@@ -1,0 +1,2095 @@
+{\rtf1\ansi\ansicpg936\cocoartf2761
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 <!-- Design System -->\
+<!DOCTYPE html>\
+\
+<html lang="zh-CN"><head>\
+<meta charset="utf-8"/>\
+<meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport"/>\
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>\
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>\
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>\
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>\
+<script id="tailwind-config">\
+        tailwind.config = \{\
+            darkMode: "class",\
+            theme: \{\
+                extend: \{\
+                    "colors": \{\
+                        "surface-container-lowest": "#ffffff",\
+                        "inverse-surface": "#2f3132",\
+                        "tertiary": "#5e5e63",\
+                        "on-tertiary-fixed-variant": "#46464b",\
+                        "surface-bright": "#f9f9fb",\
+                        "secondary": "#5f5e60",\
+                        "secondary-container": "#e2dfe1",\
+                        "on-tertiary-container": "#444549",\
+                        "on-tertiary-fixed": "#1a1b1f",\
+                        "on-primary-container": "#554300",\
+                        "surface": "#f9f9fb",\
+                        "background": "#f9f9fb",\
+                        "primary": "#735c00",\
+                        "on-secondary-container": "#636264",\
+                        "on-primary-fixed-variant": "#574500",\
+                        "error": "#ba1a1a",\
+                        "primary-container": "#d4af37",\
+                        "on-primary": "#ffffff",\
+                        "tertiary-fixed": "#e3e2e7",\
+                        "surface-dim": "#d9dadc",\
+                        "on-surface-variant": "#4d4635",\
+                        "on-secondary": "#ffffff",\
+                        "tertiary-container": "#b3b2b7",\
+                        "surface-tint": "#735c00",\
+                        "surface-variant": "#e2e2e4",\
+                        "error-container": "#ffdad6",\
+                        "on-tertiary": "#ffffff",\
+                        "surface-container-high": "#e8e8ea",\
+                        "tertiary-fixed-dim": "#c7c6cb",\
+                        "inverse-primary": "#e9c349",\
+                        "on-secondary-fixed-variant": "#474649",\
+                        "on-error-container": "#93000a",\
+                        "on-surface": "#1a1c1d",\
+                        "secondary-fixed": "#e4e2e4",\
+                        "surface-container-low": "#f3f3f5",\
+                        "surface-container-highest": "#e2e2e4",\
+                        "outline-variant": "#d0c5af",\
+                        "inverse-on-surface": "#f0f0f2",\
+                        "primary-fixed": "#ffe088",\
+                        "surface-container": "#eeeef0",\
+                        "on-error": "#ffffff",\
+                        "on-primary-fixed": "#241a00",\
+                        "secondary-fixed-dim": "#c8c6c8",\
+                        "on-secondary-fixed": "#1b1b1d",\
+                        "on-background": "#1a1c1d",\
+                        "primary-fixed-dim": "#e9c349",\
+                        "outline": "#7f7663"\
+                    \},\
+                    "borderRadius": \{\
+                        "DEFAULT": "0.25rem",\
+                        "lg": "0.5rem",\
+                        "xl": "0.75rem",\
+                        "full": "9999px"\
+                    \},\
+                    "spacing": \{\
+                        "unit": "8px",\
+                        "padding-item": "16px",\
+                        "stack-lg": "40px",\
+                        "gutter-card": "24px",\
+                        "margin-page": "32px",\
+                        "stack-sm": "8px",\
+                        "stack-md": "16px"\
+                    \},\
+                    "fontFamily": \{\
+                        "headline-2": ["Inter"],\
+                        "body-secondary": ["Inter"],\
+                        "headline-1": ["Inter"],\
+                        "label-caps": ["Inter"],\
+                        "display-lg": ["Inter"],\
+                        "body-main": ["Inter"],\
+                        "label-bold": ["Inter"]\
+                    \},\
+                    "fontSize": \{\
+                        "headline-2": ["28px", \{"lineHeight": "34px", "letterSpacing": "0em", "fontWeight": "500"\}],\
+                        "body-secondary": ["15px", \{"lineHeight": "20px", "letterSpacing": "0em", "fontWeight": "400"\}],\
+                        "headline-1": ["34px", \{"lineHeight": "41px", "letterSpacing": "-0.01em", "fontWeight": "600"\}],\
+                        "label-caps": ["11px", \{"lineHeight": "16px", "letterSpacing": "0.06em", "fontWeight": "600"\}],\
+                        "display-lg": ["48px", \{"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "600"\}],\
+                        "body-main": ["17px", \{"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "400"\}],\
+                        "label-bold": ["13px", \{"lineHeight": "18px", "letterSpacing": "0.02em", "fontWeight": "600"\}]\
+                    \}\
+                \}\
+            \}\
+        \}\
+    </script>\
+<style>\
+        .material-symbols-outlined \{\
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;\
+        \}\
+        .backdrop-blur-30 \{ backdrop-filter: blur(30px); \}\
+        .drawer-slide-up \{ animation: slideUp 0.5s ease-out; \}\
+        @keyframes slideUp \{\
+            from \{ transform: translateY(100%); \}\
+            to \{ transform: translateY(0); \}\
+        \}\
+    </style>\
+<style>\
+    body \{\
+      min-height: max(884px, 100dvh);\
+    \}\
+  </style>\
+  </head>\
+<body class="bg-[#F5F5F7] text-on-surface font-body-main selection:bg-primary-container selection:text-on-primary-container">\
+<!-- Top Navigation Bar -->\
+<header class="docked full-width top-0 sticky z-50 bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl border-b border-slate-100 dark:border-slate-800/50 shadow-[0_1px_2px_rgba(0,0,0,0.02)] h-16 flex justify-between items-center w-full px-6">\
+<div class="flex flex-col">\
+<div class="flex items-center gap-1.5">\
+<span class="text-lg font-semibold tracking-tighter text-slate-900 dark:text-slate-50">Nutri-Pilot</span>\
+<div class="w-1.5 h-1.5 rounded-full bg-[#D4AF37]"></div>\
+</div>\
+<span class="text-[10px] uppercase tracking-widest text-slate-400 font-Inter">Today's Curated Curation for Your Family</span>\
+</div>\
+<div class="relative w-8 h-8 rounded-full overflow-hidden border border-slate-100">\
+<img class="w-full h-full object-cover" data-alt="A professional studio portrait of a sophisticated person with a warm smile, set against a clean, minimalist off-white background. The lighting is soft and flattering, reflecting a luxury lifestyle aesthetic with high-key brightness. The image has a sharp focus and a polished, editorial quality that aligns with a high-end digital concierge service." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB5pFLiyT38XDlg8cr2tLU2GFPnVqa__1zVJ25-o6QQ4wsNbY6u0YNPLrQ-4sF-tv4EmU59Z5KHUtOQvO9IW97jTCAUe9w6oEegcZ8kigbjL0iY9aQrQF_LtyBTqFqj80P5zh6nr_bh8TEwzgJqUkeOBqOWTaQH_Fqtpp8tP_EGuYjFCr6EepEfFJYbNq-mdPIOS3cd9F2DHyFT1AoKZzawnaH98pg-fBQUnTWQHZOHzZFojV81U0QxLDpoGF0SCRtfeh3KBAfSMiCJ"/>\
+</div>\
+</header>\
+<main class="px-5 py-6 mb-32 space-y-gutter-card max-w-md mx-auto">\
+<!-- Main Recommended Card -->\
+<section class="bg-white rounded-[24px] p-6 shadow-[0_10px_30px_rgba(0,0,0,0.03)] border border-white/10">\
+<div class="flex justify-between items-end mb-6">\
+<h2 class="text-headline-2 font-headline-2 text-slate-900">\uc0\u20170 \u26085 \u40644 \u37329 \u25512 \u33616 </h2>\
+<div class="flex items-center gap-2 px-3 py-1 rounded-full bg-[#D4AF37]/10">\
+<span class="material-symbols-outlined text-[14px] text-[#D4AF37]" data-weight="fill">auto_awesome</span>\
+<span class="text-[11px] font-semibold text-[#D4AF37] uppercase tracking-wider">AI Pilot</span>\
+</div>\
+</div>\
+<!-- Recipe Rows -->\
+<div class="space-y-4">\
+<!-- Row 1: Meat -->\
+<div class="group flex items-center gap-4 p-3 rounded-2xl border-[1.5px] border-transparent active:border-[#D4AF37] transition-all duration-200 cursor-pointer">\
+<div class="w-12 h-12 rounded-[12px] overflow-hidden flex-shrink-0">\
+<img class="w-full h-full object-cover" data-alt="Glistening slices of twice-cooked pork belly with green leeks and bright red chili, presented on a minimalist white ceramic plate. The lighting is bright and airy, emphasizing the rich textures and premium quality of the ingredients. The composition is clean and artistic, following a luxury culinary photography style with soft ambient shadows." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAVXwll15D3-gsGLFpE_h7hFur1XlGTLhnS2hPCTVsDpveIaQAlJl5X0hSeBnsXo0O8oAdxvrZeELQxciNeKEbTVHmtsBkwr5DQacdzx-WIhjQ25ZgWzmqKCFgEcoi2pAVCXMj_tPUf3z1Jf2zL5KwYLNqG5pcqoG6clYxI9oXGy9VER-GETrOWHHA_hUitwXgoMiqWVBbsgT8KjfB7dDdtibV2LSvkssdJM_Qz1Wc7MWczwpr9PIYEN3aRDLKPW0AgCTKOKPtY85-e"/>\
+</div>\
+<div class="flex-grow flex flex-col justify-center">\
+<h3 class="text-body-main font-semibold text-slate-800">\uc0\u22238 \u38149 \u40657 \u35930 \u32905 </h3>\
+<span class="text-[10px] font-bold text-[#D4AF37] uppercase tracking-widest">Premium</span>\
+</div>\
+<span class="material-symbols-outlined text-slate-300 group-active:text-[#D4AF37] transition-colors" data-icon="swap_horiz">swap_horiz</span>\
+</div>\
+<!-- Row 2: Seafood (Active Highlight) -->\
+<div class="flex items-center gap-4 p-3 rounded-2xl border-[1.5px] border-[#D4AF37] bg-[#D4AF37]/[0.02] shadow-[0_4px_12px_rgba(212,175,55,0.08)] transition-all duration-200">\
+<div class="w-12 h-12 rounded-[12px] overflow-hidden flex-shrink-0">\
+<img class="w-full h-full object-cover" data-alt="A whole steamed leopard coral grouper garnished with delicate julienned ginger and scallions, drizzled with premium light soy sauce. The fish is presented on an elegant oblong white platter. The scene is illuminated with bright, natural kitchen light that highlights the freshness of the seafood and the clean, minimalist presentation." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD8RmirsyPBy_p6WikVKPM17PetWVzK7hKfMnqFfNXTJJ_VRrDH0HX51kNKlYbT3yGtwaxmY3_xGnQbDXT_9Y9cwSR5MkUt-F13yqyY14zkveJlQacK1obPvlDeaGFTvdMPCe3CUpDYIYKpx97BE83D-_iiNzGd1RSn0XSR-7QVJTPaqP9zb3BQIdDMUHvEmGFuumdekt67Zo46w8MI0evHcI5hw4Qw-8x8vLvOgq0QDs2jidYATI8iO8v5c39ytJgqsTwO7gndrk3A"/>\
+</div>\
+<div class="flex-grow flex flex-col justify-center">\
+<h3 class="text-body-main font-semibold text-slate-800">\uc0\u28165 \u33976 \u19996 \u26143 \u26001 </h3>\
+<span class="text-[10px] font-bold text-[#D4AF37] uppercase tracking-widest">Premium</span>\
+</div>\
+<span class="material-symbols-outlined text-[#D4AF37]" data-icon="swap_horiz">swap_horiz</span>\
+</div>\
+<!-- Row 3: Veggie -->\
+<div class="group flex items-center gap-4 p-3 rounded-2xl border-[1.5px] border-transparent active:border-[#D4AF37] transition-all duration-200 cursor-pointer">\
+<div class="w-12 h-12 rounded-[12px] overflow-hidden flex-shrink-0">\
+<img class="w-full h-full object-cover" data-alt="Vibrant green organic choy sum stems with tiny yellow flowers, perfectly saut\'e9ed with golden slivers of garlic. The dish is shown in a bright, modern kitchen setting on a white ceramic dish. The photography uses high-key lighting to emphasize the freshness and health-conscious quality of the seasonal organic vegetables." src="https://lh3.googleusercontent.com/aida-public/AB6AXuApj1zHqWGWKC_xwMy8yj4B1RzqbJkKicg5zZ6OjaL-H6jyNMVxHI99MgbHaH6oppwQ0WLlR2pmianDOIBXvoFEFiGntuZszypMHZcxc9iUtlTJMXzLTeFPv2-WTQAShrwlm8tR7UkeemFw6DODR_Bi78KeTY6PUdQKmODRxPnW1jmLPBtd5YLolVKsUtvIYCcvCTLVk6c_7zfs0eGM7dgEJzZnzy9MNOkySTHyz1go_mndj4ZCzurmrZAX8OkzmpnK7dPXEkhPSsgP"/>\
+</div>\
+<div class="flex-grow flex flex-col justify-center">\
+<h3 class="text-body-main font-semibold text-slate-800">\uc0\u33948 \u33993 \u26412 \u22320 \u26377 \u26426 \u33756 \u24515 </h3>\
+<span class="text-[10px] font-bold text-[#D4AF37] uppercase tracking-widest">Daily</span>\
+</div>\
+<span class="material-symbols-outlined text-slate-300 group-active:text-[#D4AF37] transition-colors" data-icon="swap_horiz">swap_horiz</span>\
+</div>\
+<!-- Row 4: Soup -->\
+<div class="group flex items-center gap-4 p-3 rounded-2xl border-[1.5px] border-transparent active:border-[#D4AF37] transition-all duration-200 cursor-pointer">\
+<div class="w-12 h-12 rounded-[12px] overflow-hidden flex-shrink-0">\
+<img class="w-full h-full object-cover" data-alt="A luxurious traditional Chinese soup containing cordyceps flower and premium fish maw in a clear, golden broth. The soup is served in a high-end white porcelain tureen. The lighting is warm and inviting, highlighting the gelatinous texture of the fish maw and the rich, nourishing quality of the broth in a quiet luxury style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuC0MJ_gmf8Qn8X2CljhZrrmvig1pDjmyz4PeQVSU2hiWKt7JedOgmtryR66_1RCzf09ee3--6eR7bb2qY3mCx0oPq3PMpBbmsn0woUeu2yPp8mLxab0-hukIev1mQZqOmDNr3sVUptD4FY2GjVMdXnSCj9sz9PsRsdxfG7npYJ8Oo5VXKOy8SoqtrEjdc3O09cFo_5PCa1Qt0-kC65-197QI49QIjrLpdfyqQRjKE44QwwBC3s-wECn8M2DKPLhLe_u19_P3Ij4cvYH"/>\
+</div>\
+<div class="flex-grow flex flex-col justify-center">\
+<h3 class="text-body-main font-semibold text-slate-800">\uc0\u34411 \u33609 \u33457 \u33457 \u33014 \u40481 \u27748 </h3>\
+<span class="text-[10px] font-bold text-[#D4AF37] uppercase tracking-widest">Premium</span>\
+</div>\
+<span class="material-symbols-outlined text-slate-300 group-active:text-[#D4AF37] transition-colors" data-icon="swap_horiz">swap_horiz</span>\
+</div>\
+</div>\
+</section>\
+<!-- Nutrition Summary Chip -->\
+<div class="flex justify-center">\
+<div class="flex items-center gap-3 px-5 py-3 rounded-full bg-white shadow-[0_4px_20px_rgba(0,0,0,0.02)] border border-slate-50">\
+<div class="relative w-6 h-6">\
+<svg class="w-full h-full transform -rotate-90">\
+<circle class="text-slate-100" cx="12" cy="12" fill="transparent" r="10" stroke="currentColor" stroke-width="2"></circle>\
+<circle class="text-[#D4AF37]" cx="12" cy="12" fill="transparent" r="10" stroke="currentColor" stroke-dasharray="62.8" stroke-dashoffset="15" stroke-width="2"></circle>\
+</svg>\
+</div>\
+<span class="text-label-bold text-slate-600">Daily Goal: 85% Matched</span>\
+</div>\
+</div>\
+</main>\
+<!-- Bottom Drawer Overlay -->\
+<div class="fixed inset-0 bg-slate-900/30 backdrop-blur-sm z-[60] flex flex-col justify-end">\
+<div class="bg-white rounded-t-[32px] p-8 drawer-slide-up shadow-[0_-20px_50px_rgba(0,0,0,0.1)] flex flex-col max-h-[618px]">\
+<div class="w-12 h-1.5 bg-slate-100 rounded-full mx-auto mb-6"></div>\
+<h2 class="text-lg font-bold text-slate-900 mb-6">\uc0\u26356 \u25442 \u33756 \u21697 : \'93\u28165 \u33976 \u19996 \u26143 \u26001 \'94</h2>\
+<!-- Horizontal Options Grid -->\
+<div class="flex gap-4 overflow-x-auto pb-4 -mx-2 px-2 scrollbar-hide">\
+<!-- Option 1 -->\
+<div class="min-w-[100px] flex flex-col items-center text-center space-y-2 cursor-pointer">\
+<div class="w-[90px] h-[110px] bg-slate-50 rounded-2xl overflow-hidden relative border border-slate-100 p-2 group active:border-[#D4AF37] transition-all">\
+<img class="w-full h-16 object-cover rounded-xl mb-1.5" data-alt="Stir-fried ginger and scallion crab, beautifully plated on a white minimalist dish. The bright, high-key lighting showcases the vibrant orange of the crab shells and the fresh green of the scallions. The setting is clean and sophisticated, embodying the high-end culinary theme with an emphasis on fresh, premium seafood." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAFojfwA-P3HA8OjcYc8PgxadWPWZwVbw4VARavs91spF9B_fzi-7A8a5sm6JAs7wt8wOuJppmaGM2z5rEgLq_AiKQrjuLPzoaxeCM_EHfsAHSUnKlwaIqegshSY3ekJIaof9AS0-AcM32TQEHXs3oss-z-J7NeOsTk9efLfBQeknSjW1eKpOB9QDKMN-eRAxBNtz9NpwAVQ7UuW7k5Qh8o3jg3rTuOAyrDf52TAJA3Z-cKVwbM3q9S3gUthIR3fxQyZL0EQHjmU6V2"/>\
+<span class="text-[12px] font-bold text-slate-800 leading-tight">\uc0\u23004 \u33905 \u28818 \u34809 </span>\
+<span class="text-[9px] font-bold text-[#D4AF37] uppercase absolute top-2 right-2 bg-white/90 px-1 rounded">P</span>\
+</div>\
+</div>\
+<!-- Option 2 (Selected) -->\
+<div class="min-w-[100px] flex flex-col items-center text-center space-y-2">\
+<div class="w-[90px] h-[110px] bg-white rounded-2xl overflow-hidden relative border-2 border-[#D4AF37] shadow-[0_8px_20px_rgba(212,175,55,0.12)] p-2">\
+<img class="w-full h-16 object-cover rounded-xl mb-1.5" data-alt="Typhoon Shelter style fried shrimp, golden and crispy with garlic bits and chili, presented on a minimalist white plate. The lighting is crisp and bright, highlighting the texture and color of the perfectly fried shrimp. The image style is polished and high-end, fitting for a digital white-glove culinary service." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBPb87OraOPfgU2ifxYepogENi9vMu1HTeMnqgENB1BxFAxVvS0nEUzRg1m0Pa6ejjZ8zHI6yoT3lTRIF5H6WV2XGA0OGGmFv0vzMgfsJBWzXd8Gpt0RFNo89nB7bcplv0KNMtWa1KQrBntZkhZQU_L3aN4t3aTxZ-jGjFh2elEsY-pgokt-lvy9NQ4L7NcE6pro38gioL7NQkh1XNDIlNQfrTJcUwwrZeqEnXU274znvrBNt1ATrAgI7sICjQa6qn-UCZq50AKKFQ_"/>\
+<span class="text-[12px] font-bold text-slate-800 leading-tight">\uc0\u36991 \u39118 \u22616 \u28818 \u34430 </span>\
+<span class="text-[9px] font-bold text-[#D4AF37] uppercase absolute top-2 right-2 bg-white/90 px-1 rounded">P</span>\
+<div class="absolute bottom-1 right-1">\
+<span class="material-symbols-outlined text-[#D4AF37] text-[16px]" data-weight="fill">check_circle</span>\
+</div>\
+</div>\
+</div>\
+<!-- Option 3 -->\
+<div class="min-w-[100px] flex flex-col items-center text-center space-y-2 cursor-pointer">\
+<div class="w-[90px] h-[110px] bg-slate-50 rounded-2xl overflow-hidden relative border border-slate-100 p-2 group active:border-[#D4AF37] transition-all">\
+<img class="w-full h-16 object-cover rounded-xl mb-1.5" data-alt="Steamed pork ribs with black bean sauce, served in a traditional dim sum steamer basket but presented in a modern, clean kitchen environment. The lighting is soft and natural, emphasizing the juicy texture of the pork ribs and the rich color of the black beans. The overall aesthetic is minimalist and premium." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBAAUD3HAfbGM_N4uSCrlODswI7uChA1BRvdpBuQbs14B33o8QO6dV1Sjxkl7Rz4xQyyBjZDM5sjHs7njiWPBS1Y5BxJNnLkKXahVcmF3rUZuSRHX4lkLwq2xQwVVcPOPpwb4ZeCrqaTYgznqAqQKc-n2qIOKZfQgtN6aORjigfimYvBvAB9Me_TXTWIrK5J80QS9A7_lEXWu8xb6p5re-TRWjbq2bpnxQNP4Y6O3ZduE-V5K9OZWY-IFGfp32y-qZbLr0YER6qb64n"/>\
+<span class="text-[12px] font-bold text-slate-800 leading-tight">\uc0\u35913 \u27713 \u33976 \u25490 \u39592 </span>\
+<span class="text-[9px] font-bold text-slate-400 uppercase absolute top-2 right-2 bg-white/90 px-1 rounded">D</span>\
+</div>\
+</div>\
+</div>\
+<button class="mt-8 w-full py-4 rounded-2xl border border-[#D4AF37] text-[#D4AF37] font-semibold text-body-main active:scale-95 transition-all bg-[#D4AF37]/5">\
+                Confirm Swap\
+            </button>\
+</div>\
+</div>\
+<!-- Sticky Footer -->\
+<footer class="fixed bottom-0 w-full z-50 pb-safe bg-white/80 dark:bg-slate-950/80 backdrop-blur-2xl border-t border-slate-100 dark:border-slate-800/50 shadow-[0_-4px_20px_rgba(0,0,0,0.03)] px-6 py-4">\
+<div class="max-w-md mx-auto flex flex-col items-center gap-3">\
+<button class="w-full py-4 bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-[16px] font-semibold shadow-lg active:scale-[0.98] transition-transform duration-150">\
+                \uc0\u30830 \u35748 \u33756 \u21333 \u24182 \u37197 \u36865 \
+            </button>\
+<p class="text-[10px] text-slate-400 font-light tracking-wide text-center">\
+                Guaranteed delivery by 10:30 AM tomorrow via <span class="text-slate-600 font-medium italic">Waves Pacific</span> &amp; <span class="text-slate-600 font-medium italic">Eat FRESH</span>\
+</p>\
+</div>\
+</footer>\
+</body></html>\
+\
+<!-- Nutri-Pilot Main Selection -->\
+<!DOCTYPE html>\
+\
+<html class="light" lang="en"><head>\
+<meta charset="utf-8"/>\
+<meta content="width=390, height=844, initial-scale=1.0" name="viewport"/>\
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>\
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>\
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>\
+<script id="tailwind-config">\
+        tailwind.config = \{\
+            darkMode: "class",\
+            theme: \{\
+                extend: \{\
+                    "colors": \{\
+                        "on-background": "#1a1c1d",\
+                        "on-error-container": "#93000a",\
+                        "inverse-primary": "#e9c349",\
+                        "on-primary-fixed": "#241a00",\
+                        "surface-container-highest": "#e2e2e4",\
+                        "primary-fixed-dim": "#e9c349",\
+                        "tertiary-fixed-dim": "#c7c6cb",\
+                        "primary-container": "#d4af37",\
+                        "tertiary": "#5e5e63",\
+                        "on-primary-fixed-variant": "#574500",\
+                        "error": "#ba1a1a",\
+                        "on-surface": "#1a1c1d",\
+                        "outline-variant": "#d0c5af",\
+                        "secondary-fixed": "#e4e2e4",\
+                        "on-surface-variant": "#4d4635",\
+                        "on-secondary-container": "#636264",\
+                        "tertiary-container": "#b3b2b7",\
+                        "inverse-surface": "#2f3132",\
+                        "on-secondary-fixed-variant": "#474649",\
+                        "outline": "#7f7663",\
+                        "on-secondary": "#ffffff",\
+                        "background": "#f9f9fb",\
+                        "on-primary-container": "#554300",\
+                        "surface-container": "#eeeef0",\
+                        "on-tertiary-fixed-variant": "#46464b",\
+                        "secondary-fixed-dim": "#c8c6c8",\
+                        "secondary-container": "#e2dfe1",\
+                        "primary-fixed": "#ffe088",\
+                        "inverse-on-surface": "#f0f0f2",\
+                        "surface-container-high": "#e8e8ea",\
+                        "on-tertiary-container": "#444549",\
+                        "tertiary-fixed": "#e3e2e7",\
+                        "secondary": "#5f5e60",\
+                        "on-tertiary": "#ffffff",\
+                        "surface-bright": "#f9f9fb",\
+                        "primary": "#735c00",\
+                        "on-primary": "#ffffff",\
+                        "surface": "#f9f9fb",\
+                        "surface-container-lowest": "#ffffff",\
+                        "on-tertiary-fixed": "#1a1b1f",\
+                        "surface-variant": "#e2e2e4",\
+                        "error-container": "#ffdad6",\
+                        "surface-container-low": "#f3f3f5",\
+                        "surface-dim": "#d9dadc",\
+                        "surface-tint": "#735c00",\
+                        "on-error": "#ffffff",\
+                        "on-secondary-fixed": "#1b1b1d"\
+                    \},\
+                    "borderRadius": \{\
+                        "DEFAULT": "0.25rem",\
+                        "lg": "0.5rem",\
+                        "xl": "0.75rem",\
+                        "full": "9999px"\
+                    \},\
+                    "spacing": \{\
+                        "padding-item": "16px",\
+                        "stack-lg": "40px",\
+                        "margin-page": "32px",\
+                        "unit": "8px",\
+                        "stack-sm": "8px",\
+                        "stack-md": "16px",\
+                        "gutter-card": "24px"\
+                    \},\
+                    "fontFamily": \{\
+                        "label-caps": ["Inter"],\
+                        "display-lg": ["Inter"],\
+                        "body-main": ["Inter"],\
+                        "headline-1": ["Inter"],\
+                        "label-bold": ["Inter"],\
+                        "headline-2": ["Inter"],\
+                        "body-secondary": ["Inter"]\
+                    \},\
+                    "fontSize": \{\
+                        "label-caps": ["11px", \{"lineHeight": "16px", "letterSpacing": "0.06em", "fontWeight": "600"\}],\
+                        "display-lg": ["48px", \{"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "600"\}],\
+                        "body-main": ["17px", \{"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "400"\}],\
+                        "headline-1": ["34px", \{"lineHeight": "41px", "letterSpacing": "-0.01em", "fontWeight": "600"\}],\
+                        "label-bold": ["13px", \{"lineHeight": "18px", "letterSpacing": "0.02em", "fontWeight": "600"\}],\
+                        "headline-2": ["28px", \{"lineHeight": "34px", "letterSpacing": "0em", "fontWeight": "500"\}],\
+                        "body-secondary": ["15px", \{"lineHeight": "20px", "letterSpacing": "0em", "fontWeight": "400"\}]\
+                    \}\
+                \}\
+            \}\
+        \}\
+    </script>\
+<style>\
+        body \{\
+            background-color: #F5F5F7;\
+            font-family: 'Inter', sans-serif;\
+            width: 390px;\
+            height: 844px;\
+            overflow-x: hidden;\
+            color: #1D1D1F;\
+        \}\
+        .material-symbols-outlined \{\
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;\
+        \}\
+        .ambient-card \{\
+            box-shadow: 0 10px 30px rgba(0,0,0,0.03);\
+        \}\
+        body \{\
+            min-height: max(884px, 100dvh);\
+        \}\
+    </style>\
+</head>\
+<body class="mx-auto relative">\
+<!-- Top Navigation Bar -->\
+<header class="bg-surface/80 backdrop-blur-xl docked full-width top-0 sticky z-50 flex items-center justify-between px-margin-page h-20 w-full max-w-7xl mx-auto">\
+<div class="flex items-center gap-4">\
+<button class="active:scale-95 transition-transform duration-200">\
+<span class="material-symbols-outlined text-primary text-2xl">arrow_back</span>\
+</button>\
+<div class="flex flex-col">\
+<h1 class="font-headline-2 text-[18px] font-bold leading-tight">Verify Ingredients (\uc0\u30830 \u35748 \u37319 \u36141 \u28165 \u21333 )</h1>\
+<p class="font-body-secondary text-[11px] text-[#86868B]">Optimized sourcing for premium quality &amp; local speed.</p>\
+</div>\
+</div>\
+<button class="active:scale-95 transition-transform duration-200">\
+<span class="material-symbols-outlined text-primary text-2xl">account_circle</span>\
+</button>\
+</header>\
+<!-- Scaling Banner -->\
+<div class="px-6 pt-4">\
+<div class="bg-primary/5 border border-primary/20 rounded-xl px-4 py-3 flex items-center gap-3">\
+<span class="material-symbols-outlined text-primary text-[20px]" style="font-variation-settings: 'FILL' 1;">groups</span>\
+<span class="font-label-bold text-primary text-[12px]">Quantities scaled for 8 Dinners (\uc0\u20221 \u37327 \u24050 \u25353  8 \u20154 \u20221 \u33258 \u21160 \u35843 \u25972 )</span>\
+</div>\
+</div>\
+<main class="px-6 py-6 space-y-6 pb-48">\
+<!-- Sourcing Section 1: Elite Partner Sourcing -->\
+<section class="space-y-3">\
+<div class="flex items-center gap-2 px-1">\
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">stars</span>\
+<h2 class="font-label-bold text-[#D4AF37] uppercase tracking-wider">Premium Partners (Waves Pacific &amp; Eat FRESH)</h2>\
+</div>\
+<div class="bg-white rounded-[20px] border border-[#D4AF37]/30 ambient-card overflow-hidden">\
+<div class="flex flex-col">\
+<!-- Item 1 -->\
+<div class="p-4 border-b border-[#F5F5F7] flex gap-4">\
+<div class="w-20 h-20 rounded-xl overflow-hidden flex-shrink-0 bg-[#F9F9FB]">\
+<img class="w-full h-full object-cover" data-alt="Premium Japanese bluefin tuna slices" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCA8qWlCuCQ1ajnscoM36GgZf6-t9NPuGV_zPcfTohszl7Erbz5g4gntK8EOLjzXH__EUA9tWRBNbUcYLKwhgAzWAEDc9GE0sXED_4Ioiqw5V40oZC5sEZVlqnnuOX98VFP8c6wCez0Tjb6vmsI_xpNpuOapnKMGoSiPDk6CojX9feqIxTLwkndkteATcnxU1At4HEt8ixNvGCwFYBwVfF-0YHnd-GFBkCH15lnh-CSP7PZ0kzk-35x5OKx7EtNDJ0BRDks-hdAceXc"/>\
+</div>\
+<div class="flex-grow flex flex-col justify-between">\
+<div>\
+<div class="flex justify-between items-start gap-2">\
+<h3 class="font-body-main font-semibold text-[15px] leading-snug">Japanese Bluefin Tuna Slices (\uc0\u26085 \u24335 \u34013 \u40141 \u37329 \u26538 \u40060 \u29255 )</h3>\
+<span class="font-label-bold text-primary whitespace-nowrap">HK$1,120</span>\
+</div>\
+<p class="text-[12px] text-[#86868B] mt-1">Brand: Yamaji Suisan \'95 800g</p>\
+</div>\
+<div class="mt-2">\
+<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-primary-container/10 text-primary font-label-bold text-[10px]">\
+                                    Selected Partner Recommendation\
+                                </span>\
+</div>\
+</div>\
+</div>\
+<!-- Item 2 -->\
+<div class="p-4 flex gap-4">\
+<div class="w-20 h-20 rounded-xl overflow-hidden flex-shrink-0 bg-[#F9F9FB]">\
+<img class="w-full h-full object-cover" data-alt="Organic French beans" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAiu5t9SBWH2MAxPPynfoHOUYYQ3t92plsdV7jRxQ7YdabrDieWfY4SXAe2AtthPPrgtBq10M6auFRe8lG-hQRL4WZrPf4eOxdAMMr-55Kzwwt6qcg8lGCCtpZc2r_JV6AcbHR3TDZbU2ck6Wa4qTbKsicxtq8NPidB-eUkjEcVrblVUlJxFkxF80_PKYtXD35FcMnBNbRSx_-imRi_bVfgeyoKEXVOqzMPZvQNakMRfhk2NFf2nIs6snp1kgyQR2BWkgVb62Api43W"/>\
+</div>\
+<div class="flex-grow flex flex-col justify-center">\
+<div class="flex justify-between items-start gap-2">\
+<h3 class="font-body-main font-semibold text-[15px] leading-snug">Organic French Beans (\uc0\u26377 \u26426 \u29577 \u35910 )</h3>\
+<span class="font-label-bold text-primary whitespace-nowrap">HK$180</span>\
+</div>\
+<p class="text-[12px] text-[#86868B] mt-1">Brand: Eat FRESH Organic \'95 1.2kg</p>\
+</div>\
+</div>\
+</div>\
+</div>\
+</section>\
+<!-- Sourcing Section 2: Neighborhood Sourcing -->\
+<section class="space-y-3">\
+<div class="flex items-center gap-2 px-1">\
+<span class="material-symbols-outlined text-[#007AFF]">near_me</span>\
+<h2 class="font-label-bold text-[#007AFF] uppercase tracking-wider">Nearby Merchants (Wellcome / HKTVmall)</h2>\
+</div>\
+<div class="bg-white rounded-[20px] border border-[#F5F5F7] ambient-card overflow-hidden">\
+<div class="flex flex-col">\
+<!-- Item 3 -->\
+<div class="p-4 border-b border-[#F5F5F7] flex gap-4">\
+<div class="w-20 h-20 rounded-xl overflow-hidden flex-shrink-0 bg-[#F9F9FB]">\
+<img class="w-full h-full object-cover" data-alt="Ginger garlic set" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA2gENhjedv5L1GsSSN1XgqRVqFAOnB4J4YNw5TRczt1Yok48zLPShgluQ6VN6JAtX57dgdRNQBSgrFrMHMsUFUbG4Q2p537J5i1GvYyedjAquuWXUnahF_ofb5smUTvBeAT5J20-DTsgnQU9-ezW_ND82wfuo5Kyyu58Njb4aQt6UMau7jU1fWkRecbZYPgrPwjcAJJNaJsmHRLEk5HhFPjU7v0PZKftzUFFltsTokzgl0xld9t_xeoiju2OYLhoTuLwVMsU3XTD6Y"/>\
+</div>\
+<div class="flex-grow flex flex-col justify-between">\
+<div>\
+<div class="flex justify-between items-start gap-2">\
+<h3 class="font-body-main font-semibold text-[15px] leading-snug">Ginger, Garlic &amp; Scallion Set (\uc0\u33905 \u23004 \u33948 \u32452 \u21512 )</h3>\
+<span class="font-label-bold text-[#1D1D1F] whitespace-nowrap">HK$48</span>\
+</div>\
+<p class="text-[12px] text-[#86868B] mt-1">4 Packs</p>\
+</div>\
+<div class="mt-2">\
+<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-blue-50 text-[#007AFF] font-label-bold text-[10px]">\
+                                    Local Wellcome\
+                                </span>\
+</div>\
+</div>\
+</div>\
+<!-- Item 4 -->\
+<div class="p-4 flex gap-4">\
+<div class="w-20 h-20 rounded-xl overflow-hidden flex-shrink-0 bg-[#F9F9FB]">\
+<img class="w-full h-full object-cover" data-alt="Premium soy sauce" src="https://lh3.googleusercontent.com/aida-public/AB6AXuByEjs7nGvrDkKGEeU8F92HkCQmgJvYmB21lQUE5KyrBTDCWbgHFI1HEmv3LQNX0-6ibCVRAEJQJD4fyy8w5s7pHxt4LcNfH72Z9DSodSVC0ueY_QkfeNa0AUceoYqhmNoGyS1TbEJLolGoeZMomX6kMRJunOQZehVzuuVhG3jG95wVDk8qymjAu46Io7rocPzq-fn9sdHPN_F1tFVMG05zPRgQSZ18fgPQkUNS8e5MENYHoTDdPcyemhP-zbhMX_iQ22qBCS9IPVBH"/>\
+</div>\
+<div class="flex-grow flex flex-col justify-center">\
+<div class="flex justify-between items-start gap-2">\
+<h3 class="font-body-main font-semibold text-[15px] leading-snug">Premium Light Soy Sauce (\uc0\u22836 \u25277 )</h3>\
+<span class="font-label-bold text-[#1D1D1F] whitespace-nowrap">HK$72</span>\
+</div>\
+<p class="text-[12px] text-[#86868B] mt-1">Brand: Lee Kum Kee \'95 4 Bottles</p>\
+</div>\
+</div>\
+</div>\
+</div>\
+</section>\
+<!-- Summary & Pricing Info -->\
+<section class="bg-white rounded-[20px] p-6 ambient-card space-y-4">\
+<div class="space-y-3">\
+<div class="flex justify-between items-center text-[15px] text-secondary">\
+<span>Subtotal Premium</span>\
+<span class="font-medium">HK$1,300.00</span>\
+</div>\
+<div class="flex justify-between items-center text-[15px] text-secondary">\
+<span>Subtotal Daily</span>\
+<span class="font-medium">HK$120.00</span>\
+</div>\
+<div class="flex justify-between items-center text-[15px] text-secondary">\
+<span>Delivery Fee (Merged)</span>\
+<span class="text-primary font-semibold">FREE</span>\
+</div>\
+</div>\
+<div class="pt-4 border-t border-[#F5F5F7] flex justify-between items-baseline">\
+<span class="font-body-main font-bold text-[18px]">Total Price</span>\
+<span class="font-display-lg text-[32px] font-bold text-[#1D1D1F]">HK$1,420.00</span>\
+</div>\
+</section>\
+</main>\
+<!-- Bottom Action Bar -->\
+<footer class="fixed bottom-0 left-0 w-full bg-white/80 backdrop-blur-2xl px-6 pb-10 pt-4 z-50 border-t border-surface-container-highest">\
+<div class="max-w-md mx-auto space-y-3">\
+<button class="w-full bg-[#1D1D1F] text-white h-14 rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-transform duration-200 shadow-xl">\
+<span class="material-symbols-outlined text-[20px]">shopping_cart_checkout</span>\
+<span class="font-body-main font-semibold text-[16px]">Pay &amp; Dispatch Ingredients (\uc0\u19968 \u38190 \u19979 \u21333 \u24182 \u24320 \u22987 \u27966 \u36865 )</span>\
+</button>\
+<p class="text-center text-[10px] text-[#86868B] uppercase tracking-widest font-label-caps">\
+                Your helper will receive storage instructions instantly upon arrival.\
+            </p>\
+</div>\
+</footer>\
+<!-- Pilot Quick Access Button -->\
+<div class="fixed bottom-32 right-6 z-50">\
+<button class="w-14 h-14 rounded-full bg-white shadow-2xl flex items-center justify-center border border-[#F5F5F7] active:scale-90 transition-transform">\
+<span class="material-symbols-outlined text-primary text-[28px]" style="font-variation-settings: 'FILL' 1;">auto_awesome</span>\
+</button>\
+</div>\
+</body></html>\
+\
+<!-- Nutri-Pilot Smart Purchase Cart (8 Dinners Scaled) -->\
+<!DOCTYPE html>\
+\
+<html class="light" lang="zh-CN"><head>\
+<meta charset="utf-8"/>\
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>\
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>\
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>\
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>\
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>\
+<script id="tailwind-config">\
+      tailwind.config = \{\
+        darkMode: "class",\
+        theme: \{\
+          extend: \{\
+            "colors": \{\
+                    "inverse-primary": "#e9c349",\
+                    "outline": "#7f7663",\
+                    "surface-container-highest": "#e2e2e4",\
+                    "on-primary-container": "#554300",\
+                    "on-primary": "#ffffff",\
+                    "error-container": "#ffdad6",\
+                    "on-surface": "#1a1c1d",\
+                    "surface-container-low": "#f3f3f5",\
+                    "surface-bright": "#f9f9fb",\
+                    "secondary-fixed-dim": "#c8c6c8",\
+                    "on-secondary-container": "#636264",\
+                    "surface-tint": "#735c00",\
+                    "on-primary-fixed": "#241a00",\
+                    "on-error": "#ffffff",\
+                    "tertiary-fixed": "#e3e2e7",\
+                    "surface-container-high": "#e8e8ea",\
+                    "on-background": "#1a1c1d",\
+                    "inverse-on-surface": "#f0f0f2",\
+                    "primary-container": "#d4af37",\
+                    "primary-fixed-dim": "#e9c349",\
+                    "outline-variant": "#d0c5af",\
+                    "on-surface-variant": "#4d4635",\
+                    "primary-fixed": "#ffe088",\
+                    "tertiary": "#5e5e63",\
+                    "tertiary-container": "#b3b2b7",\
+                    "surface": "#f9f9fb",\
+                    "surface-container": "#eeeef0",\
+                    "secondary": "#5f5e60",\
+                    "on-tertiary": "#ffffff",\
+                    "surface-dim": "#d9dadc",\
+                    "surface-container-lowest": "#ffffff",\
+                    "primary": "#735c00",\
+                    "on-secondary-fixed": "#1b1b1d",\
+                    "inverse-surface": "#2f3132",\
+                    "error": "#ba1a1a",\
+                    "background": "#f9f9fb",\
+                    "surface-variant": "#e2e2e4",\
+                    "secondary-fixed": "#e4e2e4",\
+                    "on-tertiary-fixed": "#1a1b1f",\
+                    "on-secondary": "#ffffff",\
+                    "on-secondary-fixed-variant": "#474649",\
+                    "secondary-container": "#e2dfe1",\
+                    "on-primary-fixed-variant": "#574500",\
+                    "on-error-container": "#93000a",\
+                    "tertiary-fixed-dim": "#c7c6cb",\
+                    "on-tertiary-fixed-variant": "#46464b",\
+                    "on-tertiary-container": "#444549"\
+            \},\
+            "borderRadius": \{\
+                    "DEFAULT": "0.25rem",\
+                    "lg": "0.5rem",\
+                    "xl": "0.75rem",\
+                    "full": "9999px",\
+                    "card": "24px",\
+                    "btn": "16px"\
+            \},\
+            "spacing": \{\
+                    "stack-lg": "40px",\
+                    "margin-page": "32px",\
+                    "gutter-card": "24px",\
+                    "unit": "8px",\
+                    "stack-sm": "8px",\
+                    "stack-md": "16px",\
+                    "padding-item": "16px"\
+            \},\
+            "fontFamily": \{\
+                    "body-main": ["Inter"],\
+                    "label-caps": ["Inter"],\
+                    "body-secondary": ["Inter"],\
+                    "label-bold": ["Inter"],\
+                    "headline-2": ["Inter"],\
+                    "headline-1": ["Inter"],\
+                    "display-lg": ["Inter"]\
+            \},\
+            "fontSize": \{\
+                    "body-main": ["17px", \{"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "400"\}],\
+                    "label-caps": ["11px", \{"lineHeight": "16px", "letterSpacing": "0.06em", "fontWeight": "600"\}],\
+                    "body-secondary": ["15px", \{"lineHeight": "20px", "letterSpacing": "0em", "fontWeight": "400"\}],\
+                    "label-bold": ["13px", \{"lineHeight": "18px", "letterSpacing": "0.02em", "fontWeight": "600"\}],\
+                    "headline-2": ["28px", \{"lineHeight": "34px", "letterSpacing": "0em", "fontWeight": "500"\}],\
+                    "headline-1": ["34px", \{"lineHeight": "41px", "letterSpacing": "-0.01em", "fontWeight": "600"\}],\
+                    "display-lg": ["48px", \{"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "600"\}]\
+            \}\
+          \},\
+        \},\
+      \}\
+    </script>\
+<style>\
+      .material-symbols-outlined \{\
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;\
+      \}\
+      body \{ background-color: #F5F5F7; \}\
+      .glass-card \{ background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(20px); \}\
+      .gold-glow \{ box-shadow: 0 0 15px rgba(212, 175, 55, 0.15); \}\
+    </style>\
+<style>\
+    body \{\
+      min-height: max(884px, 100dvh);\
+    \}\
+  </style>\
+  </head>\
+<body class="font-body-main text-on-surface antialiased overflow-x-hidden pb-32">\
+<!-- TopAppBar -->\
+<header class="bg-surface/80 dark:bg-surface/80 backdrop-blur-md font-headline-2 text-headline-2 docked full-width top-0 sticky flex justify-between items-center w-full px-margin-page py-4 max-w-full z-50">\
+<div class="flex flex-col">\
+<div class="flex items-center gap-1">\
+<span class="font-headline-2 text-[18px] font-semibold tracking-tight text-primary">Nutri-Pilot</span>\
+<div class="w-1.5 h-1.5 rounded-full bg-primary-container"></div>\
+<span class="ml-1 text-[18px] font-semibold text-on-surface">\uc0\u24742 \u23567 \u21416 </span>\
+</div>\
+<span class="font-label-caps text-label-caps text-secondary">Today's Curated Curation for Your Family</span>\
+</div>\
+<div class="relative group active:scale-95 transition-transform">\
+<img class="w-8 h-8 rounded-full border border-outline-variant" data-alt="A high-end profile avatar of a sophisticated user in a luxury environment. The lighting is soft and artistic, reflecting a premium digital lifestyle. The composition is a close-up circle, fitting the minimalist Apple aesthetic of the Nutri-Pilot application. The color palette consists of neutral whites and soft grays with a hint of gold light." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB7Zg8a6m7XUQvXKCDMVxUrgoAkr03cz_M9mDGc-QDUu0HarnbbFJC4spv-e4vA3ZC6VbpYMM4qjdzKbW9N9t63MCOBUM2hbMIrKUfrbgx6KNjVwDAwuWA109eB9JSHCJ1yd2z5GiOozG0gjdubOLsGnJlEa6GFX9hIcRa-5jXa2DA2Vy0IZXpJ42jbtDBCIsf2uecz5DXSL-ssC0jz3Gzg9Pfs8sjXSYVvd5Cwn7t15Ypht3hNk7MJwZsCjB4eSu1PFtiEi2cb2tez"/>\
+</div>\
+</header>\
+<main class="max-w-md mx-auto">\
+<!-- Dynamic Diner Selector -->\
+<section class="mt-3 px-4">\
+<div class="flex items-center justify-between bg-surface-container-lowest rounded-full py-3 px-5 shadow-[0_4px_12px_rgba(0,0,0,0.02)] border border-surface-container">\
+<button class="w-8 h-8 flex items-center justify-center rounded-full text-secondary hover:bg-surface-container transition-colors">\
+<span class="material-symbols-outlined text-[20px]">remove</span>\
+</button>\
+<div class="flex items-center gap-2">\
+<span class="material-symbols-outlined text-primary-container text-[18px]" style="font-variation-settings: 'FILL' 1;">restaurant</span>\
+<span class="font-label-bold text-[15px] font-bold text-on-surface">\uc0\u20170 \u26085  5 \u20154 \u23601 \u39184 </span>\
+</div>\
+<button class="w-8 h-8 flex items-center justify-center rounded-full text-secondary hover:bg-surface-container transition-colors">\
+<span class="material-symbols-outlined text-[20px]">add</span>\
+</button>\
+</div>\
+</section>\
+<!-- "Today's Gold Match" Hero Card -->\
+<section class="mt-4 px-4">\
+<div class="bg-surface-container-lowest rounded-card p-5 shadow-[0_10px_30px_rgba(0,0,0,0.02)] border border-surface-container/50">\
+<div class="flex flex-col gap-1 mb-6">\
+<div class="flex justify-between items-start">\
+<h2 class="text-[20px] font-bold text-on-surface tracking-tight">\uc0\u20170 \u26085 \u40644 \u37329 \u25512 \u33616 </h2>\
+<div class="px-2.5 py-1 bg-primary-container/10 rounded-full">\
+<span class="font-label-caps text-[10px] text-primary font-bold uppercase tracking-wider">Humidity 92% - Damp Clear Menu</span>\
+</div>\
+</div>\
+</div>\
+<div class="space-y-4">\
+<!-- Dish 1 -->\
+<div class="flex items-center justify-between group hover:opacity-80 transition-opacity">\
+<div class="flex items-center gap-4">\
+<div class="w-12 h-12 rounded-xl overflow-hidden bg-surface-container">\
+<img class="w-full h-full object-cover" data-alt="A delicate watercolor-style photograph of traditional Chinese Twice-cooked Pork Belly, known as Huiguo Rou. The dish is presented on a pristine white ceramic plate in a bright, airy kitchen setting with soft morning sunlight. The colors are vibrant yet refined, emphasizing the rich textures of the glazed meat and green scallions. The mood is one of culinary excellence and health-conscious gourmet dining." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCeFEl2mNIfre8YXV3tgomTrFQaXfpivoa2csjBvSG3-6KDia-omgSXPNGwPdGpaJrzSpy_PX2nHaYlcrW3BRUwTf-J6uJE3l_YJe6TFYBupRf2ik_8gilfFcCxCP4H2qHVievKDTbiFTt2KQI61wR49qA2ESdhKQIa6ZZivHbFjlIngJGJzFIFzRHA1w-jbtimsGKxAoVUV8Kk8reV8ixA-RxY_qh9QVAtCm3S1EerrwbBQnx82JJUn8e8AjtyGgT3Ik4wOKZFqfHw"/>\
+</div>\
+<div>\
+<div class="flex items-center gap-2">\
+<h3 class="text-[16px] font-bold text-on-surface">\uc0\u22238 \u38149 \u40657 \u35930 \u32905 </h3>\
+<span class="text-[11px] text-primary-container font-medium">MEAT</span>\
+</div>\
+<p class="text-[12px] text-secondary">Premium Black Pork</p>\
+</div>\
+</div>\
+<span class="material-symbols-outlined text-secondary opacity-30 text-[20px]">swap_horiz</span>\
+</div>\
+<!-- Dish 2 (Highlighted) -->\
+<div class="flex items-center justify-between p-3 -mx-3 rounded-2xl border-[1.5px] border-primary-container gold-glow bg-primary-container/5">\
+<div class="flex items-center gap-4">\
+<div class="w-12 h-12 rounded-xl overflow-hidden shadow-sm">\
+<img class="w-full h-full object-cover" data-alt="An exquisite close-up of Steamed Garoupa fish seasoned with premium soy sauce and julienned ginger. The image has a soft-focus background of a modern, minimalist high-end kitchen with champagne gold accents. The fish looks incredibly fresh, with translucent white flesh and vibrant herbs. The lighting is diffused and high-key, creating a sense of luxury and nutritional purity." src="https://lh3.googleusercontent.com/aida-public/AB6AXuC5nZyrKGBuM8IkjZo2OVhw9xkp-v5h899Rj0osD_4D7VPrAGgEOvmRZLgCPD9AUfGloHwIjpQnr3QqQqR9HOocDSzhrW9nasyo-wI5dZFigCK8AtDu9IFDWxkXX5rAbWm9QwLjETJOyeNoSMfOJsgZ00OCWgnstAsJ9Zgi7q9YnjrVvgFHxylc0pkTQfpHVQEgSvJdoazlUlLlltDlgB7Ghln0KlFu9IbovL9b38JhHsmNxW2RjRbIxoMd4VAXISKQbhrH9npIn8Te"/>\
+</div>\
+<div>\
+<div class="flex items-center gap-2">\
+<h3 class="text-[16px] font-bold text-on-surface">\uc0\u28165 \u33976 \u19996 \u26143 \u26001 </h3>\
+<span class="text-[11px] text-primary font-bold">SEAFOOD</span>\
+</div>\
+<p class="text-[12px] text-secondary">Steamed Garoupa</p>\
+</div>\
+</div>\
+<span class="material-symbols-outlined text-primary text-[20px]">star_border</span>\
+</div>\
+<!-- Dish 3 -->\
+<div class="flex items-center justify-between group hover:opacity-80 transition-opacity">\
+<div class="flex items-center gap-4">\
+<div class="w-12 h-12 rounded-xl overflow-hidden bg-surface-container">\
+<img class="w-full h-full object-cover" data-alt="Freshly harvested organic Choy Sum greens with golden garlic bits, served on a minimalist white stoneware dish. The image captures the vibrant green of the vegetables against a clean, light gray background typical of Apple-style minimalist design. The lighting is crisp and natural, highlighting the healthy, organic quality of the ingredients. The composition is balanced and elegant, reflecting professional culinary curation." src="https://lh3.googleusercontent.com/aida-public/AB6AXuC9zCHf_9BIKpLclYQqkpqP9nn5zZqxJXAVRvjD9VcDb-Z-cLrkWLiw_55qAym81OiuT-JDaMw-3NH7TMyWJfPVtc4QrR-WxO4wFP87qoFAZ1IbxWfAY9aDqI31jzwhyYWyum31tb7OSl_7bXfP9QfLSPmZwLBJrs6-pBG0Hk14ZJqEsUhuk1wwBq-oVBabIjf7Pvq7ln-1-juESFbCftUpcLM2H_M9_LxxHKMGrEfKkvz9tx_oUFsIBUua32ZIsMhwPouaylI0Byy8"/>\
+</div>\
+<div>\
+<div class="flex items-center gap-2">\
+<h3 class="text-[16px] font-bold text-on-surface">\uc0\u33948 \u33993 \u26412 \u22320 \u26377 \u26426 \u33756 \u24515 </h3>\
+<span class="text-[11px] text-primary-container font-medium">VEGGIE</span>\
+</div>\
+<p class="text-[12px] text-secondary">Organic Choy Sum</p>\
+</div>\
+</div>\
+<span class="material-symbols-outlined text-secondary opacity-30 text-[20px]">swap_horiz</span>\
+</div>\
+<!-- Dish 4 -->\
+<div class="flex items-center justify-between group hover:opacity-80 transition-opacity">\
+<div class="flex items-center gap-4">\
+<div class="w-12 h-12 rounded-xl overflow-hidden bg-surface-container">\
+<img class="w-full h-full object-cover" data-alt="A premium soup presentation featuring delicate fish maw and herbs in a translucent golden broth. The photograph uses a top-down perspective on a minimalist luxury kitchen counter. The overall tone is warm and inviting, yet strictly minimalist with high contrast. The image emphasizes the refined textures of the gourmet ingredients, maintaining a clean and elite aesthetic consistent with the Nutri-Pilot brand." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAT8K2HZYhzHYFaZ07Rqs32WtkwSPn9QfCWpQFuZVgrKUxSHyMSqm8IkkldUa_dN1emAOS0CeSxLRfvUbxS8oqRgQ7b8auE4vlq9FwvBRddo52ckNYgumz16EYwtkP6pBPMrGo70oAcfFDU9GWWiGyCy_5gv0vVwdZRwAsJF0Og11iL5jB6A516GHt9sBYM5NBVc8a7x4DQ44sf6jioh9-4wos3lE0PDRZH7uBsR-l0k11mkZTs-_nvYP8PyBkO5_6xbTdgf35jHmQ7"/>\
+</div>\
+<div>\
+<div class="flex items-center gap-2">\
+<h3 class="text-[16px] font-bold text-on-surface">\uc0\u36991 \u39118 \u22616 \u28818 \u34430 </h3>\
+<span class="text-[11px] text-primary-container font-medium">SOUP</span>\
+</div>\
+<p class="text-[12px] text-secondary">Premium Fish Maw Soup</p>\
+</div>\
+</div>\
+<span class="material-symbols-outlined text-secondary opacity-30 text-[20px]">swap_horiz</span>\
+</div>\
+</div>\
+</div>\
+</section>\
+<!-- Nutrition Insight Card -->\
+<section class="mt-6 px-4">\
+<div class="bg-surface-container-lowest rounded-card p-5 border border-surface-container/50">\
+<div class="flex items-center justify-between mb-4">\
+<span class="font-label-bold text-on-surface">Nutritional Balance</span>\
+<span class="material-symbols-outlined text-primary-container">insights</span>\
+</div>\
+<div class="flex items-end gap-3 h-20">\
+<div class="flex-1 bg-surface-container rounded-t-lg h-[60%]"></div>\
+<div class="flex-1 bg-surface-container rounded-t-lg h-[40%]"></div>\
+<div class="flex-1 bg-primary-container rounded-t-lg h-[95%]"></div>\
+<div class="flex-1 bg-surface-container rounded-t-lg h-[55%]"></div>\
+<div class="flex-1 bg-surface-container rounded-t-lg h-[70%]"></div>\
+</div>\
+<p class="mt-4 text-[13px] text-secondary leading-snug">The current menu optimizes for <span class="text-primary font-semibold">Protein Synthesis</span> and <span class="text-primary font-semibold">Joint Health</span>, perfect for active family members today.</p>\
+</div>\
+</section>\
+</main>\
+<!-- Bottom Action Bar (Sticky Bottom) -->\
+<footer class="fixed bottom-0 left-0 w-full z-50 bg-surface/90 backdrop-blur-xl px-4 pb-8 pt-4">\
+<div class="max-w-md mx-auto flex flex-col items-center gap-3">\
+<button class="w-full h-[52px] bg-gradient-to-r from-[#1D1D1F] to-[#3A3A3C] rounded-btn flex flex-col items-center justify-center active:scale-95 transition-transform shadow-xl">\
+<span class="text-on-primary text-[15px] font-semibold">\uc0\u30830 \u35748 \u33756 \u21333 \u24182 \u37319 \u36141 </span>\
+<span class="text-on-primary/60 text-[9px] uppercase tracking-[0.1em] font-medium">Confirm &amp; Purchase Ingredients</span>\
+</button>\
+<p class="text-[10px] text-secondary text-center leading-tight opacity-70">\
+                Guaranteed delivery via Waves Pacific &amp; local premium partners.\
+            </p>\
+</div>\
+</footer>\
+<!-- BottomNavBar -->\
+<nav class="fixed bottom-0 left-0 w-full z-40 flex justify-around items-center px-6 pb-2 pt-2 bg-transparent pointer-events-none">\
+<!-- Hidden underlying nav content, simplified for mobile H5 context -->\
+</nav>\
+<!-- Floating AI Suggestion (Pilot Float) -->\
+<div class="fixed bottom-32 right-6 z-50">\
+<button class="w-14 h-14 rounded-full glass-card border border-white/20 shadow-2xl flex items-center justify-center active:scale-90 transition-transform">\
+<span class="material-symbols-outlined text-primary text-[28px]" style="font-variation-settings: 'FILL' 1;">auto_awesome</span>\
+</button>\
+</div>\
+</body></html>\
+\
+<!-- Nutri-Pilot Home (Optimized v2) -->\
+<!DOCTYPE html>\
+\
+<html class="light" lang="zh-CN"><head>\
+<meta charset="utf-8"/>\
+<meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport"/>\
+<title>Nutri-Pilot - Delivery &amp; Storage Tracking</title>\
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>\
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet"/>\
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>\
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>\
+<script id="tailwind-config">\
+        tailwind.config = \{\
+            darkMode: "class",\
+            theme: \{\
+                extend: \{\
+                    "colors": \{\
+                        "outline": "#7f7663",\
+                        "on-primary-fixed": "#241a00",\
+                        "inverse-primary": "#e9c349",\
+                        "tertiary": "#5e5e63",\
+                        "on-secondary-fixed-variant": "#474649",\
+                        "primary-fixed-dim": "#e9c349",\
+                        "on-tertiary": "#ffffff",\
+                        "on-error-container": "#93000a",\
+                        "error": "#ba1a1a",\
+                        "surface-container-lowest": "#ffffff",\
+                        "on-surface-variant": "#4d4635",\
+                        "on-error": "#ffffff",\
+                        "outline-variant": "#d0c5af",\
+                        "surface-container": "#eeeef0",\
+                        "on-surface": "#1a1c1d",\
+                        "secondary-fixed-dim": "#c8c6c8",\
+                        "primary": "#735c00",\
+                        "surface-container-low": "#f3f3f5",\
+                        "error-container": "#ffdad6",\
+                        "inverse-surface": "#2f3132",\
+                        "secondary-fixed": "#e4e2e4",\
+                        "on-background": "#1a1c1d",\
+                        "primary-container": "#d4af37",\
+                        "on-primary-fixed-variant": "#574500",\
+                        "on-tertiary-fixed-variant": "#46464b",\
+                        "on-secondary-fixed": "#1b1b1d",\
+                        "surface-container-high": "#e8e8ea",\
+                        "background": "#f9f9fb",\
+                        "on-secondary": "#ffffff",\
+                        "tertiary-fixed": "#e3e2e7",\
+                        "surface-tint": "#735c00",\
+                        "secondary-container": "#e2dfe1",\
+                        "on-secondary-container": "#636264",\
+                        "inverse-on-surface": "#f0f0f2",\
+                        "surface-dim": "#d9dadc",\
+                        "primary-fixed": "#ffe088",\
+                        "on-tertiary-fixed": "#1a1b1f",\
+                        "on-primary-container": "#554300",\
+                        "surface-bright": "#f9f9fb",\
+                        "surface-container-highest": "#e2e2e4",\
+                        "on-primary": "#ffffff",\
+                        "tertiary-container": "#b3b2b7",\
+                        "surface-variant": "#e2e2e4",\
+                        "surface": "#f9f9fb",\
+                        "secondary": "#5f5e60",\
+                        "on-tertiary-container": "#444549",\
+                        "tertiary-fixed-dim": "#c7c6cb"\
+                    \},\
+                    "borderRadius": \{\
+                        "DEFAULT": "0.25rem",\
+                        "lg": "0.5rem",\
+                        "xl": "0.75rem",\
+                        "full": "9999px"\
+                    \},\
+                    "spacing": \{\
+                        "stack-md": "16px",\
+                        "margin-page": "32px",\
+                        "unit": "8px",\
+                        "stack-sm": "8px",\
+                        "stack-lg": "40px",\
+                        "padding-item": "16px",\
+                        "gutter-card": "24px"\
+                    \},\
+                    "fontFamily": \{\
+                        "body-secondary": ["Inter"],\
+                        "display-lg": ["Inter"],\
+                        "body-main": ["Inter"],\
+                        "label-caps": ["Inter"],\
+                        "headline-2": ["Inter"],\
+                        "label-bold": ["Inter"],\
+                        "headline-1": ["Inter"]\
+                    \},\
+                    "fontSize": \{\
+                        "body-secondary": ["15px", \{"lineHeight": "20px", "letterSpacing": "0em", "fontWeight": "400"\}],\
+                        "display-lg": ["48px", \{"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "600"\}],\
+                        "body-main": ["17px", \{"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "400"\}],\
+                        "label-caps": ["11px", \{"lineHeight": "16px", "letterSpacing": "0.06em", "fontWeight": "600"\}],\
+                        "headline-2": ["28px", \{"lineHeight": "34px", "letterSpacing": "0em", "fontWeight": "500"\}],\
+                        "label-bold": ["13px", \{"lineHeight": "18px", "letterSpacing": "0.02em", "fontWeight": "600"\}],\
+                        "headline-1": ["34px", \{"lineHeight": "41px", "letterSpacing": "-0.01em", "fontWeight": "600"\}]\
+                    \}\
+                \},\
+            \},\
+        \}\
+    </script>\
+<style>\
+        body \{\
+            background-color: #F5F5F7;\
+            -webkit-font-smoothing: antialiased;\
+        \}\
+        .apple-shadow \{\
+            box-shadow: 0 10px 30px rgba(0,0,0,0.03);\
+        \}\
+        .material-symbols-outlined \{\
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;\
+            vertical-align: middle;\
+        \}\
+        .premium-border-left \{\
+            border-left: 3px solid #D4AF37;\
+        \}\
+    </style>\
+<style>\
+    body \{\
+      min-height: max(884px, 100dvh);\
+    \}\
+  </style>\
+  </head>\
+<body class="font-body-main text-on-surface">\
+<!-- Top Navigation Bar -->\
+<header class="bg-white/80 backdrop-blur-xl docked full-width top-0 sticky z-50 border-b border-slate-100 flex justify-between items-center w-full px-6 h-16 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">\
+<div class="flex items-center gap-3">\
+<span class="material-symbols-outlined text-[#D4AF37] active:scale-95 transition-transform duration-200">menu</span>\
+<h1 class="text-lg font-semibold tracking-tighter text-slate-900">Nutri-Pilot</h1>\
+</div>\
+<div class="w-8 h-8 rounded-full overflow-hidden bg-surface-container active:scale-95 transition-transform duration-200">\
+<img alt="User profile avatar" class="w-full h-full object-cover" data-alt="A clean, professional close-up of a minimalist user profile avatar placeholder with a soft gray background. The visual style is modern, sleek, and aligns with high-end Apple-style interface aesthetics, featuring subtle lighting and a high-key, refined photographic tone." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAARkIy-iet9oY_FFoVcXUBSHTbaFWFj9w9NiVtBLM83yQmUF6iAqzHOPZ8gZTlMmzPP8yrytsYxhDm2FNUzQdjrJsuSPrvoXFGzfGNu8_R7chPdTtUIlWQFmQEIfv7tgUP0dv4Yb7xoj8AkktE8-06vEqwsAobIeTH2RBT2r6MbWRN9YgTr6176gVc3aZG6HAYDE-pBsmuPb-nPnKGrSU6ZyHMUBE_tJsxRcxfp2dH28RtaV9IK21CSmgdORtO3Nw-ymAp1V1DcXkM"/>\
+</div>\
+</header>\
+<main class="px-6 pt-8 pb-32 max-w-md mx-auto">\
+<!-- Header Section -->\
+<section class="mb-stack-lg">\
+<h2 class="font-display-lg text-[22px] leading-tight font-bold text-slate-900">\uc0\u20170 \u26085 \u39135 \u26448 \u37197 \u36865 </h2>\
+<p class="font-body-secondary text-[12px] text-slate-400 mt-1 uppercase tracking-wider">Ensuring premium ingredients are stored perfectly.</p>\
+</section>\
+<!-- Shipment List -->\
+<div class="space-y-gutter-card">\
+<!-- Card 1: Waves Pacific -->\
+<article class="bg-white rounded-[24px] p-6 apple-shadow">\
+<div class="flex justify-between items-start mb-4">\
+<div>\
+<div class="flex items-center gap-2 mb-1">\
+<h3 class="font-headline-2 text-lg font-semibold">Waves Pacific</h3>\
+<span class="bg-[#D4AF37]/10 text-[#D4AF37] text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-tighter">Elite Partner</span>\
+</div>\
+<div class="flex items-center text-emerald-600 gap-1">\
+<span class="material-symbols-outlined text-sm" style="font-variation-settings: 'FILL' 1;">check_circle</span>\
+<span class="text-sm font-medium">Delivered at 10:15 AM</span>\
+</div>\
+</div>\
+<img alt="Meat Icon" class="w-12 h-12 rounded-xl object-cover bg-surface-container-low" data-alt="A high-quality, professional food photography shot of a raw Wagyu Ribeye steak with beautiful marbling. The lighting is soft and natural, emphasizing the rich red color and intricate white fat distribution. The background is a minimalist, clean kitchen surface, maintaining an ultra-modern, elite culinary aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuC4Sxlh9EelgCuoBdIg9P8pybJrBN_Kib0D40HvuwQJiy_xUPlsl8oEjQDT7cWgzEa63D0vg-yKg3aDAYUgWzqr5QSbZ07K1TWVk-d_jkdtnbKOOmjwL3YB_sza8C1irU1kqhPf9DgrVjTs7oBAKaY8hGope1cIDoExRWpOLwP-6We_rx7Ga5e9xS1GQABBgl18BnuIh2NMp4pW9GOyf2zHXVidgftXmDBP2j8udtvuH5rvI5RHJ9y1dHmMbW2dXS7cjblWN-aUk1p-"/>\
+</div>\
+<div class="bg-[#FDFBF7] premium-border-left p-4 rounded-r-xl mt-4">\
+<p class="text-sm text-slate-800 leading-relaxed">\
+<span class="font-bold text-[#D4AF37]">\uc0\u55357 \u56525  Wagyu Ribeye:</span> DO NOT wash. Pat dry with paper towel, place in fridge zone B (0\'b0C Fresh Compartment).<br/>\
+<span class="text-xs text-slate-500 mt-1 block">(\uc0\u21644 \u29275 \u30524 \u32905 \u65306 \u20005 \u31105 \u27700 \u27927 \u65292 \u29992 \u32440 \u24062 \u21560 \u24178 \u65292 \u25918 0\u24230 \u20445 \u40092 \u21306 )</span>\
+</p>\
+<div class="mt-4 flex justify-center py-2 bg-white/50 rounded-lg">\
+<div class="relative w-full h-24 max-w-[120px]">\
+<img alt="Refrigerator Diagram" class="w-full h-full object-contain opacity-80" data-alt="A clean, flat-style technical illustration of a modern luxury refrigerator with transparent glass shelving. A subtle champagne gold highlight indicates the middle shelf compartment, designated as Zone B. The style is ultra-minimalist, white-themed, and fits perfectly into a high-end digital kitchen concierge interface." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBTmWMmaKdBah2Di-DVgxPvPEl0dN2KHkvIbZCQjnw6wmZrPOV5o3YfvM2N596kDDKFq8ZoWXZujjE2wAczAtCkEXzf-CX-zpRrlkDspFcsqTUY4qZEyKrinE1hBWtJczm4wmmdsZ718W94qD_CnNsr2-TcfmMZS49RwIauTmfCIvYDU5XEP6N6TJ5WAlTr1HFieDy5hHk6T19FKHcBx4hNEfuumOvRAVX5oOmJdewZQ49kRQy3TbK1P9WtaHiPcTLFMfn803gfpTCc"/>\
+<div class="absolute inset-0 flex items-center justify-center">\
+<div class="w-full h-1/3 bg-[#D4AF37]/10 border-y border-[#D4AF37]/30 flex items-center justify-center">\
+<span class="text-[10px] font-bold text-[#D4AF37]">OPTIMAL ZONE</span>\
+</div>\
+</div>\
+</div>\
+</div>\
+</div>\
+</article>\
+<!-- Card 2: Eat FRESH -->\
+<article class="bg-white rounded-[24px] p-6 apple-shadow">\
+<div class="flex justify-between items-start mb-4">\
+<div>\
+<div class="flex items-center gap-2 mb-1">\
+<h3 class="font-headline-2 text-lg font-semibold">Eat FRESH (Organic Garden)</h3>\
+</div>\
+<div class="flex items-center text-[#D4AF37] gap-1">\
+<span class="material-symbols-outlined text-sm animate-pulse">schedule</span>\
+<span class="text-sm font-medium">Arriving in 15 mins (Est. 10:30 AM)</span>\
+</div>\
+</div>\
+<img alt="Vegetable Icon" class="w-12 h-12 rounded-xl object-cover bg-surface-container-low" data-alt="A vibrant, fresh bundle of organic Choy Sum with crisp green leaves and bright yellow flowers. The photography is sharp and bright, set against a clean white marble background. The overall mood is healthy, natural, and premium, suggesting farm-to-table quality in a high-end kitchen setting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDVP7qZKmIHU3Hn2FRRBSnpWkTxk3QK9Jw7j3P5Eib17Iaz82i1oQt9kIrXAaGHFEjaIo7aOCXFFwHt00r6JVbU1yjxlaYomECzEaOGPsD4kWdKA-8P6GhE4N_HKRjyXr-Dn1g3wNKBnCiT90WyQQF3UJkLxncU78lnmk726fVRpkMuedQ7_rhX0gpGn8dDWI5eDtyLddWhOko1OnLO9uViIoj5gEsXUQ6XzLW9cNpAUSq3BWUdQrXdjGKkX8LL105BiwH-3TVUJApQ"/>\
+</div>\
+<div class="bg-[#FDFBF7] premium-border-left p-4 rounded-r-xl mt-4">\
+<p class="text-sm text-slate-800 leading-relaxed">\
+<span class="font-bold text-[#D4AF37]">\uc0\u55357 \u56525  Organic Choy Sum:</span> Keep inside paper wrap, place in bottom veggie drawer.<br/>\
+<span class="text-xs text-slate-500 mt-1 block">(\uc0\u34092 \u33756 \u65306 \u20445 \u30041 \u32440 \u21253 \u65292 \u25918 \u20837 \u26368 \u24213 \u23618 \u34092 \u33756 \u25277 \u23625 )</span>\
+</p>\
+</div>\
+</article>\
+</div>\
+<!-- Footer Links & Actions -->\
+<footer class="mt-stack-lg space-y-6">\
+<a class="flex items-center justify-center gap-2 text-slate-500 hover:text-slate-800 transition-colors py-2 active:scale-95" href="#">\
+<span class="material-symbols-outlined text-amber-500 text-lg">warning</span>\
+<span class="text-sm font-medium">\uc0\u37197 \u36865 \u20986 \u29616 \u38382 \u39064 \u65311 \u32852 \u31995 AI\u21161 \u25163 </span>\
+</a>\
+<button class="w-full bg-[#1D1D1F] text-white py-4 rounded-full font-semibold text-[17px] active:scale-[0.98] transition-all shadow-lg">\
+                \uc0\u36827 \u20837 \u20219 \u21153 \u30475 \u26495 \
+            </button>\
+</footer>\
+</main>\
+<!-- Bottom Navigation Bar -->\
+<nav class="bg-white/80 backdrop-blur-2xl fixed bottom-0 w-full z-50 pb-safe border-t border-slate-100 flex justify-around items-center h-20 px-4 shadow-[0_-4px_20px_rgba(0,0,0,0.03)]">\
+<div class="flex flex-col items-center gap-1 group">\
+<span class="material-symbols-outlined text-slate-400 group-hover:text-[#D4AF37] transition-colors">home</span>\
+<span class="text-[10px] uppercase tracking-widest text-slate-400 font-label-caps">Home</span>\
+</div>\
+<div class="flex flex-col items-center gap-1 group">\
+<span class="material-symbols-outlined text-[#D4AF37] scale-110">rebase_edit</span>\
+<span class="text-[10px] uppercase tracking-widest text-[#D4AF37] font-label-caps">Status</span>\
+</div>\
+<div class="flex flex-col items-center group -mt-8">\
+<div class="w-14 h-14 bg-[#1D1D1F] rounded-full flex items-center justify-center shadow-xl active:scale-90 transition-transform">\
+<span class="material-symbols-outlined text-[#D4AF37] text-3xl" style="font-variation-settings: 'FILL' 1;">add_circle</span>\
+</div>\
+</div>\
+<div class="flex flex-col items-center gap-1 group">\
+<span class="material-symbols-outlined text-slate-400 group-hover:text-[#D4AF37] transition-colors">auto_awesome</span>\
+<span class="text-[10px] uppercase tracking-widest text-slate-400 font-label-caps">AI Pilot</span>\
+</div>\
+<div class="flex flex-col items-center gap-1 group">\
+<span class="material-symbols-outlined text-slate-400 group-hover:text-[#D4AF37] transition-colors">person</span>\
+<span class="text-[10px] uppercase tracking-widest text-slate-400 font-label-caps">Profile</span>\
+</div>\
+</nav>\
+<!-- Contextual FAB (The Pilot Float) -->\
+<div class="fixed bottom-24 left-1/2 -translate-x-1/2 z-40">\
+<button class="bg-white/40 backdrop-blur-md border border-white/20 px-6 py-2 rounded-full shadow-2xl flex items-center gap-2 active:scale-95 transition-all">\
+<span class="w-2 h-2 rounded-full bg-[#D4AF37] animate-pulse"></span>\
+<span class="text-sm font-medium text-slate-900">AI Concierge Active</span>\
+</button>\
+</div>\
+</body></html>\
+\
+<!-- Nutri-Pilot Delivery & Storage Tracking -->\
+<!DOCTYPE html>\
+\
+<html lang="zh-CN"><head>\
+<meta charset="utf-8"/>\
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>\
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>\
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..700&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>\
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>\
+<script id="tailwind-config">\
+        tailwind.config = \{\
+            darkMode: "class",\
+            theme: \{\
+                extend: \{\
+                    "colors": \{\
+                        "on-primary-fixed-variant": "#574500",\
+                        "error": "#ba1a1a",\
+                        "outline-variant": "#d0c5af",\
+                        "on-surface": "#1a1c1d",\
+                        "on-surface-variant": "#4d4635",\
+                        "secondary-fixed": "#e4e2e4",\
+                        "on-secondary-container": "#636264",\
+                        "on-error-container": "#93000a",\
+                        "on-background": "#1a1c1d",\
+                        "on-primary-fixed": "#241a00",\
+                        "inverse-primary": "#e9c349",\
+                        "primary-fixed-dim": "#e9c349",\
+                        "surface-container-highest": "#e2e2e4",\
+                        "tertiary": "#5e5e63",\
+                        "tertiary-fixed-dim": "#c7c6cb",\
+                        "primary-container": "#d4af37",\
+                        "secondary-fixed-dim": "#c8c6c8",\
+                        "secondary-container": "#e2dfe1",\
+                        "primary-fixed": "#ffe088",\
+                        "inverse-on-surface": "#f0f0f2",\
+                        "on-secondary-fixed-variant": "#474649",\
+                        "tertiary-container": "#b3b2b7",\
+                        "inverse-surface": "#2f3132",\
+                        "outline": "#7f7663",\
+                        "on-secondary": "#ffffff",\
+                        "on-primary-container": "#554300",\
+                        "background": "#f9f9fb",\
+                        "on-tertiary-fixed-variant": "#46464b",\
+                        "surface-container": "#eeeef0",\
+                        "surface": "#f9f9fb",\
+                        "surface-container-lowest": "#ffffff",\
+                        "on-tertiary-fixed": "#1a1b1f",\
+                        "on-tertiary-container": "#444549",\
+                        "surface-container-high": "#e8e8ea",\
+                        "secondary": "#5f5e60",\
+                        "on-tertiary": "#ffffff",\
+                        "tertiary-fixed": "#e3e2e7",\
+                        "surface-bright": "#f9f9fb",\
+                        "primary": "#735c00",\
+                        "on-primary": "#ffffff",\
+                        "on-secondary-fixed": "#1b1b1d",\
+                        "on-error": "#ffffff",\
+                        "surface-variant": "#e2e2e4",\
+                        "surface-container-low": "#f3f3f5",\
+                        "error-container": "#ffdad6",\
+                        "surface-dim": "#d9dadc",\
+                        "surface-tint": "#735c00"\
+                    \},\
+                    "borderRadius": \{\
+                        "DEFAULT": "0.25rem",\
+                        "lg": "0.5rem",\
+                        "xl": "0.75rem",\
+                        "full": "9999px"\
+                    \},\
+                    "spacing": \{\
+                        "unit": "8px",\
+                        "stack-lg": "40px",\
+                        "margin-page": "32px",\
+                        "padding-item": "16px",\
+                        "stack-sm": "8px",\
+                        "stack-md": "16px",\
+                        "gutter-card": "24px"\
+                    \},\
+                    "fontFamily": \{\
+                        "body-main": ["Inter"],\
+                        "display-lg": ["Inter"],\
+                        "label-caps": ["Inter"],\
+                        "body-secondary": ["Inter"],\
+                        "label-bold": ["Inter"],\
+                        "headline-2": ["Inter"],\
+                        "headline-1": ["Inter"]\
+                    \},\
+                    "fontSize": \{\
+                        "body-main": ["17px", \{"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "400"\}],\
+                        "display-lg": ["48px", \{"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "600"\}],\
+                        "label-caps": ["11px", \{"lineHeight": "16px", "letterSpacing": "0.06em", "fontWeight": "600"\}],\
+                        "body-secondary": ["15px", \{"lineHeight": "20px", "letterSpacing": "0em", "fontWeight": "400"\}],\
+                        "label-bold": ["13px", \{"lineHeight": "18px", "letterSpacing": "0.02em", "fontWeight": "600"\}],\
+                        "headline-2": ["28px", \{"lineHeight": "34px", "letterSpacing": "0em", "fontWeight": "500"\}],\
+                        "headline-1": ["34px", \{"lineHeight": "41px", "letterSpacing": "-0.01em", "fontWeight": "600"\}]\
+                    \}\
+                \},\
+            \},\
+        \}\
+    </script>\
+<style>\
+        .material-symbols-outlined \{\
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;\
+        \}\
+        .check-glow \{\
+            box-shadow: 0 0 12px rgba(212, 175, 55, 0.2);\
+        \}\
+        .glass-panel \{\
+            background: rgba(255, 255, 255, 0.8);\
+            backdrop-filter: blur(20px);\
+        \}\
+    </style>\
+<style>\
+    body \{\
+      min-height: max(884px, 100dvh);\
+    \}\
+  </style>\
+  </head>\
+<body class="bg-[#F8F9FA] font-body-main text-on-surface min-h-screen pb-32">\
+<!-- TopAppBar -->\
+<header class="bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl docked full-width top-0 sticky z-50 border-b border-slate-100 dark:border-slate-800/50 shadow-[0_1px_2px_rgba(0,0,0,0.02)] flex justify-between items-center w-full px-6 h-16">\
+<div class="flex items-center gap-3">\
+<span class="material-symbols-outlined text-[#D4AF37]">menu</span>\
+<span class="text-lg font-semibold tracking-tighter text-slate-900 dark:text-slate-50">Nutri-Pilot</span>\
+</div>\
+<div class="w-8 h-8 rounded-full overflow-hidden border border-slate-200">\
+<img alt="User profile avatar" class="w-full h-full object-cover" data-alt="A professional close-up portrait of a user for a high-end application profile. The lighting is soft and natural, emphasizing a clean and minimalist aesthetic. The background is a neutral, out-of-focus interior suggesting a modern and organized home environment. The image is crisp with a shallow depth of field, maintaining the luxury design feel of the app." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDlHiZHb5fEF4Mu2JQD8njVxC6F-5D_50u6ElDb5qChuRzNZ9mAWliK0OHArYvNfPN9Xj4pZAs33XjyMbGPRoFBgQ9BQ2Sf-3wrYldsF0hG4GUEjexK3X9aE3c9KXCegv-cExhxgk8j7Oy0a3YugrkpmdufZudjmYtEybRxDScrEm6VD4TGv3HPhs_4vgvT1qdtsPZS8ZFBp98TOI31pCZ_1vx4mLvx9-voeyQ6YBbh1CM0jHJNJbVsh4W5v14bCMY_0RtlV_jSEgo5"/>\
+</div>\
+</header>\
+<!-- Phase Timeline -->\
+<nav class="sticky top-16 z-40 bg-white/90 backdrop-blur-md px-6 py-4 flex justify-between items-center border-b border-slate-50">\
+<div class="flex flex-col items-center gap-1">\
+<div class="w-8 h-8 rounded-full bg-[#D4AF37]/10 flex items-center justify-center text-[#D4AF37]">\
+<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">restaurant_menu</span>\
+</div>\
+<span class="text-[10px] font-semibold text-[#D4AF37] tracking-wider">PREP</span>\
+</div>\
+<div class="h-[1px] flex-1 bg-slate-100 mx-4"></div>\
+<div class="flex flex-col items-center gap-1 opacity-40">\
+<div class="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">\
+<span class="material-symbols-outlined text-[18px]">skillet</span>\
+</div>\
+<span class="text-[10px] font-semibold text-slate-500 tracking-wider uppercase">Cook</span>\
+</div>\
+<div class="h-[1px] flex-1 bg-slate-100 mx-4"></div>\
+<div class="flex flex-col items-center gap-1 opacity-40">\
+<div class="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">\
+<span class="material-symbols-outlined text-[18px]">room_service</span>\
+</div>\
+<span class="text-[10px] font-semibold text-slate-500 tracking-wider uppercase">Serve</span>\
+</div>\
+</nav>\
+<main class="px-6 pt-6 flex flex-col gap-6">\
+<!-- Guidance Card -->\
+<section class="bg-[#D4AF37]/5 border-2 border-dashed border-[#D4AF37]/30 rounded-[24px] p-5">\
+<div class="flex items-start gap-3">\
+<span class="material-symbols-outlined text-[#D4AF37]">tips_and_updates</span>\
+<div>\
+<h2 class="text-[16px] font-bold text-slate-900">\uc0\u20170 \u26085 \u22791 \u33756 \u27719 \u24635 </h2>\
+<p class="text-[12px] text-slate-500 mt-1">\uc0\u35831 \u20999 \u22909 \u39135 \u26448 \u24182 \u25353 \u25351 \u23450 \u20301 \u32622 \u23384 \u25918 </p>\
+</div>\
+</div>\
+</section>\
+<!-- Ingredient List -->\
+<div class="flex flex-col gap-4">\
+<!-- Card 1: Pending (Pork Belly) -->\
+<div class="bg-white rounded-[24px] p-4 flex items-center gap-4 shadow-[0_10px_30px_rgba(0,0,0,0.03)] border border-[#D4AF37]/40 ring-1 ring-[#D4AF37]/10">\
+<div class="w-16 h-16 rounded-xl overflow-hidden bg-slate-50 shrink-0">\
+<img alt="\uc0\u20116 \u33457 \u32905 " class="w-full h-full object-cover" data-alt="A high-quality, top-down photograph of freshly sliced raw pork belly with beautiful marbling, presented in a minimalist watercolor style. The lighting is bright and clean, set against a pristine white background. The visual composition is elegant and focused, emphasizing the fresh texture of the meat in a culinary prep context." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAgaVmzxkw_EIPhqSHd__FcEanKGLKnH8LEYRKlQaUlzFDkrY-zETMV2VGLAiUH7S6WnF9I9ced5GAo7B3sVzRHSfPK2FZgC-dFrJDSWT9VZy1BsmWm0ZF_b1t3z9YnmgmFTghuUaighNVZUoz5tKNxRR-XkCjNJd1cP-7Zk5ktlmGfxmMJs49QwIjE9Z33NYTwzA_7mxDnFKkwdDupWdtIjx2fBaAfdFPgzdO8F8AyWCPgpZO6-tYncnZFk_DkGwBnNOsj7pDw6_we"/>\
+</div>\
+<div class="flex-1 flex flex-col gap-1">\
+<h3 class="font-label-bold text-slate-900">\uc0\u20116 \u33457 \u32905 </h3>\
+<p class="text-[14px] text-slate-500 leading-tight">\uc0\u20999 2mm\u34180 \u29255 \u65292 \u28151 \u21512 \u37233 \u27713 </p>\
+<span class="inline-flex items-center gap-1 text-[11px] font-medium text-[#D4AF37] bg-[#D4AF37]/5 px-2 py-0.5 rounded-full mt-1 w-fit">\
+<span class="material-symbols-outlined text-[12px]">location_on</span>\
+                        \uc0\u55357 \u56525  \u25918 \u20837  A\u26684 : \u32905 \u31867 \
+                    </span>\
+</div>\
+<button class="w-8 h-8 rounded-full border-2 border-slate-200 shrink-0 flex items-center justify-center transition-all active:scale-90">\
+</button>\
+</div>\
+<!-- Card 2: Completed (Ginger/Garlic) -->\
+<div class="bg-white/60 rounded-[24px] p-4 flex items-center gap-4 shadow-sm border border-emerald-100 opacity-60">\
+<div class="w-16 h-16 rounded-xl overflow-hidden bg-slate-100 shrink-0 grayscale-[0.5]">\
+<img alt="\uc0\u23004 \u33948 \u26411 " class="w-full h-full object-cover" data-alt="Minced ginger and garlic neatly arranged on a clean white ceramic plate. The lighting is bright and airy, following a minimalist luxury aesthetic. Soft shadows create depth, and the overall color palette is muted and natural, fitting for a clean kitchen prep interface." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAtPIDjsBsLbll1mgg0QxEGSfq66YfXJXFw0Wt4w_rrDvvwXalfFFzrt1ubUBVrxhAVduPYjXoEzk2m7Wjr3A_SwjNMuKaJ-BxEI89tVOCMz57FEf0nCRHdHhEbCY9ZzJITKyM0-pjYFcTvGsrEuw6RyPKKWJKiKG3_M0HBv-VEzlGNYCadAmI_920voe-_4j6GnmTdWNWRtjv41IgFs5MEYZjIOkwq126wi3Kz883jzs7Ro572iQGBnFkmDj8Kg-xN9MrOSSWjeB4G"/>\
+</div>\
+<div class="flex-1 flex flex-col gap-1">\
+<h3 class="font-label-bold text-slate-400 line-through">\uc0\u23004 \u33948 \u26411 </h3>\
+<p class="text-[14px] text-slate-400 leading-tight line-through">\uc0\u20999 \u30862 \u25104 \u26411 \u65292 \u22791 \u29992 </p>\
+<span class="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600/50 bg-emerald-50 px-2 py-0.5 rounded-full mt-1 w-fit">\
+<span class="material-symbols-outlined text-[12px]">check_circle</span>\
+                        \uc0\u24050 \u25918 \u20837  C\u26684 : \u37197 \u26009 \
+                    </span>\
+</div>\
+<div class="w-8 h-8 rounded-full bg-emerald-500 shrink-0 flex items-center justify-center shadow-sm">\
+<span class="material-symbols-outlined text-white text-[18px]">check</span>\
+</div>\
+</div>\
+<!-- Card 3: Pending (Choy Sum) -->\
+<div class="bg-white rounded-[24px] p-4 flex items-center gap-4 shadow-[0_10px_30px_rgba(0,0,0,0.03)] border border-transparent">\
+<div class="w-16 h-16 rounded-xl overflow-hidden bg-slate-50 shrink-0">\
+<img alt="\uc0\u26412 \u22320 \u33756 \u24515 " class="w-full h-full object-cover" data-alt="Fresh vibrant local choy sum greens, washed and glistening with water droplets, photographed on a clean white surface. The lighting is high-key and fresh, capturing the crisp texture of the vegetables. Minimalist and professional culinary presentation." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAcpqVNiYZ-AdqVBznUg3d2ENqyZcZNTLr8_iqrwrceIgWJXfUbbX1zieAnIwlccWIkZJzvQpO6FfdCVd1w3R_eAKYNOBJxqu2wZZd6T3sm4kw9xq2trjl_gKduY9_hNcWL8uRHBYsMjcp9KC65LiQC7ssdhJ167X0Cttw1_PhpqmUJD7yIDg0oreqEqWcPRnDqMJq2vsk3lniVNxfXeboshTaYE4afFZm88-mRlK_NxhDzOPNrke1haqJQPyqb-RjaJlrrDrsF2ktB"/>\
+</div>\
+<div class="flex-1 flex flex-col gap-1">\
+<h3 class="font-label-bold text-slate-900">\uc0\u26412 \u22320 \u33756 \u24515 </h3>\
+<p class="text-[14px] text-slate-500 leading-tight">\uc0\u27927 \u20928 \u21435 \u26681 \u65292 \u20999 \u25104 5cm\u27573 </p>\
+<span class="inline-flex items-center gap-1 text-[11px] font-medium text-[#D4AF37] bg-[#D4AF37]/5 px-2 py-0.5 rounded-full mt-1 w-fit">\
+<span class="material-symbols-outlined text-[12px]">location_on</span>\
+                        \uc0\u55357 \u56525  \u25918 \u20837  B\u26684 : \u34092 \u33756 \
+                    </span>\
+</div>\
+<button class="w-8 h-8 rounded-full border-2 border-slate-200 shrink-0 flex items-center justify-center transition-all active:scale-90">\
+</button>\
+</div>\
+<!-- Card 4: Pending (Mushrooms) -->\
+<div class="bg-white rounded-[24px] p-4 flex items-center gap-4 shadow-[0_10px_30px_rgba(0,0,0,0.03)] border border-transparent">\
+<div class="w-16 h-16 rounded-xl overflow-hidden bg-slate-50 shrink-0">\
+<img alt="\uc0\u40092 \u39321 \u33735 " class="w-full h-full object-cover" data-alt="Slices of fresh shiitake mushrooms arranged artfully on a white marble surface. Bright natural kitchen lighting creates soft shadows. The visual style is premium and clean, focusing on the earthy textures and neutral tones of the mushrooms." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCYvE7QrC9Nio5JLw3WxP34lq54wQ-hvdCoKswHxPmxHIUzsIHrWe2VvaQj58Bp72M5fZUR1YAxhpwQwbp3cbXcWG7PhMsLhmQobmhlxqvy8jkcIMfYtwA83jvCix1m67VPctznweQ7rNw5syIqJjK0BIqXmQ1oh3RPGmccuZGRh1tQHPFfE6dc69pJ3mtR0cnUpHQ5NO58T9MDx6eS0bJQdiHGJEaXcCaCe30niWWrOyMrsH8DHyM4o5gyE7PihtQDlqSxZ2IvfgdE"/>\
+</div>\
+<div class="flex-1 flex flex-col gap-1">\
+<h3 class="font-label-bold text-slate-900">\uc0\u40092 \u39321 \u33735 </h3>\
+<p class="text-[14px] text-slate-500 leading-tight">\uc0\u20999 \u25104 \u22343 \u21248 \u34180 \u29255 </p>\
+<span class="inline-flex items-center gap-1 text-[11px] font-medium text-[#D4AF37] bg-[#D4AF37]/5 px-2 py-0.5 rounded-full mt-1 w-fit">\
+<span class="material-symbols-outlined text-[12px]">location_on</span>\
+                        \uc0\u55357 \u56525  \u25918 \u20837  B\u26684 : \u34092 \u33756 \
+                    </span>\
+</div>\
+<button class="w-8 h-8 rounded-full border-2 border-slate-200 shrink-0 flex items-center justify-center transition-all active:scale-90">\
+</button>\
+</div>\
+</div>\
+</main>\
+<!-- AI Pilot Floating Action Button -->\
+<div class="fixed bottom-28 right-6 flex flex-col items-end gap-2 z-[55]">\
+<div class="bg-white/90 backdrop-blur-md px-4 py-2 rounded-2xl shadow-xl border border-[#D4AF37]/10 animate-bounce-subtle">\
+<p class="text-[12px] font-medium text-slate-700">Ask AI: "Where to put the spice?"</p>\
+</div>\
+<button class="w-14 h-14 bg-[#D4AF37] rounded-full flex items-center justify-center text-white shadow-[0_10px_25px_rgba(212,175,55,0.4)] active:scale-90 transition-transform">\
+<span class="material-symbols-outlined text-[28px]" style="font-variation-settings: 'FILL' 1;">mic</span>\
+</button>\
+</div>\
+<!-- Sticky Bottom Navigation Shell (Footer Action) -->\
+<footer class="fixed bottom-0 w-full z-50 p-6 bg-gradient-to-t from-white via-white/95 to-transparent">\
+<button class="w-full h-14 bg-[#2D3748] rounded-2xl flex items-center justify-center gap-2 text-white font-bold shadow-lg active:scale-95 transition-transform duration-200">\
+<span>\uc0\u23436 \u25104 \u22791 \u33756 \u65292 \u20934 \u22791 \u20570 \u39277 </span>\
+<span class="material-symbols-outlined text-[18px]">arrow_forward_ios</span>\
+</button>\
+</footer>\
+<!-- Standard BottomNavBar from JSON (For Main Navigation Context) -->\
+<nav class="fixed bottom-0 hidden w-full z-50 bg-white/80 dark:bg-slate-950/80 backdrop-blur-2xl border-t border-slate-100 dark:border-slate-800/50 shadow-[0_-4px_20px_rgba(0,0,0,0.03)] flex justify-around items-center h-20 px-4">\
+<!-- Not rendered due to Task-Focused page rule in instructions -->\
+</nav>\
+</body></html>\
+\
+<!-- Nutri-Pilot Helper Prep Checklist (Optimized) -->\
+<!DOCTYPE html>\
+\
+<html class="dark" lang="zh-CN"><head>\
+<meta charset="utf-8"/>\
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>\
+<title>Nutri-Pilot Helper View</title>\
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>\
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>\
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>\
+<style>\
+        .material-symbols-outlined \{\
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;\
+        \}\
+        @keyframes pulse-gold \{\
+            0%, 100% \{ opacity: 1; transform: scale(1); \}\
+            50% \{ opacity: 0.5; transform: scale(1.2); \}\
+        \}\
+        .animate-pulse-gold \{\
+            animation: pulse-gold 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;\
+        \}\
+        .glass-blur \{\
+            backdrop-filter: blur(12px);\
+            -webkit-backdrop-filter: blur(12px);\
+        \}\
+    </style>\
+<script id="tailwind-config">\
+        tailwind.config = \{\
+            darkMode: "class",\
+            theme: \{\
+                extend: \{\
+                    "colors": \{\
+                        "on-surface": "#1a1c1d",\
+                        "on-secondary-fixed-variant": "#474649",\
+                        "inverse-on-surface": "#f0f0f2",\
+                        "on-tertiary-fixed": "#1a1b1f",\
+                        "inverse-primary": "#e9c349",\
+                        "outline": "#7f7663",\
+                        "error": "#ba1a1a",\
+                        "primary": "#735c00",\
+                        "background": "#111111",\
+                        "on-secondary-fixed": "#1b1b1d",\
+                        "surface-container-highest": "#e2e2e4",\
+                        "secondary-fixed-dim": "#c8c6c8",\
+                        "outline-variant": "#d0c5af",\
+                        "error-container": "#ffdad6",\
+                        "tertiary-fixed-dim": "#c7c6cb",\
+                        "surface-tint": "#735c00",\
+                        "surface-container-high": "#e8e8ea",\
+                        "on-tertiary": "#ffffff",\
+                        "secondary": "#5f5e60",\
+                        "primary-fixed": "#ffe088",\
+                        "surface-container": "#eeeef0",\
+                        "surface-container-lowest": "#ffffff",\
+                        "on-primary-container": "#554300",\
+                        "on-secondary": "#ffffff",\
+                        "on-surface-variant": "#4d4635",\
+                        "secondary-container": "#e2dfe1",\
+                        "on-background": "#1a1c1d",\
+                        "secondary-fixed": "#e4e2e4",\
+                        "on-primary-fixed-variant": "#574500",\
+                        "on-tertiary-fixed-variant": "#46464b",\
+                        "tertiary": "#5e5e63",\
+                        "primary-fixed-dim": "#e9c349",\
+                        "on-error-container": "#93000a",\
+                        "tertiary-container": "#b3b2b7",\
+                        "on-primary-fixed": "#241a00",\
+                        "surface-variant": "#e2e2e4",\
+                        "tertiary-fixed": "#e3e2e7",\
+                        "surface-container-low": "#f3f3f5",\
+                        "surface-bright": "#f9f9fb",\
+                        "surface": "#f9f9fb",\
+                        "surface-dim": "#d9dadc",\
+                        "on-error": "#ffffff",\
+                        "on-primary": "#ffffff",\
+                        "on-tertiary-container": "#444549",\
+                        "inverse-surface": "#2f3132",\
+                        "primary-container": "#d4af37",\
+                        "on-secondary-container": "#636264"\
+                    \},\
+                    "borderRadius": \{\
+                        "DEFAULT": "0.25rem",\
+                        "lg": "0.5rem",\
+                        "xl": "0.75rem",\
+                        "full": "9999px"\
+                    \},\
+                    "spacing": \{\
+                        "stack-lg": "40px",\
+                        "stack-md": "16px",\
+                        "gutter-card": "24px",\
+                        "stack-sm": "8px",\
+                        "unit": "8px",\
+                        "margin-page": "32px",\
+                        "padding-item": "16px"\
+                    \},\
+                    "fontFamily": \{\
+                        "body-secondary": ["Inter"],\
+                        "headline-2": ["Inter"],\
+                        "body-main": ["Inter"],\
+                        "display-lg": ["Inter"],\
+                        "headline-1": ["Inter"],\
+                        "label-caps": ["Inter"],\
+                        "label-bold": ["Inter"]\
+                    \},\
+                    "fontSize": \{\
+                        "body-secondary": ["15px", \{"lineHeight": "20px", "letterSpacing": "0em", "fontWeight": "400"\}],\
+                        "headline-2": ["28px", \{"lineHeight": "34px", "letterSpacing": "0em", "fontWeight": "500"\}],\
+                        "body-main": ["17px", \{"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "400"\}],\
+                        "display-lg": ["48px", \{"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "600"\}],\
+                        "headline-1": ["34px", \{"lineHeight": "41px", "letterSpacing": "-0.01em", "fontWeight": "600"\}],\
+                        "label-caps": ["11px", \{"lineHeight": "16px", "letterSpacing": "0.06em", "fontWeight": "600"\}],\
+                        "label-bold": ["13px", \{"lineHeight": "18px", "letterSpacing": "0.02em", "fontWeight": "600"\}]\
+                    \}\
+                \},\
+            \},\
+        \}\
+    </script>\
+<style>\
+    body \{\
+      min-height: max(884px, 100dvh);\
+    \}\
+  </style>\
+  </head>\
+<body class="bg-[#111111] text-white antialiased flex justify-center">\
+<!-- Viewport Container -->\
+<div class="w-[390px] h-[844px] overflow-y-auto relative flex flex-col no-scrollbar">\
+<!-- Header: TopAppBar Content & Identity from JSON mapping -->\
+<header class="sticky top-0 z-50 bg-[#111111]/90 backdrop-blur-md px-margin-page py-6 space-y-4">\
+<div class="flex justify-between items-center">\
+<span class="material-symbols-outlined text-white" data-icon="menu">menu</span>\
+<h1 class="font-headline-2 text-headline-2 text-white">Active Cooking: 2 Active Dishes</h1>\
+<span class="material-symbols-outlined text-white" data-icon="settings">settings</span>\
+</div>\
+<!-- Progress Stepper -->\
+<div class="flex items-center justify-between px-4">\
+<div class="flex flex-col items-center gap-1">\
+<div class="w-6 h-6 rounded-full bg-green-500 flex items-center justify-center">\
+<span class="material-symbols-outlined text-[14px] text-white" data-icon="check">check</span>\
+</div>\
+<span class="font-label-caps text-label-caps text-green-500">Prep</span>\
+</div>\
+<div class="flex-1 h-[2px] bg-white/10 mx-2"></div>\
+<div class="flex flex-col items-center gap-1">\
+<div class="w-6 h-6 rounded-full border-2 border-[#D4AF37] flex items-center justify-center relative">\
+<div class="w-2 h-2 rounded-full bg-[#D4AF37] animate-pulse-gold"></div>\
+</div>\
+<span class="font-label-caps text-label-caps text-[#D4AF37]">COOKING</span>\
+</div>\
+<div class="flex-1 h-[2px] bg-white/10 mx-2"></div>\
+<div class="flex flex-col items-center gap-1">\
+<div class="w-6 h-6 rounded-full border-2 border-white/20"></div>\
+<span class="font-label-caps text-label-caps text-white/20">Serve</span>\
+</div>\
+</div>\
+</header>\
+<!-- Main Content Area -->\
+<main class="flex-1 px-4 space-y-stack-md pb-40">\
+<!-- Robot-Link IoT Dashboard -->\
+<section class="bg-[#007AFF]/5 border-[1.5px] border-[#007AFF] rounded-xl p-padding-item space-y-4">\
+<div class="flex items-center justify-between">\
+<div class="flex items-center gap-2">\
+<div class="w-2 h-2 rounded-full bg-[#007AFF] animate-pulse"></div>\
+<span class="font-label-bold text-[#007AFF]">Smart Cooker B1 (\uc0\u26234 \u33021 \u28818 \u33756 \u26426 )</span>\
+</div>\
+<span class="material-symbols-outlined text-[#007AFF]" data-icon="precision_manufacturing">precision_manufacturing</span>\
+</div>\
+<div class="flex gap-4 items-start">\
+<div class="w-20 h-20 rounded-lg overflow-hidden bg-white/5 flex-shrink-0">\
+<img alt="\uc0\u22238 \u38149 \u40657 \u35930 \u32905 " class="w-full h-full object-cover" data-alt="A delicate watercolor-style illustration of a Chinese Twice-cooked pork dish featuring thin slices of succulent black pork belly stir-fried with vibrant green leeks and red peppers. The artistic rendering is soft and ethereal, set against a dark, high-contrast digital interface background to create a premium culinary app aesthetic. The lighting is focused and warm, highlighting the textures of the glaze and fresh ingredients." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAVhpl-8UfniuuixvOKtyPmlv_Ak0Cazwz28O45I8pfkJRnmATE0p45Fc5W6sx7ZaSTobt7gzcjpSmSDeYYeMUedka5CI4VqQsq2hSq2q3a19cVJrCi4TLCpDoixJwIkBUFWKTn3kbU0LEsAXW-eIFyKxM5EtU1N_i7XzUcS0uy-FnMdvb5pcMZmPQq7eou80TlvvNpKB1pZ79-fKeq7StMmoSU0bzjSptMi3I5fTbnzQS2X0l1yadnBlZdeIy5JtboVt3TMQehdeeV"/>\
+</div>\
+<div class="space-y-1">\
+<p class="font-body-main text-white">Recipe loaded. Ready for Tray A, Slot B.</p>\
+<p class="font-body-secondary text-white/60 text-[13px]">\uc0\u25351 \u20196 \u23601 \u32490 \u65292 \u24453 \u20498 \u20837 A\u26684 \u32905 \u29255 </p>\
+</div>\
+</div>\
+<button class="w-full h-12 bg-gradient-to-r from-[#007AFF] to-[#0056B3] rounded-xl font-label-bold text-white shadow-lg active:scale-95 transition-transform">\
+                    Send Instructions to Robot\
+                </button>\
+</section>\
+<!-- Symphony Timer Board -->\
+<section class="space-y-stack-md">\
+<!-- Stove A -->\
+<div class="bg-[#1E1E1E] rounded-xl p-padding-item shadow-xl relative overflow-hidden">\
+<div class="flex justify-between items-start mb-2">\
+<div>\
+<h3 class="font-label-bold text-white/50 uppercase tracking-widest text-[11px]">Stove A (\uc0\u24038 \u28790 )</h3>\
+<p class="font-body-main text-white text-lg">\uc0\u34411 \u33609 \u33457 \u33457 \u33014 \u40481 \u27748 </p>\
+</div>\
+<span class="material-symbols-outlined text-[#D4AF37]" data-icon="timer">timer</span>\
+</div>\
+<div class="flex items-baseline gap-2 my-2">\
+<span class="text-[36px] font-bold text-[#D4AF37] font-mono tracking-tight">34:12</span>\
+<span class="font-label-caps text-[#D4AF37] animate-pulse">Simmering...</span>\
+</div>\
+<div class="p-3 bg-white/5 rounded-lg border-l-2 border-[#D4AF37]">\
+<p class="font-body-secondary text-[#D4AF37] text-[14px]">Status: \uc0\u23567 \u28779 \u24930 \u28822 \u20013 </p>\
+<p class="font-body-secondary text-white/70 text-[13px] italic">Tip: At 00:00, turn off heat and add salt.</p>\
+</div>\
+</div>\
+<!-- Stove B -->\
+<div class="bg-[#1E1E1E] rounded-xl p-padding-item shadow-xl space-y-4">\
+<div class="flex justify-between items-start">\
+<div>\
+<h3 class="font-label-bold text-white/50 uppercase tracking-widest text-[11px]">Stove B (\uc0\u21491 \u28790 )</h3>\
+<p class="font-body-main text-white text-lg">\uc0\u33948 \u33993 \u26412 \u22320 \u26377 \u26426 \u33756 \u24515 </p>\
+</div>\
+<div class="text-right">\
+<span class="text-[16px] font-bold text-orange-500 font-mono">01:45</span>\
+</div>\
+</div>\
+<div class="flex gap-4 items-center bg-white/5 p-3 rounded-lg">\
+<div class="w-16 h-16 rounded-md overflow-hidden bg-white/10">\
+<img alt="Choy Sum" class="w-full h-full object-cover" data-alt="A soft, watercolor illustration of fresh green organic Choy Sum stems with small yellow blossoms, isolated against a dark background. The style is minimalist and elegant, reflecting a high-end AI cooking assistant interface. The colors are vibrant greens and soft yellows with a light, airy feel that contrasts with the dark charcoal tones of the app UI." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDDSa22jNkQhaysgaZxFoWhS_UOY55R41bAi07TTGKmitqtts9ngyWQ6ULERxkQlm_BUqyCeNxOUQOLYORz79i_4lIOXGsksTj8STlzjr9wLJk5Q_9MgGVM-y8VdrU303cEhECMkHVxL1FsjL7Lt7QLWmFk3E1Z1_AmNBOnqRWf6LaJhk_8eD4fMQVzMtnk90F93fOxvR6--BgMXXZf0DkrOLgzSPTtuq5UZ4Mx75sfZjQ0xqBWAsJ2GCbzBmA8EsB_QqqYKDIyR7Ie"/>\
+</div>\
+<div>\
+<p class="font-label-bold text-orange-400">Step 2 of 3: Add Choy Sum</p>\
+<p class="font-body-secondary text-white/80">\uc0\u19979 \u33756 \u24515 \u29190 \u28818 </p>\
+</div>\
+</div>\
+</div>\
+</section>\
+</main>\
+<!-- Bottom Controls & AI FAB -->\
+<div class="fixed bottom-0 left-1/2 -translate-x-1/2 w-[390px] px-margin-page pb-8 pointer-events-none">\
+<div class="flex flex-col items-center gap-6 pointer-events-auto">\
+<!-- Tooltip & AI FAB -->\
+<div class="relative flex flex-col items-center">\
+<div class="mb-4 px-4 py-2 bg-white/10 backdrop-blur-md rounded-full border border-white/20">\
+<p class="font-label-bold text-[12px] text-white">"Is the fish done?"</p>\
+</div>\
+<button class="w-14 h-14 bg-[#D4AF37] rounded-full shadow-[0_0_20px_rgba(212,175,55,0.4)] flex items-center justify-center active:scale-90 transition-transform">\
+<span class="material-symbols-outlined text-white text-3xl" data-icon="mic">mic</span>\
+</button>\
+</div>\
+<!-- Serve Button -->\
+<button class="w-full h-14 bg-[#48BB78] rounded-xl flex items-center justify-center shadow-lg active:opacity-90 transition-opacity">\
+<span class="text-[16px] font-semibold text-white tracking-tight">\uc0\u20840 \u37096 \u20570 \u22909 \u65292 \u20934 \u22791 \u19978 \u33756 </span>\
+</button>\
+</div>\
+</div>\
+<!-- Navigation Drawer (Shell Implementation) -->\
+<nav class="hidden">\
+<!-- Represented in Logic: cooking state inhibits global navigation to maintain focus -->\
+</nav>\
+</div>\
+<!-- Background Decoration for Luxury Feel -->\
+<div class="fixed inset-0 -z-10 bg-[#111111] pointer-events-none">\
+<div class="absolute top-0 right-0 w-[500px] h-[500px] bg-[#D4AF37] opacity-[0.03] blur-[120px] rounded-full"></div>\
+<div class="absolute bottom-0 left-0 w-[500px] h-[500px] bg-[#007AFF] opacity-[0.03] blur-[120px] rounded-full"></div>\
+</div>\
+</body></html>\
+\
+<!-- Nutri-Pilot Helper Active Cooking (IoT Integrated) -->\
+<!DOCTYPE html>\
+\
+<html class="light" lang="zh-CN"><head>\
+<meta charset="utf-8"/>\
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>\
+<title>AI Pilot Interpreter</title>\
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>\
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>\
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>\
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>\
+<script id="tailwind-config">\
+        tailwind.config = \{\
+            darkMode: "class",\
+            theme: \{\
+                extend: \{\
+                    "colors": \{\
+                        "tertiary-container": "#b3b2b7",\
+                        "on-secondary-fixed-variant": "#474649",\
+                        "primary-fixed-dim": "#e9c349",\
+                        "on-surface-variant": "#4d4635",\
+                        "surface-container": "#eeeef0",\
+                        "secondary-container": "#e2dfe1",\
+                        "on-tertiary": "#ffffff",\
+                        "on-secondary": "#ffffff",\
+                        "background": "#f9f9fb",\
+                        "tertiary-fixed-dim": "#c7c6cb",\
+                        "on-error": "#ffffff",\
+                        "tertiary-fixed": "#e3e2e7",\
+                        "on-error-container": "#93000a",\
+                        "outline-variant": "#d0c5af",\
+                        "secondary-fixed": "#e4e2e4",\
+                        "surface": "#f9f9fb",\
+                        "primary-fixed": "#ffe088",\
+                        "on-primary": "#ffffff",\
+                        "surface-tint": "#735c00",\
+                        "on-tertiary-fixed-variant": "#46464b",\
+                        "on-secondary-container": "#636264",\
+                        "outline": "#7f7663",\
+                        "on-background": "#1a1c1d",\
+                        "inverse-primary": "#e9c349",\
+                        "primary-container": "#d4af37",\
+                        "on-tertiary-container": "#444549",\
+                        "on-tertiary-fixed": "#1a1b1f",\
+                        "on-primary-fixed": "#241a00",\
+                        "secondary-fixed-dim": "#c8c6c8",\
+                        "surface-dim": "#d9dadc",\
+                        "surface-container-lowest": "#ffffff",\
+                        "tertiary": "#5e5e63",\
+                        "surface-bright": "#f9f9fb",\
+                        "error": "#ba1a1a",\
+                        "surface-variant": "#e2e2e4",\
+                        "on-secondary-fixed": "#1b1b1d",\
+                        "inverse-on-surface": "#f0f0f2",\
+                        "on-primary-container": "#554300",\
+                        "error-container": "#ffdad6",\
+                        "surface-container-low": "#f3f3f5",\
+                        "on-surface": "#1a1c1d",\
+                        "surface-container-high": "#e8e8ea",\
+                        "surface-container-highest": "#e2e2e4",\
+                        "secondary": "#5f5e60",\
+                        "on-primary-fixed-variant": "#574500",\
+                        "inverse-surface": "#2f3132",\
+                        "primary": "#735c00"\
+                    \},\
+                    "borderRadius": \{\
+                        "DEFAULT": "0.25rem",\
+                        "lg": "0.5rem",\
+                        "xl": "0.75rem",\
+                        "full": "9999px"\
+                    \},\
+                    "spacing": \{\
+                        "margin-page": "32px",\
+                        "gutter-card": "24px",\
+                        "padding-item": "16px",\
+                        "stack-lg": "40px",\
+                        "stack-md": "16px",\
+                        "unit": "8px",\
+                        "stack-sm": "8px"\
+                    \},\
+                    "fontFamily": \{\
+                        "label-bold": ["Inter"],\
+                        "display-lg": ["Inter"],\
+                        "body-secondary": ["Inter"],\
+                        "headline-1": ["Inter"],\
+                        "body-main": ["Inter"],\
+                        "headline-2": ["Inter"],\
+                        "label-caps": ["Inter"]\
+                    \},\
+                    "fontSize": \{\
+                        "label-bold": ["13px", \{"lineHeight": "18px", "letterSpacing": "0.02em", "fontWeight": "600"\}],\
+                        "display-lg": ["48px", \{"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "600"\}],\
+                        "body-secondary": ["15px", \{"lineHeight": "20px", "letterSpacing": "0em", "fontWeight": "400"\}],\
+                        "headline-1": ["34px", \{"lineHeight": "41px", "letterSpacing": "-0.01em", "fontWeight": "600"\}],\
+                        "body-main": ["17px", \{"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "400"\}],\
+                        "headline-2": ["28px", \{"lineHeight": "34px", "letterSpacing": "0em", "fontWeight": "500"\}],\
+                        "label-caps": ["11px", \{"lineHeight": "16px", "letterSpacing": "0.06em", "fontWeight": "600"\}]\
+                    \}\
+                \},\
+            \},\
+        \}\
+    </script>\
+<style>\
+        .material-symbols-outlined \{\
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;\
+        \}\
+        .pulsate \{\
+            animation: pulse-blue 2s infinite;\
+        \}\
+        @keyframes pulse-blue \{\
+            0% \{ box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); \}\
+            70% \{ box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); \}\
+            100% \{ box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); \}\
+        \}\
+        .ai-shimmer \{\
+            background: linear-gradient(90deg, #d4af37 0%, #ffe088 50%, #d4af37 100%);\
+            background-size: 200% auto;\
+            -webkit-background-clip: text;\
+            -webkit-text-fill-color: transparent;\
+            animation: shimmer 3s linear infinite;\
+        \}\
+        @keyframes shimmer \{\
+            to \{ background-position: 200% center; \}\
+        \}\
+    </style>\
+<style>\
+    body \{\
+      min-height: max(884px, 100dvh);\
+    \}\
+  </style>\
+  </head>\
+<body class="bg-[#F5F5F7] text-on-background font-body-main selection:bg-primary/20 min-h-screen pb-32">\
+<!-- TopAppBar -->\
+<header class="bg-surface/80 dark:bg-surface-dim/80 backdrop-blur-xl docked full-width top-0 sticky z-50">\
+<div class="flex items-center justify-between px-margin-page h-20 w-full max-w-7xl mx-auto">\
+<div class="flex flex-col">\
+<div class="flex items-center gap-2">\
+<span class="w-2 h-2 rounded-full bg-blue-500 pulsate"></span>\
+<h1 class="font-bold text-[18px] text-on-surface">AI Pilot Interpreter (AI \uc0\u21452 \u35821 \u31649 \u23478 )</h1>\
+</div>\
+<p class="font-label-caps text-label-caps text-secondary">Translating Mandarin to Helper's native tongue with emotional buffering.</p>\
+</div>\
+<button class="hover:opacity-70 transition-opacity active:scale-95 transition-transform duration-200">\
+<span class="material-symbols-outlined text-primary">account_circle</span>\
+</button>\
+</div>\
+</header>\
+<main class="max-w-3xl mx-auto px-margin-page mt-stack-lg">\
+<!-- Main Translation Card -->\
+<div class="bg-white rounded-[24px] p-gutter-card shadow-[0_10px_30px_rgba(0,0,0,0.03)] border border-blue-50/50 flex flex-col gap-stack-md relative overflow-hidden">\
+<!-- Decorative background elements -->\
+<div class="absolute -top-24 -right-24 w-48 h-48 bg-primary-fixed/10 rounded-full blur-3xl"></div>\
+<!-- Employer Input -->\
+<div class="flex flex-col gap-unit">\
+<div class="bg-surface-container-lowest border border-surface-container rounded-2xl p-padding-item self-start max-w-[85%] shadow-sm">\
+<p class="font-body-main text-on-surface">\
+<span class="mr-1">\uc0\u55357 \u56803 \u65039 </span> \u38599 \u20027 \u65306 '\u26152 \u22825 \u30340 \u29275 \u32905 \u26377 \u28857 \u30828 \u65292 \u20170 \u26202 \u28818 \u24471 \u23273 \u19968 \u28857 \u65292 \u21478 \u22806 \u23569 \u25918 \u36771 \u12290 '\
+                    </p>\
+</div>\
+<span class="text-[11px] text-secondary ml-2">Yesterday at 8:15 PM</span>\
+</div>\
+<!-- AI Processing State -->\
+<div class="flex flex-col items-center justify-center py-stack-md relative">\
+<div class="absolute inset-0 flex items-center justify-center pointer-events-none">\
+<div class="w-px h-full bg-gradient-to-b from-surface-variant via-primary-container/30 to-surface-variant"></div>\
+</div>\
+<div class="z-10 bg-white px-4 py-2 flex flex-col items-center gap-1">\
+<div class="flex items-center gap-2">\
+<span class="material-symbols-outlined text-primary-container text-[20px]" style="font-variation-settings: 'FILL' 1;">auto_awesome</span>\
+<span class="font-label-bold text-label-bold ai-shimmer">AI Buffering &amp; Standardizing...</span>\
+</div>\
+<p class="text-[10px] text-secondary opacity-70">AI \uc0\u27491 \u22312 \u36827 \u34892 \u25351 \u20196 \u35268 \u33539 \u21270 \u19982 \u24773 \u32490 \u20943 \u38663 </p>\
+</div>\
+<!-- Animated Gold Dot -->\
+<div class="absolute left-1/2 -translate-x-1/2 w-2 h-2 bg-primary-container rounded-full shadow-[0_0_10px_#d4af37]"></div>\
+</div>\
+<!-- Language Toggle -->\
+<div class="flex justify-end">\
+<div class="inline-flex p-1 bg-surface-container rounded-full gap-1">\
+<button class="px-4 py-1.5 rounded-full bg-white shadow-sm font-label-bold text-label-bold text-primary">English</button>\
+<button class="px-4 py-1.5 rounded-full font-label-bold text-label-bold text-secondary hover:text-on-surface transition-colors">Tagalog</button>\
+</div>\
+</div>\
+<!-- Helper Output Bubble -->\
+<div class="flex flex-col gap-unit items-end">\
+<div class="bg-blue-50/40 border border-blue-100/50 rounded-2xl p-padding-item self-end max-w-[90%] shadow-sm">\
+<p class="font-body-main text-on-background leading-relaxed">\
+<span class="font-semibold text-blue-700 block mb-1">To Helper (Maria):</span>\
+                        "Please slice the Wagyu beef into 2mm uniform pieces and marinate with 1 tbsp starch and 1 tbsp water for 15 minutes before cooking. Reduce chili seeds to keep spice mild."\
+                    </p>\
+<div class="mt-3 pt-3 border-t border-blue-100/50">\
+<p class="text-[13px] text-secondary italic">\
+                            Pakibabad ang Wagyu beef sa 1 tbsp starch at tubig nang 15 minuto...\
+                        </p>\
+</div>\
+</div>\
+<div class="flex items-center gap-1 mr-2 mt-1">\
+<span class="material-symbols-outlined text-green-500 text-[14px]">check_circle</span>\
+<span class="text-[11px] text-green-600 font-medium">Successfully synced to Maria's Prep Board (\uc0\u24050 \u21516 \u27493 \u33267 \u22806 \u20323 \u31471 )</span>\
+</div>\
+</div>\
+<!-- AI Visualization Context Image (Optional Stylistic) -->\
+<div class="mt-stack-md rounded-xl overflow-hidden grayscale-[0.5] opacity-80 h-32 w-full relative">\
+<img alt="Clean kitchen counter" class="w-full h-full object-cover" data-alt="A clean, minimalist high-end kitchen counter with stainless steel appliances and a soft morning light streaming through a window. The aesthetic is ultra-modern and calm, reflecting the quiet luxury theme with muted tones of white, silver, and soft wood. In the background, a digital tablet displays culinary data in a refined interface. The overall mood is precise, organized, and technologically advanced." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDCuGp7-zRWSz8n48EnofBjHfy1epz30MPVugARh2L6IA75Z5lv_Ygs3fHxaDm2_MRyfEAg7StjA0KpJFSKoP5gO5RT7KmRFiCykppM7V59woC0vsL2WLl2n8fN2IuZHFY5Acdn11T1zlX7EvBpFUwDYBYI6D53kTlOouaA1CTwlJEMa42sHP6WOF3cVnYheDOXwEH-GexhbqgtTdorbXASNXIsCFg6SuIbbcecyVxOtzmYtuO9qzWEBrnL-fW51eRUL1qM4rMEyVvZ"/>\
+<div class="absolute inset-0 bg-gradient-to-t from-white via-transparent to-transparent"></div>\
+</div>\
+</div>\
+<!-- Quick Reply Section -->\
+<section class="mt-stack-lg flex flex-col gap-stack-md">\
+<h3 class="font-label-bold text-label-bold text-secondary uppercase tracking-widest px-1">Smart Quick-Reply (\uc0\u24555 \u25463 \u25351 \u20196 \u21457 \u36865 )</h3>\
+<div class="flex overflow-x-auto pb-4 gap-3 no-scrollbar">\
+<button class="whitespace-nowrap px-6 py-3 rounded-full bg-white shadow-sm border border-transparent hover:border-primary-container/20 active:scale-95 transition-all text-on-surface font-medium text-[15px]">\
+                    \uc0\u26202 \u21322 \u23567 \u26102 \u24320 \u39277 \
+                </button>\
+<button class="whitespace-nowrap px-6 py-3 rounded-full bg-white shadow-sm border border-transparent hover:border-primary-container/20 active:scale-95 transition-all text-on-surface font-medium text-[15px]">\
+                    \uc0\u20170 \u26202 \u26377 \u23458 \u20154 \u26469 \
+                </button>\
+<button class="whitespace-nowrap px-6 py-3 rounded-full bg-white shadow-sm border border-transparent hover:border-primary-container/20 active:scale-95 transition-all text-on-surface font-medium text-[15px]">\
+                    \uc0\u28023 \u40092 \u22810 \u27927 \u20960 \u36941 \
+                </button>\
+<button class="whitespace-nowrap px-6 py-3 rounded-full bg-white shadow-sm border border-transparent hover:border-primary-container/20 active:scale-95 transition-all text-on-surface font-medium text-[15px]">\
+                    \uc0\u39184 \u21518 \u21152 \u20221 \u27700 \u26524 \
+                </button>\
+</div>\
+</section>\
+<!-- The Pilot Float (AI Voice Activation) -->\
+<div class="fixed bottom-28 left-1/2 -translate-x-1/2 z-40">\
+<button class="bg-white/60 backdrop-blur-md border border-white/20 shadow-xl px-6 py-3 rounded-full flex items-center gap-3 active:scale-95 transition-transform duration-300">\
+<span class="material-symbols-outlined text-primary-container" style="font-variation-settings: 'FILL' 1;">mic</span>\
+<span class="font-label-bold text-label-bold text-primary">Hold to Command Pilot</span>\
+</button>\
+</div>\
+</main>\
+<!-- BottomNavBar -->\
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-6 pb-8 pt-4 bg-surface/90 dark:bg-surface-container-low/90 backdrop-blur-2xl shadow-lg rounded-t-xl border-t border-surface-container-highest">\
+<!-- Concierge Tab (Active Mapping: AI Pilot Interpreter falls under AI Concierge intent) -->\
+<a class="flex flex-col items-center justify-center text-primary dark:text-primary-fixed-dim bg-primary-container/10 rounded-full px-4 py-1 active:scale-90 transition-all duration-300" href="#">\
+<span class="material-symbols-outlined" data-icon="auto_awesome" style="font-variation-settings: 'FILL' 1;">auto_awesome</span>\
+<span class="font-label-bold text-label-bold">Concierge</span>\
+</a>\
+<!-- Library Tab -->\
+<a class="flex flex-col items-center justify-center text-secondary dark:text-secondary-fixed-dim opacity-60 hover:text-primary transition-colors active:scale-90 transition-all duration-300" href="#">\
+<span class="material-symbols-outlined" data-icon="menu_book">menu_book</span>\
+<span class="font-label-bold text-label-bold">Library</span>\
+</a>\
+<!-- Kitchen Tab -->\
+<a class="flex flex-col items-center justify-center text-secondary dark:text-secondary-fixed-dim opacity-60 hover:text-primary transition-colors active:scale-90 transition-all duration-300" href="#">\
+<span class="material-symbols-outlined" data-icon="countertops">countertops</span>\
+<span class="font-label-bold text-label-bold">Kitchen</span>\
+</a>\
+<!-- Profile Tab -->\
+<a class="flex flex-col items-center justify-center text-secondary dark:text-secondary-fixed-dim opacity-60 hover:text-primary transition-colors active:scale-90 transition-all duration-300" href="#">\
+<span class="material-symbols-outlined" data-icon="person">person</span>\
+<span class="font-label-bold text-label-bold">Profile</span>\
+</a>\
+</nav>\
+<style>\
+        .no-scrollbar::-webkit-scrollbar \{\
+            display: none;\
+        \}\
+        .no-scrollbar \{\
+            -ms-overflow-style: none;\
+            scrollbar-width: none;\
+        \}\
+    </style>\
+</body></html>\
+\
+<!-- AI Pilot Interpreter (Bilingual Bridge) -->\
+<!DOCTYPE html>\
+\
+<html class="light" lang="zh-CN"><head>\
+<meta charset="utf-8"/>\
+<meta content="width=390, height=844, initial-scale=1.0" name="viewport"/>\
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>\
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>\
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>\
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>\
+<script id="tailwind-config">\
+        tailwind.config = \{\
+            darkMode: "class",\
+            theme: \{\
+                extend: \{\
+                    "colors": \{\
+                        "on-tertiary-container": "#444549",\
+                        "inverse-surface": "#2f3132",\
+                        "on-primary": "#ffffff",\
+                        "primary-container": "#d4af37",\
+                        "on-secondary-container": "#636264",\
+                        "surface": "#f9f9fb",\
+                        "surface-dim": "#d9dadc",\
+                        "on-error": "#ffffff",\
+                        "surface-variant": "#e2e2e4",\
+                        "on-primary-fixed": "#241a00",\
+                        "tertiary-fixed": "#e3e2e7",\
+                        "surface-container-low": "#f3f3f5",\
+                        "surface-bright": "#f9f9fb",\
+                        "tertiary": "#5e5e63",\
+                        "primary-fixed-dim": "#e9c349",\
+                        "on-error-container": "#93000a",\
+                        "tertiary-container": "#b3b2b7",\
+                        "on-primary-fixed-variant": "#574500",\
+                        "on-tertiary-fixed-variant": "#46464b",\
+                        "secondary-container": "#e2dfe1",\
+                        "on-background": "#1a1c1d",\
+                        "on-surface-variant": "#4d4635",\
+                        "secondary-fixed": "#e4e2e4",\
+                        "on-secondary": "#ffffff",\
+                        "surface-container-lowest": "#ffffff",\
+                        "on-primary-container": "#554300",\
+                        "secondary": "#5f5e60",\
+                        "primary-fixed": "#ffe088",\
+                        "surface-container": "#eeeef0",\
+                        "tertiary-fixed-dim": "#c7c6cb",\
+                        "surface-tint": "#735c00",\
+                        "surface-container-high": "#e8e8ea",\
+                        "on-tertiary": "#ffffff",\
+                        "surface-container-highest": "#e2e2e4",\
+                        "secondary-fixed-dim": "#c8c6c8",\
+                        "outline-variant": "#d0c5af",\
+                        "on-secondary-fixed": "#1b1b1d",\
+                        "error-container": "#ffdad6",\
+                        "primary": "#735c00",\
+                        "background": "#f9f9fb",\
+                        "error": "#ba1a1a",\
+                        "outline": "#7f7663",\
+                        "inverse-primary": "#e9c349",\
+                        "on-surface": "#1a1c1d",\
+                        "on-secondary-fixed-variant": "#474649",\
+                        "inverse-on-surface": "#f0f0f2",\
+                        "on-tertiary-fixed": "#1a1b1f"\
+                    \},\
+                    "borderRadius": \{\
+                        "DEFAULT": "0.25rem",\
+                        "lg": "0.5rem",\
+                        "xl": "0.75rem",\
+                        "full": "9999px"\
+                    \},\
+                    "spacing": \{\
+                        "stack-lg": "40px",\
+                        "stack-md": "16px",\
+                        "gutter-card": "24px",\
+                        "margin-page": "32px",\
+                        "padding-item": "16px",\
+                        "stack-sm": "8px",\
+                        "unit": "8px"\
+                    \},\
+                    "fontFamily": \{\
+                        "headline-2": ["Inter"],\
+                        "body-main": ["Inter"],\
+                        "body-secondary": ["Inter"],\
+                        "label-caps": ["Inter"],\
+                        "label-bold": ["Inter"],\
+                        "headline-1": ["Inter"],\
+                        "display-lg": ["Inter"]\
+                    \},\
+                    "fontSize": \{\
+                        "headline-2": ["28px", \{"lineHeight": "34px", "letterSpacing": "0em", "fontWeight": "500"\}],\
+                        "body-main": ["17px", \{"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "400"\}],\
+                        "body-secondary": ["15px", \{"lineHeight": "20px", "letterSpacing": "0em", "fontWeight": "400"\}],\
+                        "label-caps": ["11px", \{"lineHeight": "16px", "letterSpacing": "0.06em", "fontWeight": "600"\}],\
+                        "label-bold": ["13px", \{"lineHeight": "18px", "letterSpacing": "0.02em", "fontWeight": "600"\}],\
+                        "headline-1": ["34px", \{"lineHeight": "41px", "letterSpacing": "-0.01em", "fontWeight": "600"\}],\
+                        "display-lg": ["48px", \{"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "600"\}]\
+                    \}\
+                \},\
+            \},\
+        \}\
+    </script>\
+<style>\
+        body \{ background-color: #f5f5f7; font-family: 'Inter', sans-serif; \}\
+        .material-symbols-outlined \{ font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; \}\
+        .glass-card \{ background: #ffffff; box-shadow: 0 10px 30px rgba(0,0,0,0.03); border-radius: 24px; \}\
+        .gold-glow \{ background: rgba(212, 175, 55, 0.1); color: #735c00; \}\
+        .tab-active \{ background: rgba(115, 92, 0, 0.05); color: #735c00; \}\
+        .toggle-active \{ background: #ffffff; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-radius: 8px; \}\
+    </style>\
+<style>\
+    body \{\
+      min-height: max(884px, 100dvh);\
+    \}\
+  </style>\
+  </head>\
+<body class="flex justify-center items-start min-h-screen text-on-surface">\
+<div class="w-[390px] min-h-[844px] bg-[#f5f5f7] relative overflow-y-auto pb-32">\
+<!-- Header Section -->\
+<header class="fixed top-0 w-[390px] z-50 bg-surface/80 backdrop-blur-md px-margin-page h-16 flex justify-between items-center shadow-[0_10px_30px_rgba(0,0,0,0.03)] border-none">\
+<div class="flex items-center gap-3">\
+<div class="w-10 h-10 rounded-full overflow-hidden border border-primary/20">\
+<img alt="Executive Chef Profile" class="w-full h-full object-cover" data-alt="A professional close-up portrait of an elegant Asian male executive in his 40s, looking confident and refined. He is wearing a high-quality navy blue linen shirt, standing in a brightly lit, modern minimalist kitchen with marble countertops and soft sunlight streaming in. The mood is sophisticated, professional, and fits a high-end luxury digital interface." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAhRHGsrgJgOz5FP9TQt7UN7zPO1XbbTg0fkZxATa1oderC-8nr2tBhCv-1_Ptog2aGoakLQziRO2lsEpeuDjRUbn7kiWD94OzB42oSFR-gPxLF6Yg01YNI_XD7yvYGNGmUvKH4eAN7d7Wngji-h63aIla6Bt9epHXnxP7VnyE-lEVC8ZvGZo_k6Loh5hDjiR8qHoTykwF8JltdKR3sGnZvm4XJmV3X-171EgeLBK9TjMWOFzoSU82onKttKx8BIueEzrlCpVEVYxYG"/>\
+</div>\
+<div class="flex flex-col">\
+<span class="font-bold text-[20px] text-on-background leading-none">\uc0\u26519 \u24314 \u26657 </span>\
+<span class="text-[11px] font-semibold text-primary uppercase tracking-wider mt-0.5">Elite Concierge Member</span>\
+</div>\
+</div>\
+<button class="hover:opacity-80 transition-opacity active:scale-95 duration-200">\
+<span class="material-symbols-outlined text-secondary">settings</span>\
+</button>\
+</header>\
+<div class="mt-20 px-4 space-y-stack-md">\
+<!-- Household Baseline Card -->\
+<section class="glass-card p-gutter-card">\
+<div class="flex justify-between items-center mb-stack-sm">\
+<h3 class="font-label-bold text-label-bold text-on-background">Household Baseline (\uc0\u23478 \u24237 \u24120 \u20303 \u20154 \u21475 )</h3>\
+<span class="material-symbols-outlined text-secondary text-lg">group</span>\
+</div>\
+<div class="flex items-center justify-between mt-4">\
+<div class="flex items-baseline gap-1">\
+<span class="text-display-lg font-display-lg text-primary">5</span>\
+<span class="text-body-secondary font-body-secondary text-secondary">People</span>\
+</div>\
+<div class="flex gap-2">\
+<button class="w-10 h-10 rounded-full border border-surface-variant flex items-center justify-center active:scale-90 duration-200">\
+<span class="material-symbols-outlined text-secondary">remove</span>\
+</button>\
+<button class="w-10 h-10 rounded-full border border-surface-variant flex items-center justify-center active:scale-90 duration-200">\
+<span class="material-symbols-outlined text-secondary">add</span>\
+</button>\
+</div>\
+</div>\
+<p class="text-[11px] text-secondary mt-4 leading-relaxed">This is your default setting. You can still micro-adjust this daily on the Home screen. (\uc0\u36825 \u26159 \u24744 \u30340 \u21021 \u22987 \u20540 \u65292 \u27599 \u26085 \u21487 \u22312 \u39318 \u39029 \u38543 \u26102 \u24494 \u35843 )</p>\
+</section>\
+<!-- Curation Engine Filters Card -->\
+<section class="glass-card p-gutter-card">\
+<h3 class="font-label-bold text-label-bold text-on-background mb-4">Curation Tags (\uc0\u23450 \u21046 \u25512 \u33616 \u26631 \u31614 )</h3>\
+<div class="space-y-4">\
+<div>\
+<p class="text-[11px] font-semibold text-secondary mb-2 uppercase tracking-tight">Health Goals</p>\
+<div class="flex flex-wrap gap-2">\
+<span class="px-3 py-1 rounded-full gold-glow text-[13px] font-medium">\uc0\u31067 \u28287  (Damp Clear)</span>\
+<span class="px-3 py-1 rounded-full gold-glow text-[13px] font-medium">\uc0\u39640 \u34507 \u30333  (High Protein)</span>\
+</div>\
+</div>\
+<div>\
+<p class="text-[11px] font-semibold text-secondary mb-2 uppercase tracking-tight">Taste Profile</p>\
+<div class="flex flex-wrap gap-2">\
+<span class="px-3 py-1 rounded-full bg-on-background text-white text-[13px] font-medium">\uc0\u31908 \u33756  (Cantonese)</span>\
+<span class="px-3 py-1 rounded-full bg-on-background text-white text-[13px] font-medium">\uc0\u28165 \u28129  (Light)</span>\
+<button class="px-3 py-1 rounded-full border border-dashed border-outline-variant text-secondary text-[13px] font-medium flex items-center gap-1">\
+<span class="material-symbols-outlined text-[16px]">add</span>\
+                                Add Tag\
+                            </button>\
+</div>\
+</div>\
+</div>\
+</section>\
+<!-- Helper Management Card -->\
+<section class="glass-card p-gutter-card">\
+<h3 class="font-label-bold text-label-bold text-on-background mb-4">Helper Management (\uc0\u22806 \u20323 \u21161 \u25163 \u35774 \u32622 )</h3>\
+<div class="flex items-center gap-4 mb-6 p-3 bg-surface-container-lowest rounded-xl">\
+<div class="w-12 h-12 rounded-full overflow-hidden bg-surface-variant flex-shrink-0">\
+<img alt="Maria Santos" class="w-full h-full object-cover" data-alt="A friendly, professional portrait of a domestic helper in her 30s, Maria Santos, wearing a tidy professional uniform. She is smiling warmly in a bright, modern interior environment. The image uses soft, diffused light-mode lighting to create a sense of trust, efficiency, and premium service, perfectly complementing the white and gold interface." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAPFNTo4wIQDPt8rn29ymek9Km0i_ZlmDkoKO-xlL2Dn7xQ6TM6Ii5H-VoRYxr0ywGemJ_JFgNjDGHrxYNj_O5d9qogjugJMavbgeephMQIl-81Fw8Si_67JiTxdmivMJ7itCub4dS0hru9wffkdULf-FlFBfbsgOX0OWuk6XnK2ai_azswnueXVssZ42UlsZN0YCKohd_EEv9kK2qWJInaTqlj8U_y_RCsVFhW9We0mtxQIaynWOXzkEZ9xtvGLSwznXmJkoLwlTVm"/>\
+</div>\
+<div class="flex flex-col">\
+<span class="font-label-bold text-label-bold">Maria Santos</span>\
+<div class="flex items-center gap-1.5">\
+<span class="w-2 h-2 rounded-full bg-emerald-500"></span>\
+<span class="text-[12px] text-secondary">Connected &amp; Syncing</span>\
+</div>\
+</div>\
+</div>\
+<div class="space-y-4">\
+<label class="block text-[13px] text-secondary">Target Instruction Language (\uc0\u19979 \u21457 \u25351 \u20196 \u35821 \u35328 )</label>\
+<div class="flex p-1 bg-surface-container rounded-xl w-full">\
+<button class="flex-1 py-2 text-[13px] font-medium text-secondary">English</button>\
+<button class="flex-1 py-2 text-[13px] font-bold text-on-background toggle-active">Tagalog</button>\
+</div>\
+</div>\
+</section>\
+<!-- Logistics Routing Card -->\
+<section class="glass-card p-gutter-card">\
+<h3 class="font-label-bold text-label-bold text-on-background mb-4">Logistics Routing (\uc0\u37319 \u36141 \u28192 \u36947 \u20559 \u22909 )</h3>\
+<div class="space-y-stack-sm">\
+<div class="flex items-center justify-between py-2 border-b border-surface-variant/30">\
+<div class="flex flex-col">\
+<span class="text-body-secondary font-medium">Premium Meat/Seafood</span>\
+<span class="text-[12px] text-primary">Waves Pacific</span>\
+</div>\
+<span class="material-symbols-outlined text-primary" data-weight="fill">check_circle</span>\
+</div>\
+<div class="flex items-center justify-between py-2 border-b border-surface-variant/30">\
+<div class="flex flex-col">\
+<span class="text-body-secondary font-medium">Organic Produce</span>\
+<span class="text-[12px] text-primary">Eat FRESH</span>\
+</div>\
+<span class="material-symbols-outlined text-primary" data-weight="fill">check_circle</span>\
+</div>\
+<div class="flex items-center justify-between py-2">\
+<div class="flex flex-col">\
+<span class="text-body-secondary font-medium">Daily Staples</span>\
+<span class="text-[12px] text-primary">Wellcome/HKTVmall</span>\
+</div>\
+<span class="material-symbols-outlined text-primary" data-weight="fill">check_circle</span>\
+</div>\
+</div>\
+</section>\
+<!-- Robot-Link Card -->\
+<section class="glass-card p-gutter-card">\
+<h3 class="font-label-bold text-label-bold text-on-background mb-4">Robot-Link Devices (\uc0\u26234 \u33021 \u21416 \u30005 \u29366 \u24577 )</h3>\
+<div class="flex items-center gap-4 mb-4">\
+<div class="w-12 h-12 rounded-xl bg-surface-container flex items-center justify-center">\
+<span class="material-symbols-outlined text-secondary">kitchen</span>\
+</div>\
+<div class="flex-1">\
+<div class="flex items-center justify-between">\
+<span class="text-body-secondary font-medium">Smart Cooker B1</span>\
+<span class="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]"></span>\
+</div>\
+<span class="text-[12px] text-secondary">Connected \'95 Idle</span>\
+</div>\
+</div>\
+<button class="w-full py-3 bg-primary-container/10 text-primary text-[13px] font-bold rounded-xl active:scale-[0.98] transition-transform">\
+                    Manage Cooking Protocols\
+                </button>\
+</section>\
+</div>\
+<!-- Bottom Navigation Bar -->\
+<nav class="fixed bottom-0 w-[390px] z-50 pb-safe bg-surface/90 backdrop-blur-xl shadow-[0_-10px_30px_rgba(0,0,0,0.03)] border-none">\
+<div class="flex justify-around items-center h-20 w-full px-4">\
+<button class="flex flex-col items-center justify-center text-secondary hover:text-primary transition-colors active:scale-90 duration-300 ease-out">\
+<span class="material-symbols-outlined">home</span>\
+<span class="font-label-caps text-label-caps mt-1">Home</span>\
+</button>\
+<button class="flex flex-col items-center justify-center text-secondary hover:text-primary transition-colors active:scale-90 duration-300 ease-out">\
+<span class="material-symbols-outlined">analytics</span>\
+<span class="font-label-caps text-label-caps mt-1">Status</span>\
+</button>\
+<button class="flex flex-col items-center justify-center w-12 h-12 bg-primary-container text-on-primary-container rounded-full active:scale-90 duration-300 ease-out -mt-8 shadow-lg">\
+<span class="material-symbols-outlined">radio_button_checked</span>\
+</button>\
+<button class="flex flex-col items-center justify-center text-secondary hover:text-primary transition-colors active:scale-90 duration-300 ease-out">\
+<span class="material-symbols-outlined">support_agent</span>\
+<span class="font-label-caps text-label-caps mt-1">Concierge</span>\
+</button>\
+<button class="flex flex-col items-center justify-center bg-primary-container/10 text-primary rounded-xl px-3 py-1 active:scale-90 duration-300 ease-out">\
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">domain</span>\
+<span class="font-label-caps text-label-caps mt-1">Center</span>\
+</button>\
+</div>\
+</nav>\
+</div>\
+</body></html>}

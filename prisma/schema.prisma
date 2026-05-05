@@ -1,0 +1,80 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id           String   @id @default(uuid())
+  whatsappId   String   @unique @map("whatsapp_id")
+  name         String
+  dinerCount   Int      @default(5) @map("diner_count")
+  healthTags   String[] @map("health_tags")
+  tastePrefs   String[] @map("taste_prefs")
+  orders       Order[]
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+model Ingredient {
+  id               String   @id @default(uuid())
+  nameZh           String   @map("name_zh")
+  nameEn           String   @map("name_en")
+  namePh           String   @map("name_ph")
+  category         String
+  watercolorUrl    String?  @map("watercolor_url")
+  storageProtocol  Json     @map("storage_protocol")
+  premiumPartnerId String?  @map("premium_partner_id")
+  dailyPartnerId   String?  @map("daily_partner_id")
+  dishes           Dish[]   @relation("DishIngredients")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@map("ingredients")
+}
+
+model Dish {
+  id                 String       @id @default(uuid())
+  nameZh             String       @map("name_zh")
+  nameEn             String       @map("name_en")
+  category           String
+  watercolorUrl      String?      @map("watercolor_url")
+  prepTimeMins       Int          @map("prep_time_mins")
+  cookTimeMins       Int          @map("cook_time_mins")
+  heatLevel          String       @map("heat_level")
+  helperTipEn        String       @map("helper_tip_en")
+  helperTipPh        String       @map("helper_tip_ph")
+  robotCompatible    Boolean      @default(false) @map("robot_compatible")
+  robotInstructionId String?      @map("robot_instruction_id")
+  traySlot           String?      @map("tray_slot")
+  ingredients        Ingredient[] @relation("DishIngredients")
+  orders             Order[]      @relation("OrderDishes")
+  createdAt          DateTime     @default(now()) @map("created_at")
+
+  @@map("dishes")
+}
+
+model Order {
+  id               String      @id @default(uuid())
+  userId           String      @map("user_id")
+  user             User        @relation(fields: [userId], references: [id])
+  status           OrderStatus @default(PENDING)
+  dishes           Dish[]      @relation("OrderDishes")
+  deliveryStatus   Json        @map("delivery_status")
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
+
+  @@map("orders")
+}
+
+enum OrderStatus {
+  PENDING
+  SHIPPING
+  DELIVERED
+  RECEIVED
+}
