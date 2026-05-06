@@ -43,7 +43,7 @@ export const getDailyMenu = async (req: Request, res: Response) => {
     };
 
     const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-pro", 
+      model: "gemini-1.5-flash",
       generationConfig: { responseMimeType: "application/json" },
       systemInstruction: `You are the core Culinary Curation & Symphony Cooking Engine for "Nutri-Pilot" (悦小厨). Your task is to process the user payload and output a perfectly formatted JSON containing:
 1. "gold_menu" based on target diners and health tags.
