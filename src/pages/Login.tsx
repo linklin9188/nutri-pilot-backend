@@ -153,7 +153,7 @@ export default function Login() {
               <div className="w-full text-center">
                 <button
                   onClick={handleLoginClick}
-                  className="inline-flex items-center gap-2 rounded-full bg-white text-black active:scale-[0.98] transition-transform"
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-white text-black active:scale-[0.98] transition-transform"
                   style={{ fontSize: 13, fontWeight: 600, width: 192, height: 40, boxShadow: "0 4px 16px rgba(0,0,0,0.30)" }}
                 >
                   <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
@@ -174,7 +174,7 @@ export default function Login() {
               <div className="w-full text-center">
                 <button
                   onClick={handleLoginClick}
-                  className="inline-flex items-center gap-2 rounded-full text-white active:scale-[0.98] transition-transform"
+                  className="inline-flex items-center justify-center gap-2 rounded-full text-white active:scale-[0.98] transition-transform"
                   style={{ fontSize: 13, fontWeight: 600, width: 192, height: 40, background: "#25D366", boxShadow: "0 4px 16px rgba(37,211,102,0.18)" }}
                 >
                   <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
