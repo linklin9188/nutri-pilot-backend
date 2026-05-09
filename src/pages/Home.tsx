@@ -405,7 +405,7 @@ export default function Home() {
         <div className="flex flex-col">
           <div className="flex items-center gap-1.5">
             <span className="font-serif text-[22px] font-bold tracking-tight text-primary">
-              悦小厨 <span className="font-sans text-[16px] text-on-surface tracking-normal font-bold">Nutri-Pilot</span>
+              爱吃 <span className="font-sans text-[16px] text-on-surface tracking-normal font-bold">Aieats</span>
             </span>
           </div>
         </div>

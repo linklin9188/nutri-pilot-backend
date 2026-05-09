@@ -10,7 +10,7 @@ export default function DeliveryTracking() {
           <button onClick={() => navigate('/')} className="active:scale-95 transition-transform duration-200 p-2 -ml-2 rounded-full hover:bg-black/5">
             <span className="material-symbols-outlined text-on-surface text-[20px]">arrow_back</span>
           </button>
-          <h1 className="text-[18px] font-bold tracking-tight text-on-surface">Nutri-Pilot</h1>
+          <h1 className="text-[18px] font-bold tracking-tight text-on-surface">Aieats</h1>
         </div>
         <div className="w-8 h-8 rounded-full overflow-hidden bg-black/5 active:scale-95 transition-transform duration-200 cursor-pointer" onClick={() => navigate('/settings')}>
           <img alt="User profile avatar" className="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAARkIy-iet9oY_FFoVcXUBSHTbaFWFj9w9NiVtBLM83yQmUF6iAqzHOPZ8gZTlMmzPP8yrytsYxhDm2FNUzQdjrJsuSPrvoXFGzfGNu8_R7chPdTtUIlWQFmQEIfv7tgUP0dv4Yb7xoj8AkktE8-06vEqwsAobIeTH2RBT2r6MbWRN9YgTr6176gVc3aZG6HAYDE-pBsmuPb-nPnKGrSU6ZyHMUBE_tJsxRcxfp2dH28RtaV9IK21CSmgdORtO3Nw-ymAp1V1DcXkM" />

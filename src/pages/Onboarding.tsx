@@ -79,11 +79,11 @@ export default function Onboarding() {
         <div className="flex flex-col">
           <div className="flex items-center gap-1">
             <span className="font-headline-2 text-[18px] font-semibold tracking-tight text-primary">
-              Nutri-Pilot
+              Aieats
             </span>
             <div className="w-1.5 h-1.5 rounded-full bg-primary-container"></div>
             <span className="ml-1 text-[18px] font-semibold text-on-surface">
-              悦小厨
+              爱吃
             </span>
           </div>
           <span className="font-label-caps text-label-caps text-secondary">

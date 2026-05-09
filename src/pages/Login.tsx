@@ -111,7 +111,7 @@ export default function Login() {
     try {
       await supabase.from("user_profiles").upsert({
         id: userId,
-        display_name: "Nutri-Pilot User",
+        display_name: "Aieats User",
         age_group: age,
         hometown,
         tastes: taste,
@@ -189,14 +189,14 @@ export default function Login() {
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.15, duration: 0.7, ease: "easeOut" }} className="mb-7">
               <h1 className="font-serif font-black text-white leading-none"
-                style={{ fontSize: 58, letterSpacing: "0.04em" }}>悦小厨</h1>
+                style={{ fontSize: 58, letterSpacing: "0.04em" }}>爱吃</h1>
               <div className="mt-4 mb-5 rounded-full"
                 style={{ width: 36, height: 2, background: "#FF5A1F", boxShadow: "0 0 12px rgba(255,90,31,0.6)" }} />
               <p className="text-white/50 font-light uppercase" style={{ fontSize: 13, letterSpacing: "0.26em" }}>
-                Nutri · Pilot
+                Aieats
               </p>
-              <p className="mt-3 text-white/60 font-light" style={{ fontSize: 15, letterSpacing: "0.14em" }}>
-                {t("Only to understand your taste better", "只为更懂你的味")}
+              <p className="mt-3 text-white/60 font-light leading-relaxed" style={{ fontSize: 14, letterSpacing: "0.06em" }}>
+                {t("You eat, AI thinks — made just for your taste", "你负责吃，AI 负责想——只为更懂你的味～")}
               </p>
             </motion.div>
 

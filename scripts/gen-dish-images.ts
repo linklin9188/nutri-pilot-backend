@@ -1,40 +1,45 @@
 /**
- * AI image generation for dishes
+ * AI food image generation pipeline
  *
- * For each dish with an empty image_url:
- *   1. Build a food-photography prompt from title_zh + title_en + tags
- *   2. Call Gemini Imagen 3 to generate a 1:1 food photo
- *   3. Upload PNG to Supabase Storage (bucket: dish-images)
- *   4. Write the public URL back to dishes.image_url
+ * Model: gemini-2.5-flash-image (supports image generation via generateContent)
+ * Storage: Supabase Storage bucket "dish-images" (public)
  *
- * Run:  npx tsx scripts/gen-dish-images.ts
+ * Run:  npx tsx scripts/gen-dish-images.ts --limit=10
  * Flags:
- *   --all      Regenerate images even for dishes that already have one
- *   --limit N  Only process N dishes (useful for testing, default: 10)
- *
- * Prerequisites:
- *   • GEMINI_API_KEY in .env
- *   • VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY in .env  (or SERVICE_ROLE_KEY)
- *   • Supabase Storage bucket named "dish-images" must exist and be public
- *     → Dashboard → Storage → New bucket → name: dish-images → Public: ✓
+ *   --all       Regenerate even dishes that already have image_url
+ *   --limit=N   Process N dishes (default: 10)
+ *   --vegan     Only process is_vegan dishes
  */
 
 import pg from 'pg';
 import { config } from 'dotenv';
-import { GoogleGenAI } from '@google/genai';
 import { createClient } from '@supabase/supabase-js';
 
 config();
 
-const genai   = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY!;
+const GEMINI_MODEL   = 'gemini-2.5-flash-image';
+const GEMINI_URL     = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+
 const supabase = createClient(
   process.env.VITE_SUPABASE_URL!,
   process.env.VITE_SUPABASE_ANON_KEY!,
 );
-const db = new pg.Client({
+
+// Use Pool so long-running scripts don't lose the connection
+const db = new pg.Pool({
   connectionString: process.env.DIRECT_DATABASE_URL,
   ssl: { rejectUnauthorized: false },
+  idleTimeoutMillis: 60000,
+  connectionTimeoutMillis: 10000,
 });
+
+// ── CLI flags ─────────────────────────────────────────────────────────────────
+const args     = process.argv.slice(2);
+const forceAll = args.includes('--all');
+const veganOnly = args.includes('--vegan');
+const limitArg = args.find(a => a.startsWith('--limit='))?.split('=')[1];
+const LIMIT    = limitArg ? parseInt(limitArg) : 10;
 
 // ── Prompt builder ────────────────────────────────────────────────────────────
 function buildPrompt(dish: {
@@ -43,49 +48,92 @@ function buildPrompt(dish: {
   origin_cuisine: string;
   flavor_tags: string[];
   main_ingredient: string;
+  is_vegan: boolean;
 }): string {
   const name = dish.title_en
     ? `${dish.title_zh} (${dish.title_en})`
     : dish.title_zh;
 
-  const style: Record<string, string> = {
-    cantonese:       'delicate Cantonese cuisine, steamed or lightly seasoned',
-    sichuan:         'bold Sichuan cuisine with rich red chili oil',
-    jiangnan:        'refined Jiangnan cuisine, subtle flavors',
-    northern:        'hearty northern Chinese cuisine',
-    western:         'Western-style plating',
-    japanese_korean: 'Japanese or Korean style, minimalist plating',
-    southeast_asian: 'Southeast Asian cuisine, vibrant colors',
+  const styleMap: Record<string, string> = {
+    cantonese:       'delicate Cantonese cuisine, lightly seasoned, elegant',
+    sichuan:         'bold Sichuan cuisine with rich red chili oil, vibrant',
+    jiangnan:        'refined Jiangnan cuisine, subtle golden tones',
+    northern:        'hearty northern Chinese cuisine, rustic warmth',
+    western:         'Western restaurant-style plating, clean and modern',
+    japanese_korean: 'Japanese or Korean style, minimalist zen plating',
+    southeast_asian: 'Southeast Asian cuisine, vibrant tropical colors',
   };
-  const cuisineHint = style[dish.origin_cuisine] ?? 'Chinese home-style cuisine';
+  const cuisineHint = styleMap[dish.origin_cuisine] ?? 'Chinese home-style cuisine';
 
   const tagsHint = dish.flavor_tags.includes('light')
-    ? 'light and clean presentation'
+    ? 'light, clean, fresh presentation'
     : dish.flavor_tags.includes('spicy')
-    ? 'rich chili-red coloring'
-    : 'golden, appetizing appearance';
+    ? 'rich chili-red coloring, steaming hot'
+    : dish.flavor_tags.includes('sweet')
+    ? 'golden caramelized, glossy sauce'
+    : 'appetizing golden-brown appearance';
+
+  const veganHint = dish.is_vegan
+    ? 'plant-based, fresh vegetables visible, vibrant green accents, '
+    : '';
 
   return (
     `Professional food photography of "${name}", ${cuisineHint}. ` +
-    `${tagsHint}. ` +
-    `Shot on a clean wooden or marble surface, overhead or 45-degree angle, ` +
-    `natural window light, shallow depth of field, restaurant-quality plating, ` +
-    `vibrant colors, no text, no watermark, square crop 1:1.`
+    `${veganHint}${tagsHint}. ` +
+    `Shot overhead or at 45-degree angle on a clean wooden or marble surface, ` +
+    `natural window light, shallow depth of field, ` +
+    `restaurant-quality plating, vibrant colors, no text, no watermark, square 1:1 crop.`
   );
 }
 
-// ── Parse CLI flags ───────────────────────────────────────────────────────────
-const args    = process.argv.slice(2);
-const forceAll = args.includes('--all');
-const limitArg = args.find(a => a.startsWith('--limit='))?.split('=')[1];
-const LIMIT   = limitArg ? parseInt(limitArg) : 10;
+// ── Generate one image via Gemini ─────────────────────────────────────────────
+async function generateImage(prompt: string): Promise<Buffer | null> {
+  const res = await fetch(GEMINI_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
+    }),
+  });
 
-// ── Main ─────────────────────────────────────────────────────────────────────
+  const json = await res.json() as any;
+  if (!res.ok) throw new Error(json.error?.message ?? JSON.stringify(json));
+
+  const parts: any[] = json.candidates?.[0]?.content?.parts ?? [];
+  const imgPart = parts.find(p => p.inlineData?.mimeType?.startsWith('image/'));
+  if (!imgPart) throw new Error('No image in response');
+
+  return Buffer.from(imgPart.inlineData.data, 'base64');
+}
+
+// ── Upload to Supabase Storage ────────────────────────────────────────────────
+async function uploadImage(dishId: string, imageBuffer: Buffer): Promise<string> {
+  const fileName = `${dishId}.png`;
+  const { error } = await supabase.storage
+    .from('dish-images')
+    .upload(fileName, imageBuffer, {
+      contentType: 'image/png',
+      upsert: true,
+    });
+
+  if (error) throw new Error(`Upload failed: ${error.message}`);
+
+  const { data } = supabase.storage.from('dish-images').getPublicUrl(fileName);
+  return data.publicUrl;
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────────
 async function main() {
-  await db.connect();
-  console.log('🔗 Connected to DB');
+  // Pool connects on demand — no explicit connect() needed
+  console.log('🔗 DB pool ready');
 
-  const whereClause = forceAll ? '' : `WHERE (image_url IS NULL OR image_url = '')`;
+  const conditions: string[] = [];
+  if (!forceAll) conditions.push(`(image_url IS NULL OR image_url = '')`);
+  if (veganOnly) conditions.push(`is_vegan = true`);
+
+  const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
   const { rows: dishes } = await db.query<{
     id: string;
     title_zh: string;
@@ -93,66 +141,52 @@ async function main() {
     origin_cuisine: string;
     flavor_tags: string[];
     main_ingredient: string;
+    is_vegan: boolean;
   }>(`
-    SELECT id, title_zh, title_en, origin_cuisine, flavor_tags, main_ingredient
+    SELECT id, title_zh, title_en, origin_cuisine, flavor_tags, main_ingredient, is_vegan
     FROM dishes
     ${whereClause}
     ORDER BY title_zh
     LIMIT $1
   `, [LIMIT]);
 
-  console.log(`🎨 Generating images for ${dishes.length} dishes (limit=${LIMIT}, forceAll=${forceAll})\n`);
+  console.log(`\n🎨 Generating images for ${dishes.length} dishes`);
+  console.log(`   Model: ${GEMINI_MODEL} · limit=${LIMIT} · forceAll=${forceAll}\n`);
+
+  let ok = 0, failed = 0;
 
   for (let i = 0; i < dishes.length; i++) {
     const dish = dishes[i];
-    console.log(`[${i + 1}/${dishes.length}] ${dish.title_zh}`);
+    process.stdout.write(`[${i + 1}/${dishes.length}] ${dish.title_zh} … `);
 
     try {
       const prompt = buildPrompt(dish);
+      const imgBuffer = await generateImage(prompt);
+      if (!imgBuffer) { console.log('⚠ no image'); failed++; continue; }
 
-      // Call Imagen 3 via Gemini API
-      const result = await genai.models.generateImages({
-        model:  'imagen-3.0-generate-002',
-        prompt,
-        config: { numberOfImages: 1, aspectRatio: '1:1', outputMimeType: 'image/png' },
-      });
+      const publicUrl = await uploadImage(dish.id, imgBuffer);
 
-      const imgData = result.generatedImages?.[0]?.image?.imageBytes;
-      if (!imgData) { console.warn('  ⚠ No image returned, skipping'); continue; }
-
-      // Upload to Supabase Storage
-      const fileName  = `${dish.id}.png`;
-      const buffer    = Buffer.from(imgData, 'base64');
-      const { error: uploadErr } = await supabase.storage
-        .from('dish-images')
-        .upload(fileName, buffer, {
-          contentType: 'image/png',
-          upsert: true,
-        });
-
-      if (uploadErr) { console.warn(`  ⚠ Upload failed: ${uploadErr.message}`); continue; }
-
-      // Get public URL
-      const { data: urlData } = supabase.storage.from('dish-images').getPublicUrl(fileName);
-      const publicUrl = urlData.publicUrl;
-
-      // Write back to DB
       await db.query(
         `UPDATE dishes SET image_url = $1 WHERE id = $2`,
         [publicUrl, dish.id],
       );
 
-      console.log(`  ✅ ${publicUrl}`);
+      console.log(`✅`);
+      ok++;
     } catch (err: any) {
-      console.warn(`  ⚠ Error: ${err?.message ?? err}`);
+      console.log(`⚠ ${err?.message?.slice(0, 80)}`);
+      failed++;
     }
 
-    // Respect Imagen rate limit (~2 req/s)
-    await new Promise(r => setTimeout(r, 600));
+    // ~1.5s between requests to stay within rate limits
+    if (i < dishes.length - 1) await new Promise(r => setTimeout(r, 1500));
   }
 
+  console.log(`\n📊 Done: ${ok} ✅  ${failed} ⚠`);
   await db.end();
-  console.log('\n✅ Image generation complete');
 }
+
+// Pool doesn't need connect() — remove from main
+
 
 main().catch(err => { console.error(err); process.exit(1); });

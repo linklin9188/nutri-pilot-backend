@@ -11,7 +11,7 @@ export default function HelperPrep() {
     const shareUrl = window.location.href;
     if (navigator.share) {
       navigator.share({
-        title: 'Nutri-Pilot Prep',
+        title: 'Aieats Prep',
         text: '今天的备菜清单和做饭指南 (Prep & Cooking Guide)',
         url: shareUrl,
       }).catch(console.error);
@@ -67,7 +67,7 @@ export default function HelperPrep() {
           <button className="active:scale-95 transition-transform duration-200 bg-black/5 hover:bg-black/10 p-2 text-on-surface rounded-full flex items-center justify-center cursor-pointer" onClick={() => navigate('/')}>
             <span className="material-symbols-outlined text-[20px]">arrow_back</span>
           </button>
-          <span className="text-[18px] font-bold tracking-tight leading-tight">{t("Nutri-Pilot Prep", "备菜区 - 悦小厨")}</span>
+          <span className="text-[18px] font-bold tracking-tight leading-tight">{t("Aieats Prep", "备菜区 - 爱吃")}</span>
         </div>
         <button 
           onClick={toggleLanguage}
