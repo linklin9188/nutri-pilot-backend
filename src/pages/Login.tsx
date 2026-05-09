@@ -205,10 +205,7 @@ export default function Login() {
               {/* Slogan: 两行，节奏感 */}
               <div>
                 <p className="text-white/65 font-light" style={{ fontSize: 15, letterSpacing: "0.08em" }}>
-                  {t("You eat, AI thinks", "你负责吃，AI 负责想")}
-                </p>
-                <p className="text-white/40 font-light mt-1" style={{ fontSize: 13, letterSpacing: "0.12em" }}>
-                  {t("— made just for your taste", "——只为更懂你的味 ～")}
+                  {t("No more thinking about what to eat", "吃啥不用想，AI 替你想～")}
                 </p>
               </div>
             </motion.div>
