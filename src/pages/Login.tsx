@@ -188,16 +188,29 @@ export default function Login() {
 
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.15, duration: 0.7, ease: "easeOut" }} className="mb-7">
-              <h1 className="font-serif font-black text-white leading-none"
-                style={{ fontSize: 58, letterSpacing: "0.04em" }}>爱吃</h1>
+
+              {/* Brand: 爱吃 · Aieats 并排一行 */}
+              <div className="flex items-center gap-3">
+                <h1 className="font-serif font-black text-white leading-none whitespace-nowrap"
+                  style={{ fontSize: 40, letterSpacing: "0.02em" }}>爱吃</h1>
+                <span style={{ fontSize: 22, color: "#FF5A1F", fontWeight: 400, lineHeight: 1 }}>·</span>
+                <span className="text-white/75 font-light uppercase"
+                  style={{ fontSize: 20, letterSpacing: "0.20em" }}>Aieats</span>
+              </div>
+
+              {/* Accent line */}
               <div className="mt-4 mb-5 rounded-full"
                 style={{ width: 36, height: 2, background: "#FF5A1F", boxShadow: "0 0 12px rgba(255,90,31,0.6)" }} />
-              <p className="text-white/50 font-light uppercase" style={{ fontSize: 13, letterSpacing: "0.26em" }}>
-                Aieats
-              </p>
-              <p className="mt-3 text-white/60 font-light leading-relaxed" style={{ fontSize: 14, letterSpacing: "0.06em" }}>
-                {t("You eat, AI thinks — made just for your taste", "你负责吃，AI 负责想——只为更懂你的味～")}
-              </p>
+
+              {/* Slogan: 两行，节奏感 */}
+              <div>
+                <p className="text-white/65 font-light" style={{ fontSize: 15, letterSpacing: "0.08em" }}>
+                  {t("You eat, AI thinks", "你负责吃，AI 负责想")}
+                </p>
+                <p className="text-white/40 font-light mt-1" style={{ fontSize: 13, letterSpacing: "0.12em" }}>
+                  {t("— made just for your taste", "——只为更懂你的味 ～")}
+                </p>
+              </div>
             </motion.div>
 
             <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
