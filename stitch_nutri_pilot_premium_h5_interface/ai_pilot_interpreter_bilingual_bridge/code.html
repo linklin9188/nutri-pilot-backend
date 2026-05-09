@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+
+<html class="light" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AI Pilot Interpreter</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "tertiary-container": "#b3b2b7",
+                        "on-secondary-fixed-variant": "#474649",
+                        "primary-fixed-dim": "#e9c349",
+                        "on-surface-variant": "#4d4635",
+                        "surface-container": "#eeeef0",
+                        "secondary-container": "#e2dfe1",
+                        "on-tertiary": "#ffffff",
+                        "on-secondary": "#ffffff",
+                        "background": "#f9f9fb",
+                        "tertiary-fixed-dim": "#c7c6cb",
+                        "on-error": "#ffffff",
+                        "tertiary-fixed": "#e3e2e7",
+                        "on-error-container": "#93000a",
+                        "outline-variant": "#d0c5af",
+                        "secondary-fixed": "#e4e2e4",
+                        "surface": "#f9f9fb",
+                        "primary-fixed": "#ffe088",
+                        "on-primary": "#ffffff",
+                        "surface-tint": "#735c00",
+                        "on-tertiary-fixed-variant": "#46464b",
+                        "on-secondary-container": "#636264",
+                        "outline": "#7f7663",
+                        "on-background": "#1a1c1d",
+                        "inverse-primary": "#e9c349",
+                        "primary-container": "#d4af37",
+                        "on-tertiary-container": "#444549",
+                        "on-tertiary-fixed": "#1a1b1f",
+                        "on-primary-fixed": "#241a00",
+                        "secondary-fixed-dim": "#c8c6c8",
+                        "surface-dim": "#d9dadc",
+                        "surface-container-lowest": "#ffffff",
+                        "tertiary": "#5e5e63",
+                        "surface-bright": "#f9f9fb",
+                        "error": "#ba1a1a",
+                        "surface-variant": "#e2e2e4",
+                        "on-secondary-fixed": "#1b1b1d",
+                        "inverse-on-surface": "#f0f0f2",
+                        "on-primary-container": "#554300",
+                        "error-container": "#ffdad6",
+                        "surface-container-low": "#f3f3f5",
+                        "on-surface": "#1a1c1d",
+                        "surface-container-high": "#e8e8ea",
+                        "surface-container-highest": "#e2e2e4",
+                        "secondary": "#5f5e60",
+                        "on-primary-fixed-variant": "#574500",
+                        "inverse-surface": "#2f3132",
+                        "primary": "#735c00"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "margin-page": "32px",
+                        "gutter-card": "24px",
+                        "padding-item": "16px",
+                        "stack-lg": "40px",
+                        "stack-md": "16px",
+                        "unit": "8px",
+                        "stack-sm": "8px"
+                    },
+                    "fontFamily": {
+                        "label-bold": ["Inter"],
+                        "display-lg": ["Inter"],
+                        "body-secondary": ["Inter"],
+                        "headline-1": ["Inter"],
+                        "body-main": ["Inter"],
+                        "headline-2": ["Inter"],
+                        "label-caps": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label-bold": ["13px", {"lineHeight": "18px", "letterSpacing": "0.02em", "fontWeight": "600"}],
+                        "display-lg": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "600"}],
+                        "body-secondary": ["15px", {"lineHeight": "20px", "letterSpacing": "0em", "fontWeight": "400"}],
+                        "headline-1": ["34px", {"lineHeight": "41px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                        "body-main": ["17px", {"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "400"}],
+                        "headline-2": ["28px", {"lineHeight": "34px", "letterSpacing": "0em", "fontWeight": "500"}],
+                        "label-caps": ["11px", {"lineHeight": "16px", "letterSpacing": "0.06em", "fontWeight": "600"}]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .pulsate {
+            animation: pulse-blue 2s infinite;
+        }
+        @keyframes pulse-blue {
+            0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+        }
+        .ai-shimmer {
+            background: linear-gradient(90deg, #d4af37 0%, #ffe088 50%, #d4af37 100%);
+            background-size: 200% auto;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: shimmer 3s linear infinite;
+        }
+        @keyframes shimmer {
+            to { background-position: 200% center; }
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-[#F5F5F7] text-on-background font-body-main selection:bg-primary/20 min-h-screen pb-32">
+<!-- TopAppBar -->
+<header class="bg-surface/80 dark:bg-surface-dim/80 backdrop-blur-xl docked full-width top-0 sticky z-50">
+<div class="flex items-center justify-between px-margin-page h-20 w-full max-w-7xl mx-auto">
+<div class="flex flex-col">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-blue-500 pulsate"></span>
+<h1 class="font-bold text-[18px] text-on-surface">AI Pilot Interpreter (AI 双语管家)</h1>
+</div>
+<p class="font-label-caps text-label-caps text-secondary">Translating Mandarin to Helper's native tongue with emotional buffering.</p>
+</div>
+<button class="hover:opacity-70 transition-opacity active:scale-95 transition-transform duration-200">
+<span class="material-symbols-outlined text-primary">account_circle</span>
+</button>
+</div>
+</header>
+<main class="max-w-3xl mx-auto px-margin-page mt-stack-lg">
+<!-- Main Translation Card -->
+<div class="bg-white rounded-[24px] p-gutter-card shadow-[0_10px_30px_rgba(0,0,0,0.03)] border border-blue-50/50 flex flex-col gap-stack-md relative overflow-hidden">
+<!-- Decorative background elements -->
+<div class="absolute -top-24 -right-24 w-48 h-48 bg-primary-fixed/10 rounded-full blur-3xl"></div>
+<!-- Employer Input -->
+<div class="flex flex-col gap-unit">
+<div class="bg-surface-container-lowest border border-surface-container rounded-2xl p-padding-item self-start max-w-[85%] shadow-sm">
+<p class="font-body-main text-on-surface">
+<span class="mr-1">🗣️</span> 雇主：'昨天的牛肉有点硬，今晚炒得嫩一点，另外少放辣。'
+                    </p>
+</div>
+<span class="text-[11px] text-secondary ml-2">Yesterday at 8:15 PM</span>
+</div>
+<!-- AI Processing State -->
+<div class="flex flex-col items-center justify-center py-stack-md relative">
+<div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+<div class="w-px h-full bg-gradient-to-b from-surface-variant via-primary-container/30 to-surface-variant"></div>
+</div>
+<div class="z-10 bg-white px-4 py-2 flex flex-col items-center gap-1">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary-container text-[20px]" style="font-variation-settings: 'FILL' 1;">auto_awesome</span>
+<span class="font-label-bold text-label-bold ai-shimmer">AI Buffering &amp; Standardizing...</span>
+</div>
+<p class="text-[10px] text-secondary opacity-70">AI 正在进行指令规范化与情绪减震</p>
+</div>
+<!-- Animated Gold Dot -->
+<div class="absolute left-1/2 -translate-x-1/2 w-2 h-2 bg-primary-container rounded-full shadow-[0_0_10px_#d4af37]"></div>
+</div>
+<!-- Language Toggle -->
+<div class="flex justify-end">
+<div class="inline-flex p-1 bg-surface-container rounded-full gap-1">
+<button class="px-4 py-1.5 rounded-full bg-white shadow-sm font-label-bold text-label-bold text-primary">English</button>
+<button class="px-4 py-1.5 rounded-full font-label-bold text-label-bold text-secondary hover:text-on-surface transition-colors">Tagalog</button>
+</div>
+</div>
+<!-- Helper Output Bubble -->
+<div class="flex flex-col gap-unit items-end">
+<div class="bg-blue-50/40 border border-blue-100/50 rounded-2xl p-padding-item self-end max-w-[90%] shadow-sm">
+<p class="font-body-main text-on-background leading-relaxed">
+<span class="font-semibold text-blue-700 block mb-1">To Helper (Maria):</span>
+                        "Please slice the Wagyu beef into 2mm uniform pieces and marinate with 1 tbsp starch and 1 tbsp water for 15 minutes before cooking. Reduce chili seeds to keep spice mild."
+                    </p>
+<div class="mt-3 pt-3 border-t border-blue-100/50">
+<p class="text-[13px] text-secondary italic">
+                            Pakibabad ang Wagyu beef sa 1 tbsp starch at tubig nang 15 minuto...
+                        </p>
+</div>
+</div>
+<div class="flex items-center gap-1 mr-2 mt-1">
+<span class="material-symbols-outlined text-green-500 text-[14px]">check_circle</span>
+<span class="text-[11px] text-green-600 font-medium">Successfully synced to Maria's Prep Board (已同步至外佣端)</span>
+</div>
+</div>
+<!-- AI Visualization Context Image (Optional Stylistic) -->
+<div class="mt-stack-md rounded-xl overflow-hidden grayscale-[0.5] opacity-80 h-32 w-full relative">
+<img alt="Clean kitchen counter" class="w-full h-full object-cover" data-alt="A clean, minimalist high-end kitchen counter with stainless steel appliances and a soft morning light streaming through a window. The aesthetic is ultra-modern and calm, reflecting the quiet luxury theme with muted tones of white, silver, and soft wood. In the background, a digital tablet displays culinary data in a refined interface. The overall mood is precise, organized, and technologically advanced." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDCuGp7-zRWSz8n48EnofBjHfy1epz30MPVugARh2L6IA75Z5lv_Ygs3fHxaDm2_MRyfEAg7StjA0KpJFSKoP5gO5RT7KmRFiCykppM7V59woC0vsL2WLl2n8fN2IuZHFY5Acdn11T1zlX7EvBpFUwDYBYI6D53kTlOouaA1CTwlJEMa42sHP6WOF3cVnYheDOXwEH-GexhbqgtTdorbXASNXIsCFg6SuIbbcecyVxOtzmYtuO9qzWEBrnL-fW51eRUL1qM4rMEyVvZ"/>
+<div class="absolute inset-0 bg-gradient-to-t from-white via-transparent to-transparent"></div>
+</div>
+</div>
+<!-- Quick Reply Section -->
+<section class="mt-stack-lg flex flex-col gap-stack-md">
+<h3 class="font-label-bold text-label-bold text-secondary uppercase tracking-widest px-1">Smart Quick-Reply (快捷指令发送)</h3>
+<div class="flex overflow-x-auto pb-4 gap-3 no-scrollbar">
+<button class="whitespace-nowrap px-6 py-3 rounded-full bg-white shadow-sm border border-transparent hover:border-primary-container/20 active:scale-95 transition-all text-on-surface font-medium text-[15px]">
+                    晚半小时开饭
+                </button>
+<button class="whitespace-nowrap px-6 py-3 rounded-full bg-white shadow-sm border border-transparent hover:border-primary-container/20 active:scale-95 transition-all text-on-surface font-medium text-[15px]">
+                    今晚有客人来
+                </button>
+<button class="whitespace-nowrap px-6 py-3 rounded-full bg-white shadow-sm border border-transparent hover:border-primary-container/20 active:scale-95 transition-all text-on-surface font-medium text-[15px]">
+                    海鲜多洗几遍
+                </button>
+<button class="whitespace-nowrap px-6 py-3 rounded-full bg-white shadow-sm border border-transparent hover:border-primary-container/20 active:scale-95 transition-all text-on-surface font-medium text-[15px]">
+                    餐后加份水果
+                </button>
+</div>
+</section>
+<!-- The Pilot Float (AI Voice Activation) -->
+<div class="fixed bottom-28 left-1/2 -translate-x-1/2 z-40">
+<button class="bg-white/60 backdrop-blur-md border border-white/20 shadow-xl px-6 py-3 rounded-full flex items-center gap-3 active:scale-95 transition-transform duration-300">
+<span class="material-symbols-outlined text-primary-container" style="font-variation-settings: 'FILL' 1;">mic</span>
+<span class="font-label-bold text-label-bold text-primary">Hold to Command Pilot</span>
+</button>
+</div>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-6 pb-8 pt-4 bg-surface/90 dark:bg-surface-container-low/90 backdrop-blur-2xl shadow-lg rounded-t-xl border-t border-surface-container-highest">
+<!-- Concierge Tab (Active Mapping: AI Pilot Interpreter falls under AI Concierge intent) -->
+<a class="flex flex-col items-center justify-center text-primary dark:text-primary-fixed-dim bg-primary-container/10 rounded-full px-4 py-1 active:scale-90 transition-all duration-300" href="#">
+<span class="material-symbols-outlined" data-icon="auto_awesome" style="font-variation-settings: 'FILL' 1;">auto_awesome</span>
+<span class="font-label-bold text-label-bold">Concierge</span>
+</a>
+<!-- Library Tab -->
+<a class="flex flex-col items-center justify-center text-secondary dark:text-secondary-fixed-dim opacity-60 hover:text-primary transition-colors active:scale-90 transition-all duration-300" href="#">
+<span class="material-symbols-outlined" data-icon="menu_book">menu_book</span>
+<span class="font-label-bold text-label-bold">Library</span>
+</a>
+<!-- Kitchen Tab -->
+<a class="flex flex-col items-center justify-center text-secondary dark:text-secondary-fixed-dim opacity-60 hover:text-primary transition-colors active:scale-90 transition-all duration-300" href="#">
+<span class="material-symbols-outlined" data-icon="countertops">countertops</span>
+<span class="font-label-bold text-label-bold">Kitchen</span>
+</a>
+<!-- Profile Tab -->
+<a class="flex flex-col items-center justify-center text-secondary dark:text-secondary-fixed-dim opacity-60 hover:text-primary transition-colors active:scale-90 transition-all duration-300" href="#">
+<span class="material-symbols-outlined" data-icon="person">person</span>
+<span class="font-label-bold text-label-bold">Profile</span>
+</a>
+</nav>
+<style>
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</body></html>

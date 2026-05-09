@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=390, height=844, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-background": "#1a1c1d",
+                        "on-error-container": "#93000a",
+                        "inverse-primary": "#e9c349",
+                        "on-primary-fixed": "#241a00",
+                        "surface-container-highest": "#e2e2e4",
+                        "primary-fixed-dim": "#e9c349",
+                        "tertiary-fixed-dim": "#c7c6cb",
+                        "primary-container": "#d4af37",
+                        "tertiary": "#5e5e63",
+                        "on-primary-fixed-variant": "#574500",
+                        "error": "#ba1a1a",
+                        "on-surface": "#1a1c1d",
+                        "outline-variant": "#d0c5af",
+                        "secondary-fixed": "#e4e2e4",
+                        "on-surface-variant": "#4d4635",
+                        "on-secondary-container": "#636264",
+                        "tertiary-container": "#b3b2b7",
+                        "inverse-surface": "#2f3132",
+                        "on-secondary-fixed-variant": "#474649",
+                        "outline": "#7f7663",
+                        "on-secondary": "#ffffff",
+                        "background": "#f9f9fb",
+                        "on-primary-container": "#554300",
+                        "surface-container": "#eeeef0",
+                        "on-tertiary-fixed-variant": "#46464b",
+                        "secondary-fixed-dim": "#c8c6c8",
+                        "secondary-container": "#e2dfe1",
+                        "primary-fixed": "#ffe088",
+                        "inverse-on-surface": "#f0f0f2",
+                        "surface-container-high": "#e8e8ea",
+                        "on-tertiary-container": "#444549",
+                        "tertiary-fixed": "#e3e2e7",
+                        "secondary": "#5f5e60",
+                        "on-tertiary": "#ffffff",
+                        "surface-bright": "#f9f9fb",
+                        "primary": "#735c00",
+                        "on-primary": "#ffffff",
+                        "surface": "#f9f9fb",
+                        "surface-container-lowest": "#ffffff",
+                        "on-tertiary-fixed": "#1a1b1f",
+                        "surface-variant": "#e2e2e4",
+                        "error-container": "#ffdad6",
+                        "surface-container-low": "#f3f3f5",
+                        "surface-dim": "#d9dadc",
+                        "surface-tint": "#735c00",
+                        "on-error": "#ffffff",
+                        "on-secondary-fixed": "#1b1b1d"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "padding-item": "16px",
+                        "stack-lg": "40px",
+                        "margin-page": "32px",
+                        "unit": "8px",
+                        "stack-sm": "8px",
+                        "stack-md": "16px",
+                        "gutter-card": "24px"
+                    },
+                    "fontFamily": {
+                        "label-caps": ["Inter"],
+                        "display-lg": ["Inter"],
+                        "body-main": ["Inter"],
+                        "headline-1": ["Inter"],
+                        "label-bold": ["Inter"],
+                        "headline-2": ["Inter"],
+                        "body-secondary": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label-caps": ["11px", {"lineHeight": "16px", "letterSpacing": "0.06em", "fontWeight": "600"}],
+                        "display-lg": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "600"}],
+                        "body-main": ["17px", {"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "400"}],
+                        "headline-1": ["34px", {"lineHeight": "41px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                        "label-bold": ["13px", {"lineHeight": "18px", "letterSpacing": "0.02em", "fontWeight": "600"}],
+                        "headline-2": ["28px", {"lineHeight": "34px", "letterSpacing": "0em", "fontWeight": "500"}],
+                        "body-secondary": ["15px", {"lineHeight": "20px", "letterSpacing": "0em", "fontWeight": "400"}]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body {
+            background-color: #F5F5F7;
+            font-family: 'Inter', sans-serif;
+            width: 390px;
+            height: 844px;
+            overflow-x: hidden;
+            color: #1D1D1F;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .ambient-card {
+            box-shadow: 0 10px 30px rgba(0,0,0,0.03);
+        }
+        body {
+            min-height: max(884px, 100dvh);
+        }
+    </style>
+</head>
+<body class="mx-auto relative">
+<!-- Top Navigation Bar -->
+<header class="bg-surface/80 backdrop-blur-xl docked full-width top-0 sticky z-50 flex items-center justify-between px-margin-page h-20 w-full max-w-7xl mx-auto">
+<div class="flex items-center gap-4">
+<button class="active:scale-95 transition-transform duration-200">
+<span class="material-symbols-outlined text-primary text-2xl">arrow_back</span>
+</button>
+<div class="flex flex-col">
+<h1 class="font-headline-2 text-[18px] font-bold leading-tight">Verify Ingredients (确认采购清单)</h1>
+<p class="font-body-secondary text-[11px] text-[#86868B]">Optimized sourcing for premium quality &amp; local speed.</p>
+</div>
+</div>
+<button class="active:scale-95 transition-transform duration-200">
+<span class="material-symbols-outlined text-primary text-2xl">account_circle</span>
+</button>
+</header>
+<!-- Scaling Banner -->
+<div class="px-6 pt-4">
+<div class="bg-primary/5 border border-primary/20 rounded-xl px-4 py-3 flex items-center gap-3">
+<span class="material-symbols-outlined text-primary text-[20px]" style="font-variation-settings: 'FILL' 1;">groups</span>
+<span class="font-label-bold text-primary text-[12px]">Quantities scaled for 8 Dinners (份量已按 8 人份自动调整)</span>
+</div>
+</div>
+<main class="px-6 py-6 space-y-6 pb-48">
+<!-- Sourcing Section 1: Elite Partner Sourcing -->
+<section class="space-y-3">
+<div class="flex items-center gap-2 px-1">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">stars</span>
+<h2 class="font-label-bold text-[#D4AF37] uppercase tracking-wider">Premium Partners (Waves Pacific &amp; Eat FRESH)</h2>
+</div>
+<div class="bg-white rounded-[20px] border border-[#D4AF37]/30 ambient-card overflow-hidden">
+<div class="flex flex-col">
+<!-- Item 1 -->
+<div class="p-4 border-b border-[#F5F5F7] flex gap-4">
+<div class="w-20 h-20 rounded-xl overflow-hidden flex-shrink-0 bg-[#F9F9FB]">
+<img class="w-full h-full object-cover" data-alt="Premium Japanese bluefin tuna slices" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCA8qWlCuCQ1ajnscoM36GgZf6-t9NPuGV_zPcfTohszl7Erbz5g4gntK8EOLjzXH__EUA9tWRBNbUcYLKwhgAzWAEDc9GE0sXED_4Ioiqw5V40oZC5sEZVlqnnuOX98VFP8c6wCez0Tjb6vmsI_xpNpuOapnKMGoSiPDk6CojX9feqIxTLwkndkteATcnxU1At4HEt8ixNvGCwFYBwVfF-0YHnd-GFBkCH15lnh-CSP7PZ0kzk-35x5OKx7EtNDJ0BRDks-hdAceXc"/>
+</div>
+<div class="flex-grow flex flex-col justify-between">
+<div>
+<div class="flex justify-between items-start gap-2">
+<h3 class="font-body-main font-semibold text-[15px] leading-snug">Japanese Bluefin Tuna Slices (日式蓝鳍金枪鱼片)</h3>
+<span class="font-label-bold text-primary whitespace-nowrap">HK$1,120</span>
+</div>
+<p class="text-[12px] text-[#86868B] mt-1">Brand: Yamaji Suisan • 800g</p>
+</div>
+<div class="mt-2">
+<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-primary-container/10 text-primary font-label-bold text-[10px]">
+                                    Selected Partner Recommendation
+                                </span>
+</div>
+</div>
+</div>
+<!-- Item 2 -->
+<div class="p-4 flex gap-4">
+<div class="w-20 h-20 rounded-xl overflow-hidden flex-shrink-0 bg-[#F9F9FB]">
+<img class="w-full h-full object-cover" data-alt="Organic French beans" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAiu5t9SBWH2MAxPPynfoHOUYYQ3t92plsdV7jRxQ7YdabrDieWfY4SXAe2AtthPPrgtBq10M6auFRe8lG-hQRL4WZrPf4eOxdAMMr-55Kzwwt6qcg8lGCCtpZc2r_JV6AcbHR3TDZbU2ck6Wa4qTbKsicxtq8NPidB-eUkjEcVrblVUlJxFkxF80_PKYtXD35FcMnBNbRSx_-imRi_bVfgeyoKEXVOqzMPZvQNakMRfhk2NFf2nIs6snp1kgyQR2BWkgVb62Api43W"/>
+</div>
+<div class="flex-grow flex flex-col justify-center">
+<div class="flex justify-between items-start gap-2">
+<h3 class="font-body-main font-semibold text-[15px] leading-snug">Organic French Beans (有机玉豆)</h3>
+<span class="font-label-bold text-primary whitespace-nowrap">HK$180</span>
+</div>
+<p class="text-[12px] text-[#86868B] mt-1">Brand: Eat FRESH Organic • 1.2kg</p>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Sourcing Section 2: Neighborhood Sourcing -->
+<section class="space-y-3">
+<div class="flex items-center gap-2 px-1">
+<span class="material-symbols-outlined text-[#007AFF]">near_me</span>
+<h2 class="font-label-bold text-[#007AFF] uppercase tracking-wider">Nearby Merchants (Wellcome / HKTVmall)</h2>
+</div>
+<div class="bg-white rounded-[20px] border border-[#F5F5F7] ambient-card overflow-hidden">
+<div class="flex flex-col">
+<!-- Item 3 -->
+<div class="p-4 border-b border-[#F5F5F7] flex gap-4">
+<div class="w-20 h-20 rounded-xl overflow-hidden flex-shrink-0 bg-[#F9F9FB]">
+<img class="w-full h-full object-cover" data-alt="Ginger garlic set" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA2gENhjedv5L1GsSSN1XgqRVqFAOnB4J4YNw5TRczt1Yok48zLPShgluQ6VN6JAtX57dgdRNQBSgrFrMHMsUFUbG4Q2p537J5i1GvYyedjAquuWXUnahF_ofb5smUTvBeAT5J20-DTsgnQU9-ezW_ND82wfuo5Kyyu58Njb4aQt6UMau7jU1fWkRecbZYPgrPwjcAJJNaJsmHRLEk5HhFPjU7v0PZKftzUFFltsTokzgl0xld9t_xeoiju2OYLhoTuLwVMsU3XTD6Y"/>
+</div>
+<div class="flex-grow flex flex-col justify-between">
+<div>
+<div class="flex justify-between items-start gap-2">
+<h3 class="font-body-main font-semibold text-[15px] leading-snug">Ginger, Garlic &amp; Scallion Set (葱姜蒜组合)</h3>
+<span class="font-label-bold text-[#1D1D1F] whitespace-nowrap">HK$48</span>
+</div>
+<p class="text-[12px] text-[#86868B] mt-1">4 Packs</p>
+</div>
+<div class="mt-2">
+<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-blue-50 text-[#007AFF] font-label-bold text-[10px]">
+                                    Local Wellcome
+                                </span>
+</div>
+</div>
+</div>
+<!-- Item 4 -->
+<div class="p-4 flex gap-4">
+<div class="w-20 h-20 rounded-xl overflow-hidden flex-shrink-0 bg-[#F9F9FB]">
+<img class="w-full h-full object-cover" data-alt="Premium soy sauce" src="https://lh3.googleusercontent.com/aida-public/AB6AXuByEjs7nGvrDkKGEeU8F92HkCQmgJvYmB21lQUE5KyrBTDCWbgHFI1HEmv3LQNX0-6ibCVRAEJQJD4fyy8w5s7pHxt4LcNfH72Z9DSodSVC0ueY_QkfeNa0AUceoYqhmNoGyS1TbEJLolGoeZMomX6kMRJunOQZehVzuuVhG3jG95wVDk8qymjAu46Io7rocPzq-fn9sdHPN_F1tFVMG05zPRgQSZ18fgPQkUNS8e5MENYHoTDdPcyemhP-zbhMX_iQ22qBCS9IPVBH"/>
+</div>
+<div class="flex-grow flex flex-col justify-center">
+<div class="flex justify-between items-start gap-2">
+<h3 class="font-body-main font-semibold text-[15px] leading-snug">Premium Light Soy Sauce (头抽)</h3>
+<span class="font-label-bold text-[#1D1D1F] whitespace-nowrap">HK$72</span>
+</div>
+<p class="text-[12px] text-[#86868B] mt-1">Brand: Lee Kum Kee • 4 Bottles</p>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Summary & Pricing Info -->
+<section class="bg-white rounded-[20px] p-6 ambient-card space-y-4">
+<div class="space-y-3">
+<div class="flex justify-between items-center text-[15px] text-secondary">
+<span>Subtotal Premium</span>
+<span class="font-medium">HK$1,300.00</span>
+</div>
+<div class="flex justify-between items-center text-[15px] text-secondary">
+<span>Subtotal Daily</span>
+<span class="font-medium">HK$120.00</span>
+</div>
+<div class="flex justify-between items-center text-[15px] text-secondary">
+<span>Delivery Fee (Merged)</span>
+<span class="text-primary font-semibold">FREE</span>
+</div>
+</div>
+<div class="pt-4 border-t border-[#F5F5F7] flex justify-between items-baseline">
+<span class="font-body-main font-bold text-[18px]">Total Price</span>
+<span class="font-display-lg text-[32px] font-bold text-[#1D1D1F]">HK$1,420.00</span>
+</div>
+</section>
+</main>
+<!-- Bottom Action Bar -->
+<footer class="fixed bottom-0 left-0 w-full bg-white/80 backdrop-blur-2xl px-6 pb-10 pt-4 z-50 border-t border-surface-container-highest">
+<div class="max-w-md mx-auto space-y-3">
+<button class="w-full bg-[#1D1D1F] text-white h-14 rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-transform duration-200 shadow-xl">
+<span class="material-symbols-outlined text-[20px]">shopping_cart_checkout</span>
+<span class="font-body-main font-semibold text-[16px]">Pay &amp; Dispatch Ingredients (一键下单并开始派送)</span>
+</button>
+<p class="text-center text-[10px] text-[#86868B] uppercase tracking-widest font-label-caps">
+                Your helper will receive storage instructions instantly upon arrival.
+            </p>
+</div>
+</footer>
+<!-- Pilot Quick Access Button -->
+<div class="fixed bottom-32 right-6 z-50">
+<button class="w-14 h-14 rounded-full bg-white shadow-2xl flex items-center justify-center border border-[#F5F5F7] active:scale-90 transition-transform">
+<span class="material-symbols-outlined text-primary text-[28px]" style="font-variation-settings: 'FILL' 1;">auto_awesome</span>
+</button>
+</div>
+</body></html>

@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+
+<html class="light" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "inverse-primary": "#e9c349",
+                    "outline": "#7f7663",
+                    "surface-container-highest": "#e2e2e4",
+                    "on-primary-container": "#554300",
+                    "on-primary": "#ffffff",
+                    "error-container": "#ffdad6",
+                    "on-surface": "#1a1c1d",
+                    "surface-container-low": "#f3f3f5",
+                    "surface-bright": "#f9f9fb",
+                    "secondary-fixed-dim": "#c8c6c8",
+                    "on-secondary-container": "#636264",
+                    "surface-tint": "#735c00",
+                    "on-primary-fixed": "#241a00",
+                    "on-error": "#ffffff",
+                    "tertiary-fixed": "#e3e2e7",
+                    "surface-container-high": "#e8e8ea",
+                    "on-background": "#1a1c1d",
+                    "inverse-on-surface": "#f0f0f2",
+                    "primary-container": "#d4af37",
+                    "primary-fixed-dim": "#e9c349",
+                    "outline-variant": "#d0c5af",
+                    "on-surface-variant": "#4d4635",
+                    "primary-fixed": "#ffe088",
+                    "tertiary": "#5e5e63",
+                    "tertiary-container": "#b3b2b7",
+                    "surface": "#f9f9fb",
+                    "surface-container": "#eeeef0",
+                    "secondary": "#5f5e60",
+                    "on-tertiary": "#ffffff",
+                    "surface-dim": "#d9dadc",
+                    "surface-container-lowest": "#ffffff",
+                    "primary": "#735c00",
+                    "on-secondary-fixed": "#1b1b1d",
+                    "inverse-surface": "#2f3132",
+                    "error": "#ba1a1a",
+                    "background": "#f9f9fb",
+                    "surface-variant": "#e2e2e4",
+                    "secondary-fixed": "#e4e2e4",
+                    "on-tertiary-fixed": "#1a1b1f",
+                    "on-secondary": "#ffffff",
+                    "on-secondary-fixed-variant": "#474649",
+                    "secondary-container": "#e2dfe1",
+                    "on-primary-fixed-variant": "#574500",
+                    "on-error-container": "#93000a",
+                    "tertiary-fixed-dim": "#c7c6cb",
+                    "on-tertiary-fixed-variant": "#46464b",
+                    "on-tertiary-container": "#444549"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px",
+                    "card": "24px",
+                    "btn": "16px"
+            },
+            "spacing": {
+                    "stack-lg": "40px",
+                    "margin-page": "32px",
+                    "gutter-card": "24px",
+                    "unit": "8px",
+                    "stack-sm": "8px",
+                    "stack-md": "16px",
+                    "padding-item": "16px"
+            },
+            "fontFamily": {
+                    "body-main": ["Inter"],
+                    "label-caps": ["Inter"],
+                    "body-secondary": ["Inter"],
+                    "label-bold": ["Inter"],
+                    "headline-2": ["Inter"],
+                    "headline-1": ["Inter"],
+                    "display-lg": ["Inter"]
+            },
+            "fontSize": {
+                    "body-main": ["17px", {"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "400"}],
+                    "label-caps": ["11px", {"lineHeight": "16px", "letterSpacing": "0.06em", "fontWeight": "600"}],
+                    "body-secondary": ["15px", {"lineHeight": "20px", "letterSpacing": "0em", "fontWeight": "400"}],
+                    "label-bold": ["13px", {"lineHeight": "18px", "letterSpacing": "0.02em", "fontWeight": "600"}],
+                    "headline-2": ["28px", {"lineHeight": "34px", "letterSpacing": "0em", "fontWeight": "500"}],
+                    "headline-1": ["34px", {"lineHeight": "41px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                    "display-lg": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "600"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+      .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      }
+      body { background-color: #F5F5F7; }
+      .glass-card { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(20px); }
+      .gold-glow { box-shadow: 0 0 15px rgba(212, 175, 55, 0.15); }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="font-body-main text-on-surface antialiased overflow-x-hidden pb-32">
+<!-- TopAppBar -->
+<header class="bg-surface/80 dark:bg-surface/80 backdrop-blur-md font-headline-2 text-headline-2 docked full-width top-0 sticky flex justify-between items-center w-full px-margin-page py-4 max-w-full z-50">
+<div class="flex flex-col">
+<div class="flex items-center gap-1">
+<span class="font-headline-2 text-[18px] font-semibold tracking-tight text-primary">Nutri-Pilot</span>
+<div class="w-1.5 h-1.5 rounded-full bg-primary-container"></div>
+<span class="ml-1 text-[18px] font-semibold text-on-surface">悦小厨</span>
+</div>
+<span class="font-label-caps text-label-caps text-secondary">Today's Curated Curation for Your Family</span>
+</div>
+<div class="relative group active:scale-95 transition-transform">
+<img class="w-8 h-8 rounded-full border border-outline-variant" data-alt="A high-end profile avatar of a sophisticated user in a luxury environment. The lighting is soft and artistic, reflecting a premium digital lifestyle. The composition is a close-up circle, fitting the minimalist Apple aesthetic of the Nutri-Pilot application. The color palette consists of neutral whites and soft grays with a hint of gold light." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB7Zg8a6m7XUQvXKCDMVxUrgoAkr03cz_M9mDGc-QDUu0HarnbbFJC4spv-e4vA3ZC6VbpYMM4qjdzKbW9N9t63MCOBUM2hbMIrKUfrbgx6KNjVwDAwuWA109eB9JSHCJ1yd2z5GiOozG0gjdubOLsGnJlEa6GFX9hIcRa-5jXa2DA2Vy0IZXpJ42jbtDBCIsf2uecz5DXSL-ssC0jz3Gzg9Pfs8sjXSYVvd5Cwn7t15Ypht3hNk7MJwZsCjB4eSu1PFtiEi2cb2tez"/>
+</div>
+</header>
+<main class="max-w-md mx-auto">
+<!-- Dynamic Diner Selector -->
+<section class="mt-3 px-4">
+<div class="flex items-center justify-between bg-surface-container-lowest rounded-full py-3 px-5 shadow-[0_4px_12px_rgba(0,0,0,0.02)] border border-surface-container">
+<button class="w-8 h-8 flex items-center justify-center rounded-full text-secondary hover:bg-surface-container transition-colors">
+<span class="material-symbols-outlined text-[20px]">remove</span>
+</button>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary-container text-[18px]" style="font-variation-settings: 'FILL' 1;">restaurant</span>
+<span class="font-label-bold text-[15px] font-bold text-on-surface">今日 5 人就餐</span>
+</div>
+<button class="w-8 h-8 flex items-center justify-center rounded-full text-secondary hover:bg-surface-container transition-colors">
+<span class="material-symbols-outlined text-[20px]">add</span>
+</button>
+</div>
+</section>
+<!-- "Today's Gold Match" Hero Card -->
+<section class="mt-4 px-4">
+<div class="bg-surface-container-lowest rounded-card p-5 shadow-[0_10px_30px_rgba(0,0,0,0.02)] border border-surface-container/50">
+<div class="flex flex-col gap-1 mb-6">
+<div class="flex justify-between items-start">
+<h2 class="text-[20px] font-bold text-on-surface tracking-tight">今日黄金推荐</h2>
+<div class="px-2.5 py-1 bg-primary-container/10 rounded-full">
+<span class="font-label-caps text-[10px] text-primary font-bold uppercase tracking-wider">Humidity 92% - Damp Clear Menu</span>
+</div>
+</div>
+</div>
+<div class="space-y-4">
+<!-- Dish 1 -->
+<div class="flex items-center justify-between group hover:opacity-80 transition-opacity">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-xl overflow-hidden bg-surface-container">
+<img class="w-full h-full object-cover" data-alt="A delicate watercolor-style photograph of traditional Chinese Twice-cooked Pork Belly, known as Huiguo Rou. The dish is presented on a pristine white ceramic plate in a bright, airy kitchen setting with soft morning sunlight. The colors are vibrant yet refined, emphasizing the rich textures of the glazed meat and green scallions. The mood is one of culinary excellence and health-conscious gourmet dining." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCeFEl2mNIfre8YXV3tgomTrFQaXfpivoa2csjBvSG3-6KDia-omgSXPNGwPdGpaJrzSpy_PX2nHaYlcrW3BRUwTf-J6uJE3l_YJe6TFYBupRf2ik_8gilfFcCxCP4H2qHVievKDTbiFTt2KQI61wR49qA2ESdhKQIa6ZZivHbFjlIngJGJzFIFzRHA1w-jbtimsGKxAoVUV8Kk8reV8ixA-RxY_qh9QVAtCm3S1EerrwbBQnx82JJUn8e8AjtyGgT3Ik4wOKZFqfHw"/>
+</div>
+<div>
+<div class="flex items-center gap-2">
+<h3 class="text-[16px] font-bold text-on-surface">回锅黑豚肉</h3>
+<span class="text-[11px] text-primary-container font-medium">MEAT</span>
+</div>
+<p class="text-[12px] text-secondary">Premium Black Pork</p>
+</div>
+</div>
+<span class="material-symbols-outlined text-secondary opacity-30 text-[20px]">swap_horiz</span>
+</div>
+<!-- Dish 2 (Highlighted) -->
+<div class="flex items-center justify-between p-3 -mx-3 rounded-2xl border-[1.5px] border-primary-container gold-glow bg-primary-container/5">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-xl overflow-hidden shadow-sm">
+<img class="w-full h-full object-cover" data-alt="An exquisite close-up of Steamed Garoupa fish seasoned with premium soy sauce and julienned ginger. The image has a soft-focus background of a modern, minimalist high-end kitchen with champagne gold accents. The fish looks incredibly fresh, with translucent white flesh and vibrant herbs. The lighting is diffused and high-key, creating a sense of luxury and nutritional purity." src="https://lh3.googleusercontent.com/aida-public/AB6AXuC5nZyrKGBuM8IkjZo2OVhw9xkp-v5h899Rj0osD_4D7VPrAGgEOvmRZLgCPD9AUfGloHwIjpQnr3QqQqR9HOocDSzhrW9nasyo-wI5dZFigCK8AtDu9IFDWxkXX5rAbWm9QwLjETJOyeNoSMfOJsgZ00OCWgnstAsJ9Zgi7q9YnjrVvgFHxylc0pkTQfpHVQEgSvJdoazlUlLlltDlgB7Ghln0KlFu9IbovL9b38JhHsmNxW2RjRbIxoMd4VAXISKQbhrH9npIn8Te"/>
+</div>
+<div>
+<div class="flex items-center gap-2">
+<h3 class="text-[16px] font-bold text-on-surface">清蒸东星斑</h3>
+<span class="text-[11px] text-primary font-bold">SEAFOOD</span>
+</div>
+<p class="text-[12px] text-secondary">Steamed Garoupa</p>
+</div>
+</div>
+<span class="material-symbols-outlined text-primary text-[20px]">star_border</span>
+</div>
+<!-- Dish 3 -->
+<div class="flex items-center justify-between group hover:opacity-80 transition-opacity">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-xl overflow-hidden bg-surface-container">
+<img class="w-full h-full object-cover" data-alt="Freshly harvested organic Choy Sum greens with golden garlic bits, served on a minimalist white stoneware dish. The image captures the vibrant green of the vegetables against a clean, light gray background typical of Apple-style minimalist design. The lighting is crisp and natural, highlighting the healthy, organic quality of the ingredients. The composition is balanced and elegant, reflecting professional culinary curation." src="https://lh3.googleusercontent.com/aida-public/AB6AXuC9zCHf_9BIKpLclYQqkpqP9nn5zZqxJXAVRvjD9VcDb-Z-cLrkWLiw_55qAym81OiuT-JDaMw-3NH7TMyWJfPVtc4QrR-WxO4wFP87qoFAZ1IbxWfAY9aDqI31jzwhyYWyum31tb7OSl_7bXfP9QfLSPmZwLBJrs6-pBG0Hk14ZJqEsUhuk1wwBq-oVBabIjf7Pvq7ln-1-juESFbCftUpcLM2H_M9_LxxHKMGrEfKkvz9tx_oUFsIBUua32ZIsMhwPouaylI0Byy8"/>
+</div>
+<div>
+<div class="flex items-center gap-2">
+<h3 class="text-[16px] font-bold text-on-surface">蒜蓉本地有机菜心</h3>
+<span class="text-[11px] text-primary-container font-medium">VEGGIE</span>
+</div>
+<p class="text-[12px] text-secondary">Organic Choy Sum</p>
+</div>
+</div>
+<span class="material-symbols-outlined text-secondary opacity-30 text-[20px]">swap_horiz</span>
+</div>
+<!-- Dish 4 -->
+<div class="flex items-center justify-between group hover:opacity-80 transition-opacity">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-xl overflow-hidden bg-surface-container">
+<img class="w-full h-full object-cover" data-alt="A premium soup presentation featuring delicate fish maw and herbs in a translucent golden broth. The photograph uses a top-down perspective on a minimalist luxury kitchen counter. The overall tone is warm and inviting, yet strictly minimalist with high contrast. The image emphasizes the refined textures of the gourmet ingredients, maintaining a clean and elite aesthetic consistent with the Nutri-Pilot brand." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAT8K2HZYhzHYFaZ07Rqs32WtkwSPn9QfCWpQFuZVgrKUxSHyMSqm8IkkldUa_dN1emAOS0CeSxLRfvUbxS8oqRgQ7b8auE4vlq9FwvBRddo52ckNYgumz16EYwtkP6pBPMrGo70oAcfFDU9GWWiGyCy_5gv0vVwdZRwAsJF0Og11iL5jB6A516GHt9sBYM5NBVc8a7x4DQ44sf6jioh9-4wos3lE0PDRZH7uBsR-l0k11mkZTs-_nvYP8PyBkO5_6xbTdgf35jHmQ7"/>
+</div>
+<div>
+<div class="flex items-center gap-2">
+<h3 class="text-[16px] font-bold text-on-surface">避风塘炒虾</h3>
+<span class="text-[11px] text-primary-container font-medium">SOUP</span>
+</div>
+<p class="text-[12px] text-secondary">Premium Fish Maw Soup</p>
+</div>
+</div>
+<span class="material-symbols-outlined text-secondary opacity-30 text-[20px]">swap_horiz</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Nutrition Insight Card -->
+<section class="mt-6 px-4">
+<div class="bg-surface-container-lowest rounded-card p-5 border border-surface-container/50">
+<div class="flex items-center justify-between mb-4">
+<span class="font-label-bold text-on-surface">Nutritional Balance</span>
+<span class="material-symbols-outlined text-primary-container">insights</span>
+</div>
+<div class="flex items-end gap-3 h-20">
+<div class="flex-1 bg-surface-container rounded-t-lg h-[60%]"></div>
+<div class="flex-1 bg-surface-container rounded-t-lg h-[40%]"></div>
+<div class="flex-1 bg-primary-container rounded-t-lg h-[95%]"></div>
+<div class="flex-1 bg-surface-container rounded-t-lg h-[55%]"></div>
+<div class="flex-1 bg-surface-container rounded-t-lg h-[70%]"></div>
+</div>
+<p class="mt-4 text-[13px] text-secondary leading-snug">The current menu optimizes for <span class="text-primary font-semibold">Protein Synthesis</span> and <span class="text-primary font-semibold">Joint Health</span>, perfect for active family members today.</p>
+</div>
+</section>
+</main>
+<!-- Bottom Action Bar (Sticky Bottom) -->
+<footer class="fixed bottom-0 left-0 w-full z-50 bg-surface/90 backdrop-blur-xl px-4 pb-8 pt-4">
+<div class="max-w-md mx-auto flex flex-col items-center gap-3">
+<button class="w-full h-[52px] bg-gradient-to-r from-[#1D1D1F] to-[#3A3A3C] rounded-btn flex flex-col items-center justify-center active:scale-95 transition-transform shadow-xl">
+<span class="text-on-primary text-[15px] font-semibold">确认菜单并采购</span>
+<span class="text-on-primary/60 text-[9px] uppercase tracking-[0.1em] font-medium">Confirm &amp; Purchase Ingredients</span>
+</button>
+<p class="text-[10px] text-secondary text-center leading-tight opacity-70">
+                Guaranteed delivery via Waves Pacific &amp; local premium partners.
+            </p>
+</div>
+</footer>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full z-40 flex justify-around items-center px-6 pb-2 pt-2 bg-transparent pointer-events-none">
+<!-- Hidden underlying nav content, simplified for mobile H5 context -->
+</nav>
+<!-- Floating AI Suggestion (Pilot Float) -->
+<div class="fixed bottom-32 right-6 z-50">
+<button class="w-14 h-14 rounded-full glass-card border border-white/20 shadow-2xl flex items-center justify-center active:scale-90 transition-transform">
+<span class="material-symbols-outlined text-primary text-[28px]" style="font-variation-settings: 'FILL' 1;">auto_awesome</span>
+</button>
+</div>
+</body></html>

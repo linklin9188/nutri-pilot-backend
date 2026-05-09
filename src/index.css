@@ -1,0 +1,83 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@500;700;900&family=Noto+Sans+SC:wght@400;500;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #FF5A1F;
+  --color-primary-container: #FFE5DB;
+  --color-on-primary: #FFFFFF;
+  --color-on-primary-container: #4D1600;
+  --color-inverse-primary: #FFB59B;
+  --color-secondary: #6B5E59;
+  --color-on-secondary: #FFFFFF;
+  --color-secondary-container: #F5E5DF;
+  --color-on-secondary-container: #241A17;
+  --color-tertiary: #5E6135;
+  --color-on-tertiary: #FFFFFF;
+  --color-tertiary-container: #E4E6AE;
+  --color-on-tertiary-container: #1B1D00;
+  --color-surface: #FCFBF8;
+  --color-surface-dim: #DCDAD6;
+  --color-surface-bright: #FCFBF8;
+  --color-surface-container-lowest: #FFFFFF;
+  --color-surface-container-low: #F6F4F1;
+  --color-surface-container: #F0EEEA;
+  --color-surface-container-high: #EAE8E4;
+  --color-surface-container-highest: #E5E2DF;
+  --color-on-surface: #201A18;
+  --color-on-surface-variant: #53433F;
+  --color-outline: #85736E;
+  --color-outline-variant: #D8C2BC;
+  --color-background: #FCFBF8;
+  --color-on-background: #201A18;
+  --color-inverse-surface: #362F2D;
+  --color-inverse-on-surface: #FBEEEA;
+  
+  --font-sans: "Noto Sans SC", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Noto Serif SC", ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+
+  --font-body-main: Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-headline-1: Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-headline-2: Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-label-caps: Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-label-bold: Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-display-lg: Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-body-secondary: Inter, ui-sans-serif, system-ui, sans-serif;
+  
+  --spacing-margin-page: 32px;
+  --spacing-gutter-card: 24px;
+  --spacing-stack-lg: 40px;
+  --spacing-stack-md: 16px;
+  --spacing-stack-sm: 8px;
+  --spacing-unit: 8px;
+  --spacing-padding-item: 16px;
+  
+  --radius-card: 24px;
+  --radius-btn: 16px;
+}
+
+body {
+  background-color: var(--color-background);
+  min-height: max(884px, 100dvh);
+}
+
+.glass-card { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(20px); }
+.gold-glow { box-shadow: 0 0 15px rgba(212, 175, 55, 0.15); }
+.backdrop-blur-30 { backdrop-filter: blur(30px); }
+.drawer-slide-up { animation: slideUp 0.5s ease-out; }
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+@keyframes pulse-gold {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.2); }
+}
+.animate-pulse-gold {
+  animation: pulse-gold 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+.glass-blur {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+

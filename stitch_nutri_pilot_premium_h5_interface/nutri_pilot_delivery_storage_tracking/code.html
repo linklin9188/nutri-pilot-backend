@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+
+<html class="light" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport"/>
+<title>Nutri-Pilot - Delivery &amp; Storage Tracking</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "outline": "#7f7663",
+                        "on-primary-fixed": "#241a00",
+                        "inverse-primary": "#e9c349",
+                        "tertiary": "#5e5e63",
+                        "on-secondary-fixed-variant": "#474649",
+                        "primary-fixed-dim": "#e9c349",
+                        "on-tertiary": "#ffffff",
+                        "on-error-container": "#93000a",
+                        "error": "#ba1a1a",
+                        "surface-container-lowest": "#ffffff",
+                        "on-surface-variant": "#4d4635",
+                        "on-error": "#ffffff",
+                        "outline-variant": "#d0c5af",
+                        "surface-container": "#eeeef0",
+                        "on-surface": "#1a1c1d",
+                        "secondary-fixed-dim": "#c8c6c8",
+                        "primary": "#735c00",
+                        "surface-container-low": "#f3f3f5",
+                        "error-container": "#ffdad6",
+                        "inverse-surface": "#2f3132",
+                        "secondary-fixed": "#e4e2e4",
+                        "on-background": "#1a1c1d",
+                        "primary-container": "#d4af37",
+                        "on-primary-fixed-variant": "#574500",
+                        "on-tertiary-fixed-variant": "#46464b",
+                        "on-secondary-fixed": "#1b1b1d",
+                        "surface-container-high": "#e8e8ea",
+                        "background": "#f9f9fb",
+                        "on-secondary": "#ffffff",
+                        "tertiary-fixed": "#e3e2e7",
+                        "surface-tint": "#735c00",
+                        "secondary-container": "#e2dfe1",
+                        "on-secondary-container": "#636264",
+                        "inverse-on-surface": "#f0f0f2",
+                        "surface-dim": "#d9dadc",
+                        "primary-fixed": "#ffe088",
+                        "on-tertiary-fixed": "#1a1b1f",
+                        "on-primary-container": "#554300",
+                        "surface-bright": "#f9f9fb",
+                        "surface-container-highest": "#e2e2e4",
+                        "on-primary": "#ffffff",
+                        "tertiary-container": "#b3b2b7",
+                        "surface-variant": "#e2e2e4",
+                        "surface": "#f9f9fb",
+                        "secondary": "#5f5e60",
+                        "on-tertiary-container": "#444549",
+                        "tertiary-fixed-dim": "#c7c6cb"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "stack-md": "16px",
+                        "margin-page": "32px",
+                        "unit": "8px",
+                        "stack-sm": "8px",
+                        "stack-lg": "40px",
+                        "padding-item": "16px",
+                        "gutter-card": "24px"
+                    },
+                    "fontFamily": {
+                        "body-secondary": ["Inter"],
+                        "display-lg": ["Inter"],
+                        "body-main": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "headline-2": ["Inter"],
+                        "label-bold": ["Inter"],
+                        "headline-1": ["Inter"]
+                    },
+                    "fontSize": {
+                        "body-secondary": ["15px", {"lineHeight": "20px", "letterSpacing": "0em", "fontWeight": "400"}],
+                        "display-lg": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "600"}],
+                        "body-main": ["17px", {"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "400"}],
+                        "label-caps": ["11px", {"lineHeight": "16px", "letterSpacing": "0.06em", "fontWeight": "600"}],
+                        "headline-2": ["28px", {"lineHeight": "34px", "letterSpacing": "0em", "fontWeight": "500"}],
+                        "label-bold": ["13px", {"lineHeight": "18px", "letterSpacing": "0.02em", "fontWeight": "600"}],
+                        "headline-1": ["34px", {"lineHeight": "41px", "letterSpacing": "-0.01em", "fontWeight": "600"}]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            background-color: #F5F5F7;
+            -webkit-font-smoothing: antialiased;
+        }
+        .apple-shadow {
+            box-shadow: 0 10px 30px rgba(0,0,0,0.03);
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        .premium-border-left {
+            border-left: 3px solid #D4AF37;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="font-body-main text-on-surface">
+<!-- Top Navigation Bar -->
+<header class="bg-white/80 backdrop-blur-xl docked full-width top-0 sticky z-50 border-b border-slate-100 flex justify-between items-center w-full px-6 h-16 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-[#D4AF37] active:scale-95 transition-transform duration-200">menu</span>
+<h1 class="text-lg font-semibold tracking-tighter text-slate-900">Nutri-Pilot</h1>
+</div>
+<div class="w-8 h-8 rounded-full overflow-hidden bg-surface-container active:scale-95 transition-transform duration-200">
+<img alt="User profile avatar" class="w-full h-full object-cover" data-alt="A clean, professional close-up of a minimalist user profile avatar placeholder with a soft gray background. The visual style is modern, sleek, and aligns with high-end Apple-style interface aesthetics, featuring subtle lighting and a high-key, refined photographic tone." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAARkIy-iet9oY_FFoVcXUBSHTbaFWFj9w9NiVtBLM83yQmUF6iAqzHOPZ8gZTlMmzPP8yrytsYxhDm2FNUzQdjrJsuSPrvoXFGzfGNu8_R7chPdTtUIlWQFmQEIfv7tgUP0dv4Yb7xoj8AkktE8-06vEqwsAobIeTH2RBT2r6MbWRN9YgTr6176gVc3aZG6HAYDE-pBsmuPb-nPnKGrSU6ZyHMUBE_tJsxRcxfp2dH28RtaV9IK21CSmgdORtO3Nw-ymAp1V1DcXkM"/>
+</div>
+</header>
+<main class="px-6 pt-8 pb-32 max-w-md mx-auto">
+<!-- Header Section -->
+<section class="mb-stack-lg">
+<h2 class="font-display-lg text-[22px] leading-tight font-bold text-slate-900">今日食材配送</h2>
+<p class="font-body-secondary text-[12px] text-slate-400 mt-1 uppercase tracking-wider">Ensuring premium ingredients are stored perfectly.</p>
+</section>
+<!-- Shipment List -->
+<div class="space-y-gutter-card">
+<!-- Card 1: Waves Pacific -->
+<article class="bg-white rounded-[24px] p-6 apple-shadow">
+<div class="flex justify-between items-start mb-4">
+<div>
+<div class="flex items-center gap-2 mb-1">
+<h3 class="font-headline-2 text-lg font-semibold">Waves Pacific</h3>
+<span class="bg-[#D4AF37]/10 text-[#D4AF37] text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-tighter">Elite Partner</span>
+</div>
+<div class="flex items-center text-emerald-600 gap-1">
+<span class="material-symbols-outlined text-sm" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span class="text-sm font-medium">Delivered at 10:15 AM</span>
+</div>
+</div>
+<img alt="Meat Icon" class="w-12 h-12 rounded-xl object-cover bg-surface-container-low" data-alt="A high-quality, professional food photography shot of a raw Wagyu Ribeye steak with beautiful marbling. The lighting is soft and natural, emphasizing the rich red color and intricate white fat distribution. The background is a minimalist, clean kitchen surface, maintaining an ultra-modern, elite culinary aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuC4Sxlh9EelgCuoBdIg9P8pybJrBN_Kib0D40HvuwQJiy_xUPlsl8oEjQDT7cWgzEa63D0vg-yKg3aDAYUgWzqr5QSbZ07K1TWVk-d_jkdtnbKOOmjwL3YB_sza8C1irU1kqhPf9DgrVjTs7oBAKaY8hGope1cIDoExRWpOLwP-6We_rx7Ga5e9xS1GQABBgl18BnuIh2NMp4pW9GOyf2zHXVidgftXmDBP2j8udtvuH5rvI5RHJ9y1dHmMbW2dXS7cjblWN-aUk1p-"/>
+</div>
+<div class="bg-[#FDFBF7] premium-border-left p-4 rounded-r-xl mt-4">
+<p class="text-sm text-slate-800 leading-relaxed">
+<span class="font-bold text-[#D4AF37]">📍 Wagyu Ribeye:</span> DO NOT wash. Pat dry with paper towel, place in fridge zone B (0°C Fresh Compartment).<br/>
+<span class="text-xs text-slate-500 mt-1 block">(和牛眼肉：严禁水洗，用纸巾吸干，放0度保鲜区)</span>
+</p>
+<div class="mt-4 flex justify-center py-2 bg-white/50 rounded-lg">
+<div class="relative w-full h-24 max-w-[120px]">
+<img alt="Refrigerator Diagram" class="w-full h-full object-contain opacity-80" data-alt="A clean, flat-style technical illustration of a modern luxury refrigerator with transparent glass shelving. A subtle champagne gold highlight indicates the middle shelf compartment, designated as Zone B. The style is ultra-minimalist, white-themed, and fits perfectly into a high-end digital kitchen concierge interface." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBTmWMmaKdBah2Di-DVgxPvPEl0dN2KHkvIbZCQjnw6wmZrPOV5o3YfvM2N596kDDKFq8ZoWXZujjE2wAczAtCkEXzf-CX-zpRrlkDspFcsqTUY4qZEyKrinE1hBWtJczm4wmmdsZ718W94qD_CnNsr2-TcfmMZS49RwIauTmfCIvYDU5XEP6N6TJ5WAlTr1HFieDy5hHk6T19FKHcBx4hNEfuumOvRAVX5oOmJdewZQ49kRQy3TbK1P9WtaHiPcTLFMfn803gfpTCc"/>
+<div class="absolute inset-0 flex items-center justify-center">
+<div class="w-full h-1/3 bg-[#D4AF37]/10 border-y border-[#D4AF37]/30 flex items-center justify-center">
+<span class="text-[10px] font-bold text-[#D4AF37]">OPTIMAL ZONE</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</article>
+<!-- Card 2: Eat FRESH -->
+<article class="bg-white rounded-[24px] p-6 apple-shadow">
+<div class="flex justify-between items-start mb-4">
+<div>
+<div class="flex items-center gap-2 mb-1">
+<h3 class="font-headline-2 text-lg font-semibold">Eat FRESH (Organic Garden)</h3>
+</div>
+<div class="flex items-center text-[#D4AF37] gap-1">
+<span class="material-symbols-outlined text-sm animate-pulse">schedule</span>
+<span class="text-sm font-medium">Arriving in 15 mins (Est. 10:30 AM)</span>
+</div>
+</div>
+<img alt="Vegetable Icon" class="w-12 h-12 rounded-xl object-cover bg-surface-container-low" data-alt="A vibrant, fresh bundle of organic Choy Sum with crisp green leaves and bright yellow flowers. The photography is sharp and bright, set against a clean white marble background. The overall mood is healthy, natural, and premium, suggesting farm-to-table quality in a high-end kitchen setting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDVP7qZKmIHU3Hn2FRRBSnpWkTxk3QK9Jw7j3P5Eib17Iaz82i1oQt9kIrXAaGHFEjaIo7aOCXFFwHt00r6JVbU1yjxlaYomECzEaOGPsD4kWdKA-8P6GhE4N_HKRjyXr-Dn1g3wNKBnCiT90WyQQF3UJkLxncU78lnmk726fVRpkMuedQ7_rhX0gpGn8dDWI5eDtyLddWhOko1OnLO9uViIoj5gEsXUQ6XzLW9cNpAUSq3BWUdQrXdjGKkX8LL105BiwH-3TVUJApQ"/>
+</div>
+<div class="bg-[#FDFBF7] premium-border-left p-4 rounded-r-xl mt-4">
+<p class="text-sm text-slate-800 leading-relaxed">
+<span class="font-bold text-[#D4AF37]">📍 Organic Choy Sum:</span> Keep inside paper wrap, place in bottom veggie drawer.<br/>
+<span class="text-xs text-slate-500 mt-1 block">(蔬菜：保留纸包，放入最底层蔬菜抽屉)</span>
+</p>
+</div>
+</article>
+</div>
+<!-- Footer Links & Actions -->
+<footer class="mt-stack-lg space-y-6">
+<a class="flex items-center justify-center gap-2 text-slate-500 hover:text-slate-800 transition-colors py-2 active:scale-95" href="#">
+<span class="material-symbols-outlined text-amber-500 text-lg">warning</span>
+<span class="text-sm font-medium">配送出现问题？联系AI助手</span>
+</a>
+<button class="w-full bg-[#1D1D1F] text-white py-4 rounded-full font-semibold text-[17px] active:scale-[0.98] transition-all shadow-lg">
+                进入任务看板
+            </button>
+</footer>
+</main>
+<!-- Bottom Navigation Bar -->
+<nav class="bg-white/80 backdrop-blur-2xl fixed bottom-0 w-full z-50 pb-safe border-t border-slate-100 flex justify-around items-center h-20 px-4 shadow-[0_-4px_20px_rgba(0,0,0,0.03)]">
+<div class="flex flex-col items-center gap-1 group">
+<span class="material-symbols-outlined text-slate-400 group-hover:text-[#D4AF37] transition-colors">home</span>
+<span class="text-[10px] uppercase tracking-widest text-slate-400 font-label-caps">Home</span>
+</div>
+<div class="flex flex-col items-center gap-1 group">
+<span class="material-symbols-outlined text-[#D4AF37] scale-110">rebase_edit</span>
+<span class="text-[10px] uppercase tracking-widest text-[#D4AF37] font-label-caps">Status</span>
+</div>
+<div class="flex flex-col items-center group -mt-8">
+<div class="w-14 h-14 bg-[#1D1D1F] rounded-full flex items-center justify-center shadow-xl active:scale-90 transition-transform">
+<span class="material-symbols-outlined text-[#D4AF37] text-3xl" style="font-variation-settings: 'FILL' 1;">add_circle</span>
+</div>
+</div>
+<div class="flex flex-col items-center gap-1 group">
+<span class="material-symbols-outlined text-slate-400 group-hover:text-[#D4AF37] transition-colors">auto_awesome</span>
+<span class="text-[10px] uppercase tracking-widest text-slate-400 font-label-caps">AI Pilot</span>
+</div>
+<div class="flex flex-col items-center gap-1 group">
+<span class="material-symbols-outlined text-slate-400 group-hover:text-[#D4AF37] transition-colors">person</span>
+<span class="text-[10px] uppercase tracking-widest text-slate-400 font-label-caps">Profile</span>
+</div>
+</nav>
+<!-- Contextual FAB (The Pilot Float) -->
+<div class="fixed bottom-24 left-1/2 -translate-x-1/2 z-40">
+<button class="bg-white/40 backdrop-blur-md border border-white/20 px-6 py-2 rounded-full shadow-2xl flex items-center gap-2 active:scale-95 transition-all">
+<span class="w-2 h-2 rounded-full bg-[#D4AF37] animate-pulse"></span>
+<span class="text-sm font-medium text-slate-900">AI Concierge Active</span>
+</button>
+</div>
+</body></html>

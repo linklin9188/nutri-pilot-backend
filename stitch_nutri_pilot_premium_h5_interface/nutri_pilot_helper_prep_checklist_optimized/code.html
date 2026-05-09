@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..700&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-primary-fixed-variant": "#574500",
+                        "error": "#ba1a1a",
+                        "outline-variant": "#d0c5af",
+                        "on-surface": "#1a1c1d",
+                        "on-surface-variant": "#4d4635",
+                        "secondary-fixed": "#e4e2e4",
+                        "on-secondary-container": "#636264",
+                        "on-error-container": "#93000a",
+                        "on-background": "#1a1c1d",
+                        "on-primary-fixed": "#241a00",
+                        "inverse-primary": "#e9c349",
+                        "primary-fixed-dim": "#e9c349",
+                        "surface-container-highest": "#e2e2e4",
+                        "tertiary": "#5e5e63",
+                        "tertiary-fixed-dim": "#c7c6cb",
+                        "primary-container": "#d4af37",
+                        "secondary-fixed-dim": "#c8c6c8",
+                        "secondary-container": "#e2dfe1",
+                        "primary-fixed": "#ffe088",
+                        "inverse-on-surface": "#f0f0f2",
+                        "on-secondary-fixed-variant": "#474649",
+                        "tertiary-container": "#b3b2b7",
+                        "inverse-surface": "#2f3132",
+                        "outline": "#7f7663",
+                        "on-secondary": "#ffffff",
+                        "on-primary-container": "#554300",
+                        "background": "#f9f9fb",
+                        "on-tertiary-fixed-variant": "#46464b",
+                        "surface-container": "#eeeef0",
+                        "surface": "#f9f9fb",
+                        "surface-container-lowest": "#ffffff",
+                        "on-tertiary-fixed": "#1a1b1f",
+                        "on-tertiary-container": "#444549",
+                        "surface-container-high": "#e8e8ea",
+                        "secondary": "#5f5e60",
+                        "on-tertiary": "#ffffff",
+                        "tertiary-fixed": "#e3e2e7",
+                        "surface-bright": "#f9f9fb",
+                        "primary": "#735c00",
+                        "on-primary": "#ffffff",
+                        "on-secondary-fixed": "#1b1b1d",
+                        "on-error": "#ffffff",
+                        "surface-variant": "#e2e2e4",
+                        "surface-container-low": "#f3f3f5",
+                        "error-container": "#ffdad6",
+                        "surface-dim": "#d9dadc",
+                        "surface-tint": "#735c00"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "unit": "8px",
+                        "stack-lg": "40px",
+                        "margin-page": "32px",
+                        "padding-item": "16px",
+                        "stack-sm": "8px",
+                        "stack-md": "16px",
+                        "gutter-card": "24px"
+                    },
+                    "fontFamily": {
+                        "body-main": ["Inter"],
+                        "display-lg": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "body-secondary": ["Inter"],
+                        "label-bold": ["Inter"],
+                        "headline-2": ["Inter"],
+                        "headline-1": ["Inter"]
+                    },
+                    "fontSize": {
+                        "body-main": ["17px", {"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "400"}],
+                        "display-lg": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "600"}],
+                        "label-caps": ["11px", {"lineHeight": "16px", "letterSpacing": "0.06em", "fontWeight": "600"}],
+                        "body-secondary": ["15px", {"lineHeight": "20px", "letterSpacing": "0em", "fontWeight": "400"}],
+                        "label-bold": ["13px", {"lineHeight": "18px", "letterSpacing": "0.02em", "fontWeight": "600"}],
+                        "headline-2": ["28px", {"lineHeight": "34px", "letterSpacing": "0em", "fontWeight": "500"}],
+                        "headline-1": ["34px", {"lineHeight": "41px", "letterSpacing": "-0.01em", "fontWeight": "600"}]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .check-glow {
+            box-shadow: 0 0 12px rgba(212, 175, 55, 0.2);
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(20px);
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-[#F8F9FA] font-body-main text-on-surface min-h-screen pb-32">
+<!-- TopAppBar -->
+<header class="bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl docked full-width top-0 sticky z-50 border-b border-slate-100 dark:border-slate-800/50 shadow-[0_1px_2px_rgba(0,0,0,0.02)] flex justify-between items-center w-full px-6 h-16">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-[#D4AF37]">menu</span>
+<span class="text-lg font-semibold tracking-tighter text-slate-900 dark:text-slate-50">Nutri-Pilot</span>
+</div>
+<div class="w-8 h-8 rounded-full overflow-hidden border border-slate-200">
+<img alt="User profile avatar" class="w-full h-full object-cover" data-alt="A professional close-up portrait of a user for a high-end application profile. The lighting is soft and natural, emphasizing a clean and minimalist aesthetic. The background is a neutral, out-of-focus interior suggesting a modern and organized home environment. The image is crisp with a shallow depth of field, maintaining the luxury design feel of the app." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDlHiZHb5fEF4Mu2JQD8njVxC6F-5D_50u6ElDb5qChuRzNZ9mAWliK0OHArYvNfPN9Xj4pZAs33XjyMbGPRoFBgQ9BQ2Sf-3wrYldsF0hG4GUEjexK3X9aE3c9KXCegv-cExhxgk8j7Oy0a3YugrkpmdufZudjmYtEybRxDScrEm6VD4TGv3HPhs_4vgvT1qdtsPZS8ZFBp98TOI31pCZ_1vx4mLvx9-voeyQ6YBbh1CM0jHJNJbVsh4W5v14bCMY_0RtlV_jSEgo5"/>
+</div>
+</header>
+<!-- Phase Timeline -->
+<nav class="sticky top-16 z-40 bg-white/90 backdrop-blur-md px-6 py-4 flex justify-between items-center border-b border-slate-50">
+<div class="flex flex-col items-center gap-1">
+<div class="w-8 h-8 rounded-full bg-[#D4AF37]/10 flex items-center justify-center text-[#D4AF37]">
+<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">restaurant_menu</span>
+</div>
+<span class="text-[10px] font-semibold text-[#D4AF37] tracking-wider">PREP</span>
+</div>
+<div class="h-[1px] flex-1 bg-slate-100 mx-4"></div>
+<div class="flex flex-col items-center gap-1 opacity-40">
+<div class="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">
+<span class="material-symbols-outlined text-[18px]">skillet</span>
+</div>
+<span class="text-[10px] font-semibold text-slate-500 tracking-wider uppercase">Cook</span>
+</div>
+<div class="h-[1px] flex-1 bg-slate-100 mx-4"></div>
+<div class="flex flex-col items-center gap-1 opacity-40">
+<div class="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">
+<span class="material-symbols-outlined text-[18px]">room_service</span>
+</div>
+<span class="text-[10px] font-semibold text-slate-500 tracking-wider uppercase">Serve</span>
+</div>
+</nav>
+<main class="px-6 pt-6 flex flex-col gap-6">
+<!-- Guidance Card -->
+<section class="bg-[#D4AF37]/5 border-2 border-dashed border-[#D4AF37]/30 rounded-[24px] p-5">
+<div class="flex items-start gap-3">
+<span class="material-symbols-outlined text-[#D4AF37]">tips_and_updates</span>
+<div>
+<h2 class="text-[16px] font-bold text-slate-900">今日备菜汇总</h2>
+<p class="text-[12px] text-slate-500 mt-1">请切好食材并按指定位置存放</p>
+</div>
+</div>
+</section>
+<!-- Ingredient List -->
+<div class="flex flex-col gap-4">
+<!-- Card 1: Pending (Pork Belly) -->
+<div class="bg-white rounded-[24px] p-4 flex items-center gap-4 shadow-[0_10px_30px_rgba(0,0,0,0.03)] border border-[#D4AF37]/40 ring-1 ring-[#D4AF37]/10">
+<div class="w-16 h-16 rounded-xl overflow-hidden bg-slate-50 shrink-0">
+<img alt="五花肉" class="w-full h-full object-cover" data-alt="A high-quality, top-down photograph of freshly sliced raw pork belly with beautiful marbling, presented in a minimalist watercolor style. The lighting is bright and clean, set against a pristine white background. The visual composition is elegant and focused, emphasizing the fresh texture of the meat in a culinary prep context." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAgaVmzxkw_EIPhqSHd__FcEanKGLKnH8LEYRKlQaUlzFDkrY-zETMV2VGLAiUH7S6WnF9I9ced5GAo7B3sVzRHSfPK2FZgC-dFrJDSWT9VZy1BsmWm0ZF_b1t3z9YnmgmFTghuUaighNVZUoz5tKNxRR-XkCjNJd1cP-7Zk5ktlmGfxmMJs49QwIjE9Z33NYTwzA_7mxDnFKkwdDupWdtIjx2fBaAfdFPgzdO8F8AyWCPgpZO6-tYncnZFk_DkGwBnNOsj7pDw6_we"/>
+</div>
+<div class="flex-1 flex flex-col gap-1">
+<h3 class="font-label-bold text-slate-900">五花肉</h3>
+<p class="text-[14px] text-slate-500 leading-tight">切2mm薄片，混合酱汁</p>
+<span class="inline-flex items-center gap-1 text-[11px] font-medium text-[#D4AF37] bg-[#D4AF37]/5 px-2 py-0.5 rounded-full mt-1 w-fit">
+<span class="material-symbols-outlined text-[12px]">location_on</span>
+                        📍 放入 A格: 肉类
+                    </span>
+</div>
+<button class="w-8 h-8 rounded-full border-2 border-slate-200 shrink-0 flex items-center justify-center transition-all active:scale-90">
+</button>
+</div>
+<!-- Card 2: Completed (Ginger/Garlic) -->
+<div class="bg-white/60 rounded-[24px] p-4 flex items-center gap-4 shadow-sm border border-emerald-100 opacity-60">
+<div class="w-16 h-16 rounded-xl overflow-hidden bg-slate-100 shrink-0 grayscale-[0.5]">
+<img alt="姜蒜末" class="w-full h-full object-cover" data-alt="Minced ginger and garlic neatly arranged on a clean white ceramic plate. The lighting is bright and airy, following a minimalist luxury aesthetic. Soft shadows create depth, and the overall color palette is muted and natural, fitting for a clean kitchen prep interface." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAtPIDjsBsLbll1mgg0QxEGSfq66YfXJXFw0Wt4w_rrDvvwXalfFFzrt1ubUBVrxhAVduPYjXoEzk2m7Wjr3A_SwjNMuKaJ-BxEI89tVOCMz57FEf0nCRHdHhEbCY9ZzJITKyM0-pjYFcTvGsrEuw6RyPKKWJKiKG3_M0HBv-VEzlGNYCadAmI_920voe-_4j6GnmTdWNWRtjv41IgFs5MEYZjIOkwq126wi3Kz883jzs7Ro572iQGBnFkmDj8Kg-xN9MrOSSWjeB4G"/>
+</div>
+<div class="flex-1 flex flex-col gap-1">
+<h3 class="font-label-bold text-slate-400 line-through">姜蒜末</h3>
+<p class="text-[14px] text-slate-400 leading-tight line-through">切碎成末，备用</p>
+<span class="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600/50 bg-emerald-50 px-2 py-0.5 rounded-full mt-1 w-fit">
+<span class="material-symbols-outlined text-[12px]">check_circle</span>
+                        已放入 C格: 配料
+                    </span>
+</div>
+<div class="w-8 h-8 rounded-full bg-emerald-500 shrink-0 flex items-center justify-center shadow-sm">
+<span class="material-symbols-outlined text-white text-[18px]">check</span>
+</div>
+</div>
+<!-- Card 3: Pending (Choy Sum) -->
+<div class="bg-white rounded-[24px] p-4 flex items-center gap-4 shadow-[0_10px_30px_rgba(0,0,0,0.03)] border border-transparent">
+<div class="w-16 h-16 rounded-xl overflow-hidden bg-slate-50 shrink-0">
+<img alt="本地菜心" class="w-full h-full object-cover" data-alt="Fresh vibrant local choy sum greens, washed and glistening with water droplets, photographed on a clean white surface. The lighting is high-key and fresh, capturing the crisp texture of the vegetables. Minimalist and professional culinary presentation." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAcpqVNiYZ-AdqVBznUg3d2ENqyZcZNTLr8_iqrwrceIgWJXfUbbX1zieAnIwlccWIkZJzvQpO6FfdCVd1w3R_eAKYNOBJxqu2wZZd6T3sm4kw9xq2trjl_gKduY9_hNcWL8uRHBYsMjcp9KC65LiQC7ssdhJ167X0Cttw1_PhpqmUJD7yIDg0oreqEqWcPRnDqMJq2vsk3lniVNxfXeboshTaYE4afFZm88-mRlK_NxhDzOPNrke1haqJQPyqb-RjaJlrrDrsF2ktB"/>
+</div>
+<div class="flex-1 flex flex-col gap-1">
+<h3 class="font-label-bold text-slate-900">本地菜心</h3>
+<p class="text-[14px] text-slate-500 leading-tight">洗净去根，切成5cm段</p>
+<span class="inline-flex items-center gap-1 text-[11px] font-medium text-[#D4AF37] bg-[#D4AF37]/5 px-2 py-0.5 rounded-full mt-1 w-fit">
+<span class="material-symbols-outlined text-[12px]">location_on</span>
+                        📍 放入 B格: 蔬菜
+                    </span>
+</div>
+<button class="w-8 h-8 rounded-full border-2 border-slate-200 shrink-0 flex items-center justify-center transition-all active:scale-90">
+</button>
+</div>
+<!-- Card 4: Pending (Mushrooms) -->
+<div class="bg-white rounded-[24px] p-4 flex items-center gap-4 shadow-[0_10px_30px_rgba(0,0,0,0.03)] border border-transparent">
+<div class="w-16 h-16 rounded-xl overflow-hidden bg-slate-50 shrink-0">
+<img alt="鲜香菇" class="w-full h-full object-cover" data-alt="Slices of fresh shiitake mushrooms arranged artfully on a white marble surface. Bright natural kitchen lighting creates soft shadows. The visual style is premium and clean, focusing on the earthy textures and neutral tones of the mushrooms." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCYvE7QrC9Nio5JLw3WxP34lq54wQ-hvdCoKswHxPmxHIUzsIHrWe2VvaQj58Bp72M5fZUR1YAxhpwQwbp3cbXcWG7PhMsLhmQobmhlxqvy8jkcIMfYtwA83jvCix1m67VPctznweQ7rNw5syIqJjK0BIqXmQ1oh3RPGmccuZGRh1tQHPFfE6dc69pJ3mtR0cnUpHQ5NO58T9MDx6eS0bJQdiHGJEaXcCaCe30niWWrOyMrsH8DHyM4o5gyE7PihtQDlqSxZ2IvfgdE"/>
+</div>
+<div class="flex-1 flex flex-col gap-1">
+<h3 class="font-label-bold text-slate-900">鲜香菇</h3>
+<p class="text-[14px] text-slate-500 leading-tight">切成均匀薄片</p>
+<span class="inline-flex items-center gap-1 text-[11px] font-medium text-[#D4AF37] bg-[#D4AF37]/5 px-2 py-0.5 rounded-full mt-1 w-fit">
+<span class="material-symbols-outlined text-[12px]">location_on</span>
+                        📍 放入 B格: 蔬菜
+                    </span>
+</div>
+<button class="w-8 h-8 rounded-full border-2 border-slate-200 shrink-0 flex items-center justify-center transition-all active:scale-90">
+</button>
+</div>
+</div>
+</main>
+<!-- AI Pilot Floating Action Button -->
+<div class="fixed bottom-28 right-6 flex flex-col items-end gap-2 z-[55]">
+<div class="bg-white/90 backdrop-blur-md px-4 py-2 rounded-2xl shadow-xl border border-[#D4AF37]/10 animate-bounce-subtle">
+<p class="text-[12px] font-medium text-slate-700">Ask AI: "Where to put the spice?"</p>
+</div>
+<button class="w-14 h-14 bg-[#D4AF37] rounded-full flex items-center justify-center text-white shadow-[0_10px_25px_rgba(212,175,55,0.4)] active:scale-90 transition-transform">
+<span class="material-symbols-outlined text-[28px]" style="font-variation-settings: 'FILL' 1;">mic</span>
+</button>
+</div>
+<!-- Sticky Bottom Navigation Shell (Footer Action) -->
+<footer class="fixed bottom-0 w-full z-50 p-6 bg-gradient-to-t from-white via-white/95 to-transparent">
+<button class="w-full h-14 bg-[#2D3748] rounded-2xl flex items-center justify-center gap-2 text-white font-bold shadow-lg active:scale-95 transition-transform duration-200">
+<span>完成备菜，准备做饭</span>
+<span class="material-symbols-outlined text-[18px]">arrow_forward_ios</span>
+</button>
+</footer>
+<!-- Standard BottomNavBar from JSON (For Main Navigation Context) -->
+<nav class="fixed bottom-0 hidden w-full z-50 bg-white/80 dark:bg-slate-950/80 backdrop-blur-2xl border-t border-slate-100 dark:border-slate-800/50 shadow-[0_-4px_20px_rgba(0,0,0,0.03)] flex justify-around items-center h-20 px-4">
+<!-- Not rendered due to Task-Focused page rule in instructions -->
+</nav>
+</body></html>

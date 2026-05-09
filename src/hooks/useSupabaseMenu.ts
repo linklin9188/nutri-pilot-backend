@@ -1,0 +1,744 @@
+import { useState, useEffect, useCallback } from 'react';
+import { supabase } from '../lib/supabase';
+import { FLAVOR_COL, HEALTH_COL, CUISINE_COL } from './preferenceColMap';
+import { getFallbackImage } from '../lib/dishImageFallback';
+
+// ── Public types ──────────────────────────────────────────────────────────
+
+export interface SupabaseDish {
+  // ── Raw DB fields ────────────────────────────────────────────────────────
+  id: string;
+  title_zh: string;
+  origin_cuisine: string;
+  flavor_tags: string[];
+  health_benefit_tags: string[];
+  seasonal_tag: string;
+  image_url: string;
+  main_ingredient: string; // e.g. 'beef' | 'chicken' | 'fish' | 'veggie' | 'other'
+
+  // ── UI adapter fields (set by enrichDish, consumed by Home.tsx) ──────────
+  title: string;        // i18n: title_zh | title_en
+  desc: string;         // i18n: description_zh | description_en | derived
+  img: string;          // alias for image_url (with fallback)
+  type: string;         // VEGGIE | SEAFOOD | SOUP | MEAT
+  highlight: boolean;
+  is_vegetarian: boolean;
+  description_en: string; // kept for backward-compat
+
+  // ── Raw record preserved for debugging / future use ──────────────────────
+  _raw: Record<string, unknown>;
+}
+
+export interface UserProfile5D {
+  hometown_cuisine: string | null;
+  dietary_goal: string | null;
+  taste_pref: string | null;
+  age_group: string | null;
+  avoid_tags: string[];
+}
+
+export interface SolarTerm {
+  name_zh: string;
+  name_en: string;
+  pinyin: string;
+  season: 'spring' | 'summer' | 'autumn' | 'winter';
+  // Scoring modifiers
+  healthBoostTags: string[];   // health_benefit_tags → goal score boost
+  healthBonus: number;
+  flavorBoostTags: string[];   // flavor_tags → taste score boost
+  flavorBonus: number;
+  flavorPenaltyTags: string[]; // flavor_tags → taste score penalty
+  flavorPenalty: number;
+  // Food philosophy summary for UI display
+  philosophy_zh: string;
+  philosophy_en: string;
+}
+
+// ── 24 Solar Terms ────────────────────────────────────────────────────────
+//
+// Each entry covers ~15 days starting from month/day.
+// Scoring philosophy:
+//   • Spring (春): 疏肝祛湿 — damp_clear, detox, light
+//   • Summer (夏): 清热解暑 — detox, damp_clear, penalize spicy
+//   • Autumn (秋): 润燥贴膘 — maintain early, muscle_gain late
+//   • Winter (冬): 温补进补 — maintain, muscle_gain (especially 冬至)
+
+const SOLAR_TERMS: SolarTerm[] = [
+  // ── SPRING ───────────────────────────────────────────────────────────
+  {
+    name_zh: '立春', name_en: 'Start of Spring', pinyin: 'Lìchūn',
+    season: 'spring', month: 2, day: 4,
+    healthBoostTags: ['maintain'], healthBonus: 0.12,
+    flavorBoostTags: ['light'], flavorBonus: 0.12,
+    flavorPenaltyTags: [], flavorPenalty: 0,
+    philosophy_zh: '疏肝理气，清淡为主',
+    philosophy_en: 'Soothe the liver, prefer light dishes',
+  },
+  {
+    name_zh: '雨水', name_en: 'Rain Water', pinyin: 'Yǔshuǐ',
+    season: 'spring', month: 2, day: 19,
+    healthBoostTags: ['maintain', 'damp_clear'], healthBonus: 0.18,
+    flavorBoostTags: ['light'], flavorBonus: 0.10,
+    flavorPenaltyTags: [], flavorPenalty: 0,
+    philosophy_zh: '健脾祛湿，温和进补',
+    philosophy_en: 'Strengthen spleen, clear dampness',
+  },
+  {
+    name_zh: '惊蛰', name_en: 'Awakening of Insects', pinyin: 'Jīngzhé',
+    season: 'spring', month: 3, day: 6,
+    healthBoostTags: ['detox', 'maintain'], healthBonus: 0.15,
+    flavorBoostTags: ['light'], flavorBonus: 0.10,
+    flavorPenaltyTags: [], flavorPenalty: 0,
+    philosophy_zh: '以梨润肺，清火排毒',
+    philosophy_en: 'Moisten lungs, clear internal heat',
+  },
+  {
+    name_zh: '春分', name_en: 'Spring Equinox', pinyin: 'Chūnfēn',
+    season: 'spring', month: 3, day: 21,
+    healthBoostTags: ['maintain'], healthBonus: 0.10,
+    flavorBoostTags: [], flavorBonus: 0,
+    flavorPenaltyTags: [], flavorPenalty: 0,
+    philosophy_zh: '阴阳平衡，饮食均衡',
+    philosophy_en: 'Balance yin and yang through varied diet',
+  },
+  {
+    name_zh: '清明', name_en: 'Clear and Bright', pinyin: 'Qīngmíng',
+    season: 'spring', month: 4, day: 5,
+    healthBoostTags: ['maintain', 'detox'], healthBonus: 0.15,
+    flavorBoostTags: ['light'], flavorBonus: 0.15,
+    flavorPenaltyTags: [], flavorPenalty: 0,
+    philosophy_zh: '清补柔肝，忌油腻',
+    philosophy_en: 'Gentle nourishing, avoid greasy foods',
+  },
+  {
+    name_zh: '谷雨', name_en: 'Grain Rain', pinyin: 'Gǔyǔ',
+    season: 'spring', month: 4, day: 20,
+    healthBoostTags: ['damp_clear'], healthBonus: 0.25,
+    flavorBoostTags: [], flavorBonus: 0,
+    flavorPenaltyTags: [], flavorPenalty: 0,
+    philosophy_zh: '祛湿健脾为要，宜饮谷雨茶',
+    philosophy_en: 'Prime season for damp-clearing foods',
+  },
+
+  // ── SUMMER ───────────────────────────────────────────────────────────
+  {
+    name_zh: '立夏', name_en: 'Start of Summer', pinyin: 'Lìxià',
+    season: 'summer', month: 5, day: 6,
+    healthBoostTags: ['damp_clear', 'maintain'], healthBonus: 0.20,
+    flavorBoostTags: ['light'], flavorBonus: 0.10,
+    flavorPenaltyTags: [], flavorPenalty: 0,
+    philosophy_zh: '健脾养心，清淡祛湿',
+    philosophy_en: 'Nourish the heart, light and damp-clearing',
+  },
+  {
+    name_zh: '小满', name_en: 'Grain Buds', pinyin: 'Xiǎomǎn',
+    season: 'summer', month: 5, day: 21,
+    healthBoostTags: ['detox', 'damp_clear'], healthBonus: 0.22,
+    flavorBoostTags: [], flavorBonus: 0,
+    flavorPenaltyTags: ['spicy'], flavorPenalty: 0.15,
+    philosophy_zh: '清热利湿，忌辛辣助热',
+    philosophy_en: 'Clear heat and dampness, avoid spicy',
+  },
+  {
+    name_zh: '芒种', name_en: 'Grain in Ear', pinyin: 'Mángzhòng',
+    season: 'summer', month: 6, day: 6,
+    healthBoostTags: ['detox'], healthBonus: 0.18,
+    flavorBoostTags: ['light'], flavorBonus: 0.12,
+    flavorPenaltyTags: ['spicy'], flavorPenalty: 0.15,
+    philosophy_zh: '开胃健脾，清淡排毒',
+    philosophy_en: 'Stimulate appetite, light detoxifying foods',
+  },
+  {
+    name_zh: '夏至', name_en: 'Summer Solstice', pinyin: 'Xiàzhì',
+    season: 'summer', month: 6, day: 21,
+    healthBoostTags: ['damp_clear', 'detox'], healthBonus: 0.25,
+    flavorBoostTags: ['light'], flavorBonus: 0.15,
+    flavorPenaltyTags: ['spicy'], flavorPenalty: 0.20,
+    philosophy_zh: '清热消暑，多食苦味祛火',
+    philosophy_en: 'Beat summer heat, bitter foods to reduce fire',
+  },
+  {
+    name_zh: '小暑', name_en: 'Minor Heat', pinyin: 'Xiǎoshǔ',
+    season: 'summer', month: 7, day: 7,
+    healthBoostTags: ['detox', 'damp_clear'], healthBonus: 0.25,
+    flavorBoostTags: ['light'], flavorBonus: 0.12,
+    flavorPenaltyTags: ['spicy'], flavorPenalty: 0.20,
+    philosophy_zh: '消暑利湿，绿豆薏米当道',
+    philosophy_en: 'Cool and clear — mung beans and pearl barley season',
+  },
+  {
+    name_zh: '大暑', name_en: 'Major Heat', pinyin: 'Dàshǔ',
+    season: 'summer', month: 7, day: 23,
+    // Strongest summer-clearing node — maximum bonuses
+    healthBoostTags: ['detox', 'damp_clear'], healthBonus: 0.30,
+    flavorBoostTags: ['light'], flavorBonus: 0.15,
+    flavorPenaltyTags: ['spicy'], flavorPenalty: 0.25,
+    philosophy_zh: '一年最热，清热祛暑滋阴为要',
+    philosophy_en: 'Peak heat: maximum damp-clearing and yin-nourishing',
+  },
+
+  // ── AUTUMN ───────────────────────────────────────────────────────────
+  {
+    name_zh: '立秋', name_en: 'Start of Autumn', pinyin: 'Lìqiū',
+    season: 'autumn', month: 8, day: 7,
+    // 贴秋膘 — traditional meat-gaining custom after summer
+    healthBoostTags: ['muscle_gain', 'maintain'], healthBonus: 0.22,
+    flavorBoostTags: [], flavorBonus: 0,
+    flavorPenaltyTags: [], flavorPenalty: 0,
+    philosophy_zh: '贴秋膘，补充夏季消耗',
+    philosophy_en: 'Store autumn fat — replenish after summer',
+  },
+  {
+    name_zh: '处暑', name_en: 'End of Heat', pinyin: 'Chǔshǔ',
+    season: 'autumn', month: 8, day: 23,
+    healthBoostTags: ['maintain'], healthBonus: 0.15,
+    flavorBoostTags: ['light'], flavorBonus: 0.10,
+    flavorPenaltyTags: [], flavorPenalty: 0,
+    philosophy_zh: '润肺防燥，梨银耳为佳',
+    philosophy_en: 'Moisten lungs against autumn dryness',
+  },
+  {
+    name_zh: '白露', name_en: 'White Dew', pinyin: 'Báilù',
+    season: 'autumn', month: 9, day: 8,
+    healthBoostTags: ['maintain'], healthBonus: 0.15,
+    flavorBoostTags: [], flavorBonus: 0,
+    flavorPenaltyTags: ['spicy'], flavorPenalty: 0.10,
+    philosophy_zh: '滋阴润燥，少食辛辣',
+    philosophy_en: 'Nourish yin, reduce spicy to protect lungs',
+  },
+  {
+    name_zh: '秋分', name_en: 'Autumnal Equinox', pinyin: 'Qiūfēn',
+    season: 'autumn', month: 9, day: 23,
+    healthBoostTags: ['maintain'], healthBonus: 0.12,
+    flavorBoostTags: [], flavorBonus: 0,
+    flavorPenaltyTags: [], flavorPenalty: 0,
+    philosophy_zh: '平补为主，阴阳调和',
+    philosophy_en: 'Balanced nourishing, harmony of yin and yang',
+  },
+  {
+    name_zh: '寒露', name_en: 'Cold Dew', pinyin: 'Hánlù',
+    season: 'autumn', month: 10, day: 8,
+    healthBoostTags: ['maintain', 'muscle_gain'], healthBonus: 0.20,
+    flavorBoostTags: [], flavorBonus: 0,
+    flavorPenaltyTags: [], flavorPenalty: 0,
+    philosophy_zh: '温补养胃，秋蟹正肥',
+    philosophy_en: 'Warm nourishing — peak season for crab',
+  },
+  {
+    name_zh: '霜降', name_en: "Frost's Descent", pinyin: 'Shuāngjiàng',
+    season: 'autumn', month: 10, day: 23,
+    healthBoostTags: ['maintain', 'muscle_gain'], healthBonus: 0.25,
+    flavorBoostTags: [], flavorBonus: 0,
+    flavorPenaltyTags: [], flavorPenalty: 0,
+    philosophy_zh: '羊肉栗子当道，温补正当时',
+    philosophy_en: 'Lamb and chestnuts — prime warming season',
+  },
+
+  // ── WINTER ───────────────────────────────────────────────────────────
+  {
+    name_zh: '立冬', name_en: 'Start of Winter', pinyin: 'Lìdōng',
+    season: 'winter', month: 11, day: 7,
+    healthBoostTags: ['maintain', 'muscle_gain'], healthBonus: 0.25,
+    flavorBoostTags: [], flavorBonus: 0,
+    flavorPenaltyTags: [], flavorPenalty: 0,
+    philosophy_zh: '补冬进补，饺子暖胃',
+    philosophy_en: 'Begin winter nourishing — dumplings and warming broths',
+  },
+  {
+    name_zh: '小雪', name_en: 'Minor Snow', pinyin: 'Xiǎoxuě',
+    season: 'winter', month: 11, day: 22,
+    healthBoostTags: ['maintain'], healthBonus: 0.20,
+    flavorBoostTags: [], flavorBonus: 0,
+    flavorPenaltyTags: [], flavorPenalty: 0,
+    philosophy_zh: '温补阳气，腊肉腌制正当时',
+    philosophy_en: 'Warm yang energy, cured meats season begins',
+  },
+  {
+    name_zh: '大雪', name_en: 'Major Snow', pinyin: 'Dàxuě',
+    season: 'winter', month: 12, day: 7,
+    healthBoostTags: ['maintain', 'muscle_gain'], healthBonus: 0.25,
+    flavorBoostTags: [], flavorBonus: 0,
+    flavorPenaltyTags: [], flavorPenalty: 0,
+    philosophy_zh: '大补特补，羊肉炉火锅正季',
+    philosophy_en: 'Deep nourishing — mutton hotpot season',
+  },
+  {
+    name_zh: '冬至', name_en: 'Winter Solstice', pinyin: 'Dōngzhì',
+    season: 'winter', month: 12, day: 22,
+    // Most important winter node — maximum tonic boost
+    healthBoostTags: ['maintain', 'muscle_gain'], healthBonus: 0.35,
+    flavorBoostTags: [], flavorBonus: 0,
+    flavorPenaltyTags: [], flavorPenalty: 0,
+    philosophy_zh: '一年最重要的进补节气，北饺南汤圆',
+    philosophy_en: 'Greatest tonic day — dumplings north, tang yuan south',
+  },
+  {
+    name_zh: '小寒', name_en: 'Minor Cold', pinyin: 'Xiǎohán',
+    season: 'winter', month: 1, day: 6,
+    healthBoostTags: ['maintain', 'muscle_gain'], healthBonus: 0.25,
+    flavorBoostTags: [], flavorBonus: 0,
+    flavorPenaltyTags: [], flavorPenalty: 0,
+    philosophy_zh: '温热为主，八宝粥驱寒',
+    philosophy_en: 'Warming foods dominate — eight-treasure porridge',
+  },
+  {
+    name_zh: '大寒', name_en: 'Major Cold', pinyin: 'Dàhán',
+    season: 'winter', month: 1, day: 20,
+    healthBoostTags: ['maintain', 'muscle_gain'], healthBonus: 0.25,
+    flavorBoostTags: [], flavorBonus: 0,
+    flavorPenaltyTags: [], flavorPenalty: 0,
+    philosophy_zh: '岁末大补，迎接新春',
+    philosophy_en: 'Year-end deep nourishing before the new year',
+  },
+] as (SolarTerm & { month: number; day: number })[];
+
+// ── Solar term calculator ─────────────────────────────────────────────────
+
+// Find the solar term currently in effect (most recently started).
+// Solar terms last ~15 days; we compare using a simple days-elapsed metric.
+function getCurrentSolarTerm(): SolarTerm {
+  const now   = new Date();
+  const month = now.getMonth() + 1; // 1-12
+  const day   = now.getDate();
+
+  // Approximate "days elapsed since this term started" — handles year wrap-around
+  function daysSinceStart(term: SolarTerm & { month: number; day: number }): number {
+    let monthDiff = month - term.month;
+    // If the term is ahead of current month in the calendar year, treat it as ~last year's instance
+    if (monthDiff < 0) monthDiff += 12;
+    return monthDiff * 30 + (day - term.day); // ~30 days/month is accurate enough
+  }
+
+  let current = SOLAR_TERMS[0] as SolarTerm;
+  let minElapsed = Infinity;
+
+  for (const term of SOLAR_TERMS as (SolarTerm & { month: number; day: number })[]) {
+    const elapsed = daysSinceStart(term);
+    if (elapsed >= 0 && elapsed < minElapsed) {
+      minElapsed = elapsed;
+      current = term;
+    }
+  }
+
+  return current;
+}
+
+// ── Age profile system ────────────────────────────────────────────────────
+
+interface AgeModifiers {
+  wellnessTags: string[];
+  wellnessBonus: number;
+  tasteBoostTags: string[];
+  tasteBonus: number;
+  tastePenaltyTags: string[];
+  tastePenalty: number;
+}
+
+const SENIOR_MODS: AgeModifiers = {   // 70后及之前
+  wellnessTags:     ['maintain', 'pregnancy', 'damp_clear'],
+  wellnessBonus:    0.50,
+  tasteBoostTags:   ['light'],
+  tasteBonus:       0.20,
+  tastePenaltyTags: ['spicy'],
+  tastePenalty:     0.30,
+};
+const MIDDLE_MODS: AgeModifiers = {   // 80后
+  wellnessTags:     ['maintain', 'lose_weight', 'damp_clear'],
+  wellnessBonus:    0.20,
+  tasteBoostTags:   [],
+  tasteBonus:       0,
+  tastePenaltyTags: [],
+  tastePenalty:     0,
+};
+const YOUNG_MODS: AgeModifiers = {    // 90后
+  wellnessTags:     ['muscle_gain'],
+  wellnessBonus:    0.25,
+  tasteBoostTags:   ['spicy', 'seafood'],
+  tasteBonus:       0.15,
+  tastePenaltyTags: [],
+  tastePenalty:     0,
+};
+const CHILD_MODS: AgeModifiers = {    // 00后及之后
+  wellnessTags:     ['maintain'],
+  wellnessBonus:    0.15,
+  tasteBoostTags:   ['sweet', 'light'],
+  tasteBonus:       0.20,
+  tastePenaltyTags: ['spicy', 'sour'],
+  tastePenalty:     0.35,
+};
+
+const AGE_GROUP_MAP: Array<{ keys: string[]; mods: AgeModifiers }> = [
+  { keys: ['50后','60后','70后','pre1970','1950s','1960s','1970s','senior','elderly'], mods: SENIOR_MODS },
+  { keys: ['80后','1980s','middle','adult'], mods: MIDDLE_MODS },
+  { keys: ['90后','1990s','young','youth'],  mods: YOUNG_MODS  },
+  { keys: ['00后','10后','2000s','2010s','child','teen','kid'],                       mods: CHILD_MODS  },
+];
+
+function resolveAgeModifiers(ageGroup: string | null): AgeModifiers {
+  if (!ageGroup) return MIDDLE_MODS;
+  const lower = ageGroup.toLowerCase();
+  for (const { keys, mods } of AGE_GROUP_MAP) {
+    if (keys.some(k => lower === k.toLowerCase() || lower.includes(k.toLowerCase()))) {
+      return mods;
+    }
+  }
+  return MIDDLE_MODS;
+}
+
+// ── Display helpers ───────────────────────────────────────────────────────
+
+const CUISINE_LABELS: Record<string, string> = {
+  sichuan:         'Sichuan Style',
+  cantonese:       'Cantonese Style',
+  jiangnan:        'Jiangnan Cuisine',
+  northern:        'Northern Chinese',
+  western:         'Western Style',
+  japanese_korean: 'Japanese/Korean',
+  southeast_asian: 'Southeast Asian',
+};
+
+const HEALTH_LABELS: Record<string, string> = {
+  damp_clear:   'Damp-Clear',
+  muscle_gain:  'High Protein',
+  lose_weight:  'Low Calorie',
+  maintain:     'Balanced',
+  detox:        'Detox',
+  pregnancy:    'Nourishing',
+  authentic_hk: 'HK Classic',
+};
+
+function deriveType(dish: any): string {
+  const tags: string[] = dish.flavor_tags ?? [];
+  if (tags.includes('veggie')) return 'VEGGIE';
+  if (tags.includes('seafood')) return 'SEAFOOD';
+  const seasonal = (dish.seasonal_tag ?? '').toLowerCase();
+  if (seasonal.includes('soup') || seasonal.includes('stew')) return 'SOUP';
+  return 'MEAT';
+}
+
+function deriveDescription(dish: any): string {
+  const cuisine = CUISINE_LABELS[dish.origin_cuisine] ?? 'Signature Dish';
+  const healthLabel = (dish.health_benefit_tags ?? [])
+    .slice(0, 2)
+    .map((t: string) => HEALTH_LABELS[t] ?? t.replace(/_/g, ' '))
+    .join(', ');
+  return healthLabel ? `${cuisine} · ${healthLabel}` : cuisine;
+}
+
+// ── Adapter: DB record → UI-friendly dish ────────────────────────────────
+//
+// Language is read from localStorage (set by LanguageContext) so this
+// pure function stays outside React without needing the context hook.
+// Fallback chain: explicit DB field → derived → empty string.
+
+function enrichDish(dish: any, highlight: boolean): SupabaseDish {
+  const lang = (localStorage.getItem('appLanguage') ?? 'zh') as 'en' | 'zh';
+  const derivedDesc = deriveDescription(dish);
+
+  const title =
+    lang === 'zh'
+      ? (dish.title_zh || dish.title_en || dish.title_zh || '')
+      : (dish.title_en || dish.title_zh || '');
+
+  const desc =
+    lang === 'zh'
+      ? (dish.description_zh || dish.description_en || derivedDesc)
+      : (dish.description_en || dish.description_zh || derivedDesc);
+
+  // Use stored URL if present, otherwise pick from curated fallback pool.
+  // When AI-generated images are uploaded to storage and written to
+  // dishes.image_url, this fallback is automatically bypassed.
+  const img = (dish.image_url && dish.image_url.trim())
+    ? dish.image_url
+    : getFallbackImage(dish);
+
+  return {
+    ...dish,
+    // UI adapter fields
+    title,
+    desc,
+    img,
+    // Computed classification
+    is_vegetarian: (dish.flavor_tags ?? []).includes('veggie'),
+    type: deriveType(dish),
+    highlight,
+    // Keep for backward-compat
+    description_en: dish.description_en || derivedDesc,
+    // Raw record for debugging
+    _raw: dish,
+  };
+}
+
+// ── Step 1: Hard filter ───────────────────────────────────────────────────
+
+function hardFilter(pool: any[], avoidTags: string[]): any[] {
+  if (avoidTags.length === 0) return pool;
+  return pool.filter(dish => {
+    const allTags = [...(dish.flavor_tags ?? []), ...(dish.health_benefit_tags ?? [])];
+    return !allTags.some(tag => avoidTags.includes(tag));
+  });
+}
+
+// ── Step 2 + 3 + 6: Composite scoring ────────────────────────────────────
+//
+// Axis weights summary:
+//   ① Hometown      30%   (5D profile)
+//   ② Goal          40%   (5D profile + age modifier)
+//   ③ Taste         30%   (5D profile + age modifier)
+//   ④ Humidity      +0.30 bonus  (environment)
+//   ⑤ Solar term    +0.12~+0.35  (culture / season)
+//   ⑥ Feedback EMA  ±0.40 cap    (learned preferences — strongest recent signal)
+
+function applyFeedbackScore(
+  score: number,
+  dish: any,
+  prefScores: Record<string, number>,
+): number {
+  const flavorTags: string[] = dish.flavor_tags ?? [];
+  const healthTags: string[] = dish.health_benefit_tags ?? [];
+  const origin: string       = dish.origin_cuisine ?? '';
+
+  let feedback = 0;
+
+  // Accumulate pref scores for matching tags (each contributes proportionally)
+  for (const tag of flavorTags) {
+    const col = FLAVOR_COL[tag];
+    if (col && prefScores[col]) feedback += prefScores[col] * 0.12;
+  }
+  for (const tag of healthTags) {
+    const col = HEALTH_COL[tag];
+    if (col && prefScores[col]) feedback += prefScores[col] * 0.12;
+  }
+  const cuisineCol = CUISINE_COL[origin];
+  if (cuisineCol && prefScores[cuisineCol]) feedback += prefScores[cuisineCol] * 0.12;
+
+  // Cap at ±0.40 so feedback never fully overrides the 5D profile
+  return score + Math.max(-0.40, Math.min(0.40, feedback));
+}
+
+function scoreDish(
+  dish: any,
+  profile: UserProfile5D,
+  humidity: number,
+  solarTerm: SolarTerm,
+  prefScores: Record<string, number>,
+): number {
+  const flavorTags: string[] = dish.flavor_tags ?? [];
+  const healthTags: string[] = dish.health_benefit_tags ?? [];
+  const origin:     string   = dish.origin_cuisine ?? '';
+  const ageMods              = resolveAgeModifiers(profile.age_group);
+
+  // ① Hometown (30%)
+  const hometownScore =
+    profile.hometown_cuisine && origin === profile.hometown_cuisine ? 1.0 : 0.0;
+
+  // ② Goal (40%) + age wellness modifier
+  let goalScore = 0.0;
+  if (profile.dietary_goal && healthTags.includes(profile.dietary_goal)) goalScore = 1.0;
+  if (healthTags.some(t => ageMods.wellnessTags.includes(t))) {
+    goalScore = Math.min(1.0, goalScore + ageMods.wellnessBonus);
+  }
+
+  // ③ Taste (30%) + age taste modifier
+  let tasteScore = 0.0;
+  if (profile.taste_pref && flavorTags.includes(profile.taste_pref)) tasteScore = 1.0;
+  if (flavorTags.some(t => ageMods.tasteBoostTags.includes(t))) {
+    tasteScore = Math.min(1.0, tasteScore + ageMods.tasteBonus);
+  }
+  if (flavorTags.some(t => ageMods.tastePenaltyTags.includes(t))) {
+    tasteScore = Math.max(0.0, tasteScore - ageMods.tastePenalty);
+  }
+
+  let score = hometownScore * 0.30 + goalScore * 0.40 + tasteScore * 0.30;
+
+  // ④ Humidity correction (独立于节气)
+  if (humidity > 85 && healthTags.includes('damp_clear')) {
+    score += 0.30;
+  }
+
+  // ⑤ Solar term correction — seasonal food culture layer
+  if (healthTags.some(t => solarTerm.healthBoostTags.includes(t))) {
+    score += solarTerm.healthBonus;
+  }
+  if (flavorTags.some(t => solarTerm.flavorBoostTags.includes(t))) {
+    score += solarTerm.flavorBonus;
+  }
+  if (flavorTags.some(t => solarTerm.flavorPenaltyTags.includes(t))) {
+    score -= solarTerm.flavorPenalty;
+  }
+
+  return score;
+}
+
+// ── 70/30 meat-veggie balance ─────────────────────────────────────────────
+
+function balanceMenu(scoredPool: any[], targetSize: number): any[] {
+  const veggieTarget = Math.round(targetSize * 0.30);
+  const meatTarget   = targetSize - veggieTarget;
+
+  const veggies = scoredPool.filter(d => (d.flavor_tags ?? []).includes('veggie'));
+  const meats   = scoredPool.filter(d => !(d.flavor_tags ?? []).includes('veggie'));
+
+  let selectedMeats   = meats.slice(0, meatTarget);
+  let selectedVeggies = veggies.slice(0, veggieTarget);
+
+  if (selectedVeggies.length < veggieTarget) {
+    selectedMeats = [...selectedMeats, ...meats.slice(meatTarget, meatTarget + (veggieTarget - selectedVeggies.length))];
+  } else if (selectedMeats.length < meatTarget) {
+    selectedVeggies = [...selectedVeggies, ...veggies.slice(veggieTarget, veggieTarget + (meatTarget - selectedMeats.length))];
+  }
+
+  return [...selectedMeats, ...selectedVeggies];
+}
+
+// ── Profile fetcher (Supabase → localStorage fallback) ───────────────────
+
+async function fetchUserProfile(): Promise<UserProfile5D> {
+  const userId = localStorage.getItem('nutri_user_id');
+  if (userId) {
+    try {
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('hometown_cuisine, dietary_goal, taste_pref, age_group, avoid_tags')
+        .eq('id', userId)
+        .single();
+      if (!error && data) {
+        return {
+          hometown_cuisine: data.hometown_cuisine ?? null,
+          dietary_goal:     data.dietary_goal ?? null,
+          taste_pref:       data.taste_pref ?? null,
+          age_group:        data.age_group ?? null,
+          avoid_tags:       data.avoid_tags ?? [],
+        };
+      }
+    } catch { /* table not yet migrated — fall through */ }
+  }
+
+  const CARD_TO_TASTE: Record<string, string> = {
+    c1: 'default', c2: 'light', c3: 'veggie',
+  };
+  const CURATION_TO_GOAL: Record<string, string> = {
+    damp_clear: 'damp_clear', high_protein: 'muscle_gain', cantonese: 'authentic_hk',
+  };
+  const savedPrefs    = JSON.parse(localStorage.getItem('nutri_prefs') ?? '{}');
+  const selectedCards = (savedPrefs.selectedCards ?? []) as string[];
+  const curationTags  = JSON.parse(localStorage.getItem('curationTags') ?? '[]') as string[];
+
+  return {
+    hometown_cuisine: null,
+    dietary_goal:     curationTags.map(t => CURATION_TO_GOAL[t]).find(Boolean) ?? null,
+    taste_pref:       selectedCards.map(c => CARD_TO_TASTE[c]).find(Boolean) ?? null,
+    age_group:        null,
+    avoid_tags:       [],
+  };
+}
+
+// ── Swap options: same main_ingredient, different dishes ─────────────────
+//
+// Given the dish currently shown, queries DB for other dishes with the same
+// main_ingredient (excluding the current dish itself). Falls back to
+// same-type dishes if the ingredient column is missing / 'other'.
+
+export async function fetchSwapOptions(
+  currentDish: SupabaseDish,
+  count = 3,
+): Promise<SupabaseDish[]> {
+  const ingredient = currentDish.main_ingredient;
+
+  let query = supabase
+    .from('dishes')
+    .select('*')
+    .neq('id', currentDish.id)
+    .limit(count * 4); // fetch extra so we can filter out excluded dishes
+
+  // If ingredient is meaningful, filter by it; otherwise fall back to same
+  // flavor_tag type so the swap is still semantically related.
+  if (ingredient && ingredient !== 'other') {
+    query = query.eq('main_ingredient', ingredient);
+  } else {
+    // Fallback: same type (veggie / seafood / meat) via flavor_tags
+    const tags: string[] = currentDish.flavor_tags ?? [];
+    if (tags.includes('veggie')) {
+      query = query.contains('flavor_tags', ['veggie']);
+    } else if (tags.includes('seafood')) {
+      query = query.contains('flavor_tags', ['seafood']);
+    }
+    // else: just any non-matching dish
+  }
+
+  const { data, error } = await query;
+  if (error || !data) return [];
+
+  // Shuffle so we don't always show the top-N rows
+  const shuffled = [...data].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, count).map(d => enrichDish(d, false));
+}
+
+// ── Hook ─────────────────────────────────────────────────────────────────
+
+export function useRecommendDishes() {
+  const [recommendedDishes, setRecommendedDishes] = useState<SupabaseDish[]>([]);
+  const [currentSolarTerm, setCurrentSolarTerm]   = useState<SolarTerm | null>(null);
+  const [prefScores, setPrefScores]               = useState<Record<string, number>>({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const refresh = useCallback(() => setRefreshKey(k => k + 1), []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function run() {
+      try {
+        setLoading(true);
+
+        const humidity  = parseFloat(localStorage.getItem('current_humidity') ?? '75');
+        const solarTerm = getCurrentSolarTerm();
+        const profile   = await fetchUserProfile();
+
+        // Load feedback-learned preference scores (best effort)
+        let scores: Record<string, number> = {};
+        const userId = localStorage.getItem('nutri_user_id');
+        if (userId) {
+          const { data: scoreRow } = await supabase
+            .from('user_preference_scores')
+            .select('*')
+            .eq('user_id', userId)
+            .single();
+          if (scoreRow) scores = scoreRow as Record<string, number>;
+        }
+
+        const { data: allDishes, error: fetchErr } = await supabase
+          .from('dishes')
+          .select('*')
+          .limit(200);
+        if (fetchErr) throw fetchErr;
+
+        const filtered = hardFilter(allDishes ?? [], profile.avoid_tags);
+
+        const sorted = filtered
+          .map(dish => ({ dish, score: scoreDish(dish, profile, humidity, solarTerm, scores) }))
+          .sort((a, b) => b.score - a.score)
+          .map(s => s.dish);
+
+        const balanced = balanceMenu(sorted, 5);
+
+        if (cancelled) return;
+
+        setCurrentSolarTerm(solarTerm);
+        setPrefScores(scores);
+        setRecommendedDishes(balanced.map((d, i) => enrichDish(d, i === 0)));
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to fetch dishes');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    run();
+    return () => { cancelled = true; };
+  }, [refreshKey]);
+
+  return { recommendedDishes, currentSolarTerm, prefScores, loading, error, refresh };
+}

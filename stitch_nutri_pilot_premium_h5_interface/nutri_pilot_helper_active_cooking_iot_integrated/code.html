@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Nutri-Pilot Helper View</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        @keyframes pulse-gold {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.2); }
+        }
+        .animate-pulse-gold {
+            animation: pulse-gold 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        .glass-blur {
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-surface": "#1a1c1d",
+                        "on-secondary-fixed-variant": "#474649",
+                        "inverse-on-surface": "#f0f0f2",
+                        "on-tertiary-fixed": "#1a1b1f",
+                        "inverse-primary": "#e9c349",
+                        "outline": "#7f7663",
+                        "error": "#ba1a1a",
+                        "primary": "#735c00",
+                        "background": "#111111",
+                        "on-secondary-fixed": "#1b1b1d",
+                        "surface-container-highest": "#e2e2e4",
+                        "secondary-fixed-dim": "#c8c6c8",
+                        "outline-variant": "#d0c5af",
+                        "error-container": "#ffdad6",
+                        "tertiary-fixed-dim": "#c7c6cb",
+                        "surface-tint": "#735c00",
+                        "surface-container-high": "#e8e8ea",
+                        "on-tertiary": "#ffffff",
+                        "secondary": "#5f5e60",
+                        "primary-fixed": "#ffe088",
+                        "surface-container": "#eeeef0",
+                        "surface-container-lowest": "#ffffff",
+                        "on-primary-container": "#554300",
+                        "on-secondary": "#ffffff",
+                        "on-surface-variant": "#4d4635",
+                        "secondary-container": "#e2dfe1",
+                        "on-background": "#1a1c1d",
+                        "secondary-fixed": "#e4e2e4",
+                        "on-primary-fixed-variant": "#574500",
+                        "on-tertiary-fixed-variant": "#46464b",
+                        "tertiary": "#5e5e63",
+                        "primary-fixed-dim": "#e9c349",
+                        "on-error-container": "#93000a",
+                        "tertiary-container": "#b3b2b7",
+                        "on-primary-fixed": "#241a00",
+                        "surface-variant": "#e2e2e4",
+                        "tertiary-fixed": "#e3e2e7",
+                        "surface-container-low": "#f3f3f5",
+                        "surface-bright": "#f9f9fb",
+                        "surface": "#f9f9fb",
+                        "surface-dim": "#d9dadc",
+                        "on-error": "#ffffff",
+                        "on-primary": "#ffffff",
+                        "on-tertiary-container": "#444549",
+                        "inverse-surface": "#2f3132",
+                        "primary-container": "#d4af37",
+                        "on-secondary-container": "#636264"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "stack-lg": "40px",
+                        "stack-md": "16px",
+                        "gutter-card": "24px",
+                        "stack-sm": "8px",
+                        "unit": "8px",
+                        "margin-page": "32px",
+                        "padding-item": "16px"
+                    },
+                    "fontFamily": {
+                        "body-secondary": ["Inter"],
+                        "headline-2": ["Inter"],
+                        "body-main": ["Inter"],
+                        "display-lg": ["Inter"],
+                        "headline-1": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "label-bold": ["Inter"]
+                    },
+                    "fontSize": {
+                        "body-secondary": ["15px", {"lineHeight": "20px", "letterSpacing": "0em", "fontWeight": "400"}],
+                        "headline-2": ["28px", {"lineHeight": "34px", "letterSpacing": "0em", "fontWeight": "500"}],
+                        "body-main": ["17px", {"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "400"}],
+                        "display-lg": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "600"}],
+                        "headline-1": ["34px", {"lineHeight": "41px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                        "label-caps": ["11px", {"lineHeight": "16px", "letterSpacing": "0.06em", "fontWeight": "600"}],
+                        "label-bold": ["13px", {"lineHeight": "18px", "letterSpacing": "0.02em", "fontWeight": "600"}]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-[#111111] text-white antialiased flex justify-center">
+<!-- Viewport Container -->
+<div class="w-[390px] h-[844px] overflow-y-auto relative flex flex-col no-scrollbar">
+<!-- Header: TopAppBar Content & Identity from JSON mapping -->
+<header class="sticky top-0 z-50 bg-[#111111]/90 backdrop-blur-md px-margin-page py-6 space-y-4">
+<div class="flex justify-between items-center">
+<span class="material-symbols-outlined text-white" data-icon="menu">menu</span>
+<h1 class="font-headline-2 text-headline-2 text-white">Active Cooking: 2 Active Dishes</h1>
+<span class="material-symbols-outlined text-white" data-icon="settings">settings</span>
+</div>
+<!-- Progress Stepper -->
+<div class="flex items-center justify-between px-4">
+<div class="flex flex-col items-center gap-1">
+<div class="w-6 h-6 rounded-full bg-green-500 flex items-center justify-center">
+<span class="material-symbols-outlined text-[14px] text-white" data-icon="check">check</span>
+</div>
+<span class="font-label-caps text-label-caps text-green-500">Prep</span>
+</div>
+<div class="flex-1 h-[2px] bg-white/10 mx-2"></div>
+<div class="flex flex-col items-center gap-1">
+<div class="w-6 h-6 rounded-full border-2 border-[#D4AF37] flex items-center justify-center relative">
+<div class="w-2 h-2 rounded-full bg-[#D4AF37] animate-pulse-gold"></div>
+</div>
+<span class="font-label-caps text-label-caps text-[#D4AF37]">COOKING</span>
+</div>
+<div class="flex-1 h-[2px] bg-white/10 mx-2"></div>
+<div class="flex flex-col items-center gap-1">
+<div class="w-6 h-6 rounded-full border-2 border-white/20"></div>
+<span class="font-label-caps text-label-caps text-white/20">Serve</span>
+</div>
+</div>
+</header>
+<!-- Main Content Area -->
+<main class="flex-1 px-4 space-y-stack-md pb-40">
+<!-- Robot-Link IoT Dashboard -->
+<section class="bg-[#007AFF]/5 border-[1.5px] border-[#007AFF] rounded-xl p-padding-item space-y-4">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<div class="w-2 h-2 rounded-full bg-[#007AFF] animate-pulse"></div>
+<span class="font-label-bold text-[#007AFF]">Smart Cooker B1 (智能炒菜机)</span>
+</div>
+<span class="material-symbols-outlined text-[#007AFF]" data-icon="precision_manufacturing">precision_manufacturing</span>
+</div>
+<div class="flex gap-4 items-start">
+<div class="w-20 h-20 rounded-lg overflow-hidden bg-white/5 flex-shrink-0">
+<img alt="回锅黑豚肉" class="w-full h-full object-cover" data-alt="A delicate watercolor-style illustration of a Chinese Twice-cooked pork dish featuring thin slices of succulent black pork belly stir-fried with vibrant green leeks and red peppers. The artistic rendering is soft and ethereal, set against a dark, high-contrast digital interface background to create a premium culinary app aesthetic. The lighting is focused and warm, highlighting the textures of the glaze and fresh ingredients." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAVhpl-8UfniuuixvOKtyPmlv_Ak0Cazwz28O45I8pfkJRnmATE0p45Fc5W6sx7ZaSTobt7gzcjpSmSDeYYeMUedka5CI4VqQsq2hSq2q3a19cVJrCi4TLCpDoixJwIkBUFWKTn3kbU0LEsAXW-eIFyKxM5EtU1N_i7XzUcS0uy-FnMdvb5pcMZmPQq7eou80TlvvNpKB1pZ79-fKeq7StMmoSU0bzjSptMi3I5fTbnzQS2X0l1yadnBlZdeIy5JtboVt3TMQehdeeV"/>
+</div>
+<div class="space-y-1">
+<p class="font-body-main text-white">Recipe loaded. Ready for Tray A, Slot B.</p>
+<p class="font-body-secondary text-white/60 text-[13px]">指令就绪，待倒入A格肉片</p>
+</div>
+</div>
+<button class="w-full h-12 bg-gradient-to-r from-[#007AFF] to-[#0056B3] rounded-xl font-label-bold text-white shadow-lg active:scale-95 transition-transform">
+                    Send Instructions to Robot
+                </button>
+</section>
+<!-- Symphony Timer Board -->
+<section class="space-y-stack-md">
+<!-- Stove A -->
+<div class="bg-[#1E1E1E] rounded-xl p-padding-item shadow-xl relative overflow-hidden">
+<div class="flex justify-between items-start mb-2">
+<div>
+<h3 class="font-label-bold text-white/50 uppercase tracking-widest text-[11px]">Stove A (左灶)</h3>
+<p class="font-body-main text-white text-lg">虫草花花胶鸡汤</p>
+</div>
+<span class="material-symbols-outlined text-[#D4AF37]" data-icon="timer">timer</span>
+</div>
+<div class="flex items-baseline gap-2 my-2">
+<span class="text-[36px] font-bold text-[#D4AF37] font-mono tracking-tight">34:12</span>
+<span class="font-label-caps text-[#D4AF37] animate-pulse">Simmering...</span>
+</div>
+<div class="p-3 bg-white/5 rounded-lg border-l-2 border-[#D4AF37]">
+<p class="font-body-secondary text-[#D4AF37] text-[14px]">Status: 小火慢炖中</p>
+<p class="font-body-secondary text-white/70 text-[13px] italic">Tip: At 00:00, turn off heat and add salt.</p>
+</div>
+</div>
+<!-- Stove B -->
+<div class="bg-[#1E1E1E] rounded-xl p-padding-item shadow-xl space-y-4">
+<div class="flex justify-between items-start">
+<div>
+<h3 class="font-label-bold text-white/50 uppercase tracking-widest text-[11px]">Stove B (右灶)</h3>
+<p class="font-body-main text-white text-lg">蒜蓉本地有机菜心</p>
+</div>
+<div class="text-right">
+<span class="text-[16px] font-bold text-orange-500 font-mono">01:45</span>
+</div>
+</div>
+<div class="flex gap-4 items-center bg-white/5 p-3 rounded-lg">
+<div class="w-16 h-16 rounded-md overflow-hidden bg-white/10">
+<img alt="Choy Sum" class="w-full h-full object-cover" data-alt="A soft, watercolor illustration of fresh green organic Choy Sum stems with small yellow blossoms, isolated against a dark background. The style is minimalist and elegant, reflecting a high-end AI cooking assistant interface. The colors are vibrant greens and soft yellows with a light, airy feel that contrasts with the dark charcoal tones of the app UI." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDDSa22jNkQhaysgaZxFoWhS_UOY55R41bAi07TTGKmitqtts9ngyWQ6ULERxkQlm_BUqyCeNxOUQOLYORz79i_4lIOXGsksTj8STlzjr9wLJk5Q_9MgGVM-y8VdrU303cEhECMkHVxL1FsjL7Lt7QLWmFk3E1Z1_AmNBOnqRWf6LaJhk_8eD4fMQVzMtnk90F93fOxvR6--BgMXXZf0DkrOLgzSPTtuq5UZ4Mx75sfZjQ0xqBWAsJ2GCbzBmA8EsB_QqqYKDIyR7Ie"/>
+</div>
+<div>
+<p class="font-label-bold text-orange-400">Step 2 of 3: Add Choy Sum</p>
+<p class="font-body-secondary text-white/80">下菜心爆炒</p>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- Bottom Controls & AI FAB -->
+<div class="fixed bottom-0 left-1/2 -translate-x-1/2 w-[390px] px-margin-page pb-8 pointer-events-none">
+<div class="flex flex-col items-center gap-6 pointer-events-auto">
+<!-- Tooltip & AI FAB -->
+<div class="relative flex flex-col items-center">
+<div class="mb-4 px-4 py-2 bg-white/10 backdrop-blur-md rounded-full border border-white/20">
+<p class="font-label-bold text-[12px] text-white">"Is the fish done?"</p>
+</div>
+<button class="w-14 h-14 bg-[#D4AF37] rounded-full shadow-[0_0_20px_rgba(212,175,55,0.4)] flex items-center justify-center active:scale-90 transition-transform">
+<span class="material-symbols-outlined text-white text-3xl" data-icon="mic">mic</span>
+</button>
+</div>
+<!-- Serve Button -->
+<button class="w-full h-14 bg-[#48BB78] rounded-xl flex items-center justify-center shadow-lg active:opacity-90 transition-opacity">
+<span class="text-[16px] font-semibold text-white tracking-tight">全部做好，准备上菜</span>
+</button>
+</div>
+</div>
+<!-- Navigation Drawer (Shell Implementation) -->
+<nav class="hidden">
+<!-- Represented in Logic: cooking state inhibits global navigation to maintain focus -->
+</nav>
+</div>
+<!-- Background Decoration for Luxury Feel -->
+<div class="fixed inset-0 -z-10 bg-[#111111] pointer-events-none">
+<div class="absolute top-0 right-0 w-[500px] h-[500px] bg-[#D4AF37] opacity-[0.03] blur-[120px] rounded-full"></div>
+<div class="absolute bottom-0 left-0 w-[500px] h-[500px] bg-[#007AFF] opacity-[0.03] blur-[120px] rounded-full"></div>
+</div>
+</body></html>
