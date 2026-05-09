@@ -15,6 +15,7 @@ export interface SupabaseDish {
   seasonal_tag: string;
   image_url: string;
   main_ingredient: string; // e.g. 'beef' | 'chicken' | 'fish' | 'veggie' | 'other'
+  is_vegan: boolean;       // Buddhist-friendly / pure plant-based
 
   // ── UI adapter fields (set by enrichDish, consumed by Home.tsx) ──────────
   title: string;        // i18n: title_zh | title_en
@@ -397,14 +398,20 @@ const CUISINE_LABELS: Record<string, string> = {
   southeast_asian: 'Southeast Asian',
 };
 
+// Extensible: add new tag → label mappings here without any DB schema change.
+// The DB stores TEXT[], so any string value is valid.
 const HEALTH_LABELS: Record<string, string> = {
-  damp_clear:   'Damp-Clear',
-  muscle_gain:  'High Protein',
-  lose_weight:  'Low Calorie',
-  maintain:     'Balanced',
-  detox:        'Detox',
-  pregnancy:    'Nourishing',
-  authentic_hk: 'HK Classic',
+  damp_clear:        'Damp-Clear',
+  muscle_gain:       'High Protein',
+  lose_weight:       'Low Calorie',
+  maintain:          'Balanced',
+  detox:             'Detox',
+  pregnancy:         'Nourishing',
+  authentic_hk:      'HK Classic',
+  mood_boost:        '愉悦心情',
+  anti_inflammation: '抗炎调理',
+  immunity:          '增强免疫',
+  beauty:            '美容养颜',
 };
 
 function deriveType(dish: any): string {
@@ -460,6 +467,7 @@ function enrichDish(dish: any, highlight: boolean): SupabaseDish {
     img,
     // Computed classification
     is_vegetarian: (dish.flavor_tags ?? []).includes('veggie'),
+    is_vegan: dish.is_vegan ?? false,
     type: deriveType(dish),
     highlight,
     // Keep for backward-compat
@@ -676,7 +684,30 @@ export async function fetchSwapOptions(
 
 // ── Hook ─────────────────────────────────────────────────────────────────
 
-export function useRecommendDishes(mealTime: '早餐' | '午餐' | '晚餐' = '晚餐') {
+/**
+ * Calculate how many dishes to recommend based on meal type + headcount.
+ *
+ * 早餐: simpler, always 2-3 dishes regardless of people count
+ * 午餐/晚餐: scales with effective headcount (kids count as 0.5)
+ *   effective → dishes: 1-2→3, 3-4→4, 5-6→5, 7+→6
+ */
+export function calcDishCount(
+  mealTime: '早餐' | '午餐' | '晚餐',
+  adults: number,
+  kids: number,
+): number {
+  if (mealTime === '早餐') return Math.min(3, Math.max(2, adults > 3 ? 3 : 2));
+  const effective = adults + kids * 0.5;
+  const count = Math.round(effective * 0.85) + 1;
+  return Math.min(6, Math.max(3, count));
+}
+
+export function useRecommendDishes(
+  mealTime: '早餐' | '午餐' | '晚餐' = '晚餐',
+  veganOnly = false,
+  adults = 2,
+  kids = 0,
+) {
   const [recommendedDishes, setRecommendedDishes] = useState<SupabaseDish[]>([]);
   const [currentSolarTerm, setCurrentSolarTerm]   = useState<SolarTerm | null>(null);
   const [prefScores, setPrefScores]               = useState<Record<string, number>>({});
@@ -686,13 +717,17 @@ export function useRecommendDishes(mealTime: '早餐' | '午餐' | '晚餐' = '�
 
   const refresh = useCallback(() => setRefreshKey(k => k + 1), []);
 
-  // Map UI label → DB meal_type values to include
+  // Map UI label → DB meal_type values to include.
+  // 午餐 intentionally includes 'dinner' — Chinese home lunch and dinner
+  // share the same dish repertoire; most dinner dishes are equally suitable
+  // for lunch. Without this, lunch returns 0 results (no lunch-tagged dishes).
   const mealTypeFilter: Record<string, string[]> = {
     '早餐': ['breakfast'],
-    '午餐': ['lunch', 'all'],
+    '午餐': ['lunch', 'dinner', 'all'],
     '晚餐': ['dinner', 'all'],
   };
   const allowedMealTypes = mealTypeFilter[mealTime] ?? ['dinner', 'all'];
+  const dishCount = calcDishCount(mealTime, adults, kids);
 
   useEffect(() => {
     let cancelled = false;
@@ -719,11 +754,18 @@ export function useRecommendDishes(mealTime: '早餐' | '午餐' | '晚餐' = '�
 
         // Filter by meal_type. `meal_type` may be NULL on older rows (treat as dinner/all).
         // We use 'in' + include NULL via OR filter.
-        const { data: allDishes, error: fetchErr } = await supabase
+        let dishQuery = supabase
           .from('dishes')
           .select('*')
           .or(`meal_type.in.(${allowedMealTypes.join(',')}),meal_type.is.null`)
-          .limit(250);
+          .limit(400);
+
+        // 净食模式: only return is_vegan dishes
+        if (veganOnly) {
+          dishQuery = dishQuery.eq('is_vegan', true);
+        }
+
+        const { data: allDishes, error: fetchErr } = await dishQuery;
         if (fetchErr) throw fetchErr;
 
         const filtered = hardFilter(allDishes ?? [], profile.avoid_tags);
@@ -733,7 +775,7 @@ export function useRecommendDishes(mealTime: '早餐' | '午餐' | '晚餐' = '�
           .sort((a, b) => b.score - a.score)
           .map(s => s.dish);
 
-        const balanced = balanceMenu(sorted, 5);
+        const balanced = balanceMenu(sorted, dishCount);
 
         if (cancelled) return;
 
@@ -750,7 +792,7 @@ export function useRecommendDishes(mealTime: '早餐' | '午餐' | '晚餐' = '�
     run();
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshKey, mealTime]);
+  }, [refreshKey, mealTime, veganOnly, adults, kids]);
 
   return { recommendedDishes, currentSolarTerm, prefScores, loading, error, refresh };
 }

@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useRecommendDishes, fetchSwapOptions, type SupabaseDish } from "../hooks/useSupabaseMenu";
+import { useWeeklyMenu } from "../hooks/useWeeklyMenu";
 import { useFeedbackInput } from "../hooks/useFeedbackInput";
+import { analyzeFridgePhoto, fileToBase64, type FridgeDish } from "../lib/geminiVision";
 
 export default function Home() {
   const navigate = useNavigate();
@@ -14,7 +16,13 @@ export default function Home() {
     return "晚餐";
   });
 
-  const { recommendedDishes, currentSolarTerm, prefScores, loading: dishesLoading, refresh: refreshMenu } = useRecommendDishes(mealTime);
+  // People count must be declared before useRecommendDishes
+  const [todayAdults, setTodayAdults] = useState(3);
+  const [todayKids, setTodayKids] = useState(2);
+
+  const [veganOnly, setVeganOnly] = useState(false);
+  const { recommendedDishes, currentSolarTerm, prefScores, loading: dishesLoading, refresh: refreshMenu } = useRecommendDishes(mealTime, veganOnly, todayAdults, todayKids);
+  const { weeklyMenu, loading: weeklyLoading, regenerate: regenerateWeekly } = useWeeklyMenu();
   const { submit: submitFeedback, submitting: feedbackSubmitting } = useFeedbackInput({
     currentScores: prefScores,
     onScoresUpdated: () => refreshMenu(),
@@ -23,8 +31,15 @@ export default function Home() {
   const [menuSwaps, setMenuSwaps] = useState<Record<number, any>>({});
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [isSwapOpen, setIsSwapOpen] = useState(false);
-  const [todayAdults, setTodayAdults] = useState(3);
-  const [todayKids, setTodayKids] = useState(2);
+
+  // ── Fridge scan ──────────────────────────────────────────────────────────
+  const [isFridgeScanOpen, setIsFridgeScanOpen]       = useState(false);
+  const [fridgeScanLoading, setFridgeScanLoading]     = useState(false);
+  const [fridgeIngredients, setFridgeIngredients]     = useState<string[]>([]);
+  const [fridgeDishes, setFridgeDishes]               = useState<FridgeDish[]>([]);
+  const [fridgeError, setFridgeError]                 = useState<string | null>(null);
+  const [fridgePreview, setFridgePreview]             = useState<string | null>(null);
+  const fridgeInputRef = useRef<HTMLInputElement>(null);
   const [isDinerSelectorOpen, setIsDinerSelectorOpen] = useState(false);
   const [currentTaste, setCurrentTaste] = useState("default");
   const [isTasteSelectorOpen, setIsTasteSelectorOpen] = useState(false);
@@ -321,6 +336,27 @@ export default function Home() {
     }
   };
 
+  const handleFridgeScan = async (file: File) => {
+    setFridgeScanLoading(true);
+    setFridgeError(null);
+    setFridgeDishes([]);
+    setFridgeIngredients([]);
+    // Show preview immediately
+    const objectUrl = URL.createObjectURL(file);
+    setFridgePreview(objectUrl);
+    setIsFridgeScanOpen(true);
+    try {
+      const { base64, mimeType } = await fileToBase64(file);
+      const result = await analyzeFridgePhoto(base64, mimeType);
+      setFridgeIngredients(result.detected_ingredients);
+      setFridgeDishes(result.dishes);
+    } catch (err) {
+      setFridgeError('识别失败，请重试');
+    } finally {
+      setFridgeScanLoading(false);
+    }
+  };
+
   // Dynamic Nutrition logic based on current menu
   const getNutritionMetrics = () => {
     let focus = "Protein Synthesis";
@@ -482,6 +518,21 @@ export default function Home() {
                       </>
                     )}
                   </div>
+
+                  {/* 今日净食 toggle */}
+                  <button
+                    onClick={() => setVeganOnly(v => !v)}
+                    className={`flex items-center gap-1.5 text-[13px] font-bold tracking-tight px-2.5 py-1 rounded-lg active:scale-95 transition-all ${
+                      veganOnly
+                        ? 'bg-green-500 text-white shadow-sm'
+                        : 'bg-green-500/10 text-green-700'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[15px] leading-none">
+                      {veganOnly ? 'spa' : 'eco'}
+                    </span>
+                    今日净食
+                  </button>
                 </div>
               </div>
             </div>
@@ -562,47 +613,98 @@ export default function Home() {
               <span className="text-[18px] font-bold tracking-tight text-on-surface">
                 一周菜单推荐
               </span>
-              <button 
-                onClick={() => setIsRecordModalOpen(true)}
+              <button
+                onClick={regenerateWeekly}
                 className="w-8 h-8 flex items-center justify-center rounded-full bg-[#f8f8f8] hover:bg-[#f0f0f0] transition-colors"
-                aria-label="View diet records"
+                title="重新生成本周菜单"
               >
                 <span className="material-symbols-outlined text-secondary text-[16px]">
-                  history
+                  refresh
                 </span>
               </button>
             </div>
-            
-            <div className="flex justify-between items-center gap-1 overflow-x-auto no-scrollbar pb-1">
-              {[
-                { name: "一", icon: "egg_alt" },
-                { name: "二", icon: "tapas" },
-                { name: "三", icon: "soup_kitchen" },
-                { name: "四", icon: "kebab_dining" },
-                { name: "五", icon: "set_meal" },
-                { name: "六", icon: "ramen_dining" },
-                { name: "日", icon: "cake" }
-              ].map((day) => (
+
+            {/* Day tabs */}
+            <div className="flex justify-between items-center gap-1 overflow-x-auto no-scrollbar pb-1 mb-4">
+              {(weeklyMenu?.days ?? []).map((day) => (
                 <button
-                  key={day.name}
-                  onClick={() => setSelectedDayOfWeek(day.name)}
+                  key={day.dayIndex}
+                  onClick={() => setSelectedDayOfWeek(day.dayLabel)}
                   className={`flex flex-col items-center gap-1.5 min-w-[3rem] py-2.5 rounded-2xl transition-all ${
-                    selectedDayOfWeek === day.name
+                    selectedDayOfWeek === day.dayLabel
                       ? "bg-primary text-white shadow-md shadow-primary/20"
                       : "bg-transparent text-secondary hover:bg-black/5"
                   }`}
                 >
                   <span className={`text-[14px] font-bold ${
-                    selectedDayOfWeek === day.name ? "text-white" : "text-secondary"
+                    selectedDayOfWeek === day.dayLabel ? "text-white" : "text-secondary"
                   }`}>
-                    {day.name}
+                    {day.dayLabel.replace('周', '')}
                   </span>
                   <div className={`w-1 h-1 rounded-full ${
-                    selectedDayOfWeek === day.name ? "bg-white/80" : "bg-transparent"
+                    selectedDayOfWeek === day.dayLabel ? "bg-white/80" : "bg-transparent"
                   }`}></div>
                 </button>
               ))}
+              {/* Fallback tabs while loading */}
+              {weeklyLoading && ['一','二','三','四','五','六','日'].map(d => (
+                <div key={d} className="flex flex-col items-center gap-1.5 min-w-[3rem] py-2.5">
+                  <div className="w-4 h-4 rounded-full bg-black/5 animate-pulse" />
+                </div>
+              ))}
             </div>
+
+            {/* Dishes for selected day */}
+            {weeklyLoading ? (
+              <div className="space-y-3">
+                {[1,2,3,4,5].map(i => (
+                  <div key={i} className="flex items-center gap-3 animate-pulse">
+                    <div className="w-10 h-10 rounded-xl bg-black/5 shrink-0" />
+                    <div className="flex-1 space-y-1.5">
+                      <div className="h-3.5 bg-black/5 rounded-full w-2/3" />
+                      <div className="h-3 bg-black/5 rounded-full w-1/2" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {(weeklyMenu?.days.find(d => d.dayLabel === selectedDayOfWeek)?.dishes ?? [])
+                  .map((dish, idx) => (
+                    <div key={idx} className="flex items-center gap-3">
+                      <div
+                        className="w-10 h-10 rounded-xl shrink-0 bg-cover bg-center bg-black/5"
+                        style={dish.img ? { backgroundImage: `url(${dish.img})` } : {}}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[14px] font-semibold text-on-surface truncate">
+                          {dish.title}
+                        </p>
+                        <p className="text-[12px] text-secondary truncate">
+                          {dish.desc || dish.type}
+                        </p>
+                      </div>
+                      {dish.is_vegan && (
+                        <span className="text-[10px] font-bold text-green-600 bg-green-50 px-1.5 py-0.5 rounded-full shrink-0">
+                          净食
+                        </span>
+                      )}
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${
+                        dish.type === 'VEGGIE' ? 'text-green-700 bg-green-50' :
+                        dish.type === 'SEAFOOD' ? 'text-blue-700 bg-blue-50' :
+                        'text-orange-700 bg-orange-50'
+                      }`}>
+                        {dish.type === 'VEGGIE' ? '素' : dish.type === 'SEAFOOD' ? '海鲜' : '肉'}
+                      </span>
+                    </div>
+                  ))}
+                {!weeklyMenu && (
+                  <p className="text-[13px] text-secondary text-center py-4">
+                    暂无推荐，请检查网络连接
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </section>
       </main>
@@ -611,24 +713,25 @@ export default function Home() {
       <footer className="fixed bottom-0 left-0 w-full z-50 bg-white/80 backdrop-blur-xl px-4 pb-8 pt-4 border-t border-black/5">
         <div className="max-w-md mx-auto flex flex-col items-center gap-3">
           <div className="flex items-center gap-2 w-full">
-            <button onClick={() => setIsRecordModalOpen(true)} className="flex-[0.8] h-[52px] bg-[#f8f8f8] hover:bg-[#f0f0f0] text-secondary rounded-2xl flex flex-col items-center justify-center active:scale-95 transition-all">
-              <span className="text-[13px] font-bold tracking-wide flex items-center gap-1">
-                打卡
-              </span>
+            <button onClick={() => setIsRecordModalOpen(true)} className="flex-1 h-[52px] bg-[#f8f8f8] hover:bg-[#f0f0f0] text-secondary rounded-2xl flex flex-col items-center justify-center active:scale-95 transition-all">
+              <span className="material-symbols-outlined text-[18px] mb-0.5">photo_camera</span>
+              <span className="text-[11px] font-semibold">打卡</span>
             </button>
-            <button onClick={() => window.location.href='/prep'} className="flex-[1] h-[52px] bg-[#f8f8f8] hover:bg-[#f0f0f0] text-secondary rounded-2xl flex flex-col items-center justify-center active:scale-95 transition-all">
-              <span className="text-[13px] font-bold tracking-wide flex items-center gap-1">
-                做法
-              </span>
+            <button onClick={() => window.location.href='/prep'} className="flex-1 h-[52px] bg-[#f8f8f8] hover:bg-[#f0f0f0] text-secondary rounded-2xl flex flex-col items-center justify-center active:scale-95 transition-all">
+              <span className="material-symbols-outlined text-[18px] mb-0.5">menu_book</span>
+              <span className="text-[11px] font-semibold">做法</span>
+            </button>
+            <button onClick={() => { setIsFridgeScanOpen(true); }} className="flex-1 h-[52px] bg-[#f0f9f4] hover:bg-[#e0f4e8] text-emerald-600 rounded-2xl flex flex-col items-center justify-center active:scale-95 transition-all">
+              <span className="material-symbols-outlined text-[18px] mb-0.5">kitchen</span>
+              <span className="text-[11px] font-semibold">扫冰箱</span>
             </button>
             <button onClick={() => {
               localStorage.setItem('generatedMenu', JSON.stringify(displayMenu));
               localStorage.setItem('effectivePeople', JSON.stringify(todayAdults + (todayKids * 0.5)));
               window.location.href='/verify';
             }} className="flex-[1.5] h-[52px] bg-gradient-to-r from-[#FF5A1F] to-[#FF9054] text-white rounded-2xl flex flex-col items-center justify-center active:scale-95 transition-all shadow-lg shadow-[#FF5A1F]/30">
-              <span className="text-[15px] font-bold tracking-wide flex items-center gap-1.5">
-                开始采购
-              </span>
+              <span className="material-symbols-outlined text-[18px] mb-0.5">shopping_cart</span>
+              <span className="text-[13px] font-bold">开始采购</span>
             </button>
           </div>
         </div>
@@ -758,6 +861,118 @@ export default function Home() {
                  确认换菜
               </span>
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Hidden fridge photo input */}
+      <input
+        ref={fridgeInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={e => { const f = e.target.files?.[0]; if (f) handleFridgeScan(f); e.target.value = ''; }}
+      />
+
+      {/* Fridge Scan Drawer */}
+      {isFridgeScanOpen && (
+        <div className="fixed inset-0 z-[110] flex flex-col justify-end">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setIsFridgeScanOpen(false)}></div>
+          <div className="relative bg-surface w-full max-w-md mx-auto rounded-t-[32px] pt-4 pb-10 px-6 shadow-2xl safe-area-pb">
+            <div className="w-12 h-1.5 bg-black/10 rounded-full mx-auto mb-4"></div>
+
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-[20px] font-bold text-on-surface">冰箱扫一扫</h2>
+              <button className="text-secondary bg-black/5 rounded-full w-8 h-8 flex items-center justify-center active:scale-95" onClick={() => setIsFridgeScanOpen(false)}>
+                <span className="material-symbols-outlined text-[18px]">close</span>
+              </button>
+            </div>
+
+            {/* Photo preview */}
+            {fridgePreview && (
+              <div className="w-full h-44 rounded-2xl overflow-hidden mb-4 bg-black/5">
+                <img src={fridgePreview} alt="冰箱照片" className="w-full h-full object-cover" />
+              </div>
+            )}
+
+            {fridgeScanLoading && (
+              <div className="flex flex-col items-center justify-center py-10 gap-3">
+                <div className="w-9 h-9 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                <p className="text-[13px] text-secondary">AI 正在识别食材，生成菜单…</p>
+              </div>
+            )}
+
+            {fridgeError && (
+              <div className="text-center py-6">
+                <p className="text-[14px] text-red-500 mb-4">{fridgeError}</p>
+                <button className="px-5 py-2 bg-primary text-white rounded-full text-[13px] font-semibold active:scale-95" onClick={() => fridgeInputRef.current?.click()}>重新拍照</button>
+              </div>
+            )}
+
+            {!fridgeScanLoading && fridgeDishes.length > 0 && (
+              <>
+                {/* Detected ingredients */}
+                {fridgeIngredients.length > 0 && (
+                  <div className="mb-4">
+                    <p className="text-[11px] text-secondary font-semibold mb-2 uppercase tracking-wider">识别到的食材</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {fridgeIngredients.map(ing => (
+                        <span key={ing} className="px-2.5 py-1 bg-primary/10 text-primary rounded-full text-[12px] font-medium">{ing}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Suggested dishes */}
+                <p className="text-[11px] text-secondary font-semibold mb-3 uppercase tracking-wider">推荐做法（3种）</p>
+                <div className="space-y-3 mb-6">
+                  {fridgeDishes.map((dish, i) => (
+                    <div key={i} className="p-4 bg-white rounded-2xl border border-black/5 shadow-sm">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1">
+                          <h3 className="text-[15px] font-bold text-on-surface">{dish.name_zh}</h3>
+                          <p className="text-[11px] text-secondary mt-0.5">{dish.name_en}</p>
+                        </div>
+                        <div className="flex flex-col items-end gap-1">
+                          <span className="px-2 py-0.5 bg-black/5 rounded-md text-[11px] text-secondary font-semibold">{dish.cook_method}</span>
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-semibold ${dish.difficulty === '简单' ? 'bg-green-50 text-green-600' : dish.difficulty === '稍复杂' ? 'bg-orange-50 text-orange-600' : 'bg-yellow-50 text-yellow-600'}`}>{dish.difficulty} · {dish.time_minutes}分钟</span>
+                        </div>
+                      </div>
+                      <p className="text-[12px] text-secondary mt-2 leading-relaxed">{dish.description}</p>
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {dish.ingredients_used.map(ing => (
+                          <span key={ing} className="px-2 py-0.5 bg-black/5 text-secondary rounded-md text-[10px]">{ing}</span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  className="w-full h-12 bg-black/5 text-secondary rounded-2xl text-[13px] font-semibold active:scale-95 transition-transform"
+                  onClick={() => fridgeInputRef.current?.click()}
+                >
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="material-symbols-outlined text-[18px]">photo_camera</span>
+                    重新拍照
+                  </span>
+                </button>
+              </>
+            )}
+
+            {!fridgeScanLoading && !fridgeError && fridgeDishes.length === 0 && !fridgePreview && (
+              <div className="flex flex-col items-center justify-center py-10 gap-4">
+                <span className="material-symbols-outlined text-[56px] text-secondary/40">kitchen</span>
+                <p className="text-[14px] text-secondary text-center">拍一张冰箱或食材照片<br/>AI 帮你想三种做法</p>
+                <button className="px-6 py-3 bg-primary text-white rounded-2xl text-[14px] font-semibold shadow-lg active:scale-95 transition-transform" onClick={() => fridgeInputRef.current?.click()}>
+                  <span className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[20px]">photo_camera</span>
+                    拍照 / 选图
+                  </span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

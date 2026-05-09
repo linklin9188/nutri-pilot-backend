@@ -12,12 +12,18 @@ export const FLAVOR_COL: Record<string, string> = {
 };
 
 export const HEALTH_COL: Record<string, string> = {
-  damp_clear:   'pref_damp_clear',
-  muscle_gain:  'pref_muscle_gain',
-  lose_weight:  'pref_lose_weight',
-  maintain:     'pref_maintain',
-  detox:        'pref_detox',
-  authentic_hk: 'pref_authentic_hk',
+  damp_clear:        'pref_damp_clear',
+  muscle_gain:       'pref_muscle_gain',
+  lose_weight:       'pref_lose_weight',
+  maintain:          'pref_maintain',
+  detox:             'pref_detox',
+  authentic_hk:      'pref_authentic_hk',
+  // Extensible — add new tags here, no DB schema change needed
+  mood_boost:        'pref_mood_boost',
+  anti_inflammation: 'pref_anti_inflammation',
+  immunity:          'pref_immunity',
+  beauty:            'pref_beauty',
+  pregnancy:         'pref_pregnancy',
 };
 
 export const CUISINE_COL: Record<string, string> = {
