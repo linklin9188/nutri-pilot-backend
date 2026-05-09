@@ -154,7 +154,7 @@ export default function Login() {
                 <button
                   onClick={handleLoginClick}
                   className="inline-flex items-center gap-2 rounded-full bg-white text-black active:scale-[0.98] transition-transform"
-                  style={{ fontSize: 13, fontWeight: 600, paddingInline: 22, height: 40, boxShadow: "0 4px 16px rgba(0,0,0,0.30)" }}
+                  style={{ fontSize: 13, fontWeight: 600, width: 192, height: 40, boxShadow: "0 4px 16px rgba(0,0,0,0.30)" }}
                 >
                   <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
                     <ellipse cx="7.5" cy="8.5" rx="6" ry="4.5" fill="#07C160"/>
@@ -175,7 +175,7 @@ export default function Login() {
                 <button
                   onClick={handleLoginClick}
                   className="inline-flex items-center gap-2 rounded-full text-white active:scale-[0.98] transition-transform"
-                  style={{ fontSize: 13, fontWeight: 600, paddingInline: 22, height: 40, background: "#25D366", boxShadow: "0 4px 16px rgba(37,211,102,0.18)" }}
+                  style={{ fontSize: 13, fontWeight: 600, width: 192, height: 40, background: "#25D366", boxShadow: "0 4px 16px rgba(37,211,102,0.18)" }}
                 >
                   <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
                     <path d="M10 2.5C5.86 2.5 2.5 5.86 2.5 10c0 1.32.35 2.56.96 3.64L2.5 17.5l3.86-.96A7.45 7.45 0 0010 17.5c4.14 0 7.5-3.36 7.5-7.5S14.14 2.5 10 2.5zm3.6 10.28c-.15.42-.88.81-1.21.86-.31.05-.69.07-1.12-.07-.26-.09-.59-.2-1.01-.38-1.77-.76-2.93-2.54-3.02-2.66-.09-.12-.73-.97-.73-1.85 0-.88.46-1.31.62-1.49.16-.18.35-.22.47-.22h.33c.11 0 .25-.04.39.3.15.35.5 1.22.55 1.31.05.09.08.2.01.32-.06.12-.1.19-.19.3-.09.1-.19.23-.27.31-.09.09-.19.19-.08.37.11.18.49.8 1.05 1.3.72.64 1.33.84 1.52.93.19.09.3.07.41-.04.12-.12.47-.54.6-.73.12-.18.24-.15.41-.09.17.06 1.1.52 1.28.62.18.09.3.13.35.2.04.08.04.46-.11.98z" fill="white"/>
