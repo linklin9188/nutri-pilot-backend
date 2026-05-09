@@ -676,7 +676,7 @@ export async function fetchSwapOptions(
 
 // ── Hook ─────────────────────────────────────────────────────────────────
 
-export function useRecommendDishes() {
+export function useRecommendDishes(mealTime: '早餐' | '午餐' | '晚餐' = '晚餐') {
   const [recommendedDishes, setRecommendedDishes] = useState<SupabaseDish[]>([]);
   const [currentSolarTerm, setCurrentSolarTerm]   = useState<SolarTerm | null>(null);
   const [prefScores, setPrefScores]               = useState<Record<string, number>>({});
@@ -685,6 +685,14 @@ export function useRecommendDishes() {
   const [refreshKey, setRefreshKey] = useState(0);
 
   const refresh = useCallback(() => setRefreshKey(k => k + 1), []);
+
+  // Map UI label → DB meal_type values to include
+  const mealTypeFilter: Record<string, string[]> = {
+    '早餐': ['breakfast'],
+    '午餐': ['lunch', 'all'],
+    '晚餐': ['dinner', 'all'],
+  };
+  const allowedMealTypes = mealTypeFilter[mealTime] ?? ['dinner', 'all'];
 
   useEffect(() => {
     let cancelled = false;
@@ -709,10 +717,13 @@ export function useRecommendDishes() {
           if (scoreRow) scores = scoreRow as Record<string, number>;
         }
 
+        // Filter by meal_type. `meal_type` may be NULL on older rows (treat as dinner/all).
+        // We use 'in' + include NULL via OR filter.
         const { data: allDishes, error: fetchErr } = await supabase
           .from('dishes')
           .select('*')
-          .limit(200);
+          .or(`meal_type.in.(${allowedMealTypes.join(',')}),meal_type.is.null`)
+          .limit(250);
         if (fetchErr) throw fetchErr;
 
         const filtered = hardFilter(allDishes ?? [], profile.avoid_tags);
@@ -738,7 +749,8 @@ export function useRecommendDishes() {
 
     run();
     return () => { cancelled = true; };
-  }, [refreshKey]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey, mealTime]);
 
   return { recommendedDishes, currentSolarTerm, prefScores, loading, error, refresh };
 }

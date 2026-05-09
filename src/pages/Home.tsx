@@ -5,7 +5,16 @@ import { useFeedbackInput } from "../hooks/useFeedbackInput";
 
 export default function Home() {
   const navigate = useNavigate();
-  const { recommendedDishes, currentSolarTerm, prefScores, loading: dishesLoading, refresh: refreshMenu } = useRecommendDishes();
+
+  // ── mealTime must be declared before useRecommendDishes ──────────────────
+  const [mealTime, setMealTime] = useState<'早餐' | '午餐' | '晚餐'>(() => {
+    const hour = new Date().getHours();
+    if (hour < 10) return "早餐";
+    if (hour < 15) return "午餐";
+    return "晚餐";
+  });
+
+  const { recommendedDishes, currentSolarTerm, prefScores, loading: dishesLoading, refresh: refreshMenu } = useRecommendDishes(mealTime);
   const { submit: submitFeedback, submitting: feedbackSubmitting } = useFeedbackInput({
     currentScores: prefScores,
     onScoresUpdated: () => refreshMenu(),
@@ -38,12 +47,7 @@ export default function Home() {
     return saved ? JSON.parse(saved) : [];
   });
   const [hasSolarTerm, setHasSolarTerm] = useState(false); // Can be toggled if today is solar term
-  const [mealTime, setMealTime] = useState(() => {
-    const hour = new Date().getHours();
-    if (hour < 10) return "早餐";
-    if (hour < 15) return "午餐";
-    return "晚餐";
-  });
+  // mealTime is declared at the top of the component (before useRecommendDishes)
   const [selectedDayOfWeek, setSelectedDayOfWeek] = useState(() => {
     const dict = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
     return dict[new Date().getDay()];
@@ -283,7 +287,11 @@ export default function Home() {
   const [swapOptions, setSwapOptions] = useState<SupabaseDish[]>([]);
   const [isSwapLoading, setIsSwapLoading] = useState(false);
 
-  const baseMenu = recommendedDishes.length > 0 ? recommendedDishes : getDynamicMenu();
+  // Breakfast: DB currently only has lunch/dinner dishes — use static until
+  // meal_type column is populated with breakfast data (see scripts/import-dishes.ts)
+  const baseMenu = (mealTime !== "早餐" && recommendedDishes.length > 0)
+    ? recommendedDishes
+    : getDynamicMenu();
   const displayMenu = baseMenu.map((dish, idx) => menuSwaps[idx] || dish);
   const effectiveLoading = isAiLoading || dishesLoading;
 
@@ -454,7 +462,7 @@ export default function Home() {
                           onClick={() => setIsMealTimeDropdownOpen(false)}
                         />
                         <div className="absolute left-0 top-full mt-2 w-32 bg-white rounded-2xl shadow-lg border border-black/5 overflow-hidden z-50 py-1 origin-top-left animate-in fade-in zoom-in-95 duration-200">
-                          {['早餐', '午餐', '晚餐'].map((option) => (
+                          {(['早餐', '午餐', '晚餐'] as const).map((option) => (
                             <button
                               key={option}
                               onClick={() => {
