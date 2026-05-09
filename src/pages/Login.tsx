@@ -62,6 +62,14 @@ export default function Login() {
     }
   };
 
+  const handleAppleLogin = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "apple",
+      options: { redirectTo: `${window.location.origin}/` },
+    });
+    if (error) console.error(error);
+  };
+
   // ── verify OTP ─────────────────────────────────────────────────────
   const handleVerifyOtp = async () => {
     const token = otp.join("");
@@ -216,26 +224,33 @@ export default function Login() {
 
               {/* WeChat placeholder */}
               <div className="w-full text-center">
-                <button className="inline-flex items-center justify-center gap-2 rounded-full bg-white text-black/40 cursor-not-allowed"
+                <button className="inline-flex items-center justify-center gap-2 rounded-full bg-white text-black/35 cursor-not-allowed"
                   style={{ fontSize: 13, fontWeight: 600, width: 192, height: 40 }}
                   title="即将上线">
                   <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
                     <ellipse cx="7.5" cy="8.5" rx="6" ry="4.5" fill="#07C160" opacity="0.4"/>
+                    <circle cx="5.5" cy="8.5" r="1" fill="white" opacity="0.6"/>
+                    <circle cx="7.5" cy="8.5" r="1" fill="white" opacity="0.6"/>
+                    <circle cx="9.5" cy="8.5" r="1" fill="white" opacity="0.6"/>
                     <ellipse cx="13" cy="12" rx="5.5" ry="4" fill="#07C160" opacity="0.4"/>
+                    <circle cx="11.5" cy="12" r="0.9" fill="white" opacity="0.6"/>
+                    <circle cx="13" cy="12" r="0.9" fill="white" opacity="0.6"/>
+                    <circle cx="14.5" cy="12" r="0.9" fill="white" opacity="0.6"/>
                   </svg>
                   微信登录（即将上线）
                 </button>
               </div>
 
-              {/* WhatsApp placeholder */}
+              {/* Apple ID */}
               <div className="w-full text-center">
-                <button className="inline-flex items-center justify-center gap-2 rounded-full text-white/40 cursor-not-allowed"
-                  style={{ fontSize: 13, fontWeight: 600, width: 192, height: 40, background: "rgba(37,211,102,0.2)" }}
-                  title="即将上线">
-                  <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
-                    <path d="M10 2.5C5.86 2.5 2.5 5.86 2.5 10c0 1.32.35 2.56.96 3.64L2.5 17.5l3.86-.96A7.45 7.45 0 0010 17.5c4.14 0 7.5-3.36 7.5-7.5S14.14 2.5 10 2.5z" fill="rgba(255,255,255,0.3)"/>
+                <button
+                  onClick={handleAppleLogin}
+                  className="inline-flex items-center justify-center gap-2 rounded-full text-white active:scale-95 transition-transform"
+                  style={{ fontSize: 13, fontWeight: 600, width: 192, height: 40, background: "#1a1a1a", border: "1px solid rgba(255,255,255,0.15)" }}>
+                  <svg width="14" height="16" viewBox="0 0 14 17" fill="white">
+                    <path d="M13.1 12.6c-.3.7-.6 1.3-1 1.9-.5.8-1 1.2-1.4 1.2-.4 0-.9-.1-1.5-.4-.6-.3-1.1-.4-1.6-.4-.5 0-1 .1-1.6.4-.6.3-1 .4-1.4.4-.5 0-1-.4-1.5-1.3-.5-.8-.9-1.8-1.2-2.8C.6 10.5.4 9.3.4 8.2c0-1.2.3-2.3.8-3.1.4-.7 1-1.3 1.7-1.7.7-.4 1.5-.6 2.3-.6.5 0 1 .1 1.7.4.6.2 1 .4 1.2.4.1 0 .6-.2 1.3-.4.7-.3 1.3-.4 1.8-.3 1.4.1 2.4.7 3 1.8-1.2.7-1.8 1.8-1.8 3.1 0 1.1.4 2 1.2 2.7.3.4.7.6 1 .7l-.5.9zM9.8.5C9.8 1.3 9.5 2 9 2.6c-.6.7-1.3 1.1-2.1 1-.1-.8.2-1.6.7-2.2C8.1.8 8.8.4 9.7.3c.1.1.1.1.1.2z"/>
                   </svg>
-                  WhatsApp（即将上线）
+                  Apple ID 登录
                 </button>
               </div>
 
