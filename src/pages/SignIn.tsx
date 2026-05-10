@@ -220,66 +220,83 @@ export default function SignIn() {
           <motion.div key="phone"
             initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }}
             transition={{ duration: 0.22 }}
-            className="relative z-10 flex-1 flex flex-col px-6 pt-8 pb-12 overflow-y-auto"
+            className="relative z-10 flex-1 flex flex-col px-6 pt-8 pb-12"
           >
-            <h2 className="font-serif font-black text-white mb-2" style={{ fontSize: 28 }}>输入手机号</h2>
+            <h2 className="font-serif font-black text-white mb-1" style={{ fontSize: 28 }}>输入手机号</h2>
             <p className="text-white/40 mb-8" style={{ fontSize: 14 }}>我们将发送 6 位验证码</p>
 
-            {/* Country selector */}
-            <div className="flex rounded-2xl mb-3 overflow-hidden"
-              style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.10)" }}>
-              {COUNTRY_CODES.map(c => (
-                <button key={c.code} onClick={() => setCountryCode(c.code)}
-                  className="flex-1 flex items-center justify-center gap-2 py-3 transition-all"
-                  style={{
-                    background: countryCode === c.code ? "rgba(255,90,31,0.22)" : "transparent",
-                    color: countryCode === c.code ? "#FF8C54" : "rgba(255,255,255,0.45)",
-                    fontSize: 13, fontWeight: 500,
-                  }}>
-                  <span>{c.flag}</span><span>{c.code}</span>
-                  <span style={{ fontSize: 11, opacity: 0.6 }}>{c.label}</span>
-                </button>
-              ))}
+            {/* Phone input row: country-code pill + number input side-by-side */}
+            <div className="flex gap-2 mb-3">
+              {/* Country code selector — always visible, tap to cycle */}
+              <button
+                onClick={() => {
+                  const next = COUNTRY_CODES[(COUNTRY_CODES.findIndex(c => c.code === countryCode) + 1) % COUNTRY_CODES.length];
+                  setCountryCode(next.code);
+                }}
+                className="flex-shrink-0 flex items-center gap-1.5 px-3 h-[54px] rounded-2xl active:scale-95 transition-all"
+                style={{
+                  background: "rgba(255,255,255,0.10)",
+                  border: "1.5px solid rgba(255,255,255,0.18)",
+                  minWidth: 90,
+                }}
+              >
+                <span style={{ fontSize: 20 }}>
+                  {COUNTRY_CODES.find(c => c.code === countryCode)?.flag}
+                </span>
+                <span style={{ fontSize: 15, fontWeight: 600, color: "white", letterSpacing: "0.02em" }}>
+                  {countryCode}
+                </span>
+                {/* chevron */}
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ opacity: 0.4, marginLeft: 1 }}>
+                  <path d="M2 3.5L5 6.5L8 3.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
+
+              {/* Phone number input */}
+              <input
+                type="tel"
+                inputMode="numeric"
+                placeholder={countryCode === "+852" ? "9XXX XXXX" : "138 0000 0000"}
+                value={phone}
+                onChange={e => setPhone(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleSend()}
+                className="flex-1 h-[54px] rounded-2xl px-4 text-white placeholder-white/25 outline-none"
+                style={{
+                  background: "rgba(255,255,255,0.08)",
+                  border: "1.5px solid rgba(255,255,255,0.14)",
+                  fontSize: 18, letterSpacing: "0.06em",
+                }}
+              />
             </div>
 
-            <input
-              type="tel"
-              inputMode="numeric"
-              placeholder={countryCode === "+852" ? "9XXX XXXX" : "138 0000 0000"}
-              value={phone}
-              onChange={e => setPhone(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && handleSend()}
-              className="w-full h-[54px] rounded-2xl px-4 text-white placeholder-white/25 outline-none mb-3"
-              style={{
-                background: "rgba(255,255,255,0.08)",
-                border: "1px solid rgba(255,255,255,0.12)",
-                fontSize: 18, letterSpacing: "0.08em",
-              }}
-            />
+            {/* Country name hint */}
+            <p className="mb-4 pl-1" style={{ fontSize: 11, color: "rgba(255,255,255,0.28)" }}>
+              {COUNTRY_CODES.find(c => c.code === countryCode)?.label} · 点击区号可切换
+            </p>
 
             {error && <p className="text-red-400 mb-3 text-[13px]">{error}</p>}
 
             <button
               onClick={handleSend}
               disabled={sending || phone.replace(/\D/g, "").length < 8}
-              className="w-full h-[54px] rounded-2xl font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
+              className="w-full h-[54px] rounded-2xl font-semibold flex items-center justify-center transition-all active:scale-[0.97]"
               style={{
-                background: sending || phone.replace(/\D/g, "").length < 8
-                  ? "rgba(255,90,31,0.35)"
+                background: (sending || phone.replace(/\D/g, "").length < 8)
+                  ? "rgba(255,90,31,0.30)"
                   : "linear-gradient(135deg, #FF5A1F, #FF8C54)",
-                boxShadow: sending || phone.replace(/\D/g, "").length < 8
+                boxShadow: (sending || phone.replace(/\D/g, "").length < 8)
                   ? "none"
-                  : "0 8px 24px rgba(255,90,31,0.28)",
+                  : "0 8px 24px rgba(255,90,31,0.30)",
                 fontSize: 15,
-                color: sending || phone.replace(/\D/g, "").length < 8
-                  ? "rgba(255,255,255,0.45)"
+                color: (sending || phone.replace(/\D/g, "").length < 8)
+                  ? "rgba(255,255,255,0.40)"
                   : "white",
-                cursor: sending || phone.replace(/\D/g, "").length < 8 ? "not-allowed" : "pointer",
+                cursor: (sending || phone.replace(/\D/g, "").length < 8) ? "not-allowed" : "pointer",
               }}
             >
               {sending
-                ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                : <span>发送验证码</span>}
+                ? <div className="w-5 h-5 border-2 border-white/60 border-t-white rounded-full animate-spin" />
+                : "发送验证码"}
             </button>
           </motion.div>
         )}
