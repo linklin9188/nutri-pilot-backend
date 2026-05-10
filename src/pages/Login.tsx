@@ -155,41 +155,44 @@ export default function Login() {
 
   // ── time-based hero bg ─────────────────────────────────────────────
   // 7 days (Mon–Sun) × 3 meal slots (breakfast/lunch/dinner)
+  // breakfast = bright sunny morning food
+  // lunch     = warm coffee / café afternoon
+  // dinner    = dark moody fine-dining
   const DAY_IMAGES = [
     { // Monday
-      breakfast: "photo-1525351484163-7529414344d8",
-      lunch:     "photo-1512058564366-18510be2db19",
-      dinner:    "photo-1414235077428-338989a2e8c0",
+      breakfast: "photo-1484723091739-30a097e8f929", // french toast warm sunlight
+      lunch:     "photo-1495474472287-4d71bcdd2085", // coffee cup warm
+      dinner:    "photo-1414235077428-338989a2e8c0", // fine dining dark
     },
     { // Tuesday
-      breakfast: "photo-1484723091739-30a097e8f929",
-      lunch:     "photo-1540189549336-e6e99c3679fe",
-      dinner:    "photo-1559339352-11d035aa65de",
+      breakfast: "photo-1567620905732-2d1ec7ab7445", // fluffy pancakes bright
+      lunch:     "photo-1509042239860-f550ce710b93", // latte art warm
+      dinner:    "photo-1559339352-11d035aa65de",    // steak moody
     },
     { // Wednesday
-      breakfast: "photo-1533089860892-a7c6f0a88666",
-      lunch:     "photo-1546069901-ba9599a7e63c",
-      dinner:    "photo-1476224203421-9ac39bcb3327",
+      breakfast: "photo-1533089860892-a7c6f0a88666", // avocado toast bright
+      lunch:     "photo-1442512595331-e89e73853f31", // coffee cozy warm
+      dinner:    "photo-1476224203421-9ac39bcb3327",  // plated dish dark
     },
     { // Thursday
-      breakfast: "photo-1504674900247-0877df9cc836",
-      lunch:     "photo-1512621776951-a57141f2eefd",
-      dinner:    "photo-1467003909585-2f8a72700288",
+      breakfast: "photo-1550547660-d9450f859349",    // eggs benedict sunny
+      lunch:     "photo-1461023058943-07fcbe16d735", // coffee shop warm
+      dinner:    "photo-1467003909585-2f8a72700288",  // dinner moody
     },
     { // Friday
-      breakfast: "photo-1550547660-d9450f859349",
-      lunch:     "photo-1498837167922-ddd27525d352",
-      dinner:    "photo-1432139509613-5c4255815697",
+      breakfast: "photo-1525351484163-7529414344d8", // oatmeal bright morning
+      lunch:     "photo-1447933601403-0c6688de566e", // coffee beans warm
+      dinner:    "photo-1432139509613-5c4255815697",  // grilled evening
     },
     { // Saturday
-      breakfast: "photo-1567620905732-2d1ec7ab7445",
-      lunch:     "photo-1455619452474-d2be8b1e70cd",
-      dinner:    "photo-1565299624946-b28f40a0ae38",
+      breakfast: "photo-1490645935967-10de6ba17061", // granola bright
+      lunch:     "photo-1541167760496-1628856ab772", // warm coffee mug
+      dinner:    "photo-1565299624946-b28f40a0ae38",  // pizza evening
     },
     { // Sunday
-      breakfast: "photo-1490645935967-10de6ba17061",
-      lunch:     "photo-1563379926898-05f4575a45d8",
-      dinner:    "photo-1574484284002-952d92456975",
+      breakfast: "photo-1504674900247-0877df9cc836", // breakfast spread bright
+      lunch:     "photo-1498804103079-a6351b050096", // café warm afternoon
+      dinner:    "photo-1574484284002-952d92456975",  // chinese dish evening
     },
   ] as const;
 
@@ -199,7 +202,8 @@ export default function Login() {
   const _now        = new Date();
   const _dayIdx     = (_now.getDay() + 6) % 7; // 0=Mon…6=Sun
   const _meal       = getMealSlot(_now.getHours());
-  const _brightness = _meal === "breakfast" ? 0.75 : _meal === "lunch" ? 0.70 : 0.65;
+  // Morning: bright & airy; Afternoon: warm café; Evening: dark & moody
+  const _brightness = _meal === "breakfast" ? 0.88 : _meal === "lunch" ? 0.78 : 0.62;
   const _photoId    = DAY_IMAGES[_dayIdx][_meal];
   const _heroSrc    = `https://images.unsplash.com/${_photoId}?w=1200&q=90`;
 
