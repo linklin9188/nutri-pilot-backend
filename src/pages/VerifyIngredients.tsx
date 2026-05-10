@@ -28,8 +28,8 @@ function getDishes(mode: 'today' | 'week'): any[] {
   monday.setDate(today.getDate() + diff);
   const weekStart = monday.toISOString().slice(0, 10);
 
-  for (const p of [3, 4, 5, 6]) {
-    const key = `weekly_menu_v5_${weekStart}_p${p}`;
+  for (const p of [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]) {
+    const key = `weekly_menu_v6_${weekStart}_p${p}`;
     const raw = localStorage.getItem(key);
     if (raw) {
       try {

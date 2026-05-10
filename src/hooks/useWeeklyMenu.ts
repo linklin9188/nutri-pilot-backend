@@ -38,7 +38,7 @@ export interface WeeklyMenu {
 
 // ── Cache version — bump this whenever the algorithm changes significantly ─────
 // This ensures old cached menus are discarded after an algorithm update.
-const ALGO_VERSION = 'v5'; // bumped: use DB course_type for slot assignment + soup slot
+const ALGO_VERSION = 'v6'; // bumped: headcount-based dishesPerDay (8人以上=人数=菜数)
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -46,20 +46,24 @@ const DAY_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', 
 
 /**
  * Map headcount → dishes per day.
- * More people → more dish variety per meal.
- *   1 person   → 3 dishes
- *   2 adults   → 4 dishes
- *   3-4 adults → 5 dishes  (default)
- *   5+ people  → 6 dishes
+ *
+ * 中国家庭标准：一人两菜一汤，随人数递增，8人以上按人数直接算。
+ *   ≤1   → 3  (2菜1汤)
+ *   2-3  → 4  (3菜1汤)
+ *   4-5  → 5  (4菜1汤)
+ *   6-7  → 6  (5菜1汤)
+ *   8+   → round(eff)  每人一道菜，上限20防止离谱
  */
 function calcDishesPerDay(): number {
   const adults = parseInt(localStorage.getItem('nutri_adults') ?? '3', 10);
   const kids   = parseInt(localStorage.getItem('nutri_kids')   ?? '0', 10);
   const eff    = adults + kids * 0.5;
   if (eff <= 1.5) return 3;
-  if (eff <= 2.5) return 4;
-  if (eff <= 4.5) return 5;
-  return 6;
+  if (eff <= 3.5) return 4;
+  if (eff <= 5.5) return 5;
+  if (eff <= 7.5) return 6;
+  // 8人以上：每人一道菜（上限20）
+  return Math.min(20, Math.round(eff));
 }
 
 function getMondayISO(): string {
@@ -124,17 +128,22 @@ function ingCategory(ing: string): string {
   return ING_CATEGORY[ing] ?? 'other';
 }
 
-// Max times any single category may appear per 7-day week
-// 'carb' dishes appear in the dedicated staple slot only (≤1/day)
-const MAX_PER_CATEGORY: Record<string, number> = {
-  seafood: 2,    // at most 2 seafood dinners per week
-  pork:    3,
-  beef:    2,
-  poultry: 3,
-  plant:   14,   // no effective cap
-  carb:    7,    // 1/day max via slot system; hard weekly cap = 7
-  other:   7,
-};
+// Max times any single category may appear per 7-day week.
+// These are WEEKLY caps across all days — for large families (8+ people),
+// a single day can have multiple slots, so weekly caps scale accordingly.
+// Formula: base × ceil(dishesPerDay / 5) — loosens cap for bigger tables.
+function getMaxPerCategory(dishesPerDay: number): Record<string, number> {
+  const scale = Math.max(1, Math.ceil(dishesPerDay / 5));
+  return {
+    seafood: 2  * scale,
+    pork:    3  * scale,
+    beef:    2  * scale,
+    poultry: 3  * scale,
+    plant:   99,           // no effective cap for vegetables
+    carb:    7,            // 1/day max (always in slot 4 only)
+    other:   7  * scale,
+  };
+}
 
 // ── Cuisine origin rebalancing ────────────────────────────────────────────────
 // Western dishes are 32% of the DB pool but most users want Chinese-first menus.
@@ -290,16 +299,49 @@ function enrichRaw(dish: any): SupabaseDish {
 //
 // Carb dishes ONLY appear in slot 4. This stops 意面/炒饭 from competing with 红烧肉.
 
+// ── Slot preference table — extended for large families (up to 20 slots) ──────
+//
+// Pattern (repeating after the base 5-slot set):
+//   slot 0: 主蛋白（猪/禽/牛/海鲜）
+//   slot 1: 次蛋白或荤素搭配
+//   slot 2: 纯蔬菜/豆腐
+//   slot 3: 汤/清淡
+//   slot 4: 主食（唯一碳水槽）
+//   slot 5+: 依次：荤→蔬→荤→蔬…（多人场景额外菜）
+//
+// 注意：主食（carb/staple）永远只出现在 slot 4，其余槽不允许
+
 const SLOT_PREFERRED_CATS: string[][] = [
-  ['pork', 'poultry', 'beef', 'seafood'],  // slot 0: main protein
-  ['plant', 'pork', 'poultry'],            // slot 1: secondary (veggie-leaning)
-  ['plant'],                                // slot 2: pure veggie/tofu
-  ['plant', 'other'],                      // slot 3: light / soup-style
-  ['carb'],                                // slot 4: 主食 — CARB ONLY
+  ['pork', 'poultry', 'beef', 'seafood'],    // 0: 主蛋白
+  ['beef', 'seafood', 'poultry', 'plant'],   // 1: 次蛋白（偏不同品类）
+  ['plant'],                                  // 2: 纯蔬菜/豆腐
+  ['plant', 'other'],                        // 3: 汤/清淡
+  ['carb'],                                  // 4: 主食 ONLY
+  ['seafood', 'beef', 'poultry'],            // 5: 第三荤（海鲜/牛/禽）
+  ['plant'],                                  // 6: 第四蔬菜
+  ['pork', 'poultry', 'beef'],              // 7: 第四荤
+  ['plant', 'other'],                        // 8: 第五蔬或汤
+  ['seafood', 'beef'],                       // 9: 轻奢荤
+  ['plant'],                                  // 10: 蔬菜
+  ['poultry', 'pork'],                       // 11: 荤
+  ['plant'],                                  // 12: 蔬菜
+  ['seafood'],                               // 13: 海鲜
+  ['plant'],                                  // 14: 蔬菜
+  ['beef', 'poultry'],                       // 15: 荤
+  ['plant'],                                  // 16: 蔬菜
+  ['seafood', 'pork'],                       // 17: 荤
+  ['plant'],                                  // 18: 蔬菜
+  ['poultry', 'beef'],                       // 19: 荤
 ];
 
-// Slots where carb dishes are BLOCKED (they only go in slot 4)
-const CARB_BLOCKED_SLOTS = new Set([0, 1, 2, 3]);
+// The ONLY carb slot is slot 4 — all others block carb/staple dishes
+// For dishesPerDay > 5, slots 5+ are blocked from carb too
+const STAPLE_SLOT = 4;
+function isCarb(slot: number): boolean { return slot === STAPLE_SLOT; }
+// Build blocked set dynamically based on max slots we'd ever use
+const CARB_BLOCKED_SLOTS = new Set(
+  Array.from({ length: 20 }, (_, i) => i).filter(i => i !== STAPLE_SLOT)
+);
 
 function generateWeekPlan(
   pool: any[],
@@ -314,7 +356,8 @@ function generateWeekPlan(
   const usedIds = new Set<string>();
   const pickedIngredients: string[] = [];
 
-  // Track weekly category counts for hard caps
+  // Track weekly category counts for hard caps (scale with dishesPerDay)
+  const MAX_PER_CATEGORY = getMaxPerCategory(dishesPerDay);
   const weeklyCatCounts: Record<string, number> = {};
 
   for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
