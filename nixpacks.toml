@@ -2,8 +2,12 @@
 nixPkgs = ["nodejs_20"]
 
 [phases.install]
-cmds = ["npm ci --include=dev --prefer-offline"]
+cmds = ["npm install --prefer-offline"]
 cacheDirectories = ["node_modules"]
+
+[variables]
+NPM_CONFIG_PRODUCTION = "false"
+NODE_ENV = "development"
 
 [phases.build]
 cmds = ["npm run build"]
