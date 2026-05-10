@@ -209,6 +209,56 @@ function SkeletonDay() {
   );
 }
 
+// ── Free tier: how many days are unlocked without login ──────────────────────
+const FREE_DAYS = 3; // Mon / Tue / Wed visible; Thu–Sun locked
+
+// ── Locked day overlay ────────────────────────────────────────────────────────
+function LockedDayCard({ onUnlock }: { onUnlock: () => void }) {
+  return (
+    <div className="mx-5 mt-2">
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="rounded-3xl overflow-hidden relative"
+        style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
+      >
+        {/* Blurred preview rows */}
+        <div className="px-5 pt-5 pb-2" style={{ filter: "blur(5px)", pointerEvents: "none", userSelect: "none" }}>
+          {[0, 1, 2].map(i => (
+            <div key={i} className="flex gap-3 mb-4">
+              {[0, 1, 2].map(j => (
+                <div key={j} className="rounded-2xl flex-shrink-0"
+                  style={{ width: 90, height: 120, background: `rgba(255,255,255,${0.06 + j * 0.02})` }} />
+              ))}
+            </div>
+          ))}
+        </div>
+
+        {/* Lock overlay */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center"
+          style={{ background: "linear-gradient(to bottom, rgba(10,10,10,0.2) 0%, rgba(10,10,10,0.85) 50%)" }}>
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3"
+            style={{ background: "rgba(255,90,31,0.15)", border: "1.5px solid rgba(255,90,31,0.35)" }}>
+            <span className="material-symbols-outlined text-[#FF5A1F]" style={{ fontSize: 28 }}>lock</span>
+          </div>
+          <p className="text-white font-bold mb-1" style={{ fontSize: 16 }}>登录后查看完整周菜单</p>
+          <p className="text-white/40 mb-5" style={{ fontSize: 12 }}>免费账号可解锁 7 天完整菜单</p>
+          <button onClick={onUnlock}
+            className="px-8 h-11 rounded-2xl font-semibold flex items-center gap-2 transition-all active:scale-95"
+            style={{
+              background: "linear-gradient(135deg, #FF5A1F, #FF8C54)",
+              boxShadow: "0 6px 20px rgba(255,90,31,0.35)",
+              fontSize: 14, color: "white",
+            }}>
+            <span className="material-symbols-outlined" style={{ fontSize: 16 }}>login</span>
+            立即登录
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function WeeklyMenu() {
@@ -218,14 +268,18 @@ export default function WeeklyMenu() {
 
   // Default to today's day index (Mon=0…Sun=6)
   const todayIdx = (() => {
-    const d = new Date().getDay(); // 0=Sun…6=Sat
-    return d === 0 ? 6 : d - 1;   // → 0=Mon…6=Sun
+    const d = new Date().getDay();
+    return d === 0 ? 6 : d - 1;
   })();
   const [selectedDay, setSelectedDay] = useState(todayIdx);
   const [showShoppingToast, setShowShoppingToast] = useState(false);
 
-  // Get dishes for selected day
-  const dayMenu = weeklyMenu?.days[selectedDay];
+  // Free users can only view days 0–2 (Mon/Tue/Wed)
+  const isDayLocked = (i: number) => !isLoggedIn && i >= FREE_DAYS;
+  // If selected day is locked, clamp to last free day
+  const effectiveDay = isDayLocked(selectedDay) ? FREE_DAYS - 1 : selectedDay;
+
+  const dayMenu = weeklyMenu?.days[effectiveDay];
   const dishes  = dayMenu?.dishes ?? [];
   const [breakfast, lunch, dinner] = splitToMeals(dishes);
   const nutrition = getDayNutrition(dishes);
@@ -235,9 +289,17 @@ export default function WeeklyMenu() {
       navigate("/login");
       return;
     }
-    // Future: navigate to shopping list page
     setShowShoppingToast(true);
     setTimeout(() => setShowShoppingToast(false), 2500);
+  }
+
+  function handleDayClick(i: number) {
+    if (isDayLocked(i)) {
+      // Scroll to lock card (it's already visible below), just let tap show it
+      setSelectedDay(i); // will show locked state
+    } else {
+      setSelectedDay(i);
+    }
   }
 
   return (
@@ -276,7 +338,6 @@ export default function WeeklyMenu() {
               : "AI 智能规划 · 每周更新"}
           </p>
         </div>
-        {/* Premium badge */}
         <div
           className="flex items-center gap-1 px-3 py-1 rounded-full"
           style={{ background: "linear-gradient(135deg, rgba(255,90,31,0.2), rgba(255,140,84,0.15))", border: "1px solid rgba(255,90,31,0.3)" }}
@@ -290,138 +351,149 @@ export default function WeeklyMenu() {
       <div className="relative z-10 px-5 mb-5">
         <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
           {DAYS.map((day, i) => {
-            const isToday = i === todayIdx;
+            const isToday    = i === todayIdx;
             const isSelected = i === selectedDay;
+            const locked     = isDayLocked(i);
             return (
               <button
                 key={day}
-                onClick={() => setSelectedDay(i)}
+                onClick={() => handleDayClick(i)}
                 className="flex-shrink-0 flex flex-col items-center gap-0.5 px-3 py-2 rounded-2xl transition-all active:scale-95"
                 style={
-                  isSelected
-                    ? { background: "#FF5A1F", boxShadow: "0 4px 16px rgba(255,90,31,0.35)" }
-                    : { background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.09)" }
+                  locked
+                    ? { background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)", opacity: 0.5 }
+                    : isSelected
+                      ? { background: "#FF5A1F", boxShadow: "0 4px 16px rgba(255,90,31,0.35)" }
+                      : { background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.09)" }
                 }
               >
                 <span
                   className="font-semibold"
-                  style={{ fontSize: 13, color: isSelected ? "white" : "rgba(255,255,255,0.65)" }}
+                  style={{ fontSize: 13, color: locked ? "rgba(255,255,255,0.35)" : isSelected ? "white" : "rgba(255,255,255,0.65)" }}
                 >
                   {day}
                 </span>
-                {isToday && (
-                  <span
-                    className="rounded-full"
-                    style={{
-                      width: 4, height: 4,
-                      background: isSelected ? "rgba(255,255,255,0.8)" : "#FF5A1F",
-                    }}
-                  />
-                )}
+                {locked ? (
+                  <span className="material-symbols-outlined" style={{ fontSize: 10, color: "rgba(255,255,255,0.3)" }}>lock</span>
+                ) : isToday ? (
+                  <span className="rounded-full" style={{
+                    width: 4, height: 4,
+                    background: isSelected ? "rgba(255,255,255,0.8)" : "#FF5A1F",
+                  }} />
+                ) : null}
               </button>
             );
           })}
         </div>
+
+        {/* Free tier hint */}
+        {!isLoggedIn && (
+          <p className="mt-2 text-white/30" style={{ fontSize: 11, letterSpacing: "0.04em" }}>
+            🔓 免费预览前 3 天 · 登录解锁完整 7 天
+          </p>
+        )}
       </div>
 
-      {/* ── Nutrition summary ────────────────────────────────────── */}
-      {!loading && dishes.length > 0 && (
-        <div className="relative z-10 mx-5 mb-5 rounded-2xl p-4"
-          style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}>
-          <div className="flex items-center justify-between mb-3">
-            <span className="font-semibold text-white/80" style={{ fontSize: 13 }}>今日营养概览</span>
-            <span className="font-black text-white" style={{ fontSize: 18 }}>
-              {nutrition.cal}
-              <span className="text-white/40 font-normal" style={{ fontSize: 11 }}> kcal</span>
-            </span>
-          </div>
-          <div className="flex flex-col gap-2">
-            <NutritionBar label="蛋白" value={nutrition.pro} max={150} color="#FF5A1F" />
-            <NutritionBar label="碳水" value={nutrition.carb} max={300} color="#F39C12" />
-            <NutritionBar label="脂肪" value={nutrition.fat} max={80}  color="#6C5CE7" />
-          </div>
+      {/* ── Content area: show meals OR lock card ─────────────────── */}
+      {isDayLocked(selectedDay) ? (
+        <div className="relative z-10 flex-1">
+          <LockedDayCard onUnlock={() => navigate("/login")} />
         </div>
-      )}
-
-      {/* ── Meal sections ────────────────────────────────────────── */}
-      <div className="relative z-10 flex-1">
-        <AnimatePresence mode="wait">
-          {loading ? (
-            <motion.div key="skeleton"
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <SkeletonDay />
-            </motion.div>
-          ) : (
-            <motion.div key={selectedDay}
-              initial={{ opacity: 0, x: 24 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -24 }}
-              transition={{ duration: 0.22, ease: "easeOut" }}>
-
-              {dishes.length === 0 ? (
-                <div className="px-5 py-10 text-center">
-                  <span className="text-5xl mb-4 block">🍽️</span>
-                  <p className="text-white/50" style={{ fontSize: 14 }}>
-                    本周菜单正在生成中…
-                  </p>
-                  <p className="text-white/30 mt-1" style={{ fontSize: 12 }}>
-                    请确保已设置您的口味偏好
-                  </p>
-                </div>
-              ) : (
-                <>
-                  <MealSection mealIdx={0} dishes={breakfast} />
-                  <MealSection mealIdx={1} dishes={lunch} />
-                  <MealSection mealIdx={2} dishes={dinner} />
-                </>
-              )}
-
-              {/* ── Week overview mini strip ── */}
-              {weeklyMenu && dishes.length > 0 && (
-                <div className="mx-5 mt-2 mb-4 rounded-2xl p-4"
-                  style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)" }}>
-                  <p className="text-white/40 mb-3" style={{ fontSize: 11, letterSpacing: "0.06em" }}>
-                    全周一览
-                  </p>
-                  <div className="grid grid-cols-7 gap-1">
-                    {weeklyMenu.days.map((day, i) => {
-                      const firstDish = day.dishes[0];
-                      const isActive  = i === selectedDay;
-                      return (
-                        <button key={i} onClick={() => setSelectedDay(i)}
-                          className="flex flex-col items-center gap-1 rounded-xl p-1.5 transition-all active:scale-90"
-                          style={isActive
-                            ? { background: "rgba(255,90,31,0.18)", border: "1px solid rgba(255,90,31,0.4)" }
-                            : { background: "transparent" }
-                          }>
-                          <span className="text-white/40" style={{ fontSize: 9 }}>{DAYS[i].replace("周", "")}</span>
-                          {firstDish ? (
-                            <div className="w-8 h-8 rounded-xl overflow-hidden">
-                              <img
-                                src={firstDish.img || firstDish.image_url ||
-                                  "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?q=80&w=80&auto=format&fit=crop"}
-                                alt=""
-                                className="w-full h-full object-cover"
-                                onError={e => {
-                                  (e.target as HTMLImageElement).src =
-                                    "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?q=80&w=80&auto=format&fit=crop";
-                                }}
-                              />
-                            </div>
-                          ) : (
-                            <div className="w-8 h-8 rounded-xl"
-                              style={{ background: "rgba(255,255,255,0.06)" }} />
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </motion.div>
+      ) : (
+        <>
+          {/* ── Nutrition summary ────────────────────────────────── */}
+          {!loading && dishes.length > 0 && (
+            <div className="relative z-10 mx-5 mb-5 rounded-2xl p-4"
+              style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}>
+              <div className="flex items-center justify-between mb-3">
+                <span className="font-semibold text-white/80" style={{ fontSize: 13 }}>今日营养概览</span>
+                <span className="font-black text-white" style={{ fontSize: 18 }}>
+                  {nutrition.cal}
+                  <span className="text-white/40 font-normal" style={{ fontSize: 11 }}> kcal</span>
+                </span>
+              </div>
+              <div className="flex flex-col gap-2">
+                <NutritionBar label="蛋白" value={nutrition.pro} max={150} color="#FF5A1F" />
+                <NutritionBar label="碳水" value={nutrition.carb} max={300} color="#F39C12" />
+                <NutritionBar label="脂肪" value={nutrition.fat} max={80}  color="#6C5CE7" />
+              </div>
+            </div>
           )}
-        </AnimatePresence>
-      </div>
+
+          {/* ── Meal sections ────────────────────────────────────── */}
+          <div className="relative z-10 flex-1">
+            <AnimatePresence mode="wait">
+              {loading ? (
+                <motion.div key="skeleton"
+                  initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                  <SkeletonDay />
+                </motion.div>
+              ) : (
+                <motion.div key={effectiveDay}
+                  initial={{ opacity: 0, x: 24 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -24 }}
+                  transition={{ duration: 0.22, ease: "easeOut" }}>
+
+                  {dishes.length === 0 ? (
+                    <div className="px-5 py-10 text-center">
+                      <span className="text-5xl mb-4 block">🍽️</span>
+                      <p className="text-white/50" style={{ fontSize: 14 }}>本周菜单正在生成中…</p>
+                      <p className="text-white/30 mt-1" style={{ fontSize: 12 }}>请确保已设置您的口味偏好</p>
+                    </div>
+                  ) : (
+                    <>
+                      <MealSection mealIdx={0} dishes={breakfast} />
+                      <MealSection mealIdx={1} dishes={lunch} />
+                      <MealSection mealIdx={2} dishes={dinner} />
+                    </>
+                  )}
+
+                  {/* ── Week overview mini strip ── */}
+                  {weeklyMenu && dishes.length > 0 && (
+                    <div className="mx-5 mt-2 mb-4 rounded-2xl p-4"
+                      style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)" }}>
+                      <p className="text-white/40 mb-3" style={{ fontSize: 11, letterSpacing: "0.06em" }}>全周一览</p>
+                      <div className="grid grid-cols-7 gap-1">
+                        {weeklyMenu.days.map((day, i) => {
+                          const firstDish = day.dishes[0];
+                          const isActive  = i === effectiveDay;
+                          const locked    = isDayLocked(i);
+                          return (
+                            <button key={i} onClick={() => handleDayClick(i)}
+                              className="flex flex-col items-center gap-1 rounded-xl p-1.5 transition-all active:scale-90 relative"
+                              style={isActive
+                                ? { background: "rgba(255,90,31,0.18)", border: "1px solid rgba(255,90,31,0.4)" }
+                                : { background: "transparent", opacity: locked ? 0.4 : 1 }
+                              }>
+                              <span className="text-white/40" style={{ fontSize: 9 }}>{DAYS[i].replace("周", "")}</span>
+                              <div className="w-8 h-8 rounded-xl overflow-hidden relative">
+                                {firstDish && !locked ? (
+                                  <img
+                                    src={firstDish.img || firstDish.image_url || "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?q=80&w=80&auto=format&fit=crop"}
+                                    alt=""
+                                    className="w-full h-full object-cover"
+                                    onError={e => { (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?q=80&w=80&auto=format&fit=crop"; }}
+                                  />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center"
+                                    style={{ background: "rgba(255,255,255,0.06)" }}>
+                                    {locked && <span className="material-symbols-outlined text-white/30" style={{ fontSize: 12 }}>lock</span>}
+                                  </div>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </>
+      )}
 
       {/* ── Bottom CTA ───────────────────────────────────────────── */}
       <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md z-20 px-5 pb-8 pt-4"
@@ -430,19 +502,19 @@ export default function WeeklyMenu() {
           onClick={handleShoppingList}
           className="w-full h-[56px] rounded-2xl font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
           style={{
-            background: "linear-gradient(135deg, #FF5A1F, #FF8C54)",
-            boxShadow: "0 8px 28px rgba(255,90,31,0.35)",
-            fontSize: 15, color: "white",
+            background: isLoggedIn
+              ? "linear-gradient(135deg, #FF5A1F, #FF8C54)"
+              : "rgba(255,255,255,0.08)",
+            boxShadow: isLoggedIn ? "0 8px 28px rgba(255,90,31,0.35)" : "none",
+            border: isLoggedIn ? "none" : "1px solid rgba(255,255,255,0.12)",
+            fontSize: 15, color: isLoggedIn ? "white" : "rgba(255,255,255,0.45)",
           }}
         >
-          <span className="material-symbols-outlined" style={{ fontSize: 20 }}>shopping_cart</span>
-          一键生成本周购物清单
+          <span className="material-symbols-outlined" style={{ fontSize: 20 }}>
+            {isLoggedIn ? "shopping_cart" : "lock"}
+          </span>
+          {isLoggedIn ? "一键生成本周购物清单" : "登录后生成购物清单"}
         </button>
-        {!isLoggedIn && (
-          <p className="text-center text-white/30 mt-2" style={{ fontSize: 11 }}>
-            登录后解锁购物清单 · 自动归类食材
-          </p>
-        )}
       </div>
 
       {/* ── Toast ───────────────────────────────────────────────── */}
