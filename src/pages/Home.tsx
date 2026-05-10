@@ -432,6 +432,27 @@ export default function Home() {
         </div>
       </header>
 
+      {/* ── Anonymous trial strip ─────────────────────────────────── */}
+      {!isLoggedIn && (
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-black/[0.04]"
+          style={{ background: "rgba(255,90,31,0.04)" }}>
+          <span style={{ fontSize: 18 }}>🎁</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-[12px] font-semibold" style={{ color: "#FF5A1F" }}>
+              访客体验模式 · 3天免费试用
+            </p>
+            <p className="text-[11px] text-gray-400 truncate">
+              菜单 · 做饭步骤 · 采购清单 全部可体验
+            </p>
+          </div>
+          <button onClick={() => navigate('/signin')}
+            className="shrink-0 text-[11px] px-3 py-1.5 rounded-full font-semibold text-white"
+            style={{ background: "linear-gradient(135deg, #FF5A1F, #FF8C54)" }}>
+            登录解锁
+          </button>
+        </div>
+      )}
+
       <main className="max-w-md mx-auto pt-4">
         {/* Attributes: Solar Terms & Diners */}
         <section className="px-4 flex flex-col gap-3">

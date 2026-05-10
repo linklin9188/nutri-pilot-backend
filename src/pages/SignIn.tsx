@@ -4,7 +4,7 @@
  * /login is the marketing landing page; /signin is this focused form.
  */
 
-import { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
@@ -104,7 +104,7 @@ export default function SignIn() {
     const next = [...otp]; next[idx] = ch; setOtp(next);
     if (ch && idx < 5) otpRefs.current[idx + 1]?.focus();
   };
-  const handleOtpKey = (idx: number, e: React.KeyboardEvent) => {
+  const handleOtpKey = (idx: number, e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Backspace" && !otp[idx] && idx > 0)
       otpRefs.current[idx - 1]?.focus();
   };
@@ -138,10 +138,15 @@ export default function SignIn() {
           >
             {/* Logo */}
             <div className="mb-10">
-              <h1 className="font-serif font-black text-white" style={{ fontSize: 32 }}>爱吃</h1>
-              <div className="mt-3 rounded-full" style={{ width: 28, height: 2, background: "#FF5A1F" }} />
-              <p className="mt-4 text-white/45 font-light" style={{ fontSize: 14 }}>
-                登录后解锁完整功能
+              <div className="flex items-baseline gap-3">
+                <h1 className="font-serif font-black text-white" style={{ fontSize: 36 }}>爱吃</h1>
+                <span style={{ fontSize: 12, color: "rgba(255,255,255,0.30)", letterSpacing: "0.20em", fontWeight: 400 }}>
+                  AI EATS
+                </span>
+              </div>
+              <div className="mt-2 rounded-full" style={{ width: 28, height: 2, background: "#FF5A1F" }} />
+              <p className="mt-4 font-light" style={{ fontSize: 14, color: "rgba(255,255,255,0.40)" }}>
+                登录解锁专属菜单 · Unlock your personal menu
               </p>
             </div>
 
@@ -210,7 +215,7 @@ export default function SignIn() {
           <motion.div key="phone"
             initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }}
             transition={{ duration: 0.22 }}
-            className="relative z-10 flex-1 flex flex-col px-6 pt-8 pb-12"
+            className="relative z-10 flex-1 flex flex-col px-6 pt-8 pb-12 overflow-y-auto"
           >
             <h2 className="font-serif font-black text-white mb-2" style={{ fontSize: 28 }}>输入手机号</h2>
             <p className="text-white/40 mb-8" style={{ fontSize: 14 }}>我们将发送 6 位验证码</p>
@@ -239,7 +244,6 @@ export default function SignIn() {
               value={phone}
               onChange={e => setPhone(e.target.value)}
               onKeyDown={e => e.key === "Enter" && handleSend()}
-              autoFocus
               className="w-full h-[54px] rounded-2xl px-4 text-white placeholder-white/25 outline-none mb-3"
               style={{
                 background: "rgba(255,255,255,0.08)",
@@ -250,17 +254,27 @@ export default function SignIn() {
 
             {error && <p className="text-red-400 mb-3 text-[13px]">{error}</p>}
 
-            <button onClick={handleSend}
+            <button
+              onClick={handleSend}
               disabled={sending || phone.replace(/\D/g, "").length < 8}
-              className="w-full h-[54px] rounded-2xl font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-30"
+              className="w-full h-[54px] rounded-2xl font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
               style={{
-                background: "linear-gradient(135deg, #FF5A1F, #FF8C54)",
-                boxShadow: "0 8px 24px rgba(255,90,31,0.28)",
-                fontSize: 15, color: "white",
-              }}>
+                background: sending || phone.replace(/\D/g, "").length < 8
+                  ? "rgba(255,90,31,0.35)"
+                  : "linear-gradient(135deg, #FF5A1F, #FF8C54)",
+                boxShadow: sending || phone.replace(/\D/g, "").length < 8
+                  ? "none"
+                  : "0 8px 24px rgba(255,90,31,0.28)",
+                fontSize: 15,
+                color: sending || phone.replace(/\D/g, "").length < 8
+                  ? "rgba(255,255,255,0.45)"
+                  : "white",
+                cursor: sending || phone.replace(/\D/g, "").length < 8 ? "not-allowed" : "pointer",
+              }}
+            >
               {sending
                 ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                : <><span className="material-symbols-outlined" style={{ fontSize: 18 }}>send</span>发送验证码</>}
+                : <span>发送验证码</span>}
             </button>
           </motion.div>
         )}

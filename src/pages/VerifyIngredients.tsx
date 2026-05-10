@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { generateProcurementList, IngredientRequirement, UserLogisticsPreferences, VENDOR_CATALOG, VENDORS_DB } from "../services/procurementEngine";
+import SupplierPanel from "../components/SupplierPanel";
+import { getUserTier, TIER_CONFIG } from "../lib/suppliers";
 
 export default function VerifyIngredients() {
   const navigate = useNavigate();
@@ -214,6 +216,9 @@ export default function VerifyIngredients() {
   };
 
 
+  const userTier = getUserTier();
+  const tierCfg  = TIER_CONFIG[userTier];
+
   return (
     <div className="bg-background font-sans w-full max-w-md mx-auto min-h-screen text-on-surface relative overflow-x-hidden">
       {/* Top Navigation Bar */}
@@ -226,6 +231,11 @@ export default function VerifyIngredients() {
             <h1 className="text-[18px] font-bold tracking-tight leading-tight">智能采购</h1>
           </div>
         </div>
+        {/* Tier badge */}
+        <span className="text-[11px] px-3 py-1 rounded-full font-semibold"
+          style={{ background: `${tierCfg.color}18`, color: tierCfg.color }}>
+          {tierCfg.icon} {tierCfg.label}
+        </span>
       </header>
 
       <main className="px-5 py-6 space-y-6 pb-24">
@@ -361,6 +371,40 @@ export default function VerifyIngredients() {
             </section>
           );
         })}
+        {/* ── Supplier Tier Showcase ─────────────────────────────── */}
+        <section>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-[16px] font-bold tracking-tight">精选供货商</h2>
+            <span className="text-[11px] text-secondary">按会员等级解锁</span>
+          </div>
+
+          {/* Anonymous banner */}
+          {userTier === 'anonymous' && (
+            <div className="mb-4 rounded-2xl px-4 py-3 flex items-center gap-3"
+              style={{ background: "rgba(255,90,31,0.06)", border: "1px solid rgba(255,90,31,0.15)" }}>
+              <span style={{ fontSize: 20 }}>🛒</span>
+              <div className="flex-1">
+                <p className="font-semibold text-[13px]" style={{ color: "#FF5A1F" }}>访客模式 · 基础超市</p>
+                <p className="text-[11px] text-gray-500 mt-0.5">登录后解锁精选供货商，会员享米其林直供</p>
+              </div>
+              <button onClick={() => navigate('/signin')}
+                className="text-[11px] px-3 py-1.5 rounded-full font-semibold text-white shrink-0"
+                style={{ background: "linear-gradient(135deg, #FF5A1F, #FF8C54)" }}>
+                登录
+              </button>
+            </div>
+          )}
+
+          <div style={{
+            background: "#0a0a0a",
+            borderRadius: 20,
+            padding: "16px 16px 20px",
+            border: "1px solid rgba(255,255,255,0.06)",
+          }}>
+            <SupplierPanel region="hk" />
+          </div>
+        </section>
+
       </main>
     </div>
   );
