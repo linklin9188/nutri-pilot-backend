@@ -72,6 +72,43 @@ function weightedRandom<T extends { score: number }>(
   return result;
 }
 
+// ── Ingredient category grouping ─────────────────────────────────────────────
+// Maps individual main_ingredient values → broad protein category.
+// This prevents the algorithm from picking fish + shrimp + crab + seafood
+// in the same week (they all look "different" by string but are all seafood).
+
+const ING_CATEGORY: Record<string, string> = {
+  // Seafood — hard-capped at MAX_PER_CATEGORY['seafood'] per week
+  seafood: 'seafood', fish: 'seafood', shrimp: 'seafood',
+  crab: 'seafood', shellfish: 'seafood', squid: 'seafood',
+  scallop: 'seafood', clam: 'seafood', lobster: 'seafood',
+  salmon: 'seafood', tuna: 'seafood', cod: 'seafood',
+  // Pork
+  pork: 'pork',
+  // Beef / lamb
+  beef: 'beef', lamb: 'beef', mutton: 'beef',
+  // Poultry
+  chicken: 'poultry', duck: 'poultry', turkey: 'poultry',
+  // Plant
+  veggie: 'plant', vegetable: 'plant', tofu: 'plant',
+  mushroom: 'plant', egg: 'plant', bean: 'plant',
+  tempeh: 'plant',
+};
+
+function ingCategory(ing: string): string {
+  return ING_CATEGORY[ing] ?? 'other';
+}
+
+// Max times any single category may appear per 7-day week
+const MAX_PER_CATEGORY: Record<string, number> = {
+  seafood: 2,   // at most 2 seafood meals per week
+  pork:    3,
+  beef:    2,
+  poultry: 3,
+  plant:   7,   // no cap on veggies
+  other:   7,
+};
+
 // ── Score a dish for weekly planning ─────────────────────────────────────────
 
 interface WeeklyScoreParams {
@@ -81,17 +118,19 @@ interface WeeklyScoreParams {
   recentIds: Map<string, number>;   // dishId → days since last served
   pickedIngredients: string[];       // main_ingredient values picked so far this week
   dayIndex: number;                  // 0=Mon … 6=Sun
+  spiceBoost?: number;              // from userPrefs
 }
 
 function scoreForWeek({
-  dish, profile, prefScores, recentIds, pickedIngredients, dayIndex,
+  dish, profile, prefScores, recentIds, pickedIngredients, dayIndex, spiceBoost = 0,
 }: WeeklyScoreParams): number {
   const flavorTags: string[]  = dish.flavor_tags ?? [];
   const healthTags: string[]  = dish.health_benefit_tags ?? [];
   const origin: string        = dish.origin_cuisine ?? '';
   const ingredient: string    = dish.main_ingredient ?? 'other';
+  const cat                   = ingCategory(ingredient);
 
-  // ── 1. Base score (simplified 6-axis without age/humidity/solar) ──────────
+  // ── 1. Base score ─────────────────────────────────────────────────────────
   const hometownScore = profile.hometown_cuisine && origin === profile.hometown_cuisine ? 1.0 : 0.0;
   const goalScore     = profile.dietary_goal && healthTags.includes(profile.dietary_goal) ? 1.0 : 0.0;
   const tasteScore    = profile.taste_pref && flavorTags.includes(profile.taste_pref) ? 1.0 : 0.0;
@@ -109,6 +148,11 @@ function scoreForWeek({
   const cuisineCol = CUISINE_COL[origin];
   if (cuisineCol && prefScores[cuisineCol]) score += prefScores[cuisineCol] * 0.10;
 
+  // Spice preference boost
+  if (spiceBoost !== 0 && (flavorTags.includes('spicy') || flavorTags.includes('mala'))) {
+    score += spiceBoost;
+  }
+
   // ── 2. Recency decay ──────────────────────────────────────────────────────
   const daysSince = recentIds.get(dish.id);
   if (daysSince !== undefined) {
@@ -117,21 +161,28 @@ function scoreForWeek({
     else if (daysSince < 30) score -= 0.15;
   }
 
-  // ── 3. Intra-week ingredient diversity ────────────────────────────────────
+  // ── 3. Diversity penalties ────────────────────────────────────────────────
+  // 3a. Exact same ingredient → strong penalty
   const sameIngCount = pickedIngredients.filter(i => i === ingredient).length;
-  score -= sameIngCount * 0.40;
+  score -= sameIngCount * 0.50;
+
+  // 3b. Same category (e.g. fish + shrimp = both seafood) → moderate penalty
+  const sameCatCount = pickedIngredients.filter(i => ingCategory(i) === cat).length;
+  score -= sameCatCount * 0.30;
 
   // ── 4. Day-of-week modifier ───────────────────────────────────────────────
   const isWeekend = dayIndex >= 5; // Sat=5, Sun=6
   if (isWeekend) {
-    // Weekends: prefer richer, more elaborate dishes (meat / seafood)
-    if (['pork','beef','lamb','seafood','fish','shrimp','crab'].includes(ingredient)) score += 0.15;
+    // Weekends: a single premium dish is fine (pork/beef/poultry — NOT exclusively seafood)
+    if (['pork','beef','poultry'].includes(cat)) score += 0.15;
+    // Seafood on weekend: slight bonus only if not already had seafood this week
+    if (cat === 'seafood' && sameCatCount === 0) score += 0.10;
   } else {
-    // Weekdays: prefer quick home-cooking (veggie, egg, tofu)
-    if (['veggie','egg','tofu','mushroom'].includes(ingredient)) score += 0.10;
+    // Weekdays: prefer quicker plant / poultry / pork dishes
+    if (['plant','poultry','pork'].includes(cat)) score += 0.10;
   }
 
-  // Slight bonus for vegan dishes on Monday (reset after weekend eating)
+  // Monday veggie reset bonus
   if (dayIndex === 0 && dish.is_vegan) score += 0.10;
 
   return score;
@@ -165,42 +216,95 @@ function enrichRaw(dish: any): SupabaseDish {
 
 // ── Generate weekly plan from dish pool ───────────────────────────────────────
 
+// ── Per-day meal slot target composition ─────────────────────────────────────
+// Each day should have a balanced mix, not all the same category.
+// slot 0: main protein (meat/poultry preferred, seafood ≤ 2/week)
+// slot 1: secondary protein or mix
+// slot 2: veggie/plant dish
+// slot 3: soup or light dish
+// slot 4: flexible
+
+const SLOT_PREFERRED_CATS: string[][] = [
+  ['pork', 'poultry', 'beef', 'seafood'],  // slot 0: main protein
+  ['pork', 'poultry', 'beef', 'plant'],    // slot 1: secondary
+  ['plant'],                                // slot 2: always veggie
+  ['plant', 'other'],                      // slot 3: soup / light
+  ['pork', 'poultry', 'plant', 'other'],   // slot 4: flexible
+];
+
 function generateWeekPlan(
   pool: any[],
   profile: { hometown_cuisine: string | null; dietary_goal: string | null; taste_pref: string | null },
   prefScores: Record<string, number>,
   recentIds: Map<string, number>,
   dishesPerDay = 5,
+  spiceBoost = 0,
 ): WeeklyMenu {
   const weekStart = getMondayISO();
   const days: WeeklyDayMenu[] = [];
   const usedIds = new Set<string>();
   const pickedIngredients: string[] = [];
 
+  // Track weekly category counts for hard caps
+  const weeklyCatCounts: Record<string, number> = {};
+
   for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
-    // Score all dishes not yet used this week
-    const candidates = pool
-      .filter(d => !usedIds.has(d.id))
-      .map(d => ({
-        dish: d,
-        score: scoreForWeek({ dish: d, profile, prefScores, recentIds, pickedIngredients, dayIndex }),
-      }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 30); // top-30 candidates for weighted random
+    const dayDishes: any[] = [];
+    const dayIngredients: string[] = [];
 
-    // Pick dishesPerDay dishes via weighted random
-    const picked = weightedRandom(candidates, dishesPerDay).map(c => c.dish);
+    for (let slot = 0; slot < dishesPerDay; slot++) {
+      const preferredCats = SLOT_PREFERRED_CATS[slot] ?? [];
 
-    // Mark as used + track ingredients
-    picked.forEach(d => {
-      usedIds.add(d.id);
-      pickedIngredients.push(d.main_ingredient ?? 'other');
-    });
+      // Build scored candidates for this slot
+      const allCandidates = pool
+        .filter(d => !usedIds.has(d.id) && !dayDishes.some(p => p.id === d.id))
+        .filter(d => {
+          // Hard weekly cap: block category if over limit
+          const cat = ingCategory(d.main_ingredient ?? 'other');
+          const cap = MAX_PER_CATEGORY[cat] ?? 7;
+          return (weeklyCatCounts[cat] ?? 0) < cap;
+        })
+        .map(d => {
+          let score = scoreForWeek({
+            dish: d, profile, prefScores, recentIds,
+            pickedIngredients: [...pickedIngredients, ...dayIngredients],
+            dayIndex,
+            spiceBoost,
+          });
+
+          // Slot affinity bonus: reward dishes that fit this slot's role
+          const cat = ingCategory(d.main_ingredient ?? 'other');
+          if (preferredCats.includes(cat)) score += 0.20;
+
+          // Penalty if same category already used in this day's earlier slots
+          const sameCatInDay = dayIngredients.filter(i => ingCategory(i) === cat).length;
+          score -= sameCatInDay * 0.45;
+
+          return { dish: d, score };
+        })
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 25);
+
+      if (allCandidates.length === 0) break;
+
+      const picked = weightedRandom(allCandidates, 1)[0]?.dish;
+      if (!picked) break;
+
+      dayDishes.push(picked);
+      dayIngredients.push(picked.main_ingredient ?? 'other');
+      usedIds.add(picked.id);
+
+      const cat = ingCategory(picked.main_ingredient ?? 'other');
+      weeklyCatCounts[cat] = (weeklyCatCounts[cat] ?? 0) + 1;
+    }
+
+    // Track for next day's scoring
+    dayIngredients.forEach(ing => pickedIngredients.push(ing));
 
     days.push({
       dayIndex,
       dayLabel: DAY_LABELS[dayIndex],
-      dishes: picked.map(d => enrichRaw(d)),
+      dishes: dayDishes.map(d => enrichRaw(d)),
     });
   }
 
@@ -384,7 +488,8 @@ export function useWeeklyMenu() {
 
         const prefScores: Record<string, number> = (scoreRow as any) ?? {};
 
-        const menu = generateWeekPlan(pool, profile, prefScores, recentIds);
+        const spiceBoost = localPrefs.spiceBoost ?? 0;
+        const menu = generateWeekPlan(pool, profile, prefScores, recentIds, 5, spiceBoost);
 
         if (cancelled) return;
 
