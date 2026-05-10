@@ -655,7 +655,7 @@ export default function Home() {
                       <button
                         key={day.dayIndex}
                         onClick={() => {
-                          if (locked) { navigate('/login'); return; }
+                          if (locked) { navigate('/signin'); return; }
                           setSelectedDayOfWeek(day.dayLabel);
                         }}
                         className={`flex flex-col items-center gap-1 min-w-[3rem] py-2.5 rounded-2xl transition-all ${
@@ -699,7 +699,7 @@ export default function Home() {
                 ) : selectedDayLocked ? (
                   /* Lock state for selected day */
                   <button
-                    onClick={() => navigate('/login')}
+                    onClick={() => navigate('/signin')}
                     className="w-full py-5 rounded-2xl flex flex-col items-center gap-2 transition-all active:scale-[0.98]"
                     style={{ background: "rgba(255,90,31,0.05)", border: "1px dashed rgba(255,90,31,0.25)" }}
                   >

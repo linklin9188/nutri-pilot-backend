@@ -288,7 +288,7 @@ export default function WeeklyMenu() {
 
   function handleShoppingList() {
     if (!isLoggedIn) {
-      navigate("/login");
+      navigate('/signin');
       return;
     }
     setShowShoppingToast(true);
@@ -399,7 +399,7 @@ export default function WeeklyMenu() {
       {/* ── Content area: show meals OR lock card ─────────────────── */}
       {isDayLocked(selectedDay) ? (
         <div className="relative z-10 flex-1">
-          <LockedDayCard onUnlock={() => navigate("/login")} />
+          <LockedDayCard onUnlock={() => navigate('/signin')} />
         </div>
       ) : (
         <>

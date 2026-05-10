@@ -15,6 +15,7 @@ import DeliveryTracking from './pages/DeliveryTracking';
 import AIPilot from './pages/AIPilot';
 import Settings from './pages/Settings';
 import WeeklyMenu from './pages/WeeklyMenu';
+import SignIn from './pages/SignIn';
 import { LanguageProvider } from './contexts/LanguageContext';
 
 // Smart entry point:
@@ -41,6 +42,7 @@ export default function App() {
           <Route path="/ai-pilot" element={<AIPilot />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/weekly" element={<WeeklyMenu />} />
+          <Route path="/signin" element={<SignIn />} />
         </Routes>
       </Router>
     </LanguageProvider>
