@@ -36,6 +36,10 @@ export interface WeeklyMenu {
   days: WeeklyDayMenu[];
 }
 
+// ── Cache version — bump this whenever the algorithm changes significantly ─────
+// This ensures old cached menus are discarded after an algorithm update.
+const ALGO_VERSION = 'v4'; // bumped: course_type slot system + diversity fix
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const DAY_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
@@ -426,7 +430,7 @@ export function useWeeklyMenu() {
   useEffect(() => {
     const handler = () => {
       const weekStart = getMondayISO();
-      localStorage.removeItem(`weekly_menu_${weekStart}`);
+      localStorage.removeItem(`weekly_menu_${ALGO_VERSION}_${weekStart}`);
       setWeeklyMenu(null);
       setRefreshKey(k => k + 1);
     };
@@ -452,7 +456,7 @@ export function useWeeklyMenu() {
       }
 
       // 2. Try localStorage cache
-      const lsKey  = `weekly_menu_${weekStart}`;
+      const lsKey  = `weekly_menu_${ALGO_VERSION}_${weekStart}`;
       const lsRaw  = localStorage.getItem(lsKey);
       if (lsRaw) {
         try {
@@ -583,7 +587,7 @@ export function useWeeklyMenu() {
 
     setWeeklyMenu(updated);
 
-    const lsKey = `weekly_menu_${weeklyMenu.weekStart}`;
+    const lsKey = `weekly_menu_${ALGO_VERSION}_${weeklyMenu.weekStart}`;
     localStorage.setItem(lsKey, JSON.stringify(updated));
 
     const userId = localStorage.getItem('nutri_user_id') ?? 'anonymous';
@@ -601,7 +605,7 @@ export function useWeeklyMenu() {
   // Regenerate (discard cache, re-run algorithm)
   function regenerate() {
     if (!weeklyMenu) return;
-    localStorage.removeItem(`weekly_menu_${weeklyMenu.weekStart}`);
+    localStorage.removeItem(`weekly_menu_${ALGO_VERSION}_${weeklyMenu.weekStart}`);
     setWeeklyMenu(null);
     setLoading(true);
     // Re-trigger useEffect via state reset

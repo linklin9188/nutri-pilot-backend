@@ -7,8 +7,8 @@ import { supabase } from "../lib/supabase";
 type Step = "login" | "phone" | "otp" | "preferences";
 
 const COUNTRY_CODES = [
-  { code: "+86", label: "中国大陆", flag: "🇨🇳" },
   { code: "+852", label: "香港", flag: "🇭🇰" },
+  { code: "+86",  label: "中国大陆", flag: "🇨🇳" },
 ];
 
 export default function Login() {
@@ -19,7 +19,7 @@ export default function Login() {
   const [step, setStep] = useState<Step>("login");
 
   // ── phone OTP state ────────────────────────────────────────────────
-  const [countryCode, setCountryCode] = useState("+86");
+  const [countryCode, setCountryCode] = useState("+852");
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const [otpError, setOtpError] = useState("");
