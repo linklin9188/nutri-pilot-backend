@@ -260,10 +260,13 @@ export default function Home() {
     return menu;
   };
 
+  const isLoggedIn = !!localStorage.getItem('isLoggedIn');
+
   useEffect(() => {
-    // Check login
-    if (!localStorage.getItem('isLoggedIn')) {
-      navigate('/login');
+    // No forced login — anonymous users can browse menu
+    // If no prefs at all, redirect to quick setup
+    if (!localStorage.getItem('quickPrefs') && !localStorage.getItem('isLoggedIn')) {
+      navigate('/setup');
       return;
     }
 
@@ -271,7 +274,7 @@ export default function Home() {
     if (savedTaste && currentTaste === "default") {
        if (savedTaste === 'light') setCurrentTaste('light');
        if (savedTaste === 'spicy') setCurrentTaste('spicy');
-       if (savedTaste === 'savory') setCurrentTaste('seafood'); // mapping savory to seafood for now
+       if (savedTaste === 'savory') setCurrentTaste('seafood');
        if (savedTaste === 'veggie' || savedTaste === 'fatloss') setCurrentTaste('veggie');
     }
   }, [navigate]);
@@ -401,6 +404,22 @@ export default function Home() {
   return (
     <div className="font-sans text-on-surface antialiased overflow-x-hidden pb-32 w-full max-w-md mx-auto relative min-h-screen bg-background">
       {/* TopAppBar */}
+      {/* 匿名用户解锁提示条 */}
+      {!isLoggedIn && (
+        <div
+          onClick={() => navigate('/login')}
+          className="sticky top-0 z-[60] flex items-center justify-between px-5 py-2.5 cursor-pointer"
+          style={{ background: "linear-gradient(135deg, #FF5A1F, #FF8C54)" }}>
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-white text-[16px]">lock_open</span>
+            <span className="text-white font-medium" style={{ fontSize: 13 }}>
+              登录后保存菜单 · 解锁全部功能
+            </span>
+          </div>
+          <span className="text-white/80 text-[12px] font-semibold">登录 →</span>
+        </div>
+      )}
+
       <header className="bg-surface/80 backdrop-blur-xl sticky top-0 flex justify-between items-center w-full px-5 py-4 z-50 border-b border-black/5">
         <div className="flex flex-col">
           <div className="flex items-center gap-1.5">
@@ -409,12 +428,20 @@ export default function Home() {
             </span>
           </div>
         </div>
-        <div className="relative group active:scale-95 transition-transform cursor-pointer" onClick={() => window.location.href='/settings'}>
-          <img
-            className="w-8 h-8 rounded-full shadow-sm"
-            alt="Profile Avatar"
-            src="https://lh3.googleusercontent.com/aida-public/AB6AXuB7Zg8a6m7XUQvXKCDMVxUrgoAkr03cz_M9mDGc-QDUu0HarnbbFJC4spv-e4vA3ZC6VbpYMM4qjdzKbW9N9t63MCOBUM2hbMIrKUfrbgx6KNjVwDAwuWA109eB9JSHCJ1yd2z5GiOozG0gjdubOLsGnJlEa6GFX9hIcRa-5jXa2DA2Vy0IZXpJ42jbtDBCIsf2uecz5DXSL-ssC0jz3Gzg9Pfs8sjXSYVvd5Cwn7t15Ypht3hNk7MJwZsCjB4eSu1PFtiEi2cb2tez"
-          />
+        <div className="relative group active:scale-95 transition-transform cursor-pointer"
+          onClick={() => navigate(isLoggedIn ? '/settings' : '/login')}>
+          {isLoggedIn ? (
+            <img
+              className="w-8 h-8 rounded-full shadow-sm"
+              alt="Profile Avatar"
+              src="https://lh3.googleusercontent.com/aida-public/AB6AXuB7Zg8a6m7XUQvXKCDMVxUrgoAkr03cz_M9mDGc-QDUu0HarnbbFJC4spv-e4vA3ZC6VbpYMM4qjdzKbW9N9t63MCOBUM2hbMIrKUfrbgx6KNjVwDAwuWA109eB9JSHCJ1yd2z5GiOozG0gjdubOLsGnJlEa6GFX9hIcRa-5jXa2DA2Vy0IZXpJ42jbtDBCIsf2uecz5DXSL-ssC0jz3Gzg9Pfs8sjXSYVvd5Cwn7t15Ypht3hNk7MJwZsCjB4eSu1PFtiEi2cb2tez"
+            />
+          ) : (
+            <div className="w-8 h-8 rounded-full flex items-center justify-center"
+              style={{ background: "rgba(255,90,31,0.12)", border: "1.5px solid rgba(255,90,31,0.3)" }}>
+              <span className="material-symbols-outlined text-primary text-[18px]">person</span>
+            </div>
+          )}
         </div>
       </header>
 

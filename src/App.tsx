@@ -3,9 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Home from './pages/Home';
 import Login from './pages/Login';
+import QuickSetup from './pages/QuickSetup';
 import Onboarding from './pages/Onboarding';
 import HelperPrep from './pages/HelperPrep';
 import HelperCook from './pages/HelperCook';
@@ -15,12 +16,21 @@ import AIPilot from './pages/AIPilot';
 import Settings from './pages/Settings';
 import { LanguageProvider } from './contexts/LanguageContext';
 
+// Smart entry point:
+// - First visit (no quickPrefs) → /setup (3-question taste profile)
+// - Return visit → / (home menu, anonymous OK)
+function RootRedirect() {
+  const hasPrefs = !!localStorage.getItem("quickPrefs");
+  return hasPrefs ? <Home /> : <Navigate to="/setup" replace />;
+}
+
 export default function App() {
   return (
     <LanguageProvider>
       <Router>
         <Routes>
-          <Route path="/" element={<Home />} />
+          <Route path="/" element={<RootRedirect />} />
+          <Route path="/setup" element={<QuickSetup />} />
           <Route path="/login" element={<Login />} />
           <Route path="/onboarding" element={<Onboarding />} />
           <Route path="/verify" element={<VerifyIngredients />} />
