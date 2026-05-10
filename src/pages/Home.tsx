@@ -732,6 +732,20 @@ export default function Home() {
                 )}
               </div>
             )}
+
+            {/* CTA → full weekly menu page */}
+            <button
+              onClick={() => navigate('/weekly')}
+              className="mt-4 w-full h-[44px] rounded-2xl flex items-center justify-center gap-2 font-semibold transition-all active:scale-[0.98]"
+              style={{
+                background: "linear-gradient(135deg, #FF5A1F, #FF8C54)",
+                boxShadow: "0 6px 20px rgba(255,90,31,0.22)",
+                fontSize: 14, color: "white",
+              }}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 18 }}>calendar_month</span>
+              查看完整周菜单 · 生成购物清单
+            </button>
           </div>
         </section>
       </main>

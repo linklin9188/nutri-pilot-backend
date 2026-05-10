@@ -14,6 +14,7 @@ import VerifyIngredients from './pages/VerifyIngredients';
 import DeliveryTracking from './pages/DeliveryTracking';
 import AIPilot from './pages/AIPilot';
 import Settings from './pages/Settings';
+import WeeklyMenu from './pages/WeeklyMenu';
 import { LanguageProvider } from './contexts/LanguageContext';
 
 // Smart entry point:
@@ -39,6 +40,7 @@ export default function App() {
           <Route path="/cook" element={<HelperCook />} />
           <Route path="/ai-pilot" element={<AIPilot />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/weekly" element={<WeeklyMenu />} />
         </Routes>
       </Router>
     </LanguageProvider>
