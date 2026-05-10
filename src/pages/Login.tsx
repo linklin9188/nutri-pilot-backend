@@ -272,21 +272,9 @@ export default function Login() {
               <div className="mt-4 mb-5 rounded-full"
                 style={{ width: 36, height: 2, background: "#FF5A1F", boxShadow: "0 0 12px rgba(255,90,31,0.6)" }} />
 
-              {/* Feature highlights */}
-              <div className="flex flex-col gap-2.5">
-                {[
-                  { emoji: "🤖", text: t("AI plans your weekly menu in seconds", "AI 3秒规划一周菜单，不再纠结吃什么") },
-                  { emoji: "🛒", text: t("Auto-generate grocery list by supermarket", "自动生成购物清单，按超市分类备齐食材") },
-                  { emoji: "🌡️", text: t("Adapts to season, weather and your taste", "节气 · 天气 · 口味三合一个性推荐") },
-                ].map(({ emoji, text }) => (
-                  <div key={emoji} className="flex items-start gap-2.5">
-                    <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>{emoji}</span>
-                    <span className="text-white/60 font-light" style={{ fontSize: 13, lineHeight: 1.5, letterSpacing: "0.04em" }}>
-                      {text}
-                    </span>
-                  </div>
-                ))}
-              </div>
+              <p className="text-white/65 font-light" style={{ fontSize: 15, letterSpacing: "0.08em" }}>
+                {t("No more thinking about what to eat", "吃啥不用想，AI 替你想～")}
+              </p>
             </motion.div>
 
             {/* ── Fun CTA button ─────────────────────────────────────── */}
