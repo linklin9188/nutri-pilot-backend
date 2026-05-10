@@ -306,6 +306,9 @@ function enrichRaw(dish: any): SupabaseDish {
     type: dishType,
     highlight: false,
     description_en: dish.description_en || '',
+    // Steps — mapped from DB JSONB fields (available once gen-dish-steps runs)
+    prep_steps_json: dish.prep_steps_json ?? null,
+    cook_steps_json: dish.cook_steps_json ?? null,
     _raw: dish,
   };
 }
