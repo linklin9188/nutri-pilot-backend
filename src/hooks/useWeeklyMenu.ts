@@ -38,7 +38,7 @@ export interface WeeklyMenu {
 
 // ── Cache version — bump this whenever the algorithm changes significantly ─────
 // This ensures old cached menus are discarded after an algorithm update.
-const ALGO_VERSION = 'v6'; // bumped: headcount-based dishesPerDay (8人以上=人数=菜数)
+const ALGO_VERSION = 'v7'; // bumped: title keyword dedup + guaranteed soup + same-protein soup block + weekday quickcook
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -128,6 +128,20 @@ function ingCategory(ing: string): string {
   return ING_CATEGORY[ing] ?? 'other';
 }
 
+// ── Title keyword deduplication ───────────────────────────────────────────────
+// Prevents e.g. 孜然排骨 + 糖醋排骨 + 排骨汤 all appearing in one week.
+// Each keyword is extracted from the Chinese dish title; if it's already been
+// used N times this week, a strong penalty is applied to all dishes sharing it.
+const TITLE_KEYWORDS = [
+  '排骨', '鸡腿', '鸡翅', '鸡胸', '全鸡', '烤鸡',
+  '牛腩', '牛排', '牛肉', '羊肉', '五花肉', '猪蹄',
+  '虾', '螃蟹', '鱼', '贝', '蛤',
+];
+
+function extractTitleKeyword(titleZh: string): string | null {
+  return TITLE_KEYWORDS.find(kw => titleZh.includes(kw)) ?? null;
+}
+
 // Max times any single category may appear per 7-day week.
 // These are WEEKLY caps across all days — for large families (8+ people),
 // a single day can have multiple slots, so weekly caps scale accordingly.
@@ -168,12 +182,13 @@ interface WeeklyScoreParams {
   prefScores: Record<string, number>;
   recentIds: Map<string, number>;   // dishId → days since last served
   pickedIngredients: string[];       // main_ingredient values picked so far this week
+  pickedTitleKeywords: string[];     // title keywords already used this week
   dayIndex: number;                  // 0=Mon … 6=Sun
   spiceBoost?: number;              // from userPrefs
 }
 
 function scoreForWeek({
-  dish, profile, prefScores, recentIds, pickedIngredients, dayIndex, spiceBoost = 0,
+  dish, profile, prefScores, recentIds, pickedIngredients, pickedTitleKeywords, dayIndex, spiceBoost = 0,
 }: WeeklyScoreParams): number {
   const flavorTags: string[]  = dish.flavor_tags ?? [];
   const healthTags: string[]  = dish.health_benefit_tags ?? [];
@@ -242,12 +257,25 @@ function scoreForWeek({
   if (isWeekend) {
     if (['pork','beef','poultry'].includes(cat)) score += 0.12;
     if (cat === 'seafood' && sameCatCount === 0) score += 0.08;
+    // Weekend: elaborate dishes (longer cook time) get a bonus
+    if (dish.cook_time_min && dish.cook_time_min >= 45) score += 0.10;
   } else {
     if (['plant','poultry','pork'].includes(cat)) score += 0.08;
+    // Weekday: quick dishes (≤30 min) preferred
+    if (dish.cook_time_min && dish.cook_time_min <= 30) score += 0.12;
   }
 
   // Monday light/detox bonus
   if (dayIndex === 0 && (dish.is_vegan || flavorTags.includes('light'))) score += 0.10;
+
+  // ── 9. Title keyword deduplication ───────────────────────────────────────
+  // Prevents 排骨×3 / 鸡腿×2 etc. across the week.
+  // Each occurrence already in pickedTitleKeywords adds a -0.65 penalty.
+  const titleKw = extractTitleKeyword(dish.title_zh ?? dish.title ?? '');
+  if (titleKw) {
+    const kwCount = pickedTitleKeywords.filter(k => k === titleKw).length;
+    score -= kwCount * 0.65;
+  }
 
   return score;
 }
@@ -343,6 +371,15 @@ const CARB_BLOCKED_SLOTS = new Set(
   Array.from({ length: 20 }, (_, i) => i).filter(i => i !== STAPLE_SLOT)
 );
 
+// ── Small-family slot template (≤3 dishes/day): guarantee soup in last slot ──
+// Standard 5-slot template puts soup in slot 3, but for 1-2 person families
+// (dishesPerDay=3) slot 3 never exists. This template ensures soup appears.
+const SLOT_PREFERRED_CATS_SMALL: string[][] = [
+  ['pork', 'poultry', 'beef', 'seafood'],  // 0: 主蛋白
+  ['plant'],                                // 1: 蔬菜
+  ['plant', 'other'],                       // 2: 汤（soup 在这里出现）
+];
+
 function generateWeekPlan(
   pool: any[],
   profile: { hometown_cuisine: string | null; dietary_goal: string | null; taste_pref: string | null },
@@ -355,6 +392,10 @@ function generateWeekPlan(
   const days: WeeklyDayMenu[] = [];
   const usedIds = new Set<string>();
   const pickedIngredients: string[] = [];
+  const pickedTitleKeywords: string[] = [];   // weekly keyword tracker
+
+  // Use small-family slot template when dishesPerDay ≤ 3
+  const useSmallTemplate = dishesPerDay <= 3;
 
   // Track weekly category counts for hard caps (scale with dishesPerDay)
   const MAX_PER_CATEGORY = getMaxPerCategory(dishesPerDay);
@@ -365,7 +406,11 @@ function generateWeekPlan(
     const dayIngredients: string[] = [];
 
     for (let slot = 0; slot < dishesPerDay; slot++) {
-      const preferredCats = SLOT_PREFERRED_CATS[slot] ?? [];
+      const slotTemplate = useSmallTemplate ? SLOT_PREFERRED_CATS_SMALL : SLOT_PREFERRED_CATS;
+      const preferredCats = slotTemplate[slot] ?? [];
+
+      // For small families: slot 2 is the soup slot; otherwise slot 3
+      const isSoupSlot = useSmallTemplate ? slot === 2 : slot === 3;
 
       // Build scored candidates for this slot
       const allCandidates = pool
@@ -377,7 +422,7 @@ function generateWeekPlan(
 
           // Determine if dish is a staple (use course_type first, fallback to ing cat)
           const isStaple = courseType === 'staple' || cat === 'carb';
-          // Soup/dessert: skip from regular menu slots (soup goes to slot 3 only)
+          // Soup/dessert: skip from regular menu slots (soup goes to soup slot only)
           const isSoup = courseType === 'soup';
           const isDessert = courseType === 'dessert';
 
@@ -388,13 +433,21 @@ function generateWeekPlan(
           const cap = MAX_PER_CATEGORY[cat] ?? 7;
           if ((weeklyCatCounts[cat] ?? 0) >= cap) return false;
 
-          // Staple dishes ONLY allowed in slot 4
-          if (isStaple && CARB_BLOCKED_SLOTS.has(slot)) return false;
-          // Non-staple dishes blocked from slot 4
-          if (slot === 4 && !isStaple) return false;
+          // Staple dishes ONLY allowed in slot 4 (standard template)
+          if (!useSmallTemplate) {
+            if (isStaple && CARB_BLOCKED_SLOTS.has(slot)) return false;
+            if (slot === 4 && !isStaple) return false;
+          } else {
+            // Small template: no staple slot — block staple entirely
+            if (isStaple) return false;
+          }
 
-          // Soup dishes prefer slot 3; block from slots 0, 1, 4
-          if (isSoup && (slot === 0 || slot === 1 || slot === 4)) return false;
+          // Soup slot: only allow soups (or light dishes if no soup available)
+          if (isSoupSlot && !isSoup && cat !== 'plant' && cat !== 'other') return false;
+          // Non-soup slots (standard): block soups from slots 0, 1, 4
+          if (!useSmallTemplate && isSoup && (slot === 0 || slot === 1 || slot === 4)) return false;
+          // Non-soup slots (small template): block soups from slots 0, 1
+          if (useSmallTemplate && isSoup && slot !== 2) return false;
 
           return true;
         })
@@ -402,6 +455,7 @@ function generateWeekPlan(
           let score = scoreForWeek({
             dish: d, profile, prefScores, recentIds,
             pickedIngredients: [...pickedIngredients, ...dayIngredients],
+            pickedTitleKeywords,
             dayIndex,
             spiceBoost,
           });
@@ -413,16 +467,26 @@ function generateWeekPlan(
           // Additional slot affinity from DB course_type (more accurate)
           const ct: string = d.course_type ?? '';
           if (slot === 0 && ct === 'main_protein') score += 0.20;
-          if ((slot === 1 || slot === 2) && ct === 'veggie_dish') score += 0.18;
-          if (slot === 3 && ct === 'soup') score += 0.30;    // strong pull to slot 3
-          if (slot === 3 && ct === 'veggie_dish') score += 0.10;
+          if ((slot === 1 || slot === 2) && ct === 'veggie_dish' && !isSoupSlot) score += 0.18;
+          if (isSoupSlot && ct === 'soup') score += 0.30;    // strong pull to soup slot
+          if (isSoupSlot && ct === 'veggie_dish') score += 0.10;
 
           // Same-category-in-same-day penalty (prevents e.g. two veggie dishes in slot 1+2)
           const sameCatInDay = dayIngredients.filter(i => ingCategory(i) === cat).length;
           score -= sameCatInDay * 0.45;
 
-          // Slot 3: prefer light-flavored dishes as pseudo-soup
-          if (slot === 3 && (d.flavor_tags ?? []).includes('light')) score += 0.15;
+          // ── Same-protein soup block ───────────────────────────────────────
+          // If slot 0 already picked a protein (pork/beef/poultry/seafood),
+          // strongly penalise soups that share the same protein category.
+          // This prevents 红烧排骨 + 排骨汤 on the same day.
+          if (isSoupSlot && ct === 'soup' && dayIngredients.length > 0) {
+            const slot0Cat = ingCategory(dayIngredients[0] ?? 'other');
+            const isProtein = ['pork','beef','poultry','seafood'].includes(slot0Cat);
+            if (isProtein && cat === slot0Cat) score -= 0.80;
+          }
+
+          // Soup slot: prefer light-flavored dishes
+          if (isSoupSlot && (d.flavor_tags ?? []).includes('light')) score += 0.15;
 
           return { dish: d, score };
         })
@@ -437,6 +501,10 @@ function generateWeekPlan(
       dayDishes.push(picked);
       dayIngredients.push(picked.main_ingredient ?? 'other');
       usedIds.add(picked.id);
+
+      // Track title keyword for weekly dedup
+      const kw = extractTitleKeyword(picked.title_zh ?? picked.title ?? '');
+      if (kw) pickedTitleKeywords.push(kw);
 
       const cat = ingCategory(picked.main_ingredient ?? 'other');
       weeklyCatCounts[cat] = (weeklyCatCounts[cat] ?? 0) + 1;
