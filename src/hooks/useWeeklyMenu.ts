@@ -471,12 +471,19 @@ export function useWeeklyMenu() {
       const weekStart = getMondayISO();
       const userId    = localStorage.getItem('nutri_user_id') ?? 'anonymous';
 
-      // 1. Try DB cache first
-      const cached = await loadFromDB(userId, weekStart);
-      if (cached && !cancelled) {
-        setWeeklyMenu(cached);
-        setLoading(false);
-        return;
+      // 1. Try DB cache first — but SKIP if algo version has changed since last save.
+      // The key "weekly_menu_algo_ver" tracks which version generated the DB rows.
+      // If it differs from ALGO_VERSION, the stored rows are stale and must be regenerated.
+      const savedAlgoVer = localStorage.getItem('weekly_menu_algo_ver');
+      const dbCacheValid = savedAlgoVer === ALGO_VERSION;
+
+      if (dbCacheValid) {
+        const cached = await loadFromDB(userId, weekStart);
+        if (cached && !cancelled) {
+          setWeeklyMenu(cached);
+          setLoading(false);
+          return;
+        }
       }
 
       // 2. Try localStorage cache
@@ -576,8 +583,10 @@ export function useWeeklyMenu() {
 
         if (cancelled) return;
 
-        // Persist
+        // Persist — mark which algo version generated this menu so DB cache
+        // can be invalidated on next algo upgrade (see weekly_menu_algo_ver check above)
         localStorage.setItem(lsKey, JSON.stringify(menu));
+        localStorage.setItem('weekly_menu_algo_ver', ALGO_VERSION);
         saveToDB(userId, menu).catch(() => {/* non-critical */});
 
         setWeeklyMenu(menu);
