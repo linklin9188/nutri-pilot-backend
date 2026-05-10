@@ -622,118 +622,138 @@ export default function Home() {
 
         {/* Weekly Menu Recommendation */}
         <section className="mt-6 px-4">
-          <div className="bg-white rounded-3xl p-5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-black/[0.02]">
-            <div className="flex items-center justify-between mb-5">
-              <span className="text-[18px] font-bold tracking-tight text-on-surface">
-                一周菜单推荐
-              </span>
-              <button
-                onClick={regenerateWeekly}
-                className="w-8 h-8 flex items-center justify-center rounded-full bg-[#f8f8f8] hover:bg-[#f0f0f0] transition-colors"
-                title="重新生成本周菜单"
-              >
-                <span className="material-symbols-outlined text-secondary text-[16px]">
-                  refresh
-                </span>
-              </button>
-            </div>
+          {(() => {
+            // today's index in Mon=0…Sun=6 system
+            const todayDayIdx = (new Date().getDay() + 6) % 7;
+            const FREE_DAYS = 3;
+            const isDayLocked = (dayIndex: number) =>
+              !isLoggedIn && (dayIndex < todayDayIdx || dayIndex >= todayDayIdx + FREE_DAYS);
+            const selectedDayObj = weeklyMenu?.days.find(d => d.dayLabel === selectedDayOfWeek);
+            const selectedDayLocked = selectedDayObj ? isDayLocked(selectedDayObj.dayIndex) : false;
 
-            {/* Day tabs */}
-            <div className="flex justify-between items-center gap-1 overflow-x-auto no-scrollbar pb-1 mb-4">
-              {(weeklyMenu?.days ?? []).map((day) => (
-                <button
-                  key={day.dayIndex}
-                  onClick={() => setSelectedDayOfWeek(day.dayLabel)}
-                  className={`flex flex-col items-center gap-1.5 min-w-[3rem] py-2.5 rounded-2xl transition-all ${
-                    selectedDayOfWeek === day.dayLabel
-                      ? "bg-primary text-white shadow-md shadow-primary/20"
-                      : "bg-transparent text-secondary hover:bg-black/5"
-                  }`}
-                >
-                  <span className={`text-[14px] font-bold ${
-                    selectedDayOfWeek === day.dayLabel ? "text-white" : "text-secondary"
-                  }`}>
-                    {day.dayLabel.replace('周', '')}
+            return (
+              <div className="bg-white rounded-3xl p-5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-black/[0.02]">
+                <div className="flex items-center justify-between mb-5">
+                  <span className="text-[18px] font-bold tracking-tight text-on-surface">
+                    一周菜单推荐
                   </span>
-                  <div className={`w-1 h-1 rounded-full ${
-                    selectedDayOfWeek === day.dayLabel ? "bg-white/80" : "bg-transparent"
-                  }`}></div>
-                </button>
-              ))}
-              {/* Fallback tabs while loading */}
-              {weeklyLoading && ['一','二','三','四','五','六','日'].map(d => (
-                <div key={d} className="flex flex-col items-center gap-1.5 min-w-[3rem] py-2.5">
-                  <div className="w-4 h-4 rounded-full bg-black/5 animate-pulse" />
+                  <button
+                    onClick={regenerateWeekly}
+                    className="w-8 h-8 flex items-center justify-center rounded-full bg-[#f8f8f8] hover:bg-[#f0f0f0] transition-colors"
+                    title="重新生成本周菜单"
+                  >
+                    <span className="material-symbols-outlined text-secondary text-[16px]">refresh</span>
+                  </button>
                 </div>
-              ))}
-            </div>
 
-            {/* Dishes for selected day */}
-            {weeklyLoading ? (
-              <div className="space-y-3">
-                {[1,2,3,4,5].map(i => (
-                  <div key={i} className="flex items-center gap-3 animate-pulse">
-                    <div className="w-10 h-10 rounded-xl bg-black/5 shrink-0" />
-                    <div className="flex-1 space-y-1.5">
-                      <div className="h-3.5 bg-black/5 rounded-full w-2/3" />
-                      <div className="h-3 bg-black/5 rounded-full w-1/2" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {(weeklyMenu?.days.find(d => d.dayLabel === selectedDayOfWeek)?.dishes ?? [])
-                  .map((dish, idx) => (
-                    <div key={idx} className="flex items-center gap-3">
-                      <div
-                        className="w-10 h-10 rounded-xl shrink-0 bg-cover bg-center bg-black/5"
-                        style={dish.img ? { backgroundImage: `url(${dish.img})` } : {}}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[14px] font-semibold text-on-surface truncate">
-                          {dish.title}
-                        </p>
-                        <p className="text-[12px] text-secondary truncate">
-                          {dish.desc || dish.type}
-                        </p>
-                      </div>
-                      {dish.is_vegan && (
-                        <span className="text-[10px] font-bold text-green-600 bg-green-50 px-1.5 py-0.5 rounded-full shrink-0">
-                          净食
+                {/* Day tabs */}
+                <div className="flex justify-between items-center gap-1 overflow-x-auto no-scrollbar pb-1 mb-4">
+                  {(weeklyMenu?.days ?? []).map((day) => {
+                    const locked = isDayLocked(day.dayIndex);
+                    const selected = selectedDayOfWeek === day.dayLabel;
+                    return (
+                      <button
+                        key={day.dayIndex}
+                        onClick={() => {
+                          if (locked) { navigate('/login'); return; }
+                          setSelectedDayOfWeek(day.dayLabel);
+                        }}
+                        className={`flex flex-col items-center gap-1 min-w-[3rem] py-2.5 rounded-2xl transition-all ${
+                          locked
+                            ? 'opacity-35 cursor-pointer'
+                            : selected
+                              ? 'bg-primary text-white shadow-md shadow-primary/20'
+                              : 'bg-transparent text-secondary hover:bg-black/5'
+                        }`}
+                      >
+                        <span className={`text-[14px] font-bold ${selected && !locked ? 'text-white' : 'text-secondary'}`}>
+                          {day.dayLabel.replace('周', '')}
                         </span>
-                      )}
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${
-                        dish.type === 'VEGGIE' ? 'text-green-700 bg-green-50' :
-                        dish.type === 'SEAFOOD' ? 'text-blue-700 bg-blue-50' :
-                        'text-orange-700 bg-orange-50'
-                      }`}>
-                        {dish.type === 'VEGGIE' ? '素' : dish.type === 'SEAFOOD' ? '海鲜' : '肉'}
-                      </span>
+                        {locked
+                          ? <span className="material-symbols-outlined text-secondary" style={{ fontSize: 10 }}>lock</span>
+                          : <div className={`w-1 h-1 rounded-full ${selected ? 'bg-white/80' : 'bg-transparent'}`} />
+                        }
+                      </button>
+                    );
+                  })}
+                  {weeklyLoading && ['一','二','三','四','五','六','日'].map(d => (
+                    <div key={d} className="flex flex-col items-center gap-1.5 min-w-[3rem] py-2.5">
+                      <div className="w-4 h-4 rounded-full bg-black/5 animate-pulse" />
                     </div>
                   ))}
-                {!weeklyMenu && (
-                  <p className="text-[13px] text-secondary text-center py-4">
-                    暂无推荐，请检查网络连接
-                  </p>
-                )}
-              </div>
-            )}
+                </div>
 
-            {/* CTA → full weekly menu page */}
-            <button
-              onClick={() => navigate('/weekly')}
-              className="mt-4 w-full h-[44px] rounded-2xl flex items-center justify-center gap-2 font-semibold transition-all active:scale-[0.98]"
-              style={{
-                background: "linear-gradient(135deg, #FF5A1F, #FF8C54)",
-                boxShadow: "0 6px 20px rgba(255,90,31,0.22)",
-                fontSize: 14, color: "white",
-              }}
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: 18 }}>calendar_month</span>
-              查看完整周菜单 · 生成购物清单
-            </button>
-          </div>
+                {/* Dishes or lock state */}
+                {weeklyLoading ? (
+                  <div className="space-y-3">
+                    {[1,2,3,4,5].map(i => (
+                      <div key={i} className="flex items-center gap-3 animate-pulse">
+                        <div className="w-10 h-10 rounded-xl bg-black/5 shrink-0" />
+                        <div className="flex-1 space-y-1.5">
+                          <div className="h-3.5 bg-black/5 rounded-full w-2/3" />
+                          <div className="h-3 bg-black/5 rounded-full w-1/2" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : selectedDayLocked ? (
+                  /* Lock state for selected day */
+                  <button
+                    onClick={() => navigate('/login')}
+                    className="w-full py-5 rounded-2xl flex flex-col items-center gap-2 transition-all active:scale-[0.98]"
+                    style={{ background: "rgba(255,90,31,0.05)", border: "1px dashed rgba(255,90,31,0.25)" }}
+                  >
+                    <span className="material-symbols-outlined text-primary" style={{ fontSize: 28 }}>lock</span>
+                    <p className="text-[13px] font-semibold text-on-surface">登录后查看完整 7 天菜单</p>
+                    <p className="text-[11px] text-secondary">免费账号即可解锁</p>
+                  </button>
+                ) : (
+                  <div className="space-y-3">
+                    {(weeklyMenu?.days.find(d => d.dayLabel === selectedDayOfWeek)?.dishes ?? [])
+                      .map((dish, idx) => (
+                        <div key={idx} className="flex items-center gap-3">
+                          <div
+                            className="w-10 h-10 rounded-xl shrink-0 bg-cover bg-center bg-black/5"
+                            style={dish.img ? { backgroundImage: `url(${dish.img})` } : {}}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[14px] font-semibold text-on-surface truncate">{dish.title}</p>
+                            <p className="text-[12px] text-secondary truncate">{dish.desc || dish.type}</p>
+                          </div>
+                          {dish.is_vegan && (
+                            <span className="text-[10px] font-bold text-green-600 bg-green-50 px-1.5 py-0.5 rounded-full shrink-0">净食</span>
+                          )}
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${
+                            dish.type === 'VEGGIE' ? 'text-green-700 bg-green-50' :
+                            dish.type === 'SEAFOOD' ? 'text-blue-700 bg-blue-50' :
+                            'text-orange-700 bg-orange-50'
+                          }`}>
+                            {dish.type === 'VEGGIE' ? '素' : dish.type === 'SEAFOOD' ? '海鲜' : '肉'}
+                          </span>
+                        </div>
+                      ))}
+                    {!weeklyMenu && (
+                      <p className="text-[13px] text-secondary text-center py-4">暂无推荐，请检查网络连接</p>
+                    )}
+                  </div>
+                )}
+
+                {/* CTA → full weekly menu page */}
+                <button
+                  onClick={() => navigate('/weekly')}
+                  className="mt-4 w-full h-[44px] rounded-2xl flex items-center justify-center gap-2 font-semibold transition-all active:scale-[0.98]"
+                  style={{
+                    background: "linear-gradient(135deg, #FF5A1F, #FF8C54)",
+                    boxShadow: "0 6px 20px rgba(255,90,31,0.22)",
+                    fontSize: 14, color: "white",
+                  }}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: 18 }}>calendar_month</span>
+                  查看完整周菜单 · 生成购物清单
+                </button>
+              </div>
+            );
+          })()}
         </section>
       </main>
 
