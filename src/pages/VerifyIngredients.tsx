@@ -5,6 +5,9 @@ import SupplierPanel from "../components/SupplierPanel";
 import { getUserTier, TIER_CONFIG } from "../lib/suppliers";
 import { dishToIngredients, aggregateIngredients, type ShoppingIngredient } from "../lib/dishIngredients";
 
+// Keep in sync with useWeeklyMenu ALGO_VERSION
+const WEEKLY_ALGO_VERSION = 'v7';
+
 // ── Helper: read headcount from localStorage ──────────────────────────────────
 function readHeadcount(): { adults: number; kids: number } {
   const adults = parseInt(localStorage.getItem('nutri_adults') ?? '3', 10);
@@ -19,8 +22,7 @@ function getDishes(mode: 'today' | 'week'): any[] {
     if (!raw) return [];
     try { return JSON.parse(raw); } catch { return []; }
   }
-  // Week mode: read from versioned weekly menu cache
-  // Try all possible dishesPerDay variants (3-6)
+  // Week mode: read from versioned weekly menu cache (try all dishesPerDay variants)
   const today = new Date();
   const day = today.getDay();
   const diff = day === 0 ? -6 : 1 - day;
@@ -29,12 +31,11 @@ function getDishes(mode: 'today' | 'week'): any[] {
   const weekStart = monday.toISOString().slice(0, 10);
 
   for (const p of [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]) {
-    const key = `weekly_menu_v6_${weekStart}_p${p}`;
+    const key = `weekly_menu_${WEEKLY_ALGO_VERSION}_${weekStart}_p${p}`;
     const raw = localStorage.getItem(key);
     if (raw) {
       try {
         const menu = JSON.parse(raw);
-        // Flatten all days' dishes
         return (menu.days ?? []).flatMap((d: any) => d.dishes ?? []);
       } catch { /* ignore */ }
     }
