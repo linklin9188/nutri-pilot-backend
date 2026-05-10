@@ -210,7 +210,7 @@ function SkeletonDay() {
 }
 
 // ── Free tier: how many days are unlocked without login ──────────────────────
-const FREE_DAYS = 3; // Mon / Tue / Wed visible; Thu–Sun locked
+const FREE_DAYS = 3; // today + next 2 days visible; rest locked
 
 // ── Locked day overlay ────────────────────────────────────────────────────────
 function LockedDayCard({ onUnlock }: { onUnlock: () => void }) {
@@ -275,9 +275,11 @@ export default function WeeklyMenu() {
   const [showShoppingToast, setShowShoppingToast] = useState(false);
 
   // Free users can only view days 0–2 (Mon/Tue/Wed)
-  const isDayLocked = (i: number) => !isLoggedIn && i >= FREE_DAYS;
-  // If selected day is locked, clamp to last free day
-  const effectiveDay = isDayLocked(selectedDay) ? FREE_DAYS - 1 : selectedDay;
+  // Free: today / today+1 / today+2. Days before today or beyond today+2 locked.
+  const isDayLocked = (i: number) =>
+    !isLoggedIn && (i < todayIdx || i >= todayIdx + FREE_DAYS);
+  // If selected day is locked, fall back to today
+  const effectiveDay = isDayLocked(selectedDay) ? todayIdx : selectedDay;
 
   const dayMenu = weeklyMenu?.days[effectiveDay];
   const dishes  = dayMenu?.dishes ?? [];
@@ -389,7 +391,7 @@ export default function WeeklyMenu() {
         {/* Free tier hint */}
         {!isLoggedIn && (
           <p className="mt-2 text-white/30" style={{ fontSize: 11, letterSpacing: "0.04em" }}>
-            🔓 免费预览前 3 天 · 登录解锁完整 7 天
+            🔓 免费查看今天起 3 天 · 登录解锁完整 7 天
           </p>
         )}
       </div>
