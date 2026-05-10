@@ -136,18 +136,23 @@ export default function SignIn() {
             transition={{ duration: 0.25 }}
             className="relative z-10 flex-1 flex flex-col px-6 pt-10 pb-12"
           >
-            {/* Logo */}
+            {/* Logo — matches home page header style */}
             <div className="mb-10">
-              <div className="flex items-baseline gap-3">
-                <h1 className="font-serif font-black text-white" style={{ fontSize: 36 }}>爱吃</h1>
-                <span style={{ fontSize: 12, color: "rgba(255,255,255,0.30)", letterSpacing: "0.20em", fontWeight: 400 }}>
-                  AI EATS
+              <div className="flex items-baseline gap-2">
+                <h1 className="font-serif font-black" style={{ fontSize: 36, color: "#FF5A1F" }}>爱吃</h1>
+                <span className="font-sans font-bold" style={{ fontSize: 22, color: "rgba(255,255,255,0.88)" }}>
+                  Aieats
                 </span>
               </div>
               <div className="mt-2 rounded-full" style={{ width: 28, height: 2, background: "#FF5A1F" }} />
-              <p className="mt-4 font-light" style={{ fontSize: 14, color: "rgba(255,255,255,0.40)" }}>
-                登录解锁专属菜单 · Unlock your personal menu
-              </p>
+              <div className="mt-4 flex flex-col gap-0.5">
+                <p className="font-light" style={{ fontSize: 13, color: "rgba(255,255,255,0.45)" }}>
+                  登录解锁专属菜单
+                </p>
+                <p className="font-light" style={{ fontSize: 12, color: "rgba(255,255,255,0.25)" }}>
+                  Unlock your personal menu
+                </p>
+              </div>
             </div>
 
             {/* Login options */}
