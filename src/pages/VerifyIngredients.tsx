@@ -3,81 +3,86 @@ import { useNavigate } from "react-router-dom";
 import { generateProcurementList, IngredientRequirement, UserLogisticsPreferences, VENDOR_CATALOG, VENDORS_DB } from "../services/procurementEngine";
 import SupplierPanel from "../components/SupplierPanel";
 import { getUserTier, TIER_CONFIG } from "../lib/suppliers";
+import { dishToIngredients, aggregateIngredients, type ShoppingIngredient } from "../lib/dishIngredients";
+
+// ── Helper: read headcount from localStorage ──────────────────────────────────
+function readHeadcount(): { adults: number; kids: number } {
+  const adults = parseInt(localStorage.getItem('nutri_adults') ?? '3', 10);
+  const kids   = parseInt(localStorage.getItem('nutri_kids')   ?? '0', 10);
+  return { adults, kids };
+}
+
+// ── Helper: get all dishes for a mode ─────────────────────────────────────────
+function getDishes(mode: 'today' | 'week'): any[] {
+  if (mode === 'today') {
+    const raw = localStorage.getItem('generatedMenu');
+    if (!raw) return [];
+    try { return JSON.parse(raw); } catch { return []; }
+  }
+  // Week mode: read from versioned weekly menu cache
+  // Try all possible dishesPerDay variants (3-6)
+  const today = new Date();
+  const day = today.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  const monday = new Date(today);
+  monday.setDate(today.getDate() + diff);
+  const weekStart = monday.toISOString().slice(0, 10);
+
+  for (const p of [3, 4, 5, 6]) {
+    const key = `weekly_menu_v5_${weekStart}_p${p}`;
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      try {
+        const menu = JSON.parse(raw);
+        // Flatten all days' dishes
+        return (menu.days ?? []).flatMap((d: any) => d.dishes ?? []);
+      } catch { /* ignore */ }
+    }
+  }
+  return [];
+}
+
+// ── Convert aggregated ingredients → IngredientRequirement[] for engine ───────
+function toRequirements(ings: { name: string; type: 'Meat/Seafood' | 'Produce' | 'Staples'; weightGrams: number }[]): IngredientRequirement[] {
+  return ings.map((ing, i) => ({
+    id: `req_${i}`,
+    name: ing.name,
+    type: ing.type,
+    weightGrams: ing.weightGrams,
+  }));
+}
 
 export default function VerifyIngredients() {
   const navigate = useNavigate();
+  const [mode, setMode] = useState<'today' | 'week'>('today');
   const [selectedDays, setSelectedDays] = useState<number[]>([new Date().getDay() || 7]); // 1-7 for Mon-Sun
   const [procurementPlan, setProcurementPlan] = useState<any[]>([]);
+  const [dishCount, setDishCount] = useState(0);
 
   useEffect(() => {
-    // 1. Identify Ingredients from today's menu (saved from Home.tsx)
-    const savedMenu = localStorage.getItem('generatedMenu');
-    const savedPeople = localStorage.getItem('effectivePeople');
-    
-    let ingredients: IngredientRequirement[] = [];
-    
-    if (savedMenu && savedPeople) {
-      const menu = JSON.parse(savedMenu);
-      const effectivePeople = parseFloat(savedPeople);
-      const daysMultiplier = Math.max(1, selectedDays.length);
-      const targetMultiplier = (effectivePeople * 0.7) * daysMultiplier; // Base fullness logic * days
-      
-      menu.forEach((dish: any, idx: number) => {
-        const title = dish.title || '';
-        
-        // Map dish names to real ingredients
-        if (title.includes('回锅')) {
-          ingredients.push({ id: `ing_${idx}_1`, name: 'Premium Pork Belly (黑豚五花肉)', type: 'Meat/Seafood', weightGrams: Math.round(150 * targetMultiplier * 1.3) });
-          ingredients.push({ id: `ing_${idx}_2`, name: 'Organic Leeks (有机青蒜苗)', type: 'Produce', weightGrams: Math.round(50 * targetMultiplier) });
-        } else if (title.includes('蟹')) {
-          ingredients.push({ id: `ing_${idx}_1`, name: 'Live Mud Crab (鲜活青蟹)', type: 'Meat/Seafood', weightGrams: Math.round(250 * effectivePeople) }); // Crabs are heavy in shells
-          ingredients.push({ id: `ing_${idx}_2`, name: 'Garlic & Chili Pack (避风塘料包)', type: 'Produce', weightGrams: 50 });
-        } else if (title.includes('鸡汤')) {
-           ingredients.push({ id: `ing_${idx}_1`, name: 'Aged Fish Maw (深海花胶)', type: 'Meat/Seafood', weightGrams: Math.round(30 * targetMultiplier) });
-           ingredients.push({ id: `ing_${idx}_2`, name: 'Free-range Whole Chicken (清远老母鸡)', type: 'Meat/Seafood', weightGrams: Math.round(150 * targetMultiplier * 1.5) });
-        } else if (title.includes('白切鸡')) {
-           ingredients.push({ id: `ing_${idx}_1`, name: 'Free-range Young Chicken (散养走地鸡)', type: 'Meat/Seafood', weightGrams: Math.round(200 * targetMultiplier * 1.4) });
-        } else if (title.includes('时蔬') || title.includes('西兰花')) {
-           ingredients.push({ id: `ing_${idx}_1`, name: 'Organic Seasonal Greens (有机时蔬)', type: 'Produce', weightGrams: Math.round(200 * targetMultiplier) });
-        } else if (title.includes('素牛排')) {
-           ingredients.push({ id: `ing_${idx}_1`, name: 'Plant-based Steak (植物肉排)', type: 'Produce', weightGrams: Math.round(180 * targetMultiplier) });
-        } else if (title.includes('莲子羹') || title.includes('菌菇汤')) {
-           ingredients.push({ id: `ing_${idx}_1`, name: 'Premium Dried Fungi/Seeds (精选干货配料)', type: 'Produce', weightGrams: Math.round(40 * targetMultiplier) });
-        } else {
-           // Generic fallback
-           if (dish.type === 'MEAT' || dish.type === 'SEAFOOD') {
-             ingredients.push({ id: `ing_${idx}_1`, name: `${title} Main Ingredient (主力食材)`, type: 'Meat/Seafood', weightGrams: Math.round(150 * targetMultiplier * 1.2) });
-           } else {
-             ingredients.push({ id: `ing_${idx}_1`, name: `${title} Main Veg (有机蔬菜)`, type: 'Produce', weightGrams: Math.round(200 * targetMultiplier) });
-           }
-        }
-      });
-      
-      // Always add some staples
-      ingredients.push({
-        id: 'ing_staple_1',
-        name: 'Premium Jasmine Rice (特级茉莉香米)',
-        type: 'Staples',
-        weightGrams: Math.round(100 * targetMultiplier)
-      });
-      ingredients.push({
-        id: 'ing_staple_2',
-        name: 'Cold-Pressed Olive Oil (冷榨橄榄油)',
-        type: 'Staples',
-        weightGrams: 200
-      });
-      
-    } else {
-      // Fallback if accessed directly
-      ingredients = [
-        { id: 'ing_1', name: 'Premium Bluefin Tuna Slices (蓝鳍金枪鱼片)', type: 'Meat/Seafood', weightGrams: 500 },
-        { id: 'ing_2', name: 'Fresh Australian Wagyu Ribeye (澳洲和牛西冷)', type: 'Meat/Seafood', weightGrams: 800 },
-        { id: 'ing_3', name: 'Organic Cherry Tomatoes (有机樱桃小番茄)', type: 'Produce', weightGrams: 300 },
-        { id: 'ing_4', name: 'Local Choy Sum (本地菜心)', type: 'Produce', weightGrams: 500 },
-        { id: 'ing_5', name: 'Premium Jasmine Rice (特级茉莉香米)', type: 'Staples', weightGrams: 1000 },
-        { id: 'ing_6', name: 'Cold-Pressed Olive Oil (冷榨橄榄油)', type: 'Staples', weightGrams: 500 },
-      ];
-    }
+    const { adults, kids } = readHeadcount();
+    const dishes = getDishes(mode);
+    setDishCount(dishes.length);
+
+    // Convert each dish → shopping ingredients using DB fields
+    const allRaw: ShoppingIngredient[] = dishes.flatMap(dish =>
+      dishToIngredients(dish, adults, kids)
+    );
+
+    // Aggregate (combine same ingredient across dishes, cap condiments)
+    const aggregated = aggregateIngredients(allRaw);
+
+    // Convert to IngredientRequirement for procurement engine
+    const requirements = toRequirements(aggregated);
+
+    let ingredients: IngredientRequirement[] = requirements.length > 0
+      ? requirements
+      : [
+          // Fallback if no menu saved
+          { id: 'ing_1', name: '鸡肉 (Chicken)', type: 'Meat/Seafood', weightGrams: 600 },
+          { id: 'ing_2', name: '时蔬 (Seasonal Veg)', type: 'Produce', weightGrams: 400 },
+          { id: 'ing_3', name: '米饭 (Jasmine Rice)', type: 'Staples', weightGrams: 500 },
+        ];
 
     // 2. Fetch User Logistics Preferences (from storage)
     const savedPrefs = localStorage.getItem('logisticsPrefs');
@@ -90,7 +95,7 @@ export default function VerifyIngredients() {
     // 3. Run Procurement Engine (This contains the "Hidden Profit Margin Logic")
     const plan = generateProcurementList(ingredients, prefs);
     setProcurementPlan(plan);
-  }, [selectedDays]);
+  }, [mode, selectedDays]);
 
   const groupedPlan = procurementPlan.reduce((acc, curr) => {
     const vName = curr.vendor ? curr.vendor.name : 'Unknown Vendor';
@@ -239,45 +244,47 @@ export default function VerifyIngredients() {
       </header>
 
       <main className="px-5 py-6 space-y-6 pb-24">
-        {/* Days Selection */}
-        <div className="bg-white rounded-3xl p-5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-black/[0.02]">
-          <h2 className="text-[15px] font-bold text-on-surface mb-4 tracking-tight flex items-center justify-between">
-            <span>就餐日期</span>
-            <span className="text-[12px] font-medium text-secondary">自动核算采购量</span>
-          </h2>
-          <div className="flex justify-between items-center gap-1 overflow-x-auto no-scrollbar pb-1">
-            {[1, 2, 3, 4, 5, 6, 7].map((dayCode) => {
-              const dayName = ["一", "二", "三", "四", "五", "六", "日"][dayCode - 1];
-              const isSelected = selectedDays.includes(dayCode);
-              return (
-                <button
-                  key={dayCode}
-                  onClick={() => {
-                    setSelectedDays(prev => 
-                      prev.includes(dayCode) 
-                        ? prev.filter(d => d !== dayCode)
-                        : [...prev, dayCode]
-                    );
-                  }}
-                  className={`flex flex-col items-center gap-1.5 min-w-[3rem] py-2.5 rounded-2xl transition-all ${
-                    isSelected
-                      ? "bg-primary text-white shadow-md shadow-primary/20"
-                      : "bg-transparent text-secondary hover:bg-black/5"
-                  }`}
-                >
-                  <span className={`text-[14px] font-bold ${
-                    isSelected ? "text-white" : "text-secondary"
-                  }`}>
-                    {dayName}
-                  </span>
-                  <div className={`w-1 h-1 rounded-full ${
-                    isSelected ? "bg-white/80" : "bg-transparent"
-                  }`}></div>
-                </button>
-              );
-            })}
-          </div>
+        {/* Today / Week Tab */}
+        <div className="bg-white rounded-3xl p-1.5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-black/[0.02] flex gap-1">
+          {(['today', 'week'] as const).map(m => (
+            <button
+              key={m}
+              onClick={() => setMode(m)}
+              className={`flex-1 py-3 rounded-2xl font-semibold text-[14px] transition-all ${
+                mode === m
+                  ? 'bg-primary text-white shadow-md shadow-primary/20'
+                  : 'text-secondary'
+              }`}
+            >
+              {m === 'today' ? '🛒 今日菜单采购' : '📅 本周菜单采购'}
+            </button>
+          ))}
         </div>
+
+        {/* Headcount + dish summary */}
+        {(() => {
+          const { adults, kids } = readHeadcount();
+          const eff = adults + kids * 0.5;
+          return (
+            <div className="flex items-center gap-3 bg-primary/5 rounded-2xl px-4 py-3 border border-primary/10">
+              <span className="text-2xl">👥</span>
+              <div className="flex-1">
+                <p className="text-[13px] font-bold text-on-surface">
+                  {adults}大{kids > 0 ? `${kids}小` : ''} · 有效{eff}人份
+                </p>
+                <p className="text-[11px] text-secondary mt-0.5">
+                  {mode === 'today' ? '今日' : '本周'} {dishCount} 道菜 · 食材已按人数核算
+                </p>
+              </div>
+              <button
+                onClick={() => navigate('/')}
+                className="text-[11px] text-primary font-semibold px-2 py-1 rounded-lg bg-primary/10"
+              >
+                改人数
+              </button>
+            </div>
+          );
+        })()}
 
         {/* Development Notice */}
         <div className="bg-primary/5 rounded-2xl px-4 py-4 flex items-start gap-3 mb-2 border border-primary/20">
