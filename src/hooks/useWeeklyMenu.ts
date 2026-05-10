@@ -38,7 +38,7 @@ export interface WeeklyMenu {
 
 // ── Cache version — bump this whenever the algorithm changes significantly ─────
 // This ensures old cached menus are discarded after an algorithm update.
-const ALGO_VERSION = 'v4'; // bumped: course_type slot system + diversity fix
+const ALGO_VERSION = 'v5'; // bumped: use DB course_type for slot assignment + soup slot
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -311,13 +311,30 @@ function generateWeekPlan(
         .filter(d => !usedIds.has(d.id) && !dayDishes.some(p => p.id === d.id))
         .filter(d => {
           const cat = ingCategory(d.main_ingredient ?? 'other');
-          // Hard weekly cap
+          // Use DB course_type when available for more accurate classification
+          const courseType: string = d.course_type ?? '';
+
+          // Determine if dish is a staple (use course_type first, fallback to ing cat)
+          const isStaple = courseType === 'staple' || cat === 'carb';
+          // Soup/dessert: skip from regular menu slots (soup goes to slot 3 only)
+          const isSoup = courseType === 'soup';
+          const isDessert = courseType === 'dessert';
+
+          // Desserts excluded from weekly dinner menu
+          if (isDessert) return false;
+
+          // Hard weekly cap (use cat for cap tracking)
           const cap = MAX_PER_CATEGORY[cat] ?? 7;
           if ((weeklyCatCounts[cat] ?? 0) >= cap) return false;
-          // Carb dishes ONLY allowed in slot 4
-          if (cat === 'carb' && CARB_BLOCKED_SLOTS.has(slot)) return false;
-          // Non-carb dishes blocked from slot 4 (keep slot 4 as 主食 only)
-          if (slot === 4 && cat !== 'carb') return false;
+
+          // Staple dishes ONLY allowed in slot 4
+          if (isStaple && CARB_BLOCKED_SLOTS.has(slot)) return false;
+          // Non-staple dishes blocked from slot 4
+          if (slot === 4 && !isStaple) return false;
+
+          // Soup dishes prefer slot 3; block from slots 0, 1, 4
+          if (isSoup && (slot === 0 || slot === 1 || slot === 4)) return false;
+
           return true;
         })
         .map(d => {
@@ -328,9 +345,16 @@ function generateWeekPlan(
             spiceBoost,
           });
 
-          // Slot affinity bonus
+          // Slot affinity bonus — from ingredient category
           const cat = ingCategory(d.main_ingredient ?? 'other');
           if (preferredCats.includes(cat)) score += 0.22;
+
+          // Additional slot affinity from DB course_type (more accurate)
+          const ct: string = d.course_type ?? '';
+          if (slot === 0 && ct === 'main_protein') score += 0.20;
+          if ((slot === 1 || slot === 2) && ct === 'veggie_dish') score += 0.18;
+          if (slot === 3 && ct === 'soup') score += 0.30;    // strong pull to slot 3
+          if (slot === 3 && ct === 'veggie_dish') score += 0.10;
 
           // Same-category-in-same-day penalty (prevents e.g. two veggie dishes in slot 1+2)
           const sameCatInDay = dayIngredients.filter(i => ingCategory(i) === cat).length;
