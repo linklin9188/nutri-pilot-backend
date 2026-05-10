@@ -153,14 +153,63 @@ export default function Login() {
     }
   };
 
-  // ── hero bg (shared) ───────────────────────────────────────────────
+  // ── time-based hero bg ─────────────────────────────────────────────
+  // 7 days (Mon–Sun) × 3 meal slots (breakfast/lunch/dinner)
+  const DAY_IMAGES = [
+    { // Monday
+      breakfast: "photo-1525351484163-7529414344d8",
+      lunch:     "photo-1512058564366-18510be2db19",
+      dinner:    "photo-1414235077428-338989a2e8c0",
+    },
+    { // Tuesday
+      breakfast: "photo-1484723091739-30a097e8f929",
+      lunch:     "photo-1540189549336-e6e99c3679fe",
+      dinner:    "photo-1559339352-11d035aa65de",
+    },
+    { // Wednesday
+      breakfast: "photo-1533089860892-a7c6f0a88666",
+      lunch:     "photo-1546069901-ba9599a7e63c",
+      dinner:    "photo-1476224203421-9ac39bcb3327",
+    },
+    { // Thursday
+      breakfast: "photo-1504674900247-0877df9cc836",
+      lunch:     "photo-1512621776951-a57141f2eefd",
+      dinner:    "photo-1467003909585-2f8a72700288",
+    },
+    { // Friday
+      breakfast: "photo-1550547660-d9450f859349",
+      lunch:     "photo-1498837167922-ddd27525d352",
+      dinner:    "photo-1432139509613-5c4255815697",
+    },
+    { // Saturday
+      breakfast: "photo-1567620905732-2d1ec7ab7445",
+      lunch:     "photo-1455619452474-d2be8b1e70cd",
+      dinner:    "photo-1565299624946-b28f40a0ae38",
+    },
+    { // Sunday
+      breakfast: "photo-1490645935967-10de6ba17061",
+      lunch:     "photo-1563379926898-05f4575a45d8",
+      dinner:    "photo-1574484284002-952d92456975",
+    },
+  ] as const;
+
+  const getMealSlot = (h: number): "breakfast" | "lunch" | "dinner" =>
+    h >= 5 && h < 11 ? "breakfast" : h >= 11 && h < 17 ? "lunch" : "dinner";
+
+  const _now        = new Date();
+  const _dayIdx     = (_now.getDay() + 6) % 7; // 0=Mon…6=Sun
+  const _meal       = getMealSlot(_now.getHours());
+  const _brightness = _meal === "breakfast" ? 0.75 : _meal === "lunch" ? 0.70 : 0.65;
+  const _photoId    = DAY_IMAGES[_dayIdx][_meal];
+  const _heroSrc    = `https://images.unsplash.com/${_photoId}?w=1200&q=90`;
+
   const heroBg = (
     <div className="absolute inset-x-0 top-0 z-0" style={{ height: "62%" }}>
       <img
-        src="https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=1200&q=90"
+        src={_heroSrc}
         alt=""
         className="w-full h-full object-cover object-center"
-        style={{ filter: "brightness(0.72)" }}
+        style={{ filter: `brightness(${_brightness})` }}
       />
       <div className="absolute inset-x-0 bottom-0" style={{
         height: "60%",
@@ -466,16 +515,44 @@ export default function Login() {
             transition={{ duration: 0.35 }}
             className="flex-1 flex flex-col px-6 pt-4 pb-12 overflow-y-auto no-scrollbar z-10 relative">
 
-            <div className="mb-8">
+            {/* Nutrition-themed background — fixed behind content */}
+            <div className="fixed inset-0 z-0 pointer-events-none">
+              <img
+                src="https://images.unsplash.com/photo-1490474418585-ba9bad8fd0ea?w=1200&q=85"
+                alt=""
+                className="w-full h-full object-cover object-center"
+                style={{ filter: "brightness(0.28) saturate(1.2)" }}
+              />
+              {/* top fade: bridge from previous dark step */}
+              <div className="absolute inset-x-0 top-0" style={{
+                height: "35%",
+                background: "linear-gradient(to bottom, #080808 0%, transparent 100%)",
+              }} />
+              {/* bottom fade: ensure readability near CTA */}
+              <div className="absolute inset-x-0 bottom-0" style={{
+                height: "30%",
+                background: "linear-gradient(to top, #080808 0%, transparent 100%)",
+              }} />
+            </div>
+
+            <div className="mb-8 relative z-10">
+              {/* Nutrition pill badge */}
+              <div className="inline-flex items-center gap-1.5 mb-4 px-3 py-1 rounded-full"
+                style={{ background: "rgba(255,90,31,0.15)", border: "1px solid rgba(255,90,31,0.25)" }}>
+                <span className="material-symbols-outlined text-[13px] text-[#FF8C54]">nutrition</span>
+                <span style={{ fontSize: 11, color: "#FF8C54", letterSpacing: "0.10em", fontWeight: 600 }}>
+                  AI 营养档案
+                </span>
+              </div>
               <h2 className="text-[28px] font-serif font-black text-white leading-tight mb-3 tracking-wide">
                 {t("Your Profile", "建立味觉档案")}
               </h2>
-              <p className="text-white/50 font-light leading-relaxed" style={{ fontSize: 14, letterSpacing: "0.04em" }}>
-                {t("Tell us your taste — we'll handle the rest.", "告诉我们你的口味，其余的交给我们。")}
+              <p className="text-white/45 font-light leading-relaxed" style={{ fontSize: 14, letterSpacing: "0.04em" }}>
+                {t("We tailor every meal to your nutrition needs.", "每一份菜单，都按你的营养需求精准定制。")}
               </p>
             </div>
 
-            <div className="space-y-8 flex-1">
+            <div className="space-y-8 flex-1 relative z-10">
               {[
                 {
                   icon: "restaurant", q: { en: "Favorite Taste?", zh: "最喜欢的口味是？" },
@@ -518,8 +595,8 @@ export default function Login() {
                         <button key={opt.id} onClick={() => section.toggle(opt.id)}
                           className="px-4 py-2.5 rounded-xl text-[13px] transition-all active:scale-95"
                           style={active
-                            ? { background: "#FF5A1F", color: "white", fontWeight: 600, boxShadow: "0 0 16px rgba(255,90,31,0.30)" }
-                            : { background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.10)", color: "rgba(255,255,255,0.65)" }
+                            ? { background: "#FF5A1F", color: "white", fontWeight: 600, boxShadow: "0 0 16px rgba(255,90,31,0.35)", border: "1px solid transparent" }
+                            : { background: "rgba(255,255,255,0.09)", border: "1px solid rgba(255,255,255,0.13)", color: "rgba(255,255,255,0.70)", backdropFilter: "blur(8px)" }
                           }>
                           {language === "en" ? opt.en : opt.zh}
                         </button>
@@ -530,7 +607,7 @@ export default function Login() {
               ))}
             </div>
 
-            <div className="mt-12">
+            <div className="mt-12 relative z-10">
               <button disabled={isLoading} onClick={handleFinishSetup}
                 className="w-full h-[54px] rounded-2xl font-semibold text-[15px] flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
                 style={{
