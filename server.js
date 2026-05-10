@@ -6,11 +6,28 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Serve built static files
-app.use(express.static(path.join(__dirname, 'dist')));
+// Serve static assets with long cache (they are content-hashed by Vite)
+app.use('/assets', express.static(path.join(__dirname, 'dist/assets'), {
+  maxAge: '1y',
+  immutable: true,
+}));
 
-// SPA fallback — all unknown routes return index.html
+// All other static files (favicon, manifest, etc.) — no cache
+app.use(express.static(path.join(__dirname, 'dist'), {
+  maxAge: 0,
+  etag: false,
+  setHeaders(res, filePath) {
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    }
+  },
+}));
+
+// SPA fallback — always serve fresh index.html
 app.get('*', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 

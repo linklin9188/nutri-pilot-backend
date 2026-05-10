@@ -93,6 +93,8 @@ export default function QuickSetup() {
     localStorage.setItem("userDiet", prefs.goal as string);
     localStorage.setItem("userSpice", prefs.spice as string);
     localStorage.setItem("userAvoid", (prefs.avoid as string[]).join(","));
+    // Notify hooks that preferences changed
+    window.dispatchEvent(new Event("nutri-prefs-changed"));
     navigate("/");
   };
 

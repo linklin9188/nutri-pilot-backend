@@ -21,6 +21,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { type SupabaseDish } from './useSupabaseMenu';
 import { FLAVOR_COL, HEALTH_COL, CUISINE_COL } from './preferenceColMap';
+import { getUserPrefs } from '../lib/userPrefs';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -260,6 +261,19 @@ async function saveToDB(userId: string, menu: WeeklyMenu): Promise<void> {
 export function useWeeklyMenu() {
   const [weeklyMenu, setWeeklyMenu] = useState<WeeklyMenu | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // Re-generate when user updates preferences
+  useEffect(() => {
+    const handler = () => {
+      const weekStart = getMondayISO();
+      localStorage.removeItem(`weekly_menu_${weekStart}`);
+      setWeeklyMenu(null);
+      setRefreshKey(k => k + 1);
+    };
+    window.addEventListener('nutri-prefs-changed', handler);
+    return () => window.removeEventListener('nutri-prefs-changed', handler);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -294,14 +308,38 @@ export function useWeeklyMenu() {
 
       // 3. Generate fresh plan
       try {
+        // Read user preferences (quickPrefs → legacy fallback)
+        const localPrefs = getUserPrefs();
+
         // Fetch dish pool (dinner + all-type, limit 400)
-        const { data: pool } = await supabase
+        let poolQuery = supabase
           .from('dishes')
           .select('*')
           .or('meal_type.in.(dinner,all),meal_type.is.null')
           .limit(400);
 
-        if (!pool || cancelled) { setLoading(false); return; }
+        // Vegetarian-only filter at DB level (optimization)
+        if (localPrefs.vegetarianOnly) {
+          poolQuery = poolQuery.eq('is_vegan', true);
+        }
+
+        const { data: rawPool } = await poolQuery;
+
+        if (!rawPool || cancelled) { setLoading(false); return; }
+
+        // Apply hard filters from user prefs
+        const pool = rawPool.filter(dish => {
+          // Tag exclusion
+          if (localPrefs.avoidTags.length > 0) {
+            const allTags = [...(dish.flavor_tags ?? []), ...(dish.health_benefit_tags ?? [])];
+            if (allTags.some((t: string) => localPrefs.avoidTags.includes(t))) return false;
+          }
+          // Ingredient exclusion
+          if (localPrefs.avoidIngredients.length > 0 && dish.main_ingredient) {
+            if (localPrefs.avoidIngredients.includes(dish.main_ingredient)) return false;
+          }
+          return true;
+        });
 
         // Fetch user profile
         const { data: profileRow } = await supabase
@@ -313,8 +351,8 @@ export function useWeeklyMenu() {
 
         const profile = {
           hometown_cuisine: (profileRow as any)?.hometown_cuisine ?? null,
-          dietary_goal:     (profileRow as any)?.dietary_goal ?? null,
-          taste_pref:       (profileRow as any)?.taste_pref ?? null,
+          dietary_goal:     (profileRow as any)?.dietary_goal ?? localPrefs.dietaryGoal,
+          taste_pref:       (profileRow as any)?.taste_pref ?? localPrefs.tastePref,
         };
 
         // Fetch recent dish history (last 30 days)
@@ -364,7 +402,8 @@ export function useWeeklyMenu() {
 
     build();
     return () => { cancelled = true; };
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]);
 
   // Swap a single dish on a given day (user override)
   async function swapDish(dayIndex: number, slotIndex: number, newDish: SupabaseDish) {

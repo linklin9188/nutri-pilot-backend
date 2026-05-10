@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { FLAVOR_COL, HEALTH_COL, CUISINE_COL } from './preferenceColMap';
 import { getFallbackImage } from '../lib/dishImageFallback';
+import { getUserPrefs } from '../lib/userPrefs';
 
 // ── Public types ──────────────────────────────────────────────────────────
 
@@ -479,11 +480,30 @@ function enrichDish(dish: any, highlight: boolean): SupabaseDish {
 
 // ── Step 1: Hard filter ───────────────────────────────────────────────────
 
-function hardFilter(pool: any[], avoidTags: string[]): any[] {
-  if (avoidTags.length === 0) return pool;
+function hardFilter(
+  pool: any[],
+  avoidTags: string[],
+  avoidIngredients: string[] = [],
+  vegetarianOnly = false,
+): any[] {
   return pool.filter(dish => {
-    const allTags = [...(dish.flavor_tags ?? []), ...(dish.health_benefit_tags ?? [])];
-    return !allTags.some(tag => avoidTags.includes(tag));
+    // Tag-based exclusion (flavor_tags + health_benefit_tags)
+    if (avoidTags.length > 0) {
+      const allTags = [...(dish.flavor_tags ?? []), ...(dish.health_benefit_tags ?? [])];
+      if (allTags.some(tag => avoidTags.includes(tag))) return false;
+    }
+    // Ingredient-based exclusion (main_ingredient column)
+    if (avoidIngredients.length > 0 && dish.main_ingredient) {
+      if (avoidIngredients.includes(dish.main_ingredient)) return false;
+    }
+    // Vegetarian-only mode
+    if (vegetarianOnly) {
+      const isVeg = dish.is_vegan ||
+        (dish.flavor_tags ?? []).includes('veggie') ||
+        (dish.flavor_tags ?? []).includes('vegan');
+      if (!isVeg) return false;
+    }
+    return true;
   });
 }
 
@@ -530,6 +550,7 @@ function scoreDish(
   humidity: number,
   solarTerm: SolarTerm,
   prefScores: Record<string, number>,
+  spiceBoost = 0,
 ): number {
   const flavorTags: string[] = dish.flavor_tags ?? [];
   const healthTags: string[] = dish.health_benefit_tags ?? [];
@@ -575,6 +596,11 @@ function scoreDish(
     score -= solarTerm.flavorPenalty;
   }
 
+  // ⑥ User spice preference boost/penalty
+  if (spiceBoost !== 0 && flavorTags.includes('spicy')) {
+    score += spiceBoost;
+  }
+
   return score;
 }
 
@@ -599,9 +625,12 @@ function balanceMenu(scoredPool: any[], targetSize: number): any[] {
   return [...selectedMeats, ...selectedVeggies];
 }
 
-// ── Profile fetcher (Supabase → localStorage fallback) ───────────────────
+// ── Profile fetcher (Supabase → quickPrefs → legacy fallback) ────────────
 
-async function fetchUserProfile(): Promise<UserProfile5D> {
+async function fetchUserProfile(): Promise<UserProfile5D & { _prefs: ReturnType<typeof getUserPrefs> }> {
+  // Always read the local prefs (quickPrefs is the primary anonymous source)
+  const prefs = getUserPrefs();
+
   const userId = localStorage.getItem('nutri_user_id');
   if (userId) {
     try {
@@ -611,33 +640,28 @@ async function fetchUserProfile(): Promise<UserProfile5D> {
         .eq('id', userId)
         .single();
       if (!error && data) {
+        // Merge DB profile with local quickPrefs (local takes precedence for avoid/spice)
         return {
           hometown_cuisine: data.hometown_cuisine ?? null,
-          dietary_goal:     data.dietary_goal ?? null,
-          taste_pref:       data.taste_pref ?? null,
+          dietary_goal:     data.dietary_goal ?? prefs.dietaryGoal,
+          taste_pref:       data.taste_pref ?? prefs.tastePref,
           age_group:        data.age_group ?? null,
-          avoid_tags:       data.avoid_tags ?? [],
+          // Union of DB avoid_tags and locally derived avoid tags
+          avoid_tags:       [...new Set([...(data.avoid_tags ?? []), ...prefs.avoidTags])],
+          _prefs:           prefs,
         };
       }
     } catch { /* table not yet migrated — fall through */ }
   }
 
-  const CARD_TO_TASTE: Record<string, string> = {
-    c1: 'default', c2: 'light', c3: 'veggie',
-  };
-  const CURATION_TO_GOAL: Record<string, string> = {
-    damp_clear: 'damp_clear', high_protein: 'muscle_gain', cantonese: 'authentic_hk',
-  };
-  const savedPrefs    = JSON.parse(localStorage.getItem('nutri_prefs') ?? '{}');
-  const selectedCards = (savedPrefs.selectedCards ?? []) as string[];
-  const curationTags  = JSON.parse(localStorage.getItem('curationTags') ?? '[]') as string[];
-
+  // Anonymous path: use quickPrefs entirely
   return {
     hometown_cuisine: null,
-    dietary_goal:     curationTags.map(t => CURATION_TO_GOAL[t]).find(Boolean) ?? null,
-    taste_pref:       selectedCards.map(c => CARD_TO_TASTE[c]).find(Boolean) ?? null,
+    dietary_goal:     prefs.dietaryGoal,
+    taste_pref:       prefs.tastePref,
     age_group:        null,
-    avoid_tags:       [],
+    avoid_tags:       prefs.avoidTags,
+    _prefs:           prefs,
   };
 }
 
@@ -717,6 +741,13 @@ export function useRecommendDishes(
 
   const refresh = useCallback(() => setRefreshKey(k => k + 1), []);
 
+  // Re-run when user updates preferences (from Settings or QuickSetup)
+  useEffect(() => {
+    const handler = () => setRefreshKey(k => k + 1);
+    window.addEventListener('nutri-prefs-changed', handler);
+    return () => window.removeEventListener('nutri-prefs-changed', handler);
+  }, []);
+
   // Map UI label → DB meal_type values to include.
   // 午餐 intentionally includes 'dinner' — Chinese home lunch and dinner
   // share the same dish repertoire; most dinner dishes are equally suitable
@@ -768,10 +799,19 @@ export function useRecommendDishes(
         const { data: allDishes, error: fetchErr } = await dishQuery;
         if (fetchErr) throw fetchErr;
 
-        const filtered = hardFilter(allDishes ?? [], profile.avoid_tags);
+        const localPrefs = profile._prefs;
+        const filtered = hardFilter(
+          allDishes ?? [],
+          profile.avoid_tags,
+          localPrefs.avoidIngredients,
+          localPrefs.vegetarianOnly,
+        );
 
         const sorted = filtered
-          .map(dish => ({ dish, score: scoreDish(dish, profile, humidity, solarTerm, scores) }))
+          .map(dish => ({
+            dish,
+            score: scoreDish(dish, profile, humidity, solarTerm, scores, localPrefs.spiceBoost),
+          }))
           .sort((a, b) => b.score - a.score)
           .map(s => s.dish);
 

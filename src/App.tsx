@@ -18,11 +18,11 @@ import WeeklyMenu from './pages/WeeklyMenu';
 import { LanguageProvider } from './contexts/LanguageContext';
 
 // Smart entry point:
-// - First visit (no quickPrefs) → /setup (3-question taste profile)
-// - Return visit → / (home menu, anonymous OK)
+// - First visit (no quickPrefs) → /login (beautiful landing + fun entry button)
+// - Return visit (has quickPrefs) → / (home menu, anonymous OK)
 function RootRedirect() {
   const hasPrefs = !!localStorage.getItem("quickPrefs");
-  return hasPrefs ? <Home /> : <Navigate to="/setup" replace />;
+  return hasPrefs ? <Home /> : <Navigate to="/login" replace />;
 }
 
 export default function App() {

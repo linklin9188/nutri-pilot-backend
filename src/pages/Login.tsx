@@ -63,9 +63,15 @@ export default function Login() {
   };
 
   const handleAppleLogin = async () => {
+    const hasPrefs = !!localStorage.getItem("quickPrefs");
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "apple",
-      options: { redirectTo: `${window.location.origin}/` },
+      options: {
+        // New users → taste setup; existing users → home
+        redirectTo: hasPrefs
+          ? `${window.location.origin}/`
+          : `${window.location.origin}/setup`,
+      },
     });
     if (error) console.error(error);
   };
@@ -99,9 +105,11 @@ export default function Login() {
         .maybeSingle();
 
       if (profile) {
+        // Existing user with saved profile → go home
         navigate("/");
       } else {
-        setStep("preferences");
+        // New user → go to QuickSetup taste profile first
+        navigate("/setup");
       }
     } catch (err: any) {
       setOtpError(err.message === "Token has expired or is invalid"
@@ -242,17 +250,17 @@ export default function Login() {
 
       <AnimatePresence mode="wait">
 
-        {/* ── STEP: login ─────────────────────────────────────────────── */}
+        {/* ── STEP: landing ────────────────────────────────────────────── */}
         {step === "login" && (
           <motion.div key="login"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             transition={{ duration: 0.6 }}
             className="flex-1 flex flex-col justify-end px-7 pb-10 z-10 relative">
 
+            {/* Brand block */}
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.15, duration: 0.7, ease: "easeOut" }} className="mb-7">
+              transition={{ delay: 0.15, duration: 0.7, ease: "easeOut" }} className="mb-8">
 
-              {/* Brand: 爱吃 · Aieats 并排一行 */}
               <div className="flex items-center gap-3">
                 <h1 className="font-serif font-black text-white leading-none whitespace-nowrap"
                   style={{ fontSize: 40, letterSpacing: "0.02em" }}>爱吃</h1>
@@ -261,96 +269,132 @@ export default function Login() {
                   style={{ fontSize: 20, letterSpacing: "0.20em" }}>Aieats</span>
               </div>
 
-              {/* Accent line */}
               <div className="mt-4 mb-5 rounded-full"
                 style={{ width: 36, height: 2, background: "#FF5A1F", boxShadow: "0 0 12px rgba(255,90,31,0.6)" }} />
 
-              {/* Slogan: 两行，节奏感 */}
-              <div>
-                <p className="text-white/65 font-light" style={{ fontSize: 15, letterSpacing: "0.08em" }}>
-                  {t("No more thinking about what to eat", "吃啥不用想，AI 替你想～")}
-                </p>
-              </div>
-            </motion.div>
-
-            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.35, duration: 0.6, ease: "easeOut" }}
-              className="flex flex-col items-center gap-2.5">
-
-              {/* WeChat placeholder */}
-              <div className="w-full text-center">
-                <button className="inline-flex items-center justify-center gap-2 rounded-full bg-white text-black/35 cursor-not-allowed"
-                  style={{ fontSize: 13, fontWeight: 600, width: 192, height: 40 }}
-                  title="即将上线">
-                  <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
-                    <ellipse cx="7.5" cy="8.5" rx="6" ry="4.5" fill="#07C160" opacity="0.4"/>
-                    <circle cx="5.5" cy="8.5" r="1" fill="white" opacity="0.6"/>
-                    <circle cx="7.5" cy="8.5" r="1" fill="white" opacity="0.6"/>
-                    <circle cx="9.5" cy="8.5" r="1" fill="white" opacity="0.6"/>
-                    <ellipse cx="13" cy="12" rx="5.5" ry="4" fill="#07C160" opacity="0.4"/>
-                    <circle cx="11.5" cy="12" r="0.9" fill="white" opacity="0.6"/>
-                    <circle cx="13" cy="12" r="0.9" fill="white" opacity="0.6"/>
-                    <circle cx="14.5" cy="12" r="0.9" fill="white" opacity="0.6"/>
-                  </svg>
-                  微信登录（即将上线）
-                </button>
-              </div>
-
-              {/* Apple ID */}
-              <div className="w-full text-center">
-                <button
-                  onClick={handleAppleLogin}
-                  className="inline-flex items-center justify-center gap-2 rounded-full text-white active:scale-95 transition-transform"
-                  style={{ fontSize: 13, fontWeight: 600, width: 192, height: 40, background: "#1a1a1a", border: "1px solid rgba(255,255,255,0.15)" }}>
-                  <svg width="14" height="16" viewBox="0 0 14 17" fill="white">
-                    <path d="M13.1 12.6c-.3.7-.6 1.3-1 1.9-.5.8-1 1.2-1.4 1.2-.4 0-.9-.1-1.5-.4-.6-.3-1.1-.4-1.6-.4-.5 0-1 .1-1.6.4-.6.3-1 .4-1.4.4-.5 0-1-.4-1.5-1.3-.5-.8-.9-1.8-1.2-2.8C.6 10.5.4 9.3.4 8.2c0-1.2.3-2.3.8-3.1.4-.7 1-1.3 1.7-1.7.7-.4 1.5-.6 2.3-.6.5 0 1 .1 1.7.4.6.2 1 .4 1.2.4.1 0 .6-.2 1.3-.4.7-.3 1.3-.4 1.8-.3 1.4.1 2.4.7 3 1.8-1.2.7-1.8 1.8-1.8 3.1 0 1.1.4 2 1.2 2.7.3.4.7.6 1 .7l-.5.9zM9.8.5C9.8 1.3 9.5 2 9 2.6c-.6.7-1.3 1.1-2.1 1-.1-.8.2-1.6.7-2.2C8.1.8 8.8.4 9.7.3c.1.1.1.1.1.2z"/>
-                  </svg>
-                  Apple ID 登录
-                </button>
-              </div>
-
-              {/* Divider */}
-              <div className="flex items-center gap-3 w-full mt-0.5">
-                <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.10)" }} />
-                <span style={{ fontSize: 11, color: "rgba(255,255,255,0.30)", letterSpacing: "0.08em" }}>其他方式登录</span>
-                <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.10)" }} />
-              </div>
-
-              {/* Phone login — primary action */}
-              <button onClick={() => setStep("phone")}
-                className="flex items-center justify-center gap-2 rounded-full active:scale-95 transition-transform"
-                style={{
-                  fontSize: 14, fontWeight: 600, paddingInline: 28, height: 44,
-                  background: "linear-gradient(135deg, #FF5A1F, #FF8C54)",
-                  boxShadow: "0 6px 20px rgba(255,90,31,0.30)",
-                  color: "white",
-                }}>
-                <span className="material-symbols-outlined text-[17px]">smartphone</span>
-                手机号登录
-              </button>
-
-              <div className="flex items-center gap-5 mt-1">
+              {/* Feature highlights */}
+              <div className="flex flex-col gap-2.5">
                 {[
-                  { icon: "mail", label: "邮箱" },
-                  { icon: "photo_camera", label: "Instagram" },
-                ].map(opt => (
-                  <button key={opt.label}
-                    className="flex flex-col items-center gap-1 opacity-40 cursor-not-allowed">
-                    <div className="w-9 h-9 rounded-full flex items-center justify-center"
-                      style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.09)" }}>
-                      <span className="material-symbols-outlined" style={{ fontSize: 17, color: "rgba(255,255,255,0.55)" }}>
-                        {opt.icon}
-                      </span>
-                    </div>
-                    <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", letterSpacing: "0.04em" }}>
-                      {opt.label}
+                  { emoji: "🤖", text: t("AI plans your weekly menu in seconds", "AI 3秒规划一周菜单，不再纠结吃什么") },
+                  { emoji: "🛒", text: t("Auto-generate grocery list by supermarket", "自动生成购物清单，按超市分类备齐食材") },
+                  { emoji: "🌡️", text: t("Adapts to season, weather and your taste", "节气 · 天气 · 口味三合一个性推荐") },
+                ].map(({ emoji, text }) => (
+                  <div key={emoji} className="flex items-start gap-2.5">
+                    <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>{emoji}</span>
+                    <span className="text-white/60 font-light" style={{ fontSize: 13, lineHeight: 1.5, letterSpacing: "0.04em" }}>
+                      {text}
                     </span>
-                  </button>
+                  </div>
                 ))}
               </div>
             </motion.div>
 
-            <p className="mt-7 text-center text-white/25" style={{ fontSize: 11, letterSpacing: "0.06em" }}>
+            {/* ── Fun CTA button ─────────────────────────────────────── */}
+            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4, duration: 0.6, ease: "easeOut" }}
+              className="flex flex-col items-center gap-3">
+
+              {/* Floating food emojis */}
+              <div className="relative w-full flex justify-center mb-1">
+                {["🍜", "🥗", "🍱", "🍣", "🥘", "🍲"].map((em, i) => (
+                  <motion.span
+                    key={i}
+                    style={{
+                      position: "absolute",
+                      fontSize: 20,
+                      top: -28 + (i % 2 === 0 ? -8 : 6),
+                      left: `${12 + i * 14}%`,
+                    }}
+                    animate={{
+                      y: [0, -8, 0],
+                      rotate: [-5, 5, -5],
+                      opacity: [0.6, 1, 0.6],
+                    }}
+                    transition={{
+                      duration: 2.4 + i * 0.3,
+                      repeat: Infinity,
+                      ease: "easeInOut",
+                      delay: i * 0.25,
+                    }}
+                  >
+                    {em}
+                  </motion.span>
+                ))}
+              </div>
+
+              {/* Primary CTA — starts onboarding (no account needed) */}
+              <motion.button
+                onClick={() => navigate("/setup")}
+                className="w-full h-[58px] rounded-[20px] font-black flex items-center justify-center gap-2.5 relative overflow-hidden"
+                style={{
+                  background: "linear-gradient(135deg, #FF5A1F 0%, #FF8C54 50%, #FFB347 100%)",
+                  boxShadow: "0 10px 30px rgba(255,90,31,0.40), 0 0 0 1px rgba(255,150,80,0.3)",
+                  fontSize: 17, color: "white", letterSpacing: "0.02em",
+                }}
+                whileTap={{ scale: 0.96 }}
+                whileHover={{ scale: 1.01 }}
+              >
+                {/* Shimmer sweep */}
+                <motion.div
+                  className="absolute inset-0 pointer-events-none"
+                  style={{
+                    background: "linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.18) 50%, transparent 60%)",
+                    backgroundSize: "200% 100%",
+                  }}
+                  animate={{ backgroundPosition: ["200% 0", "-200% 0"] }}
+                  transition={{ duration: 2.5, repeat: Infinity, ease: "linear", repeatDelay: 0.8 }}
+                />
+                <span style={{ fontSize: 22 }}>✨</span>
+                {t("Build my menu →", "生成我的专属菜单 →")}
+              </motion.button>
+
+              <p className="text-white/35" style={{ fontSize: 11, letterSpacing: "0.04em" }}>
+                {t("No account needed · 30 seconds", "无需注册 · 30秒完成口味设置")}
+              </p>
+
+              {/* Divider */}
+              <div className="flex items-center gap-3 w-full mt-1">
+                <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.09)" }} />
+                <span style={{ fontSize: 11, color: "rgba(255,255,255,0.28)", letterSpacing: "0.06em" }}>
+                  {t("Already have an account?", "已有账号")}
+                </span>
+                <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.09)" }} />
+              </div>
+
+              {/* Secondary login row: Apple + WeChat + Phone */}
+              <div className="flex items-center gap-3 w-full justify-center">
+                {/* Apple */}
+                <button onClick={handleAppleLogin}
+                  className="flex-1 h-11 rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95"
+                  style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", fontSize: 13, color: "rgba(255,255,255,0.75)" }}>
+                  <svg width="13" height="15" viewBox="0 0 14 17" fill="white" style={{ opacity: 0.8 }}>
+                    <path d="M13.1 12.6c-.3.7-.6 1.3-1 1.9-.5.8-1 1.2-1.4 1.2-.4 0-.9-.1-1.5-.4-.6-.3-1.1-.4-1.6-.4-.5 0-1 .1-1.6.4-.6.3-1 .4-1.4.4-.5 0-1-.4-1.5-1.3-.5-.8-.9-1.8-1.2-2.8C.6 10.5.4 9.3.4 8.2c0-1.2.3-2.3.8-3.1.4-.7 1-1.3 1.7-1.7.7-.4 1.5-.6 2.3-.6.5 0 1 .1 1.7.4.6.2 1 .4 1.2.4.1 0 .6-.2 1.3-.4.7-.3 1.3-.4 1.8-.3 1.4.1 2.4.7 3 1.8-1.2.7-1.8 1.8-1.8 3.1 0 1.1.4 2 1.2 2.7.3.4.7.6 1 .7l-.5.9zM9.8.5C9.8 1.3 9.5 2 9 2.6c-.6.7-1.3 1.1-2.1 1-.1-.8.2-1.6.7-2.2C8.1.8 8.8.4 9.7.3c.1.1.1.1.1.2z"/>
+                  </svg>
+                  Apple
+                </button>
+
+                {/* WeChat (coming soon) */}
+                <button disabled
+                  className="flex-1 h-11 rounded-2xl flex items-center justify-center gap-2 cursor-not-allowed"
+                  style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", fontSize: 13, color: "rgba(255,255,255,0.28)" }}>
+                  <svg width="15" height="15" viewBox="0 0 20 20" fill="none">
+                    <ellipse cx="7.5" cy="8.5" rx="6" ry="4.5" fill="#07C160" opacity="0.5"/>
+                    <ellipse cx="13" cy="12" rx="5.5" ry="4" fill="#07C160" opacity="0.5"/>
+                  </svg>
+                  微信
+                </button>
+
+                {/* Phone */}
+                <button onClick={() => setStep("phone")}
+                  className="flex-1 h-11 rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95"
+                  style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", fontSize: 13, color: "rgba(255,255,255,0.75)" }}>
+                  <span className="material-symbols-outlined" style={{ fontSize: 15 }}>smartphone</span>
+                  手机号
+                </button>
+              </div>
+            </motion.div>
+
+            <p className="mt-5 text-center text-white/20" style={{ fontSize: 11, letterSpacing: "0.06em" }}>
               {t("By continuing you agree to our Terms & Privacy Policy", "继续即同意服务条款与隐私政策")}
             </p>
           </motion.div>
