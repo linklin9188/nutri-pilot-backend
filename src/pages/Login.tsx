@@ -411,39 +411,52 @@ export default function Login() {
               </p>
             </div>
 
-            {/* Country + phone input */}
+            {/* Country code pill + phone input — always visible on mobile */}
             <div className="flex gap-2 mb-3">
-              <div className="flex rounded-2xl overflow-hidden" style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)" }}>
-                {COUNTRY_CODES.map(c => (
-                  <button key={c.code} onClick={() => setCountryCode(c.code)}
-                    className="flex items-center gap-1.5 px-3 py-3 transition-all"
-                    style={{
-                      fontSize: 13, fontWeight: 500,
-                      background: countryCode === c.code ? "rgba(255,90,31,0.25)" : "transparent",
-                      color: countryCode === c.code ? "#FF8C54" : "rgba(255,255,255,0.45)",
-                    }}>
-                    <span>{c.flag}</span>
-                    <span>{c.code}</span>
-                  </button>
-                ))}
-              </div>
+              {/* Tappable country code pill — tap to toggle HK ↔ CN */}
+              <button
+                onClick={() => {
+                  const codes = COUNTRY_CODES.map(c => c.code);
+                  const next = codes[(codes.indexOf(countryCode) + 1) % codes.length];
+                  setCountryCode(next);
+                }}
+                className="flex-shrink-0 flex items-center gap-1.5 h-[54px] px-4 rounded-2xl active:scale-95 transition-all"
+                style={{
+                  background: "rgba(255,255,255,0.12)",
+                  border: "1.5px solid rgba(255,255,255,0.20)",
+                  minWidth: 90,
+                }}
+              >
+                <span style={{ fontSize: 20 }}>
+                  {COUNTRY_CODES.find(c => c.code === countryCode)?.flag}
+                </span>
+                <span style={{ fontSize: 15, fontWeight: 600, color: "white", letterSpacing: "0.02em" }}>
+                  {countryCode}
+                </span>
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ opacity: 0.45 }}>
+                  <path d="M2 3.5L5 6.5L8 3.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
 
               <input
                 type="tel"
                 inputMode="numeric"
-                placeholder={countryCode === "+86" ? "138 0000 0000" : "9XXX XXXX"}
+                placeholder={countryCode === "+852" ? "9XXX XXXX" : "138 0000 0000"}
                 value={phone}
                 onChange={e => setPhone(e.target.value)}
                 onKeyDown={e => e.key === "Enter" && handleSendOtp()}
-                className="flex-1 rounded-2xl px-4 text-white placeholder-white/25 outline-none"
+                className="flex-1 h-[54px] rounded-2xl px-4 text-white placeholder-white/25 outline-none"
                 style={{
-                  background: "rgba(255,255,255,0.08)",
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  fontSize: 16,
+                  background: "rgba(255,255,255,0.10)",
+                  border: "1.5px solid rgba(255,255,255,0.18)",
+                  fontSize: 17,
                   letterSpacing: "0.06em",
                 }}
               />
             </div>
+            <p className="mb-4 pl-1" style={{ fontSize: 11, color: "rgba(255,255,255,0.30)" }}>
+              {COUNTRY_CODES.find(c => c.code === countryCode)?.label} · 点击区号可切换
+            </p>
 
             {otpError && (
               <p className="text-red-400 mb-3" style={{ fontSize: 13 }}>{otpError}</p>
@@ -460,7 +473,7 @@ export default function Login() {
               }}>
               {sending
                 ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                : <><span className="material-symbols-outlined text-[18px]">send</span>发送验证码</>
+                : "发送验证码"
               }
             </button>
           </motion.div>
