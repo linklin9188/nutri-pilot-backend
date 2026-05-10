@@ -74,25 +74,28 @@ function weightedRandom<T extends { score: number }>(
 
 // ── Ingredient category grouping ─────────────────────────────────────────────
 // Maps individual main_ingredient values → broad protein category.
-// This prevents the algorithm from picking fish + shrimp + crab + seafood
-// in the same week (they all look "different" by string but are all seafood).
+// Critical: hairtail/seabass/salmon/etc. must ALL be 'seafood' or they bypass the cap.
 
 const ING_CATEGORY: Record<string, string> = {
-  // Seafood — hard-capped at MAX_PER_CATEGORY['seafood'] per week
+  // Seafood — ALL variants must be here
   seafood: 'seafood', fish: 'seafood', shrimp: 'seafood',
   crab: 'seafood', shellfish: 'seafood', squid: 'seafood',
   scallop: 'seafood', clam: 'seafood', lobster: 'seafood',
   salmon: 'seafood', tuna: 'seafood', cod: 'seafood',
+  hairtail: 'seafood', seabass: 'seafood', oyster: 'seafood',
   // Pork
   pork: 'pork',
   // Beef / lamb
   beef: 'beef', lamb: 'beef', mutton: 'beef',
   // Poultry
   chicken: 'poultry', duck: 'poultry', turkey: 'poultry',
-  // Plant
+  // Plant-based
   veggie: 'plant', vegetable: 'plant', tofu: 'plant',
-  mushroom: 'plant', egg: 'plant', bean: 'plant',
-  tempeh: 'plant',
+  mushroom: 'plant', egg: 'plant', bean: 'plant', tempeh: 'plant',
+  // Carb/staple — should only appear in the staple slot, not as main dishes
+  carb: 'carb',
+  // Other / miscellaneous
+  other: 'other', dessert: 'other',
 };
 
 function ingCategory(ing: string): string {
@@ -100,13 +103,30 @@ function ingCategory(ing: string): string {
 }
 
 // Max times any single category may appear per 7-day week
+// 'carb' dishes appear in the dedicated staple slot only (≤1/day)
 const MAX_PER_CATEGORY: Record<string, number> = {
-  seafood: 2,   // at most 2 seafood meals per week
+  seafood: 2,    // at most 2 seafood dinners per week
   pork:    3,
   beef:    2,
   poultry: 3,
-  plant:   7,   // no cap on veggies
+  plant:   14,   // no effective cap
+  carb:    7,    // 1/day max via slot system; hard weekly cap = 7
   other:   7,
+};
+
+// ── Cuisine origin rebalancing ────────────────────────────────────────────────
+// Western dishes are 32% of the DB pool but most users want Chinese-first menus.
+// We apply a base score adjustment by origin so the algorithm doesn't just pick
+// by volume. Chinese-origin cuisines get a slight lift; western gets a slight
+// penalty unless the user has a western preference.
+const ORIGIN_BASE_SCORE: Record<string, number> = {
+  cantonese:       0.15,
+  northern:        0.12,
+  jiangnan:        0.12,
+  sichuan:         0.10,
+  southeast_asian: 0.08,
+  japanese_korean: 0.08,
+  western:        -0.10,   // mild penalty — overridden if user profile = western
 };
 
 // ── Score a dish for weekly planning ─────────────────────────────────────────
@@ -130,30 +150,46 @@ function scoreForWeek({
   const ingredient: string    = dish.main_ingredient ?? 'other';
   const cat                   = ingCategory(ingredient);
 
-  // ── 1. Base score ─────────────────────────────────────────────────────────
-  const hometownScore = profile.hometown_cuisine && origin === profile.hometown_cuisine ? 1.0 : 0.0;
-  const goalScore     = profile.dietary_goal && healthTags.includes(profile.dietary_goal) ? 1.0 : 0.0;
-  const tasteScore    = profile.taste_pref && flavorTags.includes(profile.taste_pref) ? 1.0 : 0.0;
-  let score = hometownScore * 0.30 + goalScore * 0.40 + tasteScore * 0.30;
+  // ── 1. Cuisine origin rebalancing (fixes western 32% volume bias) ─────────
+  // If user has a hometown preference, override the default penalty/bonus.
+  let score = ORIGIN_BASE_SCORE[origin] ?? 0;
+  if (profile.hometown_cuisine && origin === profile.hometown_cuisine) {
+    score += 0.40;  // strong hometown match overrides default
+  }
 
-  // Feedback EMA layer
+  // ── 2. Dietary goal — only count tags BEYOND 'maintain' ──────────────────
+  // 'maintain' is on 82% of dishes, so it adds zero signal.
+  // Only score specific health goals (lose_weight, muscle_gain, detox, etc.)
+  if (profile.dietary_goal && profile.dietary_goal !== 'maintain') {
+    if (healthTags.includes(profile.dietary_goal)) score += 0.35;
+  } else if (profile.dietary_goal === 'maintain') {
+    // For maintain users: prefer dishes that are NOT heavily tagged with
+    // other goals (stay neutral), and give a small bonus for light/balanced
+    if (flavorTags.includes('light')) score += 0.08;
+  }
+
+  // ── 3. Taste preference ───────────────────────────────────────────────────
+  const tasteScore = profile.taste_pref && flavorTags.includes(profile.taste_pref) ? 0.25 : 0.0;
+  score += tasteScore;
+
+  // ── 4. Feedback EMA layer ─────────────────────────────────────────────────
   for (const tag of flavorTags) {
     const col = FLAVOR_COL[tag];
-    if (col && prefScores[col]) score += prefScores[col] * 0.10;
+    if (col && prefScores[col]) score += prefScores[col] * 0.08;
   }
   for (const tag of healthTags) {
     const col = HEALTH_COL[tag];
-    if (col && prefScores[col]) score += prefScores[col] * 0.10;
+    if (col && prefScores[col]) score += prefScores[col] * 0.08;
   }
   const cuisineCol = CUISINE_COL[origin];
   if (cuisineCol && prefScores[cuisineCol]) score += prefScores[cuisineCol] * 0.10;
 
-  // Spice preference boost
-  if (spiceBoost !== 0 && (flavorTags.includes('spicy') || flavorTags.includes('mala'))) {
+  // ── 5. Spice preference ───────────────────────────────────────────────────
+  if (spiceBoost !== 0 && flavorTags.includes('spicy')) {
     score += spiceBoost;
   }
 
-  // ── 2. Recency decay ──────────────────────────────────────────────────────
+  // ── 6. Recency decay ──────────────────────────────────────────────────────
   const daysSince = recentIds.get(dish.id);
   if (daysSince !== undefined) {
     if (daysSince < 7)       score -= 0.60;
@@ -161,29 +197,26 @@ function scoreForWeek({
     else if (daysSince < 30) score -= 0.15;
   }
 
-  // ── 3. Diversity penalties ────────────────────────────────────────────────
-  // 3a. Exact same ingredient → strong penalty
+  // ── 7. Diversity penalties ────────────────────────────────────────────────
+  // 7a. Exact same ingredient → strong penalty
   const sameIngCount = pickedIngredients.filter(i => i === ingredient).length;
-  score -= sameIngCount * 0.50;
+  score -= sameIngCount * 0.55;
 
-  // 3b. Same category (e.g. fish + shrimp = both seafood) → moderate penalty
+  // 7b. Same category (fish + shrimp = both seafood) → moderate penalty
   const sameCatCount = pickedIngredients.filter(i => ingCategory(i) === cat).length;
   score -= sameCatCount * 0.30;
 
-  // ── 4. Day-of-week modifier ───────────────────────────────────────────────
-  const isWeekend = dayIndex >= 5; // Sat=5, Sun=6
+  // ── 8. Day-of-week modifier ───────────────────────────────────────────────
+  const isWeekend = dayIndex >= 5;
   if (isWeekend) {
-    // Weekends: a single premium dish is fine (pork/beef/poultry — NOT exclusively seafood)
-    if (['pork','beef','poultry'].includes(cat)) score += 0.15;
-    // Seafood on weekend: slight bonus only if not already had seafood this week
-    if (cat === 'seafood' && sameCatCount === 0) score += 0.10;
+    if (['pork','beef','poultry'].includes(cat)) score += 0.12;
+    if (cat === 'seafood' && sameCatCount === 0) score += 0.08;
   } else {
-    // Weekdays: prefer quicker plant / poultry / pork dishes
-    if (['plant','poultry','pork'].includes(cat)) score += 0.10;
+    if (['plant','poultry','pork'].includes(cat)) score += 0.08;
   }
 
-  // Monday veggie reset bonus
-  if (dayIndex === 0 && dish.is_vegan) score += 0.10;
+  // Monday light/detox bonus
+  if (dayIndex === 0 && (dish.is_vegan || flavorTags.includes('light'))) score += 0.10;
 
   return score;
 }
@@ -198,16 +231,24 @@ function enrichRaw(dish: any): SupabaseDish {
   const desc = lang === 'zh'
     ? (dish.description_zh || dish.description_en || '')
     : (dish.description_en || dish.description_zh || '');
+  // Derive type from main_ingredient (authoritative) not flavor_tags
+  // flavor_tags 'seafood' just means "has seafood taste" — unreliable for type
+  const ing = dish.main_ingredient ?? '';
+  const ingCat = ingCategory(ing);
+  const dishType =
+    ingCat === 'plant' || (dish.flavor_tags ?? []).includes('veggie') ? 'VEGGIE' :
+    ingCat === 'seafood' ? 'SEAFOOD' :
+    ingCat === 'carb'    ? 'STAPLE'  :
+    'MEAT';
+
   return {
     ...dish,
     title,
     desc,
     img: dish.image_url || '',
-    is_vegetarian: (dish.flavor_tags ?? []).includes('veggie'),
+    is_vegetarian: dishType === 'VEGGIE',
     is_vegan: dish.is_vegan ?? false,
-    type: (dish.flavor_tags ?? []).includes('veggie') ? 'VEGGIE'
-        : (dish.flavor_tags ?? []).includes('seafood') ? 'SEAFOOD'
-        : 'MEAT',
+    type: dishType,
     highlight: false,
     description_en: dish.description_en || '',
     _raw: dish,
@@ -217,20 +258,26 @@ function enrichRaw(dish: any): SupabaseDish {
 // ── Generate weekly plan from dish pool ───────────────────────────────────────
 
 // ── Per-day meal slot target composition ─────────────────────────────────────
-// Each day should have a balanced mix, not all the same category.
-// slot 0: main protein (meat/poultry preferred, seafood ≤ 2/week)
-// slot 1: secondary protein or mix
-// slot 2: veggie/plant dish
-// slot 3: soup or light dish
-// slot 4: flexible
+// A typical Chinese dinner has: 1 main protein + 1-2 veggie/tofu dishes + 1 staple
+//
+// slot 0: main protein — pork / chicken / beef (seafood only if weekly cap allows)
+// slot 1: secondary — veggie-heavy, tofu, egg, or lighter meat
+// slot 2: pure plant — veggie / tofu / mushroom / egg
+// slot 3: plant or light soup-style (light flavor tag preferred)
+// slot 4: CARB ONLY — 主食 slot (rice dish / noodle / dumpling)
+//
+// Carb dishes ONLY appear in slot 4. This stops 意面/炒饭 from competing with 红烧肉.
 
 const SLOT_PREFERRED_CATS: string[][] = [
   ['pork', 'poultry', 'beef', 'seafood'],  // slot 0: main protein
-  ['pork', 'poultry', 'beef', 'plant'],    // slot 1: secondary
-  ['plant'],                                // slot 2: always veggie
-  ['plant', 'other'],                      // slot 3: soup / light
-  ['pork', 'poultry', 'plant', 'other'],   // slot 4: flexible
+  ['plant', 'pork', 'poultry'],            // slot 1: secondary (veggie-leaning)
+  ['plant'],                                // slot 2: pure veggie/tofu
+  ['plant', 'other'],                      // slot 3: light / soup-style
+  ['carb'],                                // slot 4: 主食 — CARB ONLY
 ];
+
+// Slots where carb dishes are BLOCKED (they only go in slot 4)
+const CARB_BLOCKED_SLOTS = new Set([0, 1, 2, 3]);
 
 function generateWeekPlan(
   pool: any[],
@@ -259,10 +306,15 @@ function generateWeekPlan(
       const allCandidates = pool
         .filter(d => !usedIds.has(d.id) && !dayDishes.some(p => p.id === d.id))
         .filter(d => {
-          // Hard weekly cap: block category if over limit
           const cat = ingCategory(d.main_ingredient ?? 'other');
+          // Hard weekly cap
           const cap = MAX_PER_CATEGORY[cat] ?? 7;
-          return (weeklyCatCounts[cat] ?? 0) < cap;
+          if ((weeklyCatCounts[cat] ?? 0) >= cap) return false;
+          // Carb dishes ONLY allowed in slot 4
+          if (cat === 'carb' && CARB_BLOCKED_SLOTS.has(slot)) return false;
+          // Non-carb dishes blocked from slot 4 (keep slot 4 as 主食 only)
+          if (slot === 4 && cat !== 'carb') return false;
+          return true;
         })
         .map(d => {
           let score = scoreForWeek({
@@ -272,13 +324,16 @@ function generateWeekPlan(
             spiceBoost,
           });
 
-          // Slot affinity bonus: reward dishes that fit this slot's role
+          // Slot affinity bonus
           const cat = ingCategory(d.main_ingredient ?? 'other');
-          if (preferredCats.includes(cat)) score += 0.20;
+          if (preferredCats.includes(cat)) score += 0.22;
 
-          // Penalty if same category already used in this day's earlier slots
+          // Same-category-in-same-day penalty (prevents e.g. two veggie dishes in slot 1+2)
           const sameCatInDay = dayIngredients.filter(i => ingCategory(i) === cat).length;
           score -= sameCatInDay * 0.45;
+
+          // Slot 3: prefer light-flavored dishes as pseudo-soup
+          if (slot === 3 && (d.flavor_tags ?? []).includes('light')) score += 0.15;
 
           return { dish: d, score };
         })
