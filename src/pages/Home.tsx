@@ -866,7 +866,13 @@ export default function Home() {
               </div>
             </div>
 
-            <button className="w-full h-14 bg-[#2D3748] text-white rounded-2xl font-semibold text-[16px] shadow-lg active:scale-[0.98] transition-transform" onClick={() => setIsDinerSelectorOpen(false)}>
+            <button className="w-full h-14 bg-[#2D3748] text-white rounded-2xl font-semibold text-[16px] shadow-lg active:scale-[0.98] transition-transform" onClick={() => {
+              // Persist headcount so weekly menu can read it + regenerate
+              localStorage.setItem('nutri_adults', String(todayAdults));
+              localStorage.setItem('nutri_kids', String(todayKids));
+              window.dispatchEvent(new Event('nutri-prefs-changed'));
+              setIsDinerSelectorOpen(false);
+            }}>
               确认 Confirm
             </button>
           </div>

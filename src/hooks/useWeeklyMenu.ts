@@ -44,6 +44,24 @@ const ALGO_VERSION = 'v5'; // bumped: use DB course_type for slot assignment + s
 
 const DAY_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 
+/**
+ * Map headcount → dishes per day.
+ * More people → more dish variety per meal.
+ *   1 person   → 3 dishes
+ *   2 adults   → 4 dishes
+ *   3-4 adults → 5 dishes  (default)
+ *   5+ people  → 6 dishes
+ */
+function calcDishesPerDay(): number {
+  const adults = parseInt(localStorage.getItem('nutri_adults') ?? '3', 10);
+  const kids   = parseInt(localStorage.getItem('nutri_kids')   ?? '0', 10);
+  const eff    = adults + kids * 0.5;
+  if (eff <= 1.5) return 3;
+  if (eff <= 2.5) return 4;
+  if (eff <= 4.5) return 5;
+  return 6;
+}
+
 function getMondayISO(): string {
   const d = new Date();
   const day = d.getDay(); // 0=Sun
@@ -454,7 +472,7 @@ export function useWeeklyMenu() {
   useEffect(() => {
     const handler = () => {
       const weekStart = getMondayISO();
-      localStorage.removeItem(`weekly_menu_${ALGO_VERSION}_${weekStart}`);
+      localStorage.removeItem(`weekly_menu_${ALGO_VERSION}_${weekStart}_p${calcDishesPerDay()}`);
       setWeeklyMenu(null);
       setRefreshKey(k => k + 1);
     };
@@ -486,8 +504,9 @@ export function useWeeklyMenu() {
         }
       }
 
-      // 2. Try localStorage cache
-      const lsKey  = `weekly_menu_${ALGO_VERSION}_${weekStart}`;
+      // 2. Try localStorage cache — key includes dishesPerDay so headcount changes bust cache
+      const dishesPerDay = calcDishesPerDay();
+      const lsKey  = `weekly_menu_${ALGO_VERSION}_${weekStart}_p${dishesPerDay}`;
       const lsRaw  = localStorage.getItem(lsKey);
       if (lsRaw) {
         try {
@@ -579,7 +598,7 @@ export function useWeeklyMenu() {
         const prefScores: Record<string, number> = (scoreRow as any) ?? {};
 
         const spiceBoost = localPrefs.spiceBoost ?? 0;
-        const menu = generateWeekPlan(pool, profile, prefScores, recentIds, 5, spiceBoost);
+        const menu = generateWeekPlan(pool, profile, prefScores, recentIds, dishesPerDay, spiceBoost);
 
         if (cancelled) return;
 
@@ -620,7 +639,7 @@ export function useWeeklyMenu() {
 
     setWeeklyMenu(updated);
 
-    const lsKey = `weekly_menu_${ALGO_VERSION}_${weeklyMenu.weekStart}`;
+    const lsKey = `weekly_menu_${ALGO_VERSION}_${weeklyMenu.weekStart}_p${calcDishesPerDay()}`;
     localStorage.setItem(lsKey, JSON.stringify(updated));
 
     const userId = localStorage.getItem('nutri_user_id') ?? 'anonymous';
@@ -638,7 +657,7 @@ export function useWeeklyMenu() {
   // Regenerate (discard cache, re-run algorithm)
   function regenerate() {
     if (!weeklyMenu) return;
-    localStorage.removeItem(`weekly_menu_${ALGO_VERSION}_${weeklyMenu.weekStart}`);
+    localStorage.removeItem(`weekly_menu_${ALGO_VERSION}_${weeklyMenu.weekStart}_p${calcDishesPerDay()}`);
     setWeeklyMenu(null);
     setLoading(true);
     // Re-trigger useEffect via state reset
