@@ -257,12 +257,8 @@ function scoreForWeek({
   if (isWeekend) {
     if (['pork','beef','poultry'].includes(cat)) score += 0.12;
     if (cat === 'seafood' && sameCatCount === 0) score += 0.08;
-    // Weekend: elaborate dishes (longer cook time) get a bonus
-    if (dish.cook_time_min && dish.cook_time_min >= 45) score += 0.10;
   } else {
     if (['plant','poultry','pork'].includes(cat)) score += 0.08;
-    // Weekday: quick dishes (≤30 min) preferred
-    if (dish.cook_time_min && dish.cook_time_min <= 30) score += 0.12;
   }
 
   // Monday light/detox bonus
