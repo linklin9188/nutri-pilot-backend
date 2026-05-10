@@ -199,9 +199,11 @@ export default function Login() {
   const getMealSlot = (h: number): "breakfast" | "lunch" | "dinner" =>
     h >= 5 && h < 11 ? "breakfast" : h >= 11 && h < 17 ? "lunch" : "dinner";
 
+  // Always use Beijing time (UTC+8) regardless of user's device timezone
   const _now        = new Date();
-  const _dayIdx     = (_now.getDay() + 6) % 7; // 0=Mon…6=Sun
-  const _meal       = getMealSlot(_now.getHours());
+  const _bjDate     = new Date(_now.toLocaleString("en-US", { timeZone: "Asia/Shanghai" }));
+  const _dayIdx     = (_bjDate.getDay() + 6) % 7; // 0=Mon…6=Sun
+  const _meal       = getMealSlot(_bjDate.getHours());
   // Morning: bright & airy; Afternoon: warm café; Evening: dark & moody
   const _brightness = _meal === "breakfast" ? 0.88 : _meal === "lunch" ? 0.78 : 0.62;
   const _photoId    = DAY_IMAGES[_dayIdx][_meal];
