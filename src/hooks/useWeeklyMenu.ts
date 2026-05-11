@@ -174,6 +174,68 @@ const ORIGIN_BASE_SCORE: Record<string, number> = {
   western:        -0.10,   // mild penalty — overridden if user profile = western
 };
 
+// ── Age profile system ────────────────────────────────────────────────────────
+
+interface AgeModifiers {
+  wellnessTags: string[];
+  wellnessBonus: number;
+  tasteBoostTags: string[];
+  tasteBonus: number;
+  tastePenaltyTags: string[];
+  tastePenalty: number;
+}
+
+const SENIOR_MODS: AgeModifiers = {   // 70后及之前
+  wellnessTags:     ['maintain', 'pregnancy', 'damp_clear'],
+  wellnessBonus:    0.50,
+  tasteBoostTags:   ['light'],
+  tasteBonus:       0.20,
+  tastePenaltyTags: ['spicy'],
+  tastePenalty:     0.30,
+};
+const MIDDLE_MODS: AgeModifiers = {   // 80后
+  wellnessTags:     ['maintain', 'lose_weight', 'damp_clear'],
+  wellnessBonus:    0.20,
+  tasteBoostTags:   [],
+  tasteBonus:       0,
+  tastePenaltyTags: [],
+  tastePenalty:     0,
+};
+const YOUNG_MODS: AgeModifiers = {    // 90后
+  wellnessTags:     ['muscle_gain'],
+  wellnessBonus:    0.25,
+  tasteBoostTags:   ['spicy', 'seafood'],
+  tasteBonus:       0.15,
+  tastePenaltyTags: [],
+  tastePenalty:     0,
+};
+const CHILD_MODS: AgeModifiers = {    // 00后及之后
+  wellnessTags:     ['maintain'],
+  wellnessBonus:    0.15,
+  tasteBoostTags:   ['sweet', 'light'],
+  tasteBonus:       0.20,
+  tastePenaltyTags: ['spicy', 'sour'],
+  tastePenalty:     0.35,
+};
+
+const AGE_GROUP_MAP: Array<{ keys: string[]; mods: AgeModifiers }> = [
+  { keys: ['50后','60后','70后','pre1970','1950s','1960s','1970s','senior','elderly'], mods: SENIOR_MODS },
+  { keys: ['80后','1980s','middle','adult'], mods: MIDDLE_MODS },
+  { keys: ['90后','1990s','young','youth'],  mods: YOUNG_MODS  },
+  { keys: ['00后','10后','2000s','2010s','child','teen','kid'],                       mods: CHILD_MODS  },
+];
+
+function resolveAgeModifiers(ageGroup: string | null | undefined): AgeModifiers {
+  if (!ageGroup) return MIDDLE_MODS;
+  const lower = ageGroup.toLowerCase();
+  for (const { keys, mods } of AGE_GROUP_MAP) {
+    if (keys.some(k => lower === k.toLowerCase() || lower.includes(k.toLowerCase()))) {
+      return mods;
+    }
+  }
+  return MIDDLE_MODS;
+}
+
 // ── Score a dish for weekly planning ─────────────────────────────────────────
 
 interface WeeklyScoreParams {
@@ -185,10 +247,13 @@ interface WeeklyScoreParams {
   pickedTitleKeywords: string[];     // title keywords already used this week
   dayIndex: number;                  // 0=Mon … 6=Sun
   spiceBoost?: number;              // from userPrefs
+  ageGroup?: string | null;
+  healthPrefs?: { preferLowSodium: boolean; preferLowSugar: boolean; avoidHighPurine: boolean };
 }
 
 function scoreForWeek({
-  dish, profile, prefScores, recentIds, pickedIngredients, pickedTitleKeywords, dayIndex, spiceBoost = 0,
+  dish, profile, prefScores, recentIds, pickedIngredients, pickedTitleKeywords, dayIndex,
+  spiceBoost = 0, ageGroup, healthPrefs,
 }: WeeklyScoreParams): number {
   const flavorTags: string[]  = dish.flavor_tags ?? [];
   const healthTags: string[]  = dish.health_benefit_tags ?? [];
@@ -271,6 +336,24 @@ function scoreForWeek({
   if (titleKw) {
     const kwCount = pickedTitleKeywords.filter(k => k === titleKw).length;
     score -= kwCount * 0.65;
+  }
+
+  // ── 10. Age group modifiers ──────────────────────────────────────────────
+  const ageMods = resolveAgeModifiers(ageGroup);
+  if (ageMods) {
+    if (ageMods.wellnessTags.some((t: string) => healthTags.includes(t))) score += ageMods.wellnessBonus;
+    if (ageMods.tasteBoostTags.some((t: string) => flavorTags.includes(t))) score += ageMods.tasteBonus;
+    if (ageMods.tastePenaltyTags.some((t: string) => flavorTags.includes(t))) score -= ageMods.tastePenalty;
+  }
+
+  // ── 11. Health condition scoring ─────────────────────────────────────────
+  if (healthPrefs) {
+    if (healthPrefs.preferLowSodium && flavorTags.includes('light')) score += 0.15;
+    if (healthPrefs.preferLowSugar  && flavorTags.includes('sweet')) score -= 0.20;
+    if (healthPrefs.avoidHighPurine) {
+      const highPurineIngredients = ['shellfish', 'crab', 'scallop', 'clam', 'oyster'];
+      if (highPurineIngredients.includes(dish.main_ingredient ?? '')) score -= 0.30;
+    }
   }
 
   return score;
@@ -386,6 +469,8 @@ function generateWeekPlan(
   recentIds: Map<string, number>,
   dishesPerDay = 5,
   spiceBoost = 0,
+  ageGroup?: string | null,
+  healthPrefs?: { preferLowSodium: boolean; preferLowSugar: boolean; avoidHighPurine: boolean },
 ): WeeklyMenu {
   const weekStart = getMondayISO();
   const days: WeeklyDayMenu[] = [];
@@ -457,6 +542,8 @@ function generateWeekPlan(
             pickedTitleKeywords,
             dayIndex,
             spiceBoost,
+            ageGroup,
+            healthPrefs,
           });
 
           // Slot affinity bonus — from ingredient category
@@ -571,6 +658,28 @@ async function saveToDB(userId: string, menu: WeeklyMenu): Promise<void> {
     .upsert(rows, { onConflict: 'user_id,week_start,day_index,meal_type' });
 }
 
+// ── Dish history persistence ──────────────────────────────────────────────────
+
+async function saveToHistory(userId: string, menu: WeeklyMenu): Promise<void> {
+  if (userId === 'anonymous' || !userId) return;
+  const weekStart = new Date(menu.weekStart);
+  const rows = menu.days.flatMap(day => {
+    const date = new Date(weekStart);
+    date.setDate(date.getDate() + day.dayIndex);
+    const servedDate = date.toISOString().slice(0, 10);
+    return day.dishes.map(d => ({
+      user_id:     userId,
+      dish_id:     d.id,
+      served_date: servedDate,
+    }));
+  });
+  if (rows.length === 0) return;
+  await supabase
+    .from('user_dish_history')
+    .upsert(rows, { onConflict: 'user_id,dish_id,served_date' })
+    .then(() => {}, () => {/* non-critical */});
+}
+
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
 export function useWeeklyMenu() {
@@ -667,7 +776,7 @@ export function useWeeklyMenu() {
         // Fetch user profile
         const { data: profileRow } = await supabase
           .from('user_profiles')
-          .select('hometown_cuisine, dietary_goal, taste_pref')
+          .select('hometown_cuisine, dietary_goal, taste_pref, age_group')
           .eq('id', userId)
           .single()
           .then(r => r, () => ({ data: null }));
@@ -676,6 +785,7 @@ export function useWeeklyMenu() {
           hometown_cuisine: (profileRow as any)?.hometown_cuisine ?? null,
           dietary_goal:     (profileRow as any)?.dietary_goal ?? localPrefs.dietaryGoal,
           taste_pref:       (profileRow as any)?.taste_pref ?? localPrefs.tastePref,
+          age_group:        (profileRow as any)?.age_group ?? null,
         };
 
         // Fetch recent dish history (last 30 days)
@@ -708,7 +818,15 @@ export function useWeeklyMenu() {
         const prefScores: Record<string, number> = (scoreRow as any) ?? {};
 
         const spiceBoost = localPrefs.spiceBoost ?? 0;
-        const menu = generateWeekPlan(pool, profile, prefScores, recentIds, dishesPerDay, spiceBoost);
+        const healthPrefs = {
+          preferLowSodium: localPrefs.preferLowSodium,
+          preferLowSugar:  localPrefs.preferLowSugar,
+          avoidHighPurine: localPrefs.avoidHighPurine,
+        };
+        const menu = generateWeekPlan(
+          pool, profile, prefScores, recentIds, dishesPerDay,
+          spiceBoost, profile.age_group, healthPrefs,
+        );
 
         if (cancelled) return;
 
@@ -716,7 +834,8 @@ export function useWeeklyMenu() {
         // can be invalidated on next algo upgrade (see weekly_menu_algo_ver check above)
         localStorage.setItem(lsKey, JSON.stringify(menu));
         localStorage.setItem('weekly_menu_algo_ver', ALGO_VERSION);
-        saveToDB(userId, menu).catch(() => {/* non-critical */});
+        saveToDB(userId, menu).catch(() => {});
+        saveToHistory(userId, menu).catch(() => {});
 
         setWeeklyMenu(menu);
       } catch (err) {

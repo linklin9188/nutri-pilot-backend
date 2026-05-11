@@ -23,6 +23,9 @@ const DRY_RUN = process.argv.includes('--dry-run');
 const FORCE   = process.argv.includes('--force');
 const BATCH   = 15;   // dishes per Gemini call
 const PAUSE   = 2000; // ms between batches
+// --limit=50 caps total dishes processed per run (safe batching)
+const LIMIT_ARG = process.argv.find(a => a.startsWith('--limit='));
+const LIMIT = LIMIT_ARG ? parseInt(LIMIT_ARG.split('=')[1], 10) : Infinity;
 
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -87,19 +90,30 @@ ${JSON.stringify(dishes.map(d => ({
 
 只返回JSON，不要其他文字。`;
 
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.1, responseMimeType: 'application/json' },
-      }),
+  // Retry up to 3 times on 503/429
+  let res: Response | null = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.1, responseMimeType: 'application/json' },
+        }),
+      }
+    );
+    if (res.ok) break;
+    if ([429, 503].includes(res.status) && attempt < 3) {
+      const wait = attempt * 5000;
+      console.log(`\n  ⏳ Gemini ${res.status}, retry ${attempt}/3 in ${wait/1000}s...`);
+      await new Promise(r => setTimeout(r, wait));
+    } else {
+      throw new Error(`Gemini ${res.status}: ${await res.text()}`);
     }
-  );
-
-  if (!res.ok) throw new Error(`Gemini ${res.status}: ${await res.text()}`);
+  }
+  if (!res!.ok) throw new Error(`Gemini failed after 3 retries`);
 
   const data = await res.json();
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '[]';
@@ -131,7 +145,7 @@ function validate(result: GeminiResult): { ok: boolean; issues: string[] } {
 
 // ── DB writer ──────────────────────────────────────────────────────────────────
 
-async function writeResults(pg: Client, results: GeminiResult[]): Promise<number> {
+async function writeResults(pg: Client, results: GeminiResult[], batch: DishRow[]): Promise<number> {
   let written = 0;
   for (const r of results) {
     const { ok, issues } = validate(r);
@@ -140,22 +154,46 @@ async function writeResults(pg: Client, results: GeminiResult[]): Promise<number
       continue;
     }
 
+    // Gemini sometimes mis-transcribes UUIDs (off by one char).
+    // If the returned dish_id doesn't match exactly, fuzzy-match against the batch.
+    let resolvedId = r.dish_id;
+    if (!batch.some(d => d.id === r.dish_id)) {
+      const fuzzy = batch.find(d => {
+        // Allow up to 2 character differences
+        let diff = 0;
+        const a = d.id.replace(/-/g, '');
+        const b = r.dish_id.replace(/-/g, '');
+        if (Math.abs(a.length - b.length) > 2) return false;
+        for (let i = 0; i < Math.max(a.length, b.length); i++) {
+          if (a[i] !== b[i]) diff++;
+          if (diff > 2) return false;
+        }
+        return diff <= 2;
+      });
+      if (fuzzy) {
+        resolvedId = fuzzy.id;
+      } else {
+        console.log(`\n  ⚠️  ${r.dish_id}: UUID not found in batch — skipping`);
+        continue;
+      }
+    }
+
     // Delete old ingredients for this dish (idempotent)
-    await pg.query('DELETE FROM dish_ingredients WHERE dish_id = $1', [r.dish_id]);
+    await pg.query('DELETE FROM dish_ingredients WHERE dish_id = $1', [resolvedId]);
 
     // Insert new ingredients
     for (const ing of r.ingredients) {
       await pg.query(
         `INSERT INTO dish_ingredients (dish_id, name_zh, name_en, category, g_per_person, is_main, optional)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [r.dish_id, ing.name_zh, ing.name_en, ing.category, ing.g_per_person, ing.is_main, ing.optional]
+        [resolvedId, ing.name_zh, ing.name_en, ing.category, ing.g_per_person, ing.is_main, ing.optional]
       );
     }
 
     // Mark dish as ready
     await pg.query(
       'UPDATE dishes SET ingredients_ready = true WHERE id = $1',
-      [r.dish_id]
+      [resolvedId]
     );
     written++;
   }
@@ -172,10 +210,12 @@ async function main() {
     .select('id, title_zh, description_zh, main_ingredient, course_type, origin_cuisine');
   if (!FORCE) query = query.eq('ingredients_ready', false);
 
-  const { data: dishes, error } = await query;
-  if (error || !dishes) { console.error('Fetch error:', error); process.exit(1); }
+  const { data: allDishes, error } = await query;
+  if (error || !allDishes) { console.error('Fetch error:', error); process.exit(1); }
 
-  console.log(`📊 Dishes to process: ${dishes.length}\n`);
+  // Apply --limit cap (process at most LIMIT dishes per run)
+  const dishes = isFinite(LIMIT) ? allDishes.slice(0, LIMIT) : allDishes;
+  console.log(`📊 Dishes to process: ${dishes.length}${isFinite(LIMIT) ? ` (limited to ${LIMIT}, total pending: ${allDishes.length})` : ''}\n`);
 
   if (DRY_RUN) {
     const sample = dishes.slice(0, 3) as DishRow[];
@@ -207,7 +247,7 @@ async function main() {
 
     try {
       const results = await generateBatch(batch);
-      const written = await writeResults(pg, results);
+      const written = await writeResults(pg, results, batch);
       processed += written;
     } catch (e: any) {
       errors += batch.length;

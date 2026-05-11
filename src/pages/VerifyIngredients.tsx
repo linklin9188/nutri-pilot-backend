@@ -53,6 +53,108 @@ function toRequirements(ings: { name: string; type: 'Meat/Seafood' | 'Produce' |
   }));
 }
 
+// ── Helper simple checklist view ─────────────────────────────────────────────
+function HelperChecklistView({ onBack, procurementPlan }: {
+  onBack: () => void;
+  procurementPlan: any[];
+}) {
+  const [checked, setChecked] = useState<Record<string, boolean>>({});
+
+  const items = procurementPlan.map(item => {
+    const name = item.ingredient?.catalogItem?.abstractTerm?.[0] || item.ingredient?.name || "Unknown";
+    const id = item.ingredient?.id ?? name;
+    return { id, name };
+  });
+
+  // Deduplicate by id
+  const unique = items.filter((v, i, arr) => arr.findIndex(x => x.id === v.id) === i);
+
+  const checkedCount = Object.values(checked).filter(Boolean).length;
+
+  return (
+    <div className="min-h-screen flex flex-col max-w-md mx-auto" style={{ background: "#f8f9fa" }}>
+      {/* Header */}
+      <header className="bg-white sticky top-0 z-50 flex items-center gap-3 px-5 py-4 border-b border-black/5">
+        <button onClick={onBack} className="p-2 rounded-full bg-black/5 active:scale-95 transition-transform">
+          <span className="material-symbols-outlined text-[20px]">arrow_back</span>
+        </button>
+        <div>
+          <h1 className="text-[18px] font-bold">核对家中食材</h1>
+          <p className="text-[11px] text-gray-400 mt-0.5">Check what you already have at home</p>
+        </div>
+        <div className="ml-auto px-3 py-1 rounded-full text-[12px] font-bold"
+          style={{ background: "rgba(37,211,102,0.12)", color: "#25D366" }}>
+          {checkedCount}/{unique.length} ✓
+        </div>
+      </header>
+
+      <main className="flex-1 px-5 py-5 flex flex-col gap-3">
+        {unique.length === 0 ? (
+          <div className="text-center py-20 text-gray-400">
+            <span className="material-symbols-outlined text-5xl mb-3 block">inventory_2</span>
+            <p>No ingredients to check</p>
+            <p className="text-sm mt-1">Make sure a menu has been generated first</p>
+          </div>
+        ) : (
+          <>
+            <p className="text-[12px] text-gray-400 mb-1">Tick off ingredients you already have at home:</p>
+            {unique.map(item => {
+              const isChecked = !!checked[item.id];
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setChecked(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
+                  className="w-full flex items-center gap-4 px-5 py-4 rounded-2xl bg-white border transition-all active:scale-[0.98]"
+                  style={{
+                    border: isChecked ? "1.5px solid #25D366" : "1.5px solid rgba(0,0,0,0.07)",
+                    background: isChecked ? "rgba(37,211,102,0.06)" : "white",
+                  }}
+                >
+                  <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-all"
+                    style={{
+                      background: isChecked ? "#25D366" : "rgba(0,0,0,0.06)",
+                    }}>
+                    {isChecked && (
+                      <span className="material-symbols-outlined text-white" style={{ fontSize: 18, fontVariationSettings: "'FILL' 1" }}>check</span>
+                    )}
+                  </div>
+                  <p className="text-left font-medium text-[15px]" style={{ color: isChecked ? "#25D366" : "#1a1a1a" }}>
+                    {item.name}
+                  </p>
+                  {isChecked && (
+                    <span className="ml-auto text-[11px] font-semibold" style={{ color: "#25D366" }}>有 ✓</span>
+                  )}
+                  {!isChecked && (
+                    <span className="ml-auto text-[11px]" style={{ color: "rgba(0,0,0,0.25)" }}>需要买</span>
+                  )}
+                </button>
+              );
+            })}
+          </>
+        )}
+      </main>
+
+      {/* Summary footer */}
+      {unique.length > 0 && (
+        <div className="px-5 py-5 bg-white border-t border-black/5">
+          <div className="rounded-2xl px-5 py-4" style={{ background: "rgba(37,211,102,0.08)", border: "1px solid rgba(37,211,102,0.2)" }}>
+            <p className="font-semibold text-[14px]" style={{ color: "#25D366" }}>
+              {checkedCount === unique.length
+                ? "All ingredients available! 🎉"
+                : `${unique.length - checkedCount} item${unique.length - checkedCount !== 1 ? "s" : ""} to buy`}
+            </p>
+            <p className="text-[11px] mt-0.5" style={{ color: "rgba(0,0,0,0.4)" }}>
+              {checkedCount > 0
+                ? `${checkedCount} already at home · ${unique.length - checkedCount} needed`
+                : "Tap each item you already have"}
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function VerifyIngredients() {
   const navigate = useNavigate();
   const [mode, setMode] = useState<'today' | 'week'>('today');
@@ -147,6 +249,30 @@ export default function VerifyIngredients() {
 
   const [processingCheckout, setProcessingCheckout] = useState<string | null>(null);
 
+  function handleSendToHelper() {
+    if (procurementPlan.length === 0) return;
+    const lines: string[] = [`🛒 ${mode === 'week' ? '本周' : '今日'}采购清单\n`];
+    // Group by vendor
+    const grouped: Record<string, typeof procurementPlan> = {};
+    for (const item of procurementPlan) {
+      const vName = item.vendor?.name ?? '其他';
+      if (!grouped[vName]) grouped[vName] = [];
+      grouped[vName].push(item);
+    }
+    for (const [vendor, items] of Object.entries(grouped)) {
+      lines.push(`📦 ${vendor}`);
+      for (const item of items) {
+        const name = item.ingredient.catalogItem?.skuName || item.ingredient.name;
+        const weight = item.ingredient.weightGrams;
+        lines.push(`  • ${name} ${weight}g`);
+      }
+      lines.push('');
+    }
+    lines.push('请按以上清单采购，谢谢！');
+    const text = encodeURIComponent(lines.join('\n'));
+    window.open(`https://wa.me/?text=${text}`, '_blank');
+  }
+
   const handleCheckout = async (vendorName: string, items: any[]) => {
     setProcessingCheckout(vendorName);
     
@@ -224,17 +350,29 @@ export default function VerifyIngredients() {
 
   const userTier = getUserTier();
   const tierCfg  = TIER_CONFIG[userTier];
+  const isHelper = localStorage.getItem("nutri_role") === "helper";
+
+  // ── Helper mode: simple checklist ──────────────────────────────────────────
+  if (isHelper) {
+    return <HelperChecklistView onBack={() => navigate("/helper")} procurementPlan={procurementPlan} />;
+  }
 
   return (
     <div className="bg-background font-sans w-full max-w-md mx-auto min-h-screen text-on-surface relative overflow-x-hidden">
       {/* Top Navigation Bar */}
       <header className="bg-surface/80 backdrop-blur-xl sticky top-0 z-50 flex items-center justify-between px-5 py-4 w-full border-b border-black/5">
         <div className="flex items-center gap-3">
-          <button className="active:scale-95 transition-transform duration-200 bg-black/5 hover:bg-black/10 p-2 text-on-surface rounded-full flex items-center justify-center" onClick={() => navigate('/')}>
+          <button className="active:scale-95 transition-transform duration-200 bg-black/5 hover:bg-black/10 p-2 text-on-surface rounded-full flex items-center justify-center"
+            onClick={() => navigate(isHelper ? "/helper" : "/")}>
             <span className="material-symbols-outlined text-[20px]">arrow_back</span>
           </button>
           <div className="flex flex-col">
-            <h1 className="text-[18px] font-bold tracking-tight leading-tight">智能采购</h1>
+            <h1 className="text-[18px] font-bold tracking-tight leading-tight">
+              {isHelper ? "核对家中食材" : "智能采购"}
+            </h1>
+            {isHelper && (
+              <p className="text-[11px] text-secondary mt-0.5">确认家里已有哪些食材</p>
+            )}
           </div>
         </div>
         {/* Tier badge */}
@@ -354,31 +492,49 @@ export default function VerifyIngredients() {
                     </div>
                   ))}
                 </div>
-                {/* Checkout Footer per vendor */}
-                <div className="p-4 bg-[#f8f8f8] border-t border-black/5">
-                  <div className="flex justify-between items-center mb-3">
-                    <span className="text-[13px] font-medium text-secondary">采购状态：</span>
-                    <span className="text-[12px] font-bold text-green-700 bg-green-100 px-2.5 py-1 rounded-lg flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">check_circle</span> 最优选</span>
+                {/* Checkout Footer — employer only */}
+                {!isHelper && (
+                  <div className="p-4 bg-[#f8f8f8] border-t border-black/5">
+                    <div className="flex justify-between items-center mb-3">
+                      <span className="text-[13px] font-medium text-secondary">采购状态：</span>
+                      <span className="text-[12px] font-bold text-green-700 bg-green-100 px-2.5 py-1 rounded-lg flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">check_circle</span> 最优选</span>
+                    </div>
+                    <button
+                      onClick={() => handleCheckout(vendorName, items)}
+                      disabled={processingCheckout === vendorName}
+                      className="w-full py-3.5 bg-gradient-to-r from-[#FF5A1F] to-[#FF9054] text-white text-[15px] font-bold rounded-2xl active:scale-[0.98] transition-all disabled:opacity-70 disabled:scale-100 flex items-center justify-center gap-2 shadow-lg shadow-primary/20 disabled:shadow-none"
+                    >
+                      {processingCheckout === vendorName ? (
+                        <>
+                          <span className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin"></span>
+                          处理中...
+                        </>
+                      ) : (
+                        `在 ${vendorName} 结算`
+                      )}
+                    </button>
                   </div>
-                  <button 
-                    onClick={() => handleCheckout(vendorName, items)}
-                    disabled={processingCheckout === vendorName}
-                    className="w-full py-3.5 bg-gradient-to-r from-[#FF5A1F] to-[#FF9054] text-white text-[15px] font-bold rounded-2xl active:scale-[0.98] transition-all disabled:opacity-70 disabled:scale-100 flex items-center justify-center gap-2 shadow-lg shadow-primary/20 disabled:shadow-none"
-                  >
-                    {processingCheckout === vendorName ? (
-                      <>
-                        <span className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin"></span>
-                        处理中...
-                      </>
-                    ) : (
-                      `在 ${vendorName} 结算`
-                    )}
-                  </button>
-                </div>
+                )}
               </div>
             </section>
           );
         })}
+        {/* ── Send to helper — employer only ───────────────────── */}
+        {!isHelper && procurementPlan.length > 0 && (
+          <button
+            onClick={handleSendToHelper}
+            className="w-full py-4 rounded-2xl font-bold text-[15px] flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
+            style={{
+              background: "linear-gradient(135deg, #25D366, #128C7E)",
+              color: "white",
+              boxShadow: "0 8px 24px rgba(37,211,102,0.3)",
+            }}
+          >
+            <span style={{ fontSize: 20 }}>📲</span>
+            一键发送给工人姐姐 (WhatsApp)
+          </button>
+        )}
+
         {/* ── Supplier Tier Showcase ─────────────────────────────── */}
         <section>
           <div className="flex items-center justify-between mb-4">

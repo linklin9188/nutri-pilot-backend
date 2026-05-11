@@ -8,6 +8,8 @@ import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
 import { useWeeklyMenu } from "../hooks/useWeeklyMenu";
 import { type SupabaseDish } from "../hooks/useSupabaseMenu";
+import { supabase } from "../lib/supabase";
+import BottomTabBar from "../components/BottomTabBar";
 
 // ── Day tabs ──────────────────────────────────────────────────────────────────
 
@@ -44,14 +46,24 @@ function getDayNutrition(dishes: SupabaseDish[]) {
   );
 }
 
-// Split dishes into 3 meal slots (roughly equal for display)
-function splitToMeals(dishes: SupabaseDish[]): [SupabaseDish[], SupabaseDish[], SupabaseDish[]] {
+// Split dinner dishes into lunch/dinner slots (breakfast comes from DB separately)
+function splitToLunchDinner(dishes: SupabaseDish[]): [SupabaseDish[], SupabaseDish[]] {
   const copy = [...dishes];
-  // breakfast: 1-2, lunch: 2, dinner: rest
-  const breakfast = copy.splice(0, Math.min(1, Math.ceil(copy.length / 4)));
-  const lunch      = copy.splice(0, Math.min(2, Math.ceil(copy.length / 2)));
-  const dinner     = copy;
-  return [breakfast, lunch, dinner];
+  const lunch  = copy.splice(0, Math.min(2, Math.ceil(copy.length / 2)));
+  const dinner = copy;
+  return [lunch, dinner];
+}
+
+// Pick breakfast dishes for a given day from the pool (deterministic rotation)
+function pickBreakfast(pool: SupabaseDish[], dayIndex: number): SupabaseDish[] {
+  if (pool.length === 0) return [];
+  const count = 1;
+  const start = (dayIndex * count) % pool.length;
+  const result: SupabaseDish[] = [];
+  for (let i = 0; i < count; i++) {
+    result.push(pool[(start + i) % pool.length]);
+  }
+  return result;
 }
 
 // ── DishCard ──────────────────────────────────────────────────────────────────
@@ -272,18 +284,29 @@ export default function WeeklyMenu() {
     return d === 0 ? 6 : d - 1;
   })();
   const [selectedDay, setSelectedDay] = useState(todayIdx);
-  const [showShoppingToast, setShowShoppingToast] = useState(false);
+  const [breakfastPool, setBreakfastPool] = useState<SupabaseDish[]>([]);
+
+  // Fetch real breakfast dishes from DB once
+  useEffect(() => {
+    supabase
+      .from('dishes')
+      .select('*')
+      .eq('meal_type', 'breakfast')
+      .limit(30)
+      .then(({ data }) => {
+        if (data && data.length > 0) setBreakfastPool(data as SupabaseDish[]);
+      });
+  }, []);
 
   // Free users can only view days 0–2 (Mon/Tue/Wed)
-  // Free: today / today+1 / today+2. Days before today or beyond today+2 locked.
   const isDayLocked = (i: number) =>
     !isLoggedIn && (i < todayIdx || i >= todayIdx + FREE_DAYS);
-  // If selected day is locked, fall back to today
   const effectiveDay = isDayLocked(selectedDay) ? todayIdx : selectedDay;
 
   const dayMenu = weeklyMenu?.days[effectiveDay];
   const dishes  = dayMenu?.dishes ?? [];
-  const [breakfast, lunch, dinner] = splitToMeals(dishes);
+  const breakfast = pickBreakfast(breakfastPool, effectiveDay);
+  const [lunch, dinner] = splitToLunchDinner(dishes);
   const nutrition = getDayNutrition(dishes);
 
   function handleShoppingList() {
@@ -291,8 +314,12 @@ export default function WeeklyMenu() {
       navigate('/signin');
       return;
     }
-    setShowShoppingToast(true);
-    setTimeout(() => setShowShoppingToast(false), 2500);
+    // Write all weekly dishes to localStorage so VerifyIngredients can read them
+    if (weeklyMenu) {
+      const allDishes = weeklyMenu.days.flatMap(d => d.dishes);
+      localStorage.setItem('generatedMenu', JSON.stringify(allDishes));
+    }
+    navigate('/verify');
   }
 
   function handleDayClick(i: number) {
@@ -307,7 +334,7 @@ export default function WeeklyMenu() {
   return (
     <div
       className="min-h-screen flex flex-col max-w-md mx-auto relative overflow-hidden"
-      style={{ background: "#0a0a0a", paddingBottom: 100 }}
+      style={{ background: "#0a0a0a", paddingBottom: 140 }}
     >
       {/* Ambient glow */}
       <div className="absolute inset-0 pointer-events-none z-0">
@@ -324,7 +351,7 @@ export default function WeeklyMenu() {
       {/* ── Header ──────────────────────────────────────────────── */}
       <div className="relative z-10 flex items-center gap-4 px-5 pt-14 pb-4">
         <button
-          onClick={() => navigate(-1)}
+          onClick={() => navigate("/")}
           className="w-9 h-9 rounded-2xl flex items-center justify-center transition-all active:scale-90"
           style={{ background: "rgba(255,255,255,0.08)" }}
         >
@@ -437,7 +464,7 @@ export default function WeeklyMenu() {
                   exit={{ opacity: 0, x: -24 }}
                   transition={{ duration: 0.22, ease: "easeOut" }}>
 
-                  {dishes.length === 0 ? (
+                  {dishes.length === 0 && breakfast.length === 0 ? (
                     <div className="px-5 py-10 text-center">
                       <span className="text-5xl mb-4 block">🍽️</span>
                       <p className="text-white/50" style={{ fontSize: 14 }}>本周菜单正在生成中…</p>
@@ -498,11 +525,12 @@ export default function WeeklyMenu() {
       )}
 
       {/* ── Bottom CTA ───────────────────────────────────────────── */}
-      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md z-20 px-5 pb-8 pt-4"
-        style={{ background: "linear-gradient(to top, #0a0a0a 60%, transparent 100%)" }}>
+      {/* ── Shopping list CTA (above tab bar) ─────────────────── */}
+      <div className="fixed left-1/2 -translate-x-1/2 w-full max-w-md z-20 px-5 pt-3 pb-2"
+        style={{ bottom: 64, background: "linear-gradient(to top, #0a0a0a 55%, transparent 100%)" }}>
         <button
           onClick={handleShoppingList}
-          className="w-full h-[56px] rounded-2xl font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
+          className="w-full h-[52px] rounded-2xl font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
           style={{
             background: isLoggedIn
               ? "linear-gradient(135deg, #FF5A1F, #FF8C54)"
@@ -519,20 +547,7 @@ export default function WeeklyMenu() {
         </button>
       </div>
 
-      {/* ── Toast ───────────────────────────────────────────────── */}
-      <AnimatePresence>
-        {showShoppingToast && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 20 }}
-            className="fixed bottom-36 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl text-white font-semibold"
-            style={{ background: "rgba(30,30,30,0.95)", border: "1px solid rgba(255,255,255,0.12)", fontSize: 13, backdropFilter: "blur(12px)" }}
-          >
-            🛒 购物清单功能即将上线
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <BottomTabBar />
     </div>
   );
 }

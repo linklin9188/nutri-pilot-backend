@@ -2,7 +2,7 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { useNavigate } from "react-router-dom";
 
-// Quick 3-question onboarding — no login required
+// Quick 4-question onboarding — no login required
 // Saves to localStorage as "quickPrefs"
 
 const QUESTIONS = [
@@ -50,6 +50,20 @@ const QUESTIONS = [
       { id: "dairy",     label: "忌乳制品",  icon: "🥛" },
     ],
   },
+  {
+    id: "health",
+    step: 4,
+    emoji: "🩺",
+    question: "有需要注意的健康状况吗？",
+    sub: "AI 会自动优化菜品选择，过滤不适合的食材",
+    multi: true,
+    options: [
+      { id: "none",         label: "没有特殊情况", icon: "✅" },
+      { id: "hypertension", label: "高血压",       icon: "❤️‍🩹" },
+      { id: "diabetes",     label: "糖尿病",       icon: "🩸" },
+      { id: "gout",         label: "痛风",         icon: "🦵" },
+    ],
+  },
 ] as const;
 
 export default function QuickSetup() {
@@ -78,10 +92,25 @@ export default function QuickSetup() {
     );
   };
 
+  // Advance from a multi-select step: save current selection into answers, reset for next
+  const advanceMulti = () => {
+    const sel = multiSel.length ? multiSel : ["none"];
+    const next = { ...answers, [q.id]: sel };
+    setAnswers(next);
+    setMultiSel([]);
+    if (isLast) {
+      finish(next);
+    } else {
+      setStep(s => s + 1);
+    }
+  };
+
   const finish = (finalAnswers?: Record<string, string | string[]>) => {
+    const merged = finalAnswers ?? answers;
     const prefs = {
-      ...(finalAnswers ?? answers),
-      avoid: multiSel.length ? multiSel : ["none"],
+      ...merged,
+      avoid:  (merged.avoid  as string[] | undefined) ?? ["none"],
+      health: (merged.health as string[] | undefined) ?? ["none"],
       setupAt: Date.now(),
     };
     localStorage.setItem("quickPrefs", JSON.stringify(prefs));
@@ -169,7 +198,7 @@ export default function QuickSetup() {
                   );
                 })}
               </div>
-              <button onClick={() => finish()}
+              <button onClick={advanceMulti}
                 disabled={multiSel.length === 0}
                 className="mt-6 w-full h-[52px] rounded-2xl font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-30"
                 style={{
@@ -177,7 +206,7 @@ export default function QuickSetup() {
                   boxShadow: "0 8px 24px rgba(255,90,31,0.28)",
                   fontSize: 15, color: "white",
                 }}>
-                生成我的专属菜单 →
+                {isLast ? "生成我的专属菜单 →" : "下一步 →"}
               </button>
             </>
           ) : (

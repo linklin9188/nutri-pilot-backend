@@ -14,6 +14,12 @@ export interface UserPrefs {
   avoidIngredients: string[];       // main_ingredient values to exclude
   vegetarianOnly:   boolean;        // show only veggie/vegan dishes
 
+  // Health conditions — drive hard filters + scoring adjustments
+  healthConditions: string[];       // 'hypertension' | 'diabetes' | 'gout'
+  preferLowSodium:  boolean;        // driven by hypertension
+  preferLowSugar:   boolean;        // driven by diabetes
+  avoidHighPurine:  boolean;        // driven by gout
+
   // Soft signals for scoring
   spiceLevel:       'none' | 'mild' | 'medium' | 'hot';
   spiceBoost:       number;         // +/- applied to spicy dishes during scoring
@@ -42,6 +48,38 @@ const AVOID_OPTION_MAP: Record<string, {
   dairy:    { tags: ['dairy', 'milk'],        label: '忌乳制品' },
 };
 
+// Health condition → hard filter rules
+// High-purine ingredients to block for gout
+const GOUT_AVOID_INGREDIENTS = ['shellfish', 'crab', 'scallop', 'clam', 'oyster', 'liver', 'kidney'];
+
+export function resolveHealthFilters(conditions: string[]): {
+  avoidTags: string[];
+  avoidIngredients: string[];
+  preferLowSodium: boolean;
+  preferLowSugar: boolean;
+  avoidHighPurine: boolean;
+} {
+  const avoidTags: string[] = [];
+  const avoidIngredients: string[] = [];
+  let preferLowSodium = false;
+  let preferLowSugar  = false;
+  let avoidHighPurine = false;
+
+  if (conditions.includes('hypertension')) {
+    avoidTags.push('salty', 'very_salty');
+    preferLowSodium = true;
+  }
+  if (conditions.includes('diabetes')) {
+    avoidTags.push('sweet', 'very_sweet');
+    preferLowSugar = true;
+  }
+  if (conditions.includes('gout')) {
+    avoidIngredients.push(...GOUT_AVOID_INGREDIENTS);
+    avoidHighPurine = true;
+  }
+  return { avoidTags, avoidIngredients, preferLowSodium, preferLowSugar, avoidHighPurine };
+}
+
 // QuickSetup goal → dietary_goal tag used in health_benefit_tags scoring
 const GOAL_MAP: Record<string, string> = {
   fatloss:  'fat_loss',
@@ -66,9 +104,10 @@ export function getUserPrefs(): UserPrefs {
   if (raw) {
     try {
       const prefs = JSON.parse(raw) as {
-        goal?:  string;
-        spice?: string;
-        avoid?: string[];
+        goal?:   string;
+        spice?:  string;
+        avoid?:  string[];
+        health?: string[];   // health conditions from step 4
       };
 
       const spiceLevel = (prefs.spice ?? 'medium') as UserPrefs['spiceLevel'];
@@ -93,10 +132,18 @@ export function getUserPrefs(): UserPrefs {
         avoidLabels.push(mapping.label);
       }
 
+      // Health conditions
+      const healthConditions = (prefs.health ?? ['none']).filter(h => h !== 'none');
+      const healthFilters = resolveHealthFilters(healthConditions);
+
       return {
-        avoidTags:        [...new Set(avoidTags)],
-        avoidIngredients: [...new Set(avoidIngredients)],
+        avoidTags:        [...new Set([...avoidTags, ...healthFilters.avoidTags])],
+        avoidIngredients: [...new Set([...avoidIngredients, ...healthFilters.avoidIngredients])],
         vegetarianOnly,
+        healthConditions,
+        preferLowSodium:  healthFilters.preferLowSodium,
+        preferLowSugar:   healthFilters.preferLowSugar,
+        avoidHighPurine:  healthFilters.avoidHighPurine,
         spiceLevel,
         spiceBoost:   SPICE_BOOST[spiceLevel] ?? 0,
         dietaryGoal:  GOAL_MAP[prefs.goal ?? 'balanced'] ?? 'maintain',
@@ -133,6 +180,10 @@ export function getUserPrefs(): UserPrefs {
     avoidTags:        [...new Set(avoidTags)],
     avoidIngredients: [...new Set(avoidIngredients)],
     vegetarianOnly,
+    healthConditions: [],
+    preferLowSodium:  false,
+    preferLowSugar:   false,
+    avoidHighPurine:  false,
     spiceLevel,
     spiceBoost:   SPICE_BOOST[spiceLevel] ?? 0,
     dietaryGoal:  GOAL_MAP[legacyDiet ?? 'balanced'] ?? 'maintain',
@@ -146,9 +197,10 @@ export function getUserPrefs(): UserPrefs {
  * Merges with existing quickPrefs so other fields are preserved.
  */
 export function saveUserPrefs(updates: {
-  goal?:  string;
-  spice?: string;
-  avoid?: string[];
+  goal?:   string;
+  spice?:  string;
+  avoid?:  string[];
+  health?: string[];
 }) {
   const existing = (() => {
     try { return JSON.parse(localStorage.getItem('quickPrefs') ?? '{}'); } catch { return {}; }
