@@ -682,33 +682,45 @@ function generateWeekPlan(
 // ── Supabase persistence ──────────────────────────────────────────────────────
 
 async function loadFromDB(userId: string, weekStart: string): Promise<WeeklyMenu | null> {
-  const { data, error } = await supabase
-    .from('user_weekly_menus')
-    .select('day_index, dish_ids, swapped_dish_ids')
-    .eq('user_id', userId)
-    .eq('week_start', weekStart)
-    .eq('meal_type', 'dinner')
-    .order('day_index');
+  const [dinnerRes, lunchRes] = await Promise.all([
+    supabase
+      .from('user_weekly_menus')
+      .select('day_index, dish_ids, swapped_dish_ids')
+      .eq('user_id', userId)
+      .eq('week_start', weekStart)
+      .eq('meal_type', 'dinner')
+      .order('day_index'),
+    supabase
+      .from('user_weekly_menus')
+      .select('day_index, dish_ids')
+      .eq('user_id', userId)
+      .eq('week_start', weekStart)
+      .eq('meal_type', 'lunch')
+      .order('day_index'),
+  ]);
 
-  if (error || !data || data.length < 7) return null;
+  if (dinnerRes.error || !dinnerRes.data || dinnerRes.data.length < 7) return null;
 
-  // Re-fetch dishes by id array
-  const allIds = data.flatMap(r => (r.swapped_dish_ids ?? r.dish_ids) as string[]);
-  const { data: dishes } = await supabase
-    .from('dishes')
-    .select('*')
-    .in('id', allIds);
-  if (!dishes) return null;
+  const allIds = [
+    ...dinnerRes.data.flatMap(r => (r.swapped_dish_ids ?? r.dish_ids) as string[]),
+    ...(lunchRes.data ?? []).flatMap(r => r.dish_ids as string[]),
+  ];
+  const { data: dishRows } = await supabase.from('dishes').select('*').in('id', allIds);
+  if (!dishRows) return null;
 
-  const dishMap = new Map(dishes.map(d => [d.id, d]));
+  const dishMap = new Map(dishRows.map(d => [d.id, d]));
+  const lunchMap = new Map(
+    (lunchRes.data ?? []).map(r => [r.day_index as number, (r.dish_ids as string[])])
+  );
 
-  const days: WeeklyDayMenu[] = data.map(row => {
-    const ids = (row.swapped_dish_ids ?? row.dish_ids) as string[];
+  const days: WeeklyDayMenu[] = dinnerRes.data.map(row => {
+    const dinnerIds = (row.swapped_dish_ids ?? row.dish_ids) as string[];
+    const lunchIds  = lunchMap.get(row.day_index as number) ?? [];
     return {
-      dayIndex: row.day_index as number,
-      dayLabel: DAY_LABELS[row.day_index as number],
-      dishes: ids.map(id => dishMap.get(id)).filter(Boolean).map(d => enrichRaw(d)),
-      lunchDishes: [],  // lunch not stored in DB — regenerated via localStorage
+      dayIndex:    row.day_index as number,
+      dayLabel:    DAY_LABELS[row.day_index as number],
+      dishes:      dinnerIds.map(id => dishMap.get(id)).filter(Boolean).map(d => enrichRaw(d)),
+      lunchDishes: lunchIds.map(id => dishMap.get(id)).filter(Boolean).map(d => enrichRaw(d)),
     };
   });
 
@@ -716,13 +728,22 @@ async function loadFromDB(userId: string, weekStart: string): Promise<WeeklyMenu
 }
 
 async function saveToDB(userId: string, menu: WeeklyMenu): Promise<void> {
-  const rows = menu.days.map(day => ({
-    user_id:   userId,
-    week_start: menu.weekStart,
-    day_index:  day.dayIndex,
-    meal_type:  'dinner',
-    dish_ids:   day.dishes.map(d => d.id),
-  }));
+  const rows = menu.days.flatMap(day => [
+    {
+      user_id:    userId,
+      week_start: menu.weekStart,
+      day_index:  day.dayIndex,
+      meal_type:  'dinner',
+      dish_ids:   day.dishes.map(d => d.id),
+    },
+    ...(day.lunchDishes.length > 0 ? [{
+      user_id:    userId,
+      week_start: menu.weekStart,
+      day_index:  day.dayIndex,
+      meal_type:  'lunch',
+      dish_ids:   day.lunchDishes.map(d => d.id),
+    }] : []),
+  ]);
 
   await supabase
     .from('user_weekly_menus')

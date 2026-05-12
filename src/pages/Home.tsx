@@ -70,6 +70,7 @@ export default function Home() {
   const [fridgeError, setFridgeError] = useState<string | null>(null);
   const [fridgePreview, setFridgePreview] = useState<string | null>(null);
 
+  const [breakfastPool, setBreakfastPool] = useState<any[]>([]);
   const [displayName, setDisplayName] = useState("");
   const [helperName, setHelperName] = useState("");
   const [householdId, setHouseholdId] = useState("");
@@ -116,6 +117,14 @@ export default function Home() {
         });
     }
 
+    // Fetch breakfast dishes pool
+    supabase
+      .from('dishes')
+      .select('id, title_zh, title_en, image_url, description_zh, description_en, type')
+      .eq('meal_type', 'breakfast')
+      .limit(20)
+      .then(({ data }) => { if (data && data.length > 0) setBreakfastPool(data); });
+
     // Fallback: helper name from localStorage (settings page)
     const savedHelper = localStorage.getItem("helperName");
     if (savedHelper) setHelperName(prev => prev || savedHelper);
@@ -127,14 +136,33 @@ export default function Home() {
     if (kids) setTodayKids(Number(kids));
   }, []);
 
-  // Build display menu: live recommendations → localStorage fallback
-  const liveMenu = mealTime !== "早餐" && recommendedDishes.length > 0 ? recommendedDishes : [];
+  // Today index (Mon=0…Sun=6)
+  const todayIdx = (() => { const d = new Date().getDay(); return d === 0 ? 6 : d - 1; })();
+
+  // Build display menu per meal tab
   const storedMenuRaw: any[] = (() => {
     try { return JSON.parse(localStorage.getItem("generatedMenu") || "[]"); } catch { return []; }
   })();
-  const baseMenu = liveMenu.length > 0 ? liveMenu : storedMenuRaw;
+
+  const baseMenu: any[] = (() => {
+    if (mealTime === "早餐") {
+      if (breakfastPool.length === 0) return [];
+      // Rotate breakfast by day of week for variety
+      const start = (todayIdx * 2) % breakfastPool.length;
+      return [breakfastPool[start], breakfastPool[(start + 1) % breakfastPool.length]].filter(Boolean);
+    }
+    if (mealTime === "午餐") {
+      const lunch = weeklyMenu?.days[todayIdx]?.lunchDishes ?? [];
+      return lunch.length > 0 ? lunch : [];
+    }
+    // 晚餐: live recommendations → weeklyMenu → localStorage fallback
+    if (recommendedDishes.length > 0) return recommendedDishes;
+    const dinner = weeklyMenu?.days[todayIdx]?.dishes ?? [];
+    return dinner.length > 0 ? dinner : storedMenuRaw;
+  })();
+
   const displayMenu: any[] = baseMenu.map((dish, idx) => menuSwaps[idx] || dish);
-  const hasMenu = displayMenu.length > 0;
+  const hasMenu = (weeklyMenu?.days[todayIdx]?.dishes.length ?? storedMenuRaw.length) > 0;
 
   const healthMetrics = computeHealthMetrics(weeklyMenu);
 

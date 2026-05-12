@@ -156,7 +156,13 @@ function DishListScreen({ dishes, loading, onSelect }: {
 }
 
 // ── Step-by-step Cooking Screen ───────────────────────────────────────────────
-function CookingScreen({ dish, onBack }: { dish: DishWithCook; onBack: () => void }) {
+function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
+  dish: DishWithCook;
+  dishes: DishWithCook[];
+  dishIndex: number;
+  onBack: () => void;
+  onNextDish: (dish: DishWithCook) => void;
+}) {
   const steps = dish.cook_steps_json ?? [];
   const [currentIdx, setCurrentIdx] = useState(0);
   const [completed, setCompleted] = useState<Set<number>>(new Set());
@@ -167,6 +173,9 @@ function CookingScreen({ dish, onBack }: { dish: DishWithCook; onBack: () => voi
   const isFirst = currentIdx === 0;
   const isLast = currentIdx === steps.length - 1;
   const isDone = completed.has(currentIdx);
+  const allStepsDone = completed.size === steps.length && steps.length > 0;
+  const hasNextDish = dishIndex < dishes.length - 1;
+  const nextDish = hasNextDish ? dishes[dishIndex + 1] : null;
   const heat = step ? parseHeat(step.action_zh) : { level: null, tempC: null, label: '', sublabel: '' };
   const heatCfg = heat.level ? HEAT_CONFIG[heat.level] : null;
   const timer = timers[currentIdx];
@@ -377,30 +386,62 @@ function CookingScreen({ dish, onBack }: { dish: DishWithCook; onBack: () => voi
       </main>
 
       {/* Bottom navigation */}
-      <div className="px-5 pb-10 flex gap-3">
-        <button onClick={() => goTo(currentIdx - 1)} disabled={isFirst}
-          className="flex-1 h-14 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-30"
-          style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)' }}>
-          <span className="material-symbols-outlined text-white" style={{ fontSize: 20 }}>arrow_back_ios</span>
-          <span className="text-white font-bold" style={{ fontSize: 14 }}>Back</span>
-        </button>
+      {allStepsDone ? (
+        /* All steps complete — offer next dish or return to list */
+        <div className="px-5 pb-10 flex flex-col gap-3">
+          <div className="rounded-3xl p-5 text-center"
+            style={{ background: 'rgba(37,211,102,0.12)', border: '1.5px solid rgba(37,211,102,0.3)' }}>
+            <p className="text-3xl mb-2">🎉</p>
+            <p className="font-black text-white" style={{ fontSize: 18 }}>{dish.title_zh} 完成！</p>
+            <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', marginTop: 4 }}>
+              {dishIndex + 1} / {dishes.length} 道菜
+            </p>
+          </div>
+          {nextDish ? (
+            <button onClick={() => onNextDish(nextDish)}
+              className="w-full h-14 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform font-bold text-white"
+              style={{ background: 'linear-gradient(135deg, #FF5A1F, #FF9054)', fontSize: 15, boxShadow: '0 8px 24px rgba(255,90,31,0.35)' }}>
+              开始下一道：{nextDish.title_zh}
+              <span className="material-symbols-outlined text-white" style={{ fontSize: 20 }}>arrow_forward_ios</span>
+            </button>
+          ) : (
+            <div className="rounded-2xl p-4 text-center"
+              style={{ background: 'rgba(37,211,102,0.08)', border: '1px solid rgba(37,211,102,0.2)' }}>
+              <p className="font-black text-white" style={{ fontSize: 16 }}>全部完成！今日菜肴上桌 🍽️</p>
+            </div>
+          )}
+          <button onClick={onBack}
+            className="w-full h-12 rounded-2xl flex items-center justify-center font-semibold"
+            style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.5)', fontSize: 14 }}>
+            返回菜单列表
+          </button>
+        </div>
+      ) : (
+        <div className="px-5 pb-10 flex gap-3">
+          <button onClick={() => goTo(currentIdx - 1)} disabled={isFirst}
+            className="flex-1 h-14 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-30"
+            style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)' }}>
+            <span className="material-symbols-outlined text-white" style={{ fontSize: 20 }}>arrow_back_ios</span>
+            <span className="text-white font-bold" style={{ fontSize: 14 }}>Back</span>
+          </button>
 
-        {isLast ? (
-          <button onClick={markDoneAndNext}
-            className="flex-[2] h-14 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform font-bold text-white"
-            style={{ background: 'linear-gradient(135deg, #25D366, #128C7E)', fontSize: 15 }}>
-            <span className="material-symbols-outlined text-white" style={{ fontSize: 20, fontVariationSettings: "'FILL' 1" }}>check_circle</span>
-            Cooking done! 🎉
-          </button>
-        ) : (
-          <button onClick={markDoneAndNext}
-            className="flex-[2] h-14 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform font-bold text-white"
-            style={{ background: 'linear-gradient(135deg, #FF5A1F, #FF9054)', fontSize: 15 }}>
-            Done, next step
-            <span className="material-symbols-outlined text-white" style={{ fontSize: 20 }}>arrow_forward_ios</span>
-          </button>
-        )}
-      </div>
+          {isLast ? (
+            <button onClick={markDoneAndNext}
+              className="flex-[2] h-14 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform font-bold text-white"
+              style={{ background: 'linear-gradient(135deg, #25D366, #128C7E)', fontSize: 15 }}>
+              <span className="material-symbols-outlined text-white" style={{ fontSize: 20, fontVariationSettings: "'FILL' 1" }}>check_circle</span>
+              完成这道菜！
+            </button>
+          ) : (
+            <button onClick={markDoneAndNext}
+              className="flex-[2] h-14 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform font-bold text-white"
+              style={{ background: 'linear-gradient(135deg, #FF5A1F, #FF9054)', fontSize: 15 }}>
+              Done, next step
+              <span className="material-symbols-outlined text-white" style={{ fontSize: 20 }}>arrow_forward_ios</span>
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -409,7 +450,7 @@ function CookingScreen({ dish, onBack }: { dish: DishWithCook; onBack: () => voi
 export default function HelperCook() {
   const [dishes, setDishes] = useState<DishWithCook[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedDish, setSelectedDish] = useState<DishWithCook | null>(null);
+  const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -428,7 +469,6 @@ export default function HelperCook() {
           .in('id', ids);
 
         if (data && data.length > 0) {
-          // Preserve original order from generatedMenu
           const map = new Map(data.map(d => [d.id, d]));
           const ordered = ids.map(id => map.get(id) ?? todayDishes.find((d: any) => d.id === id)).filter(Boolean);
           setDishes(ordered as DishWithCook[]);
@@ -443,15 +483,23 @@ export default function HelperCook() {
     load();
   }, []);
 
-  if (selectedDish) {
-    return <CookingScreen dish={selectedDish} onBack={() => setSelectedDish(null)} />;
+  if (selectedIdx !== null && dishes[selectedIdx]) {
+    return (
+      <CookingScreen
+        dish={dishes[selectedIdx]}
+        dishes={dishes}
+        dishIndex={selectedIdx}
+        onBack={() => setSelectedIdx(null)}
+        onNextDish={d => setSelectedIdx(dishes.indexOf(d))}
+      />
+    );
   }
 
   return (
     <DishListScreen
       dishes={dishes}
       loading={loading}
-      onSelect={setSelectedDish}
+      onSelect={d => setSelectedIdx(dishes.indexOf(d))}
     />
   );
 }
