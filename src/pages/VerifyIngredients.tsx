@@ -60,14 +60,14 @@ function HelperChecklistView({ onBack, procurementPlan }: {
 }) {
   const [checked, setChecked] = useState<Record<string, boolean>>({});
 
+  // Use the real ingredient name (not the procurement SKU abstract term)
   const items = procurementPlan.map(item => {
-    const name = item.ingredient?.catalogItem?.abstractTerm?.[0] || item.ingredient?.name || "Unknown";
-    const id = item.ingredient?.id ?? name;
-    return { id, name };
+    const name = item.ingredient?.name || "Unknown";
+    return { name };
   });
 
-  // Deduplicate by id
-  const unique = items.filter((v, i, arr) => arr.findIndex(x => x.id === v.id) === i);
+  // Deduplicate by name
+  const unique = items.filter((v, i, arr) => arr.findIndex(x => x.name === v.name) === i);
 
   const checkedCount = Object.values(checked).filter(Boolean).length;
 
@@ -79,8 +79,8 @@ function HelperChecklistView({ onBack, procurementPlan }: {
           <span className="material-symbols-outlined text-[20px]">arrow_back</span>
         </button>
         <div>
-          <h1 className="text-[18px] font-bold">核对家中食材</h1>
-          <p className="text-[11px] text-gray-400 mt-0.5">Check what you already have at home</p>
+          <h1 className="text-[18px] font-bold">Check Ingredients</h1>
+          <p className="text-[11px] text-gray-400 mt-0.5">核对家中食材 · Tick what you have</p>
         </div>
         <div className="ml-auto px-3 py-1 rounded-full text-[12px] font-bold"
           style={{ background: "rgba(37,211,102,0.12)", color: "#25D366" }}>
@@ -99,11 +99,11 @@ function HelperChecklistView({ onBack, procurementPlan }: {
           <>
             <p className="text-[12px] text-gray-400 mb-1">Tick off ingredients you already have at home:</p>
             {unique.map(item => {
-              const isChecked = !!checked[item.id];
+              const isChecked = !!checked[item.name];
               return (
                 <button
-                  key={item.id}
-                  onClick={() => setChecked(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
+                  key={item.name}
+                  onClick={() => setChecked(prev => ({ ...prev, [item.name]: !prev[item.name] }))}
                   className="w-full flex items-center gap-4 px-5 py-4 rounded-2xl bg-white border transition-all active:scale-[0.98]"
                   style={{
                     border: isChecked ? "1.5px solid #25D366" : "1.5px solid rgba(0,0,0,0.07)",
@@ -122,10 +122,10 @@ function HelperChecklistView({ onBack, procurementPlan }: {
                     {item.name}
                   </p>
                   {isChecked && (
-                    <span className="ml-auto text-[11px] font-semibold" style={{ color: "#25D366" }}>有 ✓</span>
+                    <span className="ml-auto text-[11px] font-semibold" style={{ color: "#25D366" }}>Got it ✓</span>
                   )}
                   {!isChecked && (
-                    <span className="ml-auto text-[11px]" style={{ color: "rgba(0,0,0,0.25)" }}>需要买</span>
+                    <span className="ml-auto text-[11px]" style={{ color: "rgba(0,0,0,0.25)" }}>Need to buy</span>
                   )}
                 </button>
               );

@@ -14,7 +14,10 @@ const LanguageContext = createContext<LanguageContextType | undefined>(undefined
 export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [language, setLanguage] = useState<Language>(() => {
     const saved = localStorage.getItem('appLanguage');
-    return (saved as Language) || 'zh';
+    if (saved === 'en' || saved === 'zh') return saved;
+    // Helper role defaults to English, employer defaults to Chinese
+    const role = localStorage.getItem('nutri_role');
+    return role === 'helper' ? 'en' : 'zh';
   });
 
   useEffect(() => {

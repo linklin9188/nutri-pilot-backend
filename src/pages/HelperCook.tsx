@@ -17,23 +17,23 @@ interface TimerState {
 }
 
 // ── Parse heat level from action text ─────────────────────────────────────────
-function parseHeat(text: string): { level: 'high' | 'medium' | 'low' | 'simmer' | null; dial: string | null; label: string | null } {
-  if (/大火/.test(text)) {
-    const dial = text.match(/[（(](\d+)档[）)]/)?.[ 1] ?? text.match(/(\d+)档/)?.[1] ?? null;
-    return { level: 'high', dial, label: '大火' };
+function parseHeat(text: string): { level: 'high' | 'medium' | 'low' | 'simmer' | null; dial: string | null; label: string; sublabel: string } {
+  if (/大火|high heat/i.test(text)) {
+    const dial = text.match(/[（(](\d+)档[）)]/)?.[ 1] ?? text.match(/(\d+)档/)?.[1] ?? text.match(/level\s*(\d+)/i)?.[1] ?? null;
+    return { level: 'high', dial, label: 'High Heat', sublabel: 'Fast & hot — keep it moving' };
   }
-  if (/中火/.test(text)) {
-    const dial = text.match(/[（(](\d+)档[）)]/)?.[ 1] ?? text.match(/(\d+)档/)?.[1] ?? null;
-    return { level: 'medium', dial, label: '中火' };
+  if (/中火|medium heat/i.test(text)) {
+    const dial = text.match(/[（(](\d+)档[）)]/)?.[ 1] ?? text.match(/(\d+)档/)?.[1] ?? text.match(/level\s*(\d+)/i)?.[1] ?? null;
+    return { level: 'medium', dial, label: 'Medium Heat', sublabel: 'Steady heat — stir evenly' };
   }
-  if (/小火|文火/.test(text)) {
-    const dial = text.match(/[（(](\d+)档[）)]/)?.[ 1] ?? text.match(/(\d+)档/)?.[1] ?? null;
-    return { level: 'low', dial, label: '小火' };
+  if (/小火|文火|low heat/i.test(text)) {
+    const dial = text.match(/[（(](\d+)档[）)]/)?.[ 1] ?? text.match(/(\d+)档/)?.[1] ?? text.match(/level\s*(\d+)/i)?.[1] ?? null;
+    return { level: 'low', dial, label: 'Low Heat', sublabel: 'Gentle simmer — don\'t rush' };
   }
-  if (/慢炖|焖/.test(text)) {
-    return { level: 'simmer', dial: null, label: '慢炖' };
+  if (/慢炖|焖|simmer/i.test(text)) {
+    return { level: 'simmer', dial: null, label: 'Simmer', sublabel: 'Cover and wait patiently' };
   }
-  return { level: null, dial: null, label: null };
+  return { level: null, dial: null, label: '', sublabel: '' };
 }
 
 const HEAT_CONFIG = {
@@ -71,8 +71,8 @@ function DishListScreen({ dishes, loading, onSelect }: {
             <span className="material-symbols-outlined text-white" style={{ fontSize: 20 }}>arrow_back</span>
           </button>
           <div>
-            <h1 className="text-white font-black" style={{ fontSize: 22 }}>今日烹饪</h1>
-            <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>选择一道菜开始</p>
+            <h1 className="text-white font-black" style={{ fontSize: 22 }}>Today's Cooking</h1>
+            <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>Choose a dish to start · 今日菜单</p>
           </div>
         </div>
       </header>
@@ -86,7 +86,7 @@ function DishListScreen({ dishes, loading, onSelect }: {
           <div className="flex flex-col items-center justify-center py-24 gap-3">
             <span className="text-5xl">🍽</span>
             <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14, textAlign: 'center' }}>
-              未找到今日菜单{'\n'}请先在主页生成菜单
+              No menu found.{'\n'}Please generate today's menu first.
             </p>
           </div>
         ) : (
@@ -116,7 +116,7 @@ function DishListScreen({ dishes, loading, onSelect }: {
                       style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)' }}>
                       <span className="material-symbols-outlined text-white/70" style={{ fontSize: 12 }}>schedule</span>
                       <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', fontWeight: 600 }}>
-                        {mins > 0 ? `约${mins}分钟` : '—'}
+                        {mins > 0 ? `~${mins} min` : '—'}
                       </span>
                     </div>
                   </div>
@@ -133,13 +133,13 @@ function DishListScreen({ dishes, loading, onSelect }: {
                       {hasSteps ? 'check_circle' : 'hourglass_empty'}
                     </span>
                     <span style={{ fontSize: 12, color: hasSteps ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)' }}>
-                      {hasSteps ? `${steps.length} 个步骤` : '步骤生成中…'}
+                      {hasSteps ? `${steps.length} steps` : 'Steps generating…'}
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full"
                     style={{ background: hasSteps ? 'rgba(255,90,31,0.2)' : 'rgba(255,255,255,0.06)' }}>
                     <span style={{ fontSize: 12, fontWeight: 700, color: hasSteps ? '#FF5A1F' : 'rgba(255,255,255,0.25)' }}>
-                      {hasSteps ? '开始烹饪 ›' : '暂不可用'}
+                      {hasSteps ? 'Start cooking ›' : 'Not ready'}
                     </span>
                   </div>
                 </div>
@@ -164,7 +164,7 @@ function CookingScreen({ dish, onBack }: { dish: DishWithCook; onBack: () => voi
   const isFirst = currentIdx === 0;
   const isLast = currentIdx === steps.length - 1;
   const isDone = completed.has(currentIdx);
-  const heat = step ? parseHeat(step.action_zh) : { level: null, dial: null, label: null };
+  const heat = step ? parseHeat(step.action_zh) : { level: null, dial: null, label: '', sublabel: '' };
   const heatCfg = heat.level ? HEAT_CONFIG[heat.level] : null;
   const timer = timers[currentIdx];
   const timerRunning = timer?.running ?? false;
@@ -248,9 +248,11 @@ function CookingScreen({ dish, onBack }: { dish: DishWithCook; onBack: () => voi
             <span className="material-symbols-outlined text-white" style={{ fontSize: 20 }}>arrow_back</span>
           </button>
           <div className="flex-1 min-w-0">
-            <h1 className="text-white font-black truncate" style={{ fontSize: 18 }}>{dish.title_zh}</h1>
+            <h1 className="text-white font-black truncate" style={{ fontSize: 18 }}>
+              {dish.title_en || dish.title_zh}
+            </h1>
             <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>
-              步骤 {currentIdx + 1} / {steps.length} · 已完成 {completedCount} 步
+              Step {currentIdx + 1} of {steps.length} · {completedCount} done
             </p>
           </div>
         </div>
@@ -286,15 +288,18 @@ function CookingScreen({ dish, onBack }: { dish: DishWithCook; onBack: () => voi
               {heatCfg.icon}
             </div>
             <div>
-              <p className="font-black" style={{ fontSize: 24, color: heatCfg.bg, lineHeight: 1 }}>
-                {heat.label}
-                {heat.dial && <span style={{ fontSize: 16, marginLeft: 6 }}>{heat.dial}档</span>}
-              </p>
+              <div className="flex items-baseline gap-2 flex-wrap">
+                <p className="font-black" style={{ fontSize: 24, color: heatCfg.bg, lineHeight: 1 }}>
+                  {heat.label}
+                </p>
+                {heat.dial && (
+                  <span className="font-black px-2 py-0.5 rounded-lg" style={{ fontSize: 14, color: heatCfg.bg, background: heatCfg.bg + '22' }}>
+                    Lv.{heat.dial}
+                  </span>
+                )}
+              </div>
               <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', marginTop: 2 }}>
-                {heat.level === 'high' ? '大火快炒，保持高温' :
-                 heat.level === 'medium' ? '中火慢炒，均匀受热' :
-                 heat.level === 'low' ? '小火慢煮，保持微沸' :
-                 '慢炖，盖锅保温'}
+                {heat.sublabel}
               </p>
             </div>
           </div>
@@ -309,15 +314,15 @@ function CookingScreen({ dish, onBack }: { dish: DishWithCook; onBack: () => voi
               {isDone ? '✓' : step.step}
             </div>
             <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontWeight: 600 }}>
-              {isDone ? '已完成' : '当前步骤'}
+              {isDone ? 'Done ✓' : 'Current step'}
             </span>
           </div>
           <p className="text-white leading-relaxed" style={{ fontSize: 17, fontWeight: 500, lineHeight: 1.6 }}>
-            {step.action_zh}
+            {step.action_en || step.action_zh}
           </p>
-          {step.action_en && (
-            <p className="mt-3" style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', lineHeight: 1.5 }}>
-              {step.action_en}
+          {step.action_en && step.action_zh && (
+            <p className="mt-3" style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', lineHeight: 1.5 }}>
+              {step.action_zh}
             </p>
           )}
         </div>
@@ -336,7 +341,7 @@ function CookingScreen({ dish, onBack }: { dish: DishWithCook; onBack: () => voi
               color: timerDone ? '#25D366' : timerRunning ? '#FF5A1F' : 'rgba(255,255,255,0.6)',
               fontVariantNumeric: 'tabular-nums',
             }}>
-              {timerDone ? '完成！' : formatTime(timerRemaining)}
+              {timerDone ? 'Done!' : formatTime(timerRemaining)}
             </div>
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined" style={{
@@ -350,7 +355,7 @@ function CookingScreen({ dish, onBack }: { dish: DishWithCook; onBack: () => voi
                 fontSize: 13, fontWeight: 700,
                 color: timerDone ? '#25D366' : timerRunning ? '#FF5A1F' : 'rgba(255,255,255,0.4)',
               }}>
-                {timerDone ? '计时完成' : timerRunning ? `点击暂停 · 总${Math.round(step.duration_min)}分钟` : `点击计时 · ${Math.round(step.duration_min)}分钟`}
+                {timerDone ? 'Timer done' : timerRunning ? `Tap to pause · ${Math.round(step.duration_min)} min total` : `Tap to start · ${Math.round(step.duration_min)} min`}
               </span>
               {timerRunning && <div className="w-2 h-2 rounded-full bg-[#FF5A1F] animate-pulse" />}
             </div>
@@ -364,7 +369,7 @@ function CookingScreen({ dish, onBack }: { dish: DishWithCook; onBack: () => voi
           className="flex-1 h-14 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-30"
           style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)' }}>
           <span className="material-symbols-outlined text-white" style={{ fontSize: 20 }}>arrow_back_ios</span>
-          <span className="text-white font-bold" style={{ fontSize: 14 }}>上一步</span>
+          <span className="text-white font-bold" style={{ fontSize: 14 }}>Back</span>
         </button>
 
         {isLast ? (
@@ -372,13 +377,13 @@ function CookingScreen({ dish, onBack }: { dish: DishWithCook; onBack: () => voi
             className="flex-[2] h-14 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform font-bold text-white"
             style={{ background: 'linear-gradient(135deg, #25D366, #128C7E)', fontSize: 15 }}>
             <span className="material-symbols-outlined text-white" style={{ fontSize: 20, fontVariationSettings: "'FILL' 1" }}>check_circle</span>
-            完成烹饪 🎉
+            Cooking done! 🎉
           </button>
         ) : (
           <button onClick={markDoneAndNext}
             className="flex-[2] h-14 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform font-bold text-white"
             style={{ background: 'linear-gradient(135deg, #FF5A1F, #FF9054)', fontSize: 15 }}>
-            完成，下一步
+            Done, next step
             <span className="material-symbols-outlined text-white" style={{ fontSize: 20 }}>arrow_forward_ios</span>
           </button>
         )}
