@@ -172,6 +172,24 @@ function CookingScreen({ dish, onBack }: { dish: DishWithCook; onBack: () => voi
   const timerDone = timer ? timer.remaining === 0 : false;
   const completedCount = completed.size;
 
+  // Auto-start timer whenever step changes (if step has a duration)
+  useEffect(() => {
+    if (!step || step.duration_min <= 0) return;
+    const idx = currentIdx;
+    setTimers(prev => {
+      if (prev[idx]) return prev; // already has timer state, don't reset
+      // Pause all other running timers
+      const next: Record<number, TimerState> = {};
+      for (const k of Object.keys(prev)) {
+        const n = Number(k);
+        next[n] = prev[n].running ? { ...prev[n], running: false } : prev[n];
+      }
+      next[idx] = { remaining: Math.round(step.duration_min * 60), running: true };
+      activeTimerRef.current = idx;
+      return next;
+    });
+  }, [currentIdx]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Countdown tick
   useEffect(() => {
     const interval = setInterval(() => {
@@ -196,27 +214,26 @@ function CookingScreen({ dish, onBack }: { dish: DishWithCook; onBack: () => voi
     return () => clearInterval(interval);
   }, []);
 
+  // Tap timer to pause/resume
   function handleTimer() {
     if (!step || step.duration_min <= 0) return;
     const idx = currentIdx;
     setTimers(prev => {
       const existing = prev[idx];
-      // Pause all other timers
-      const next: Record<number, TimerState> = {};
-      for (const k of Object.keys(prev)) {
-        const n = Number(k);
-        next[n] = n !== idx && prev[n].running ? { ...prev[n], running: false } : prev[n];
-      }
-      if (!existing) {
-        next[idx] = { remaining: Math.round(step.duration_min * 60), running: true };
-        activeTimerRef.current = idx;
-      } else if (existing.running) {
-        next[idx] = { ...existing, running: false };
-        activeTimerRef.current = null;
-      } else {
-        const rem = existing.remaining > 0 ? existing.remaining : Math.round(step.duration_min * 60);
+      const next: Record<number, TimerState> = { ...prev };
+      if (!existing || !existing.running) {
+        // Resume or restart
+        for (const k of Object.keys(next)) {
+          const n = Number(k);
+          if (n !== idx && next[n].running) next[n] = { ...next[n], running: false };
+        }
+        const rem = existing?.remaining > 0 ? existing.remaining : Math.round(step.duration_min * 60);
         next[idx] = { remaining: rem, running: true };
         activeTimerRef.current = idx;
+      } else {
+        // Pause
+        next[idx] = { ...existing, running: false };
+        activeTimerRef.current = null;
       }
       return next;
     });
@@ -248,7 +265,7 @@ function CookingScreen({ dish, onBack }: { dish: DishWithCook; onBack: () => voi
             <span className="material-symbols-outlined text-white" style={{ fontSize: 20 }}>arrow_back</span>
           </button>
           <div className="flex-1 min-w-0">
-            <h1 className="text-white font-black truncate" style={{ fontSize: 18 }}>
+            <h1 className="text-white font-black leading-tight" style={{ fontSize: 17 }}>
               {dish.title_en || dish.title_zh}
             </h1>
             <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>
@@ -355,7 +372,7 @@ function CookingScreen({ dish, onBack }: { dish: DishWithCook; onBack: () => voi
                 fontSize: 13, fontWeight: 700,
                 color: timerDone ? '#25D366' : timerRunning ? '#FF5A1F' : 'rgba(255,255,255,0.4)',
               }}>
-                {timerDone ? 'Timer done' : timerRunning ? `Tap to pause · ${Math.round(step.duration_min)} min total` : `Tap to start · ${Math.round(step.duration_min)} min`}
+                {timerDone ? 'Timer done ✓' : timerRunning ? `Tap to pause` : `Tap to resume`}
               </span>
               {timerRunning && <div className="w-2 h-2 rounded-full bg-[#FF5A1F] animate-pulse" />}
             </div>

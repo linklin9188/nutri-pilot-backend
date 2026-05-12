@@ -304,19 +304,19 @@ export default function HelperPrep() {
                                 </div>
 
                                 <div className="flex-1 min-w-0">
-                                  {/* Ingredient + weight — primary info */}
+                                  {/* Ingredient + weight — primary/secondary based on language */}
                                   <div className="flex items-baseline gap-2 flex-wrap">
                                     <span className={`font-bold text-[15px] ${done ? 'line-through opacity-50' : ''}`}>
-                                      {step.ingredient_zh}
+                                      {language === 'en' ? (step.ingredient_en || step.ingredient_zh) : step.ingredient_zh}
                                     </span>
                                     {step.amount_g > 0 && (
                                       <span className={`text-[13px] font-bold px-2 py-0.5 rounded-lg ${done ? 'opacity-40 text-secondary' : 'bg-black/5 text-on-surface'}`}>
                                         {step.amount_g}g
                                       </span>
                                     )}
-                                    {language === 'en' && step.ingredient_en && (
-                                      <span className="text-[11px] text-secondary">{step.ingredient_en}</span>
-                                    )}
+                                    <span className="text-[11px] text-secondary">
+                                      {language === 'en' ? step.ingredient_zh : step.ingredient_en}
+                                    </span>
                                   </div>
                                   {/* Action */}
                                   <p className={`text-[13px] leading-snug mt-1 ${done ? 'line-through opacity-40 text-secondary' : 'text-on-surface/80'}`}>

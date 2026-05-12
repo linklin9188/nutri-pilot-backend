@@ -134,24 +134,31 @@ export function generateProcurementList(
       }
     }
 
-    // 4. Match the abstract ingredient name to a REAL SKU in the vendor's catalog
-    const vendorCatalog = VENDOR_CATALOG.filter(item => item.vendorId === selectedVendor?.id);
-    let matchedSku = vendorCatalog[0]; // fallback
-    for (const item of vendorCatalog) {
-      if (item.abstractTerm.some(term => ingredient.name.toLowerCase().includes(term.toLowerCase()))) {
-        matchedSku = item;
-        break;
+    // 4. Match ingredient name to a SKU — score by term length to prefer specific over generic
+    //    e.g. "chicken" (7) beats "肉" (1) when matching "鸡肉 (Chicken)"
+    function bestSkuMatch(catalog: typeof VENDOR_CATALOG, ingName: string) {
+      const lower = ingName.toLowerCase();
+      let best: { sku: typeof catalog[0] | null; score: number } = { sku: null, score: -1 };
+      for (const item of catalog) {
+        for (const term of item.abstractTerm) {
+          const tl = term.toLowerCase();
+          if (lower.includes(tl) && tl.length > best.score) {
+            best = { sku: item, score: tl.length };
+          }
+        }
       }
+      return best.sku;
     }
-    
-    // If we couldn't find a SKU in the optimal vendor, find a generic SKU across all vendors and switch to that vendor.
-    if (!matchedSku) {
-      for (const item of VENDOR_CATALOG) {
-         if (item.abstractTerm.some(term => ingredient.name.toLowerCase().includes(term.toLowerCase()))) {
-           matchedSku = item;
-           selectedVendor = VENDORS_DB.find(v => v.id === item.vendorId);
-           break;
-         }
+
+    const vendorCatalog = VENDOR_CATALOG.filter(item => item.vendorId === selectedVendor?.id);
+    let matchedSku = bestSkuMatch(vendorCatalog, ingredient.name) ?? vendorCatalog[0];
+
+    // If no match in preferred vendor, search all vendors
+    if (!matchedSku || matchedSku === vendorCatalog[0]) {
+      const crossMatch = bestSkuMatch(VENDOR_CATALOG, ingredient.name);
+      if (crossMatch) {
+        matchedSku = crossMatch;
+        selectedVendor = VENDORS_DB.find(v => v.id === crossMatch.vendorId);
       }
     }
 
