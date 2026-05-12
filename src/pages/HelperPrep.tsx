@@ -1,23 +1,17 @@
 import { useState, useEffect } from "react";
-import { motion } from "motion/react";
+import { motion, AnimatePresence } from "motion/react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useLanguage } from "../contexts/LanguageContext";
 import { supabase } from "../lib/supabase";
 import { type PrepStep } from "../hooks/useSupabaseMenu";
 import { useFeedbackEngine } from "../hooks/useFeedbackEngine";
 
-// ── Tray config ────────────────────────────────────────────────────────────────
-// A = 主菜食材 (main dish protein / key ingredient)
-// B = 配菜     (side vegetables)
-// C = 配料     (supplementary ingredients / garnish)
-// D = 调料     (seasonings, sauces, aromatics)
-// E = 其他     (other)
-const TRAY_CONFIG: Record<string, { zh: string; en: string; color: string; icon: string }> = {
-  A: { zh: '主菜',  en: 'Main',     color: 'bg-red-50 text-red-600 border-red-200',     icon: 'restaurant' },
-  B: { zh: '配菜',  en: 'Side Veg', color: 'bg-green-50 text-green-700 border-green-200', icon: 'eco' },
-  C: { zh: '配料',  en: 'Extras',   color: 'bg-blue-50 text-blue-600 border-blue-200',   icon: 'scatter_plot' },
-  D: { zh: '调料',  en: 'Sauce',    color: 'bg-orange-50 text-orange-600 border-orange-200', icon: 'water_drop' },
-  E: { zh: '其他',  en: 'Other',    color: 'bg-gray-50 text-gray-600 border-gray-200',   icon: 'more_horiz' },
+const TRAY_CONFIG: Record<string, { zh: string; en: string; color: string; bg: string; icon: string }> = {
+  A: { zh: '主料',  en: 'Main',     color: 'text-red-600',   bg: 'bg-red-50 border-red-200',     icon: 'restaurant' },
+  B: { zh: '配菜',  en: 'Veg',      color: 'text-green-700', bg: 'bg-green-50 border-green-200', icon: 'eco' },
+  C: { zh: '配料',  en: 'Extras',   color: 'text-blue-600',  bg: 'bg-blue-50 border-blue-200',   icon: 'scatter_plot' },
+  D: { zh: '调料',  en: 'Sauce',    color: 'text-orange-600',bg: 'bg-orange-50 border-orange-200',icon: 'water_drop' },
+  E: { zh: '其他',  en: 'Other',    color: 'text-gray-600',  bg: 'bg-gray-50 border-gray-200',   icon: 'more_horiz' },
 };
 
 interface DishWithPrep {
@@ -39,10 +33,9 @@ export default function HelperPrep() {
   const [dishes, setDishes]       = useState<DishWithPrep[]>([]);
   const [loading, setLoading]     = useState(true);
   const [completed, setCompleted] = useState<Set<string>>(new Set());
+  const [expandedDish, setExpandedDish] = useState<string | null>(null);
   const { recordEngagement } = useFeedbackEngine();
 
-  // dish_id param → single dish mode (from WeeklyMenu detail)
-  // no param      → today's full menu mode (from Home)
   const singleDishId = searchParams.get('dish_id');
 
   useEffect(() => {
@@ -55,11 +48,7 @@ export default function HelperPrep() {
             .select('id, title_zh, title_en, image_url, prep_steps_json, flavor_tags, health_benefit_tags, origin_cuisine')
             .eq('id', singleDishId)
             .single();
-          if (data) {
-            setDishes([data]);
-            // Record engagement for the dish being prepped
-            recordEngagement(data);
-          }
+          if (data) { setDishes([data]); recordEngagement(data); }
         } else {
           const raw = localStorage.getItem('generatedMenu');
           if (raw) {
@@ -73,11 +62,9 @@ export default function HelperPrep() {
               const map = new Map(data.map(d => [d.id, d]));
               const loaded = ids.map(id => map.get(id)).filter(Boolean) as DishWithPrep[];
               setDishes(loaded);
-              // Record engagement for each dish being prepped
               loaded.forEach(dish => recordEngagement(dish));
             } else {
               setDishes(todayDishes);
-              // Record engagement for each dish being prepped
               todayDishes.forEach(dish => recordEngagement(dish));
             }
           }
@@ -90,6 +77,13 @@ export default function HelperPrep() {
     loadDishes();
   }, [singleDishId]);
 
+  // Auto-expand first dish on load
+  useEffect(() => {
+    if (dishes.length > 0 && !expandedDish) {
+      setExpandedDish(dishes[0].id);
+    }
+  }, [dishes]);
+
   const toggleStep = (key: string) => {
     setCompleted(prev => {
       const next = new Set(prev);
@@ -98,50 +92,43 @@ export default function HelperPrep() {
     });
   };
 
+  const getDishStepKeys = (dish: DishWithPrep) =>
+    (dish.prep_steps_json ?? []).map((_, idx) => `${dish.id}-${idx}`);
+
+  const isDishDone = (dish: DishWithPrep) => {
+    const keys = getDishStepKeys(dish);
+    return keys.length > 0 && keys.every(k => completed.has(k));
+  };
+
+  const dishDoneCount = (dish: DishWithPrep) =>
+    getDishStepKeys(dish).filter(k => completed.has(k)).length;
+
   const totalSteps = dishes.reduce((n, d) => n + (d.prep_steps_json?.length ?? 0), 0);
   const doneSteps  = completed.size;
   const allDone    = totalSteps > 0 && doneSteps >= totalSteps;
 
-  const handleShare = () => {
-    const url = window.location.href;
-    if (navigator.share) {
-      navigator.share({ title: '备菜清单', text: '今日备菜清单', url }).catch(() => {});
-    } else {
-      navigator.clipboard.writeText(url);
-      alert('链接已复制');
-    }
-  };
-
   const goToCook = (dishId: string) => navigate(`/cook?dish_id=${dishId}`);
 
-  // ── Tray badge label: single dish → "A格" ; multi-dish → "A1格" / "A2格" ──
-  const getTrayLabel = (tray: string, dishIndex: number, isSingleDish: boolean) => {
-    const cfg = TRAY_CONFIG[tray] ?? TRAY_CONFIG['E'];
-    if (isSingleDish || tray !== 'A') {
-      return language === 'zh' ? `${tray}格 · ${cfg.zh}` : `Tray ${tray} · ${cfg.en}`;
-    }
-    // Multi-dish: A1, A2, A3...
-    const num = dishIndex + 1;
-    return language === 'zh' ? `A${num}格 · 主菜` : `Tray A${num} · Main`;
-  };
-
-  const getTrayShortLabel = (tray: string, dishIndex: number, isSingleDish: boolean) => {
-    if (isSingleDish || tray !== 'A') return tray;
-    return `A${dishIndex + 1}`;
-  };
-
-  const isSingleDish = dishes.length <= 1;
-
   return (
-    <div className="bg-background font-sans text-on-surface min-h-screen pb-40 flex flex-col max-w-md mx-auto relative">
+    <div className="bg-[#f4f4f6] font-sans text-on-surface min-h-screen pb-40 flex flex-col max-w-md mx-auto relative">
 
       {/* Header */}
-      <header className="bg-surface/80 backdrop-blur-xl sticky top-0 z-50 border-b border-black/5 flex justify-between items-center w-full px-5 py-4">
+      <header className="bg-white sticky top-0 z-50 border-b border-black/5 flex justify-between items-center w-full px-5 py-4">
         <div className="flex items-center gap-3">
-          <button className="active:scale-95 bg-black/5 hover:bg-black/10 p-2 text-on-surface rounded-full" onClick={() => navigate(localStorage.getItem('nutri_role') === 'helper' ? '/helper' : '/')}>
+          <button
+            className="active:scale-95 bg-black/5 hover:bg-black/10 p-2 text-on-surface rounded-full"
+            onClick={() => navigate(localStorage.getItem('nutri_role') === 'helper' ? '/helper' : '/')}
+          >
             <span className="material-symbols-outlined text-[20px]">arrow_back</span>
           </button>
-          <span className="text-[18px] font-bold tracking-tight">{t("Prep Guide", "备菜清单")}</span>
+          <div>
+            <span className="text-[18px] font-bold tracking-tight">{t("Prep Guide", "备菜清单")}</span>
+            {totalSteps > 0 && (
+              <p className="text-[12px] text-gray-400 mt-0.5">
+                {doneSteps}/{totalSteps} {t('done', '项完成')}
+              </p>
+            )}
+          </div>
         </div>
         <button onClick={toggleLanguage} className="w-8 h-8 rounded-full bg-black/5 hover:bg-black/10 font-bold text-[12px] active:scale-95">
           {language === 'en' ? 'EN' : '中'}
@@ -149,7 +136,7 @@ export default function HelperPrep() {
       </header>
 
       {/* Phase Timeline */}
-      <nav className="sticky top-16 z-40 bg-white/90 backdrop-blur-md px-6 py-3 flex justify-between items-center border-b border-black/5">
+      <nav className="sticky top-[69px] z-40 bg-white/95 backdrop-blur-md px-6 py-3 flex justify-between items-center border-b border-black/5">
         <div className="flex flex-col items-center gap-1">
           <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary">
             <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>restaurant_menu</span>
@@ -161,27 +148,23 @@ export default function HelperPrep() {
           <div className="w-8 h-8 rounded-full bg-black/5 flex items-center justify-center">
             <span className="material-symbols-outlined text-[18px]">skillet</span>
           </div>
-          <span className="text-[10px] font-bold text-secondary tracking-wider uppercase">Cook</span>
+          <span className="text-[10px] font-bold text-gray-400 tracking-wider uppercase">Cook</span>
         </div>
         <div className="h-[1px] flex-1 bg-black/10 mx-3" />
         <div className="flex flex-col items-center gap-1 opacity-40">
           <div className="w-8 h-8 rounded-full bg-black/5 flex items-center justify-center">
             <span className="material-symbols-outlined text-[18px]">room_service</span>
           </div>
-          <span className="text-[10px] font-bold text-secondary tracking-wider uppercase">Serve</span>
+          <span className="text-[10px] font-bold text-gray-400 tracking-wider uppercase">Serve</span>
         </div>
       </nav>
 
-      {/* Progress bar */}
+      {/* Global progress bar */}
       {totalSteps > 0 && (
-        <div className="px-5 pt-4">
-          <div className="flex justify-between text-[12px] text-secondary mb-1">
-            <span>{t(`${doneSteps} / ${totalSteps} done`, `已完成 ${doneSteps} / ${totalSteps} 项`)}</span>
-            <span>{Math.round(doneSteps / totalSteps * 100)}%</span>
-          </div>
-          <div className="w-full h-2 bg-black/5 rounded-full overflow-hidden">
+        <div className="bg-white px-5 py-3 border-b border-black/5">
+          <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
             <motion.div
-              className="h-full bg-primary rounded-full"
+              className="h-full bg-emerald-500 rounded-full"
               animate={{ width: `${doneSteps / totalSteps * 100}%` }}
               transition={{ type: 'spring', stiffness: 200 }}
             />
@@ -189,35 +172,15 @@ export default function HelperPrep() {
         </div>
       )}
 
-      {/* Tray legend (multi-dish only) */}
-      {!isSingleDish && dishes.length > 0 && (
-        <div className="px-5 pt-4">
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 flex flex-wrap gap-2">
-            {dishes.map((dish, idx) => {
-              const title = language === 'zh' ? dish.title_zh : (dish.title_en ?? dish.title_zh);
-              return (
-                <span key={dish.id} className="flex items-center gap-1.5 text-[12px] font-bold text-amber-800">
-                  <span className="w-5 h-5 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-[10px] font-bold border border-red-200">
-                    A{idx + 1}
-                  </span>
-                  {title}
-                </span>
-              );
-            })}
-            <p className="w-full text-[11px] text-amber-700 mt-0.5">{t('A1/A2/A3 = main ingredient of each dish', 'A1/A2/A3 分别对应各道菜的主料')}</p>
-          </div>
-        </div>
-      )}
-
-      <main className="px-5 pt-5 flex flex-col gap-8">
+      <main className="px-4 pt-4 flex flex-col gap-3">
         {loading && (
-          <div className="text-center py-20 text-secondary text-[14px]">
+          <div className="text-center py-20 text-gray-400 text-[14px]">
             {t("Loading prep guide...", "加载备菜清单中...")}
           </div>
         )}
 
         {!loading && dishes.length === 0 && (
-          <div className="text-center py-20 text-secondary text-[14px]">
+          <div className="text-center py-20 text-gray-400 text-[14px]">
             {t("No menu found. Go back and generate today's menu first.", "没有找到菜单，请先返回生成今日菜单。")}
           </div>
         )}
@@ -225,122 +188,202 @@ export default function HelperPrep() {
         {dishes.map((dish, dishIndex) => {
           const steps = dish.prep_steps_json ?? [];
           const title = language === 'zh' ? dish.title_zh : (dish.title_en ?? dish.title_zh);
+          const subtitle = language === 'zh' ? (dish.title_en ?? '') : dish.title_zh;
+          const done = isDishDone(dish);
+          const doneCount = dishDoneCount(dish);
+          const isOpen = expandedDish === dish.id;
 
-          // Group steps by tray for this dish
-          const byTray: Record<string, PrepStep[]> = {};
-          for (const step of steps) {
-            const tkey = step.tray ?? 'E';
+          // Group steps by tray
+          const byTray: Record<string, { step: PrepStep; idx: number }[]> = {};
+          for (let i = 0; i < steps.length; i++) {
+            const tkey = steps[i].tray ?? 'E';
             if (!byTray[tkey]) byTray[tkey] = [];
-            byTray[tkey].push(step);
+            byTray[tkey].push({ step: steps[i], idx: i });
           }
           const trayOrder = (['A', 'B', 'C', 'D', 'E'] as string[]).filter(t => byTray[t]?.length);
 
           return (
-            <section key={dish.id}>
-              {/* Dish header */}
-              <div className="flex items-center gap-3 mb-4">
-                {dish.image_url ? (
-                  <img src={dish.image_url} alt={title} className="w-12 h-12 rounded-xl object-cover" />
-                ) : (
-                  <div className="w-12 h-12 rounded-xl bg-black/5 flex items-center justify-center">
-                    <span className="material-symbols-outlined text-secondary text-[22px]">skillet</span>
+            <div
+              key={dish.id}
+              className={`rounded-3xl overflow-hidden shadow-sm transition-all duration-200 ${
+                done ? 'opacity-75' : ''
+              }`}
+            >
+              {/* Dish card header — always visible, tap to expand */}
+              <button
+                onClick={() => setExpandedDish(isOpen ? null : dish.id)}
+                className="w-full text-left"
+              >
+                <div className={`flex items-center gap-3 p-4 ${done ? 'bg-emerald-50' : 'bg-white'}`}>
+                  {/* Dish number badge */}
+                  <div className={`shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center font-black text-[16px] ${
+                    done ? 'bg-emerald-500 text-white' : 'bg-[#FF5A1F]/10 text-[#FF5A1F]'
+                  }`}>
+                    {done
+                      ? <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>check</span>
+                      : dishIndex + 1
+                    }
                   </div>
-                )}
-                <div className="flex-1">
-                  <h2 className="font-bold text-[16px] tracking-tight">{title}</h2>
-                  <p className="text-[12px] text-secondary">{steps.length} {t('prep tasks', '项备菜步骤')}</p>
-                </div>
-                <button
-                  onClick={() => goToCook(dish.id)}
-                  className="flex items-center gap-1 bg-black/5 hover:bg-black/10 px-3 py-1.5 rounded-full text-[12px] font-bold active:scale-95"
-                >
-                  {t('Cook', '烹饪')}
-                  <span className="material-symbols-outlined text-[14px]">arrow_forward_ios</span>
-                </button>
-              </div>
 
-              {steps.length === 0 ? (
-                <div className="bg-black/3 rounded-2xl p-4 text-center text-secondary text-[13px]">
-                  {t('Prep guide generating, check back soon.', '备菜指南生成中，请稍后查看。')}
-                </div>
-              ) : (
-                <div className="flex flex-col gap-4">
-                  {trayOrder.map(tray => {
-                    const traySteps = byTray[tray];
-                    const cfg = TRAY_CONFIG[tray] ?? TRAY_CONFIG['E'];
+                  {/* Dish photo */}
+                  {dish.image_url ? (
+                    <img src={dish.image_url} alt={title} className="w-14 h-14 rounded-2xl object-cover shrink-0" />
+                  ) : (
+                    <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center shrink-0">
+                      <span className="material-symbols-outlined text-gray-400 text-[24px]">skillet</span>
+                    </div>
+                  )}
 
-                    return (
-                      <div key={tray}>
-                        {/* Tray section header */}
-                        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border mb-2 ${cfg.color}`}>
-                          <span className="material-symbols-outlined text-[15px]" style={{ fontVariationSettings: "'FILL' 1" }}>
-                            {cfg.icon}
-                          </span>
-                          <span className="font-bold text-[13px]">
-                            {getTrayLabel(tray, dishIndex, isSingleDish)}
-                          </span>
+                  {/* Title */}
+                  <div className="flex-1 min-w-0">
+                    <h2 className={`font-black text-[18px] tracking-tight leading-tight ${done ? 'text-emerald-700' : 'text-gray-900'}`}>
+                      {title}
+                    </h2>
+                    {subtitle && (
+                      <p className="text-[12px] text-gray-400 mt-0.5 truncate">{subtitle}</p>
+                    )}
+                    {/* Per-dish progress */}
+                    {steps.length > 0 && (
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-300 ${done ? 'bg-emerald-500' : 'bg-[#FF5A1F]'}`}
+                            style={{ width: `${steps.length > 0 ? doneCount / steps.length * 100 : 0}%` }}
+                          />
                         </div>
+                        <span className="text-[11px] font-bold text-gray-400 shrink-0">
+                          {doneCount}/{steps.length}
+                        </span>
+                      </div>
+                    )}
+                  </div>
 
-                        <div className="flex flex-col gap-2">
-                          {traySteps.map((step, idx) => {
-                            const key = `${dish.id}-${tray}-${idx}`;
-                            const done = completed.has(key);
-                            const action = language === 'zh' ? step.action_zh : (step.action_en ?? step.action_zh);
+                  {/* Expand chevron */}
+                  <span className={`material-symbols-outlined text-gray-300 text-[20px] transition-transform duration-200 shrink-0 ${isOpen ? 'rotate-180' : ''}`}>
+                    expand_more
+                  </span>
+                </div>
+              </button>
+
+              {/* Expandable ingredient list */}
+              <AnimatePresence initial={false}>
+                {isOpen && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.22, ease: 'easeInOut' }}
+                    style={{ overflow: 'hidden' }}
+                  >
+                    <div className="bg-white border-t border-black/5">
+                      {steps.length === 0 ? (
+                        <div className="p-6 text-center text-gray-400 text-[13px]">
+                          {t('Prep guide generating, check back soon.', '备菜指南生成中，请稍后查看。')}
+                        </div>
+                      ) : (
+                        <div className="p-4 flex flex-col gap-4">
+                          {trayOrder.map(tray => {
+                            const cfg = TRAY_CONFIG[tray] ?? TRAY_CONFIG['E'];
+                            const trayItems = byTray[tray];
 
                             return (
-                              <motion.div
-                                key={key}
-                                layout
-                                onClick={() => toggleStep(key)}
-                                className={`rounded-2xl p-4 flex items-start gap-3 cursor-pointer transition-all duration-200 ${
-                                  done
-                                    ? 'bg-emerald-50/60 border border-emerald-100 opacity-60'
-                                    : 'bg-white shadow-sm border border-black/8'
-                                }`}
-                              >
-                                {/* Tray badge */}
-                                <div className={`shrink-0 w-9 h-9 rounded-xl border flex items-center justify-center font-bold text-[12px] ${cfg.color}`}>
-                                  {getTrayShortLabel(tray, dishIndex, isSingleDish)}
+                              <div key={tray}>
+                                {/* Tray group label */}
+                                <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border mb-2 ${cfg.bg}`}>
+                                  <span className={`material-symbols-outlined text-[13px] ${cfg.color}`} style={{ fontVariationSettings: "'FILL' 1" }}>
+                                    {cfg.icon}
+                                  </span>
+                                  <span className={`font-bold text-[12px] uppercase tracking-wider ${cfg.color}`}>
+                                    {language === 'zh' ? cfg.zh : cfg.en}
+                                  </span>
                                 </div>
 
-                                <div className="flex-1 min-w-0">
-                                  {/* Ingredient + weight — primary/secondary based on language */}
-                                  <div className="flex items-baseline gap-2 flex-wrap">
-                                    <span className={`font-bold text-[15px] ${done ? 'line-through opacity-50' : ''}`}>
-                                      {language === 'en' ? (step.ingredient_en || step.ingredient_zh) : step.ingredient_zh}
-                                    </span>
-                                    {step.amount_g > 0 && (
-                                      <span className={`text-[13px] font-bold px-2 py-0.5 rounded-lg ${done ? 'opacity-40 text-secondary' : 'bg-black/5 text-on-surface'}`}>
-                                        {step.amount_g}g
-                                      </span>
-                                    )}
-                                    <span className="text-[11px] text-secondary">
-                                      {language === 'en' ? step.ingredient_zh : step.ingredient_en}
-                                    </span>
-                                  </div>
-                                  {/* Action */}
-                                  <p className={`text-[13px] leading-snug mt-1 ${done ? 'line-through opacity-40 text-secondary' : 'text-on-surface/80'}`}>
-                                    {action}
-                                  </p>
-                                </div>
+                                <div className="flex flex-col gap-2">
+                                  {trayItems.map(({ step, idx }) => {
+                                    const key = `${dish.id}-${idx}`;
+                                    const isDone = completed.has(key);
+                                    const action = language === 'zh' ? step.action_zh : (step.action_en ?? step.action_zh);
+                                    const ingName = language === 'en'
+                                      ? (step.ingredient_en || step.ingredient_zh)
+                                      : step.ingredient_zh;
+                                    const ingAlt = language === 'en' ? step.ingredient_zh : step.ingredient_en;
 
-                                {done ? (
-                                  <div className="w-7 h-7 rounded-full bg-emerald-500 shrink-0 flex items-center justify-center shadow-sm">
-                                    <span className="material-symbols-outlined text-white text-[16px]">check</span>
-                                  </div>
-                                ) : (
-                                  <div className="w-7 h-7 rounded-full border-2 border-black/15 shrink-0" />
-                                )}
-                              </motion.div>
+                                    return (
+                                      <motion.button
+                                        key={key}
+                                        layout
+                                        onClick={() => toggleStep(key)}
+                                        className={`w-full text-left rounded-2xl p-4 flex items-center gap-3 transition-all duration-150 active:scale-[0.98] ${
+                                          isDone
+                                            ? 'bg-emerald-50 border border-emerald-100'
+                                            : 'bg-gray-50 border border-gray-100'
+                                        }`}
+                                      >
+                                        {/* Check circle */}
+                                        <div className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-all ${
+                                          isDone
+                                            ? 'bg-emerald-500 shadow-sm'
+                                            : 'border-2 border-gray-200 bg-white'
+                                        }`}>
+                                          {isDone && (
+                                            <span className="material-symbols-outlined text-white text-[16px]" style={{ fontVariationSettings: "'FILL' 1" }}>check</span>
+                                          )}
+                                        </div>
+
+                                        <div className="flex-1 min-w-0">
+                                          <div className="flex items-baseline gap-2 flex-wrap">
+                                            <span className={`font-black text-[17px] leading-tight ${isDone ? 'line-through text-gray-400' : 'text-gray-900'}`}>
+                                              {ingName}
+                                            </span>
+                                            {step.amount_g > 0 && (
+                                              <span className={`text-[14px] font-bold px-2 py-0.5 rounded-lg ${
+                                                isDone ? 'text-gray-300 bg-gray-100' : 'text-gray-700 bg-white border border-gray-200'
+                                              }`}>
+                                                {step.amount_g}g
+                                              </span>
+                                            )}
+                                          </div>
+                                          {ingAlt && (
+                                            <p className={`text-[12px] mt-0.5 ${isDone ? 'text-gray-300' : 'text-gray-400'}`}>
+                                              {ingAlt}
+                                            </p>
+                                          )}
+                                          {action && (
+                                            <p className={`text-[13px] mt-1 leading-snug ${isDone ? 'line-through text-gray-300' : 'text-gray-500'}`}>
+                                              {action}
+                                            </p>
+                                          )}
+                                        </div>
+                                      </motion.button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
                             );
                           })}
+
+                          {/* Per-dish cook button */}
+                          <button
+                            onClick={() => goToCook(dish.id)}
+                            className={`w-full h-12 rounded-2xl flex items-center justify-center gap-2 font-bold text-[14px] active:scale-95 transition-all mt-1 ${
+                              done
+                                ? 'bg-emerald-500 text-white'
+                                : 'bg-[#2D3748] text-white'
+                            }`}
+                          >
+                            <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>
+                              {done ? 'check_circle' : 'skillet'}
+                            </span>
+                            {done ? t('Cook this dish', '开始烹饪') : t('Start Cooking', '开始烹饪')}
+                            <span className="material-symbols-outlined text-[16px]">arrow_forward_ios</span>
+                          </button>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           );
         })}
       </main>
@@ -352,17 +395,23 @@ export default function HelperPrep() {
         </button>
       </div>
 
-      {/* Footer */}
-      <footer className="fixed bottom-0 w-full max-w-md mx-auto z-50 p-5 bg-gradient-to-t from-background via-background/95 to-transparent flex flex-col gap-3">
+      {/* Footer — global cook button */}
+      <footer className="fixed bottom-0 w-full max-w-md mx-auto z-50 p-5 bg-gradient-to-t from-[#f4f4f6] via-[#f4f4f6]/95 to-transparent">
         {dishes.length > 0 && (
           <button
             onClick={() => goToCook(singleDishId ?? dishes[0].id)}
-            className={`w-full h-14 rounded-2xl flex items-center justify-center gap-2 text-white font-bold shadow-lg active:scale-95 transition-all ${allDone ? 'bg-primary' : 'bg-[#2D3748]'}`}
+            className={`w-full h-14 rounded-2xl flex items-center justify-center gap-2 text-white font-bold shadow-lg active:scale-95 transition-all ${
+              allDone ? 'bg-emerald-500' : 'bg-[#FF5A1F]'
+            }`}
           >
             <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>
               {allDone ? 'check_circle' : 'skillet'}
             </span>
-            <span className="text-[15px]">{allDone ? t("All Done — Start Cooking!", "备菜完成 — 开始烹饪！") : t("Start Cooking", "开始烹饪")}</span>
+            <span className="text-[15px]">
+              {allDone
+                ? t("All Done — Start Cooking!", "备菜完成 — 开始烹饪！")
+                : t("Start Cooking", "开始烹饪")}
+            </span>
             <span className="material-symbols-outlined text-[18px]">arrow_forward_ios</span>
           </button>
         )}
