@@ -68,7 +68,7 @@ function DishListScreen({ dishes, loading, onSelect }: {
       {/* Header */}
       <header className="sticky top-0 z-50 px-5 pt-12 pb-4" style={{ background: '#0a0a0a' }}>
         <div className="flex items-center gap-3 mb-1">
-          <button onClick={() => navigate('/helper')}
+          <button onClick={() => navigate(localStorage.getItem('nutri_role') === 'helper' ? '/helper' : '/')}
             className="w-9 h-9 rounded-full flex items-center justify-center active:scale-90 transition-transform"
             style={{ background: 'rgba(255,255,255,0.08)' }}>
             <span className="material-symbols-outlined text-white" style={{ fontSize: 20 }}>arrow_back</span>
