@@ -435,7 +435,7 @@ export default function SignIn() {
             </p>
 
             {/* 6-digit boxes */}
-            <div className="flex gap-3 justify-between mb-4">
+            <div className="grid grid-cols-6 gap-2 mb-4">
               {otp.map((digit, idx) => (
                 <input
                   key={idx}
@@ -447,8 +447,10 @@ export default function SignIn() {
                   onChange={e => handleOtpChange(idx, e.target.value)}
                   onKeyDown={e => handleOtpKey(idx, e)}
                   autoFocus={idx === 0}
-                  className="flex-1 h-14 rounded-2xl text-center text-white text-[22px] font-bold outline-none transition-all"
+                  className="w-full rounded-xl text-center text-white font-bold outline-none transition-all"
                   style={{
+                    height: 48,
+                    fontSize: 22,
                     background: digit ? "rgba(255,90,31,0.18)" : "rgba(255,255,255,0.08)",
                     border: digit ? "1.5px solid #FF5A1F" : "1.5px solid rgba(255,255,255,0.12)",
                     caretColor: "#FF5A1F",

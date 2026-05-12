@@ -22,13 +22,15 @@ import { supabase } from '../lib/supabase';
 import { type SupabaseDish } from './useSupabaseMenu';
 import { FLAVOR_COL, HEALTH_COL, CUISINE_COL } from './preferenceColMap';
 import { getUserPrefs } from '../lib/userPrefs';
+import { getFamilyMenuPrefs, familyGoalScore, dishTriggersAllergy } from '../lib/familyPrefs';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface WeeklyDayMenu {
   dayIndex: number;      // 0=Mon … 6=Sun
   dayLabel: string;      // 周一 … 周日
-  dishes: SupabaseDish[];
+  dishes: SupabaseDish[];       // dinner dishes
+  lunchDishes: SupabaseDish[];  // lunch dishes (simpler, 1-2 items)
 }
 
 export interface WeeklyMenu {
@@ -38,7 +40,7 @@ export interface WeeklyMenu {
 
 // ── Cache version — bump this whenever the algorithm changes significantly ─────
 // This ensures old cached menus are discarded after an algorithm update.
-const ALGO_VERSION = 'v7'; // bumped: title keyword dedup + guaranteed soup + same-protein soup block + weekday quickcook
+const ALGO_VERSION = 'v8'; // bumped: separate lunch/dinner generation
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -471,6 +473,7 @@ function generateWeekPlan(
   spiceBoost = 0,
   ageGroup?: string | null,
   healthPrefs?: { preferLowSodium: boolean; preferLowSugar: boolean; avoidHighPurine: boolean },
+  familyPrefs?: ReturnType<typeof getFamilyMenuPrefs>,
 ): WeeklyMenu {
   const weekStart = getMondayISO();
   const days: WeeklyDayMenu[] = [];
@@ -488,6 +491,10 @@ function generateWeekPlan(
   for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
     const dayDishes: any[] = [];
     const dayIngredients: string[] = [];
+
+    // Track allergen dishes per day (soft-cap at 25% of daily slots)
+    let allergenDishCountToday = 0;
+    const maxAllergenToday = familyPrefs?.maxAllergenDishesPerDay ?? 1;
 
     for (let slot = 0; slot < dishesPerDay; slot++) {
       const slotTemplate = useSmallTemplate ? SLOT_PREFERRED_CATS_SMALL : SLOT_PREFERRED_CATS;
@@ -546,6 +553,28 @@ function generateWeekPlan(
             healthPrefs,
           });
 
+          // ── Family multi-goal scoring ───────────────────────────────────
+          if (familyPrefs && Object.keys(familyPrefs.goalWeights).length > 0) {
+            const totalWeight = Object.values(familyPrefs.goalWeights).reduce((a, b) => a + b, 0);
+            score += familyGoalScore(d, familyPrefs.goalWeights, totalWeight);
+          }
+
+          // ── Allergen soft-cap (main_ingredient / title only — not condiments) ──
+          if (familyPrefs && familyPrefs.allergyMembers.length > 0) {
+            const isAllergenDish = familyPrefs.allergyMembers.some(({ allergies }) =>
+              allergies.some(a => dishTriggersAllergy(d, a))
+            );
+            if (isAllergenDish) {
+              // Quota full → strong penalty so this dish is very unlikely to be picked
+              if (allergenDishCountToday >= maxAllergenToday) {
+                score -= 1.5;
+              } else {
+                // Quota not full → mild penalty (still less preferred than allergen-free)
+                score -= 0.20;
+              }
+            }
+          }
+
           // Slot affinity bonus — from ingredient category
           const cat = ingCategory(d.main_ingredient ?? 'other');
           if (preferredCats.includes(cat)) score += 0.22;
@@ -588,6 +617,14 @@ function generateWeekPlan(
       dayIngredients.push(picked.main_ingredient ?? 'other');
       usedIds.add(picked.id);
 
+      // Track allergen dish count for today's soft-cap
+      if (familyPrefs && familyPrefs.allergyMembers.length > 0) {
+        const isAllergen = familyPrefs.allergyMembers.some(({ allergies }) =>
+          allergies.some(a => dishTriggersAllergy(picked, a))
+        );
+        if (isAllergen) allergenDishCountToday++;
+      }
+
       // Track title keyword for weekly dedup
       const kw = extractTitleKeyword(picked.title_zh ?? picked.title ?? '');
       if (kw) pickedTitleKeywords.push(kw);
@@ -599,10 +636,43 @@ function generateWeekPlan(
     // Track for next day's scoring
     dayIngredients.forEach(ing => pickedIngredients.push(ing));
 
+    // ── Generate lunch dishes ─────────────────────────────────────────────────
+    // Lunch is separate from dinner: simpler, 1 dish (2 for large families).
+    // Drawn from the same pool but must differ from that day's dinner dishes.
+    // Lunch dishes are NOT added to usedIds so they can repeat across days.
+    const lunchCount = Math.max(1, Math.floor(dishesPerDay / 4));
+    const dinnerIds = new Set(dayDishes.map(d => d.id));
+
+    const lunchCandidates = pool
+      .filter(d => !dinnerIds.has(d.id))
+      .filter(d => (d.course_type ?? '') !== 'dessert')
+      .map(d => {
+        let score = scoreForWeek({
+          dish: d, profile, prefScores, recentIds,
+          pickedIngredients: dayIngredients,
+          pickedTitleKeywords: [],
+          dayIndex, spiceBoost, ageGroup, healthPrefs,
+        });
+        const ct = d.course_type ?? '';
+        const cat = ingCategory(d.main_ingredient ?? 'other');
+        // Prefer staples (fried rice, noodles) and light dishes for lunch
+        if (ct === 'staple' || cat === 'carb') score += 0.35;
+        if ((d.flavor_tags ?? []).includes('light')) score += 0.15;
+        // Penalise soups — lunch is meant to be a plate, not a pot
+        if (ct === 'soup') score -= 0.40;
+        return { dish: d, score };
+      })
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 20);
+
+    const lunchDishes = weightedRandom(lunchCandidates, lunchCount)
+      .map(c => enrichRaw(c.dish));
+
     days.push({
       dayIndex,
       dayLabel: DAY_LABELS[dayIndex],
       dishes: dayDishes.map(d => enrichRaw(d)),
+      lunchDishes,
     });
   }
 
@@ -638,6 +708,7 @@ async function loadFromDB(userId: string, weekStart: string): Promise<WeeklyMenu
       dayIndex: row.day_index as number,
       dayLabel: DAY_LABELS[row.day_index as number],
       dishes: ids.map(id => dishMap.get(id)).filter(Boolean).map(d => enrichRaw(d)),
+      lunchDishes: [],  // lunch not stored in DB — regenerated via localStorage
     };
   });
 
@@ -747,7 +818,7 @@ export function useWeeklyMenu() {
         let poolQuery = supabase
           .from('dishes')
           .select('*')
-          .or('meal_type.in.(dinner,all),meal_type.is.null')
+          .or('meal_type.in.(lunch,dinner,all),meal_type.is.null')
           .limit(400);
 
         // Vegetarian-only filter at DB level (optimization)
@@ -832,9 +903,10 @@ export function useWeeklyMenu() {
           preferLowSugar:  localPrefs.preferLowSugar,
           avoidHighPurine: localPrefs.avoidHighPurine,
         };
+        const familyPrefs = getFamilyMenuPrefs(dishesPerDay);
         const menu = generateWeekPlan(
           pool, profile, prefScores, recentIds, dishesPerDay,
-          spiceBoost, profile.age_group, healthPrefs,
+          spiceBoost, profile.age_group, healthPrefs, familyPrefs,
         );
 
         if (cancelled) return;

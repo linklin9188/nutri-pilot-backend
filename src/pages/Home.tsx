@@ -542,7 +542,7 @@ export default function Home() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold truncate" style={{ fontSize: 15, color: "#1a1a1a" }}>
-                      {dish.title || dish.title_zh}
+                      {dish.title_zh || dish.title}
                     </p>
                     <p className="truncate" style={{ fontSize: 12, color: "rgba(0,0,0,0.38)" }}>
                       {dish.desc || dish.type || "家常菜"}
@@ -681,7 +681,7 @@ export default function Home() {
                       }} />
                   </div>
                   <div className="flex-1">
-                    <p className="font-semibold" style={{ fontSize: 15 }}>{opt.title}</p>
+                    <p className="font-semibold" style={{ fontSize: 15 }}>{opt.title_zh || opt.title}</p>
                     <span className="inline-block mt-1 px-2 py-0.5 rounded-md font-bold"
                       style={{ fontSize: 10, background: "rgba(0,0,0,0.06)", color: "rgba(0,0,0,0.4)" }}>
                       {opt.type}

@@ -10,6 +10,10 @@ import { useWeeklyMenu } from "../hooks/useWeeklyMenu";
 import { type SupabaseDish } from "../hooks/useSupabaseMenu";
 import { supabase } from "../lib/supabase";
 import BottomTabBar from "../components/BottomTabBar";
+import {
+  loadFamilyMembers, loadHomeToday, saveHomeToday, dishAllergyFor,
+  type FamilyMember,
+} from "../lib/familyPrefs";
 
 // ── Day tabs ──────────────────────────────────────────────────────────────────
 
@@ -46,14 +50,6 @@ function getDayNutrition(dishes: SupabaseDish[]) {
   );
 }
 
-// Split dinner dishes into lunch/dinner slots (breakfast comes from DB separately)
-function splitToLunchDinner(dishes: SupabaseDish[]): [SupabaseDish[], SupabaseDish[]] {
-  const copy = [...dishes];
-  const lunch  = copy.splice(0, Math.min(2, Math.ceil(copy.length / 2)));
-  const dinner = copy;
-  return [lunch, dinner];
-}
-
 // Pick breakfast dishes for a given day from the pool (deterministic rotation)
 function pickBreakfast(pool: SupabaseDish[], dayIndex: number): SupabaseDish[] {
   if (pool.length === 0) return [];
@@ -68,7 +64,13 @@ function pickBreakfast(pool: SupabaseDish[], dayIndex: number): SupabaseDish[] {
 
 // ── DishCard ──────────────────────────────────────────────────────────────────
 
-function DishCard({ dish, small = false }: { dish: SupabaseDish; small?: boolean }) {
+function DishCard({ dish, small = false, familyMembers = [], homeToday = [] }: {
+  dish: SupabaseDish; small?: boolean;
+  familyMembers?: FamilyMember[];
+  homeToday?: string[];
+}) {
+  const activeMembers = familyMembers.filter(m => homeToday.includes(m.id));
+  const cannotEat = activeMembers.length > 0 ? dishAllergyFor(dish as any, activeMembers) : [];
   const typeColor: Record<string, string> = {
     MEAT:    "#FF5A1F",
     SEAFOOD: "#00B4D8",
@@ -128,6 +130,14 @@ function DishCard({ dish, small = false }: { dish: SupabaseDish; small?: boolean
             {dish.description_en}
           </p>
         )}
+        {/* Member badge: show who can't eat this dish */}
+        {cannotEat.length > 0 && (
+          <div className="flex items-center gap-0.5 mt-1 flex-wrap">
+            <span style={{ fontSize: 9, color: 'rgba(255,180,0,0.85)', background: 'rgba(0,0,0,0.55)', borderRadius: 4, padding: '1px 4px' }}>
+              🚫 {cannotEat.map(m => m.name).join('/')} 不吃
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -136,11 +146,10 @@ function DishCard({ dish, small = false }: { dish: SupabaseDish; small?: boolean
 // ── MealSection ───────────────────────────────────────────────────────────────
 
 function MealSection({
-  mealIdx,
-  dishes,
+  mealIdx, dishes, familyMembers = [], homeToday = [],
 }: {
-  mealIdx: number;
-  dishes: SupabaseDish[];
+  mealIdx: number; dishes: SupabaseDish[];
+  familyMembers?: FamilyMember[]; homeToday?: string[];
 }) {
   const meal = MEALS[mealIdx];
 
@@ -171,7 +180,7 @@ function MealSection({
       {/* Horizontal scroll */}
       <div className="flex gap-3 overflow-x-auto px-5 pb-1" style={{ scrollbarWidth: "none" }}>
         {dishes.map(dish => (
-          <DishCard key={dish.id} dish={dish} />
+          <DishCard key={dish.id} dish={dish} familyMembers={familyMembers} homeToday={homeToday} />
         ))}
       </div>
     </div>
@@ -286,6 +295,12 @@ export default function WeeklyMenu() {
   const [selectedDay, setSelectedDay] = useState(todayIdx);
   const [breakfastPool, setBreakfastPool] = useState<SupabaseDish[]>([]);
 
+  // Family member state
+  const [familyMembers] = useState<FamilyMember[]>(() => loadFamilyMembers());
+  const [homeToday, setHomeToday] = useState<string[]>(() =>
+    loadHomeToday(familyMembers)
+  );
+
   // Fetch real breakfast dishes from DB once
   useEffect(() => {
     supabase
@@ -303,11 +318,11 @@ export default function WeeklyMenu() {
     !isLoggedIn && (i < todayIdx || i >= todayIdx + FREE_DAYS);
   const effectiveDay = isDayLocked(selectedDay) ? todayIdx : selectedDay;
 
-  const dayMenu = weeklyMenu?.days[effectiveDay];
-  const dishes  = dayMenu?.dishes ?? [];
+  const dayMenu  = weeklyMenu?.days[effectiveDay];
+  const dinner   = dayMenu?.dishes ?? [];
+  const lunch    = dayMenu?.lunchDishes ?? [];
   const breakfast = pickBreakfast(breakfastPool, effectiveDay);
-  const [lunch, dinner] = splitToLunchDinner(dishes);
-  const nutrition = getDayNutrition(dishes);
+  const nutrition = getDayNutrition([...lunch, ...dinner]);
 
   function handleShoppingList() {
     if (!isLoggedIn) {
@@ -423,6 +438,40 @@ export default function WeeklyMenu() {
         )}
       </div>
 
+      {/* ── 谁在家今天 ────────────────────────────────────────────── */}
+      {familyMembers.length > 0 && (
+        <div className="relative z-10 px-5 mb-4">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-white/40" style={{ fontSize: 11 }}>谁在家：</span>
+            {familyMembers.map(m => {
+              const isHome = homeToday.includes(m.id);
+              return (
+                <button
+                  key={m.id}
+                  onClick={() => {
+                    const next = isHome
+                      ? homeToday.filter(id => id !== m.id)
+                      : [...homeToday, m.id];
+                    setHomeToday(next);
+                    saveHomeToday(next);
+                  }}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-full transition-all active:scale-95"
+                  style={isHome
+                    ? { background: "rgba(255,90,31,0.25)", border: "1px solid rgba(255,90,31,0.5)" }
+                    : { background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)" }
+                  }
+                >
+                  <span style={{ fontSize: 13 }}>{m.emoji}</span>
+                  <span style={{ fontSize: 11, color: isHome ? "#FF8C54" : "rgba(255,255,255,0.45)" }}>
+                    {m.name}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* ── Content area: show meals OR lock card ─────────────────── */}
       {isDayLocked(selectedDay) ? (
         <div className="relative z-10 flex-1">
@@ -431,7 +480,7 @@ export default function WeeklyMenu() {
       ) : (
         <>
           {/* ── Nutrition summary ────────────────────────────────── */}
-          {!loading && dishes.length > 0 && (
+          {!loading && dinner.length > 0 && (
             <div className="relative z-10 mx-5 mb-5 rounded-2xl p-4"
               style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}>
               <div className="flex items-center justify-between mb-3">
@@ -464,7 +513,7 @@ export default function WeeklyMenu() {
                   exit={{ opacity: 0, x: -24 }}
                   transition={{ duration: 0.22, ease: "easeOut" }}>
 
-                  {dishes.length === 0 && breakfast.length === 0 ? (
+                  {dinner.length === 0 && lunch.length === 0 && breakfast.length === 0 ? (
                     <div className="px-5 py-10 text-center">
                       <span className="text-5xl mb-4 block">🍽️</span>
                       <p className="text-white/50" style={{ fontSize: 14 }}>本周菜单正在生成中…</p>
@@ -472,14 +521,14 @@ export default function WeeklyMenu() {
                     </div>
                   ) : (
                     <>
-                      <MealSection mealIdx={0} dishes={breakfast} />
-                      <MealSection mealIdx={1} dishes={lunch} />
-                      <MealSection mealIdx={2} dishes={dinner} />
+                      <MealSection mealIdx={0} dishes={breakfast} familyMembers={familyMembers} homeToday={homeToday} />
+                      <MealSection mealIdx={1} dishes={lunch} familyMembers={familyMembers} homeToday={homeToday} />
+                      <MealSection mealIdx={2} dishes={dinner} familyMembers={familyMembers} homeToday={homeToday} />
                     </>
                   )}
 
                   {/* ── Week overview mini strip ── */}
-                  {weeklyMenu && dishes.length > 0 && (
+                  {weeklyMenu && dinner.length > 0 && (
                     <div className="mx-5 mt-2 mb-4 rounded-2xl p-4"
                       style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)" }}>
                       <p className="text-white/40 mb-3" style={{ fontSize: 11, letterSpacing: "0.06em" }}>全周一览</p>
