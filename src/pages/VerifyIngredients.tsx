@@ -357,7 +357,7 @@ export default function VerifyIngredients() {
 
   // ── Helper mode: simple checklist ──────────────────────────────────────────
   if (isHelper) {
-    return <HelperChecklistView onBack={() => navigate("/helper")} procurementPlan={procurementPlan} />;
+    return <HelperChecklistView onBack={() => navigate(-1)} procurementPlan={procurementPlan} />;
   }
 
   return (
@@ -366,7 +366,7 @@ export default function VerifyIngredients() {
       <header className="bg-surface/80 backdrop-blur-xl sticky top-0 z-50 flex items-center justify-between px-5 py-4 w-full border-b border-black/5">
         <div className="flex items-center gap-3">
           <button className="active:scale-95 transition-transform duration-200 bg-black/5 hover:bg-black/10 p-2 text-on-surface rounded-full flex items-center justify-center"
-            onClick={() => navigate(isHelper ? "/helper" : "/")}>
+            onClick={() => navigate(-1)}>
             <span className="material-symbols-outlined text-[20px]">arrow_back</span>
           </button>
           <div className="flex flex-col">
