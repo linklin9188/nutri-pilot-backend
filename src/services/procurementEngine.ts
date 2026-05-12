@@ -50,7 +50,9 @@ export const VENDORS_DB: Vendor[] = [
 export const VENDOR_CATALOG: CatalogItem[] = [
   // Waves Pacific (v_m_01)
   { vendorId: 'v_m_01', skuId: 'wp_pork_01', skuName: 'Okinawa Maimonton Pork Belly (冲绳玫瑰黑豚去皮五花肉) 300g', abstractTerm: ['pork belly', '五花肉', '猪肉', 'pork'], unitWeight: 300, priceRaw: 128, pricingMode: 'unit' },
-  { vendorId: 'v_m_01', skuId: 'wp_crab_01', skuName: 'Live Australian Mud Crab (澳洲鲜活青蟹) ~800g', abstractTerm: ['crab', '蟹'], unitWeight: 800, priceRaw: 580, pricingMode: 'unit' },
+  { vendorId: 'v_m_01', skuId: 'wp_crab_01', skuName: 'Live Australian Mud Crab (澳洲鲜活青蟹) ~800g', abstractTerm: ['crab', '蟹', '螃蟹'], unitWeight: 800, priceRaw: 580, pricingMode: 'unit' },
+  { vendorId: 'v_m_01', skuId: 'wp_shrimp_01', skuName: 'Fresh Tiger Prawns (新鲜大虎虾) 300g', abstractTerm: ['shrimp', 'prawn', '虾', '虾仁', '基围虾', '草虾'], unitWeight: 300, priceRaw: 168, pricingMode: 'unit' },
+  { vendorId: 'v_m_01', skuId: 'wp_fish_01', skuName: 'Fresh Seabass Fillet (新鲜鲈鱼柳) 300g', abstractTerm: ['fish', 'seabass', '鱼', '鲈鱼', '鱼柳', '带鱼', 'hairtail'], unitWeight: 300, priceRaw: 145, pricingMode: 'unit' },
   { vendorId: 'v_m_01', skuId: 'wp_fishmaw_01', skuName: 'Premium Dried Fish Maw (深海顶级野生花胶) 50g', abstractTerm: ['fish maw', '花胶'], unitWeight: 50, priceRaw: 450, pricingMode: 'unit' },
   { vendorId: 'v_m_01', skuId: 'wp_chicken_01', skuName: 'French Ping Yuen Chicken (新界平原走地鸡) 1.2kg', abstractTerm: ['chicken', '鸡'], unitWeight: 1200, priceRaw: 220, pricingMode: 'unit' },
   { vendorId: 'v_m_01', skuId: 'wp_beef_01', skuName: 'Aus Wagyu Ribeye MB8+ (澳洲和牛西冷MB8+) 250g', abstractTerm: ['beef', '牛肉', '牛柳', 'steak', '和牛', 'wagyu'], unitWeight: 250, priceRaw: 380, pricingMode: 'unit' },
@@ -68,6 +70,12 @@ export const VENDOR_CATALOG: CatalogItem[] = [
   { vendorId: 'v_m_05', skuId: 'pns_lotus_01', skuName: 'Fresh Lotus Root (新鲜莲藕) 500g', abstractTerm: ['lotus root', '莲藕', '藕'], unitWeight: 500, priceRaw: 18, pricingMode: 'unit' },
   { vendorId: 'v_m_05', skuId: 'pns_tomato_01', skuName: 'Fresh Tomatoes (新鲜番茄) 500g', abstractTerm: ['tomato', '番茄', '西红柿'], unitWeight: 500, priceRaw: 14, pricingMode: 'unit' },
   { vendorId: 'v_m_05', skuId: 'pns_mushroom_01', skuName: 'Fresh Shiitake Mushrooms (鲜香菇) 200g', abstractTerm: ['mushroom', '香菇', '蘑菇', '菌菇'], unitWeight: 200, priceRaw: 22, pricingMode: 'unit' },
+  { vendorId: 'v_m_05', skuId: 'pns_shrimp_01', skuName: 'Frozen Vannamei Shrimp (冷冻南美白虾) 400g', abstractTerm: ['shrimp', 'prawn', '虾', '虾仁', '基围虾', '草虾'], unitWeight: 400, priceRaw: 48, pricingMode: 'unit' },
+  { vendorId: 'v_m_05', skuId: 'pns_fish_01', skuName: 'Frozen Basa Fish Fillet (巴沙鱼柳) 400g', abstractTerm: ['fish', '鱼', '鱼柳', '带鱼', '鲩鱼', 'fillet'], unitWeight: 400, priceRaw: 38, pricingMode: 'unit' },
+  { vendorId: 'v_m_05', skuId: 'pns_squid_01', skuName: 'Frozen Squid Rings (冷冻鱿鱼圈) 300g', abstractTerm: ['squid', '鱿鱼', 'squid rings'], unitWeight: 300, priceRaw: 32, pricingMode: 'unit' },
+  { vendorId: 'v_m_05', skuId: 'pns_beef_01', skuName: 'Beef Brisket (牛腩) 500g', abstractTerm: ['beef brisket', '牛腩', 'brisket'], unitWeight: 500, priceRaw: 78, pricingMode: 'unit' },
+  { vendorId: 'v_m_05', skuId: 'pns_spinach_01', skuName: 'Fresh Spinach (新鲜菠菜) 300g', abstractTerm: ['spinach', '菠菜', '菠菜叶'], unitWeight: 300, priceRaw: 12, pricingMode: 'unit' },
+  { vendorId: 'v_m_05', skuId: 'pns_celery_01', skuName: 'Fresh Celery (新鲜芹菜) 300g', abstractTerm: ['celery', '芹菜', '西芹'], unitWeight: 300, priceRaw: 10, pricingMode: 'unit' },
   
   // Eat FRESH (v_p_01)
   { vendorId: 'v_p_01', skuId: 'ef_leek_01', skuName: 'Organic Baby Leeks (本地有机幼青蒜) 150g', abstractTerm: ['leeks', '蒜苗', '蒜'], unitWeight: 150, priceRaw: 38, pricingMode: 'unit' },
@@ -160,10 +168,11 @@ export function generateProcurementList(
     }
 
     const vendorCatalog = VENDOR_CATALOG.filter(item => item.vendorId === selectedVendor?.id);
-    let matchedSku = bestSkuMatch(vendorCatalog, ingredient.name) ?? vendorCatalog[0];
+    // Never fall back to vendorCatalog[0] — an unmatched SKU is better than a wrong one
+    let matchedSku = bestSkuMatch(vendorCatalog, ingredient.name);
 
-    // If no match in preferred vendor, search all vendors
-    if (!matchedSku || matchedSku === vendorCatalog[0]) {
+    // If no match in preferred vendor, try all vendors (cross-vendor search)
+    if (!matchedSku) {
       const crossMatch = bestSkuMatch(VENDOR_CATALOG, ingredient.name);
       if (crossMatch) {
         matchedSku = crossMatch;
