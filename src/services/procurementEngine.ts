@@ -49,16 +49,25 @@ export const VENDORS_DB: Vendor[] = [
 
 export const VENDOR_CATALOG: CatalogItem[] = [
   // Waves Pacific (v_m_01)
-  { vendorId: 'v_m_01', skuId: 'wp_pork_01', skuName: 'Okinawa Maimonton Pork Belly (冲绳玫瑰黑豚去皮五花肉) 300g', abstractTerm: ['pork belly', '五花肉', '肉'], unitWeight: 300, priceRaw: 128, pricingMode: 'unit' },
+  { vendorId: 'v_m_01', skuId: 'wp_pork_01', skuName: 'Okinawa Maimonton Pork Belly (冲绳玫瑰黑豚去皮五花肉) 300g', abstractTerm: ['pork belly', '五花肉', '猪肉', 'pork'], unitWeight: 300, priceRaw: 128, pricingMode: 'unit' },
   { vendorId: 'v_m_01', skuId: 'wp_crab_01', skuName: 'Live Australian Mud Crab (澳洲鲜活青蟹) ~800g', abstractTerm: ['crab', '蟹'], unitWeight: 800, priceRaw: 580, pricingMode: 'unit' },
   { vendorId: 'v_m_01', skuId: 'wp_fishmaw_01', skuName: 'Premium Dried Fish Maw (深海顶级野生花胶) 50g', abstractTerm: ['fish maw', '花胶'], unitWeight: 50, priceRaw: 450, pricingMode: 'unit' },
   { vendorId: 'v_m_01', skuId: 'wp_chicken_01', skuName: 'French Ping Yuen Chicken (新界平原走地鸡) 1.2kg', abstractTerm: ['chicken', '鸡'], unitWeight: 1200, priceRaw: 220, pricingMode: 'unit' },
-  { vendorId: 'v_m_01', skuId: 'wp_beef_01', skuName: 'Aus Wagyu Ribeye MB8+ (澳洲和牛西冷MB8+) 250g', abstractTerm: ['beef', '牛', 'steak', '肉'], unitWeight: 250, priceRaw: 380, pricingMode: 'unit' },
+  { vendorId: 'v_m_01', skuId: 'wp_beef_01', skuName: 'Aus Wagyu Ribeye MB8+ (澳洲和牛西冷MB8+) 250g', abstractTerm: ['beef', '牛肉', '牛柳', 'steak', '和牛', 'wagyu'], unitWeight: 250, priceRaw: 380, pricingMode: 'unit' },
   
   // PARKnSHOP (v_m_05)
-  { vendorId: 'v_m_05', skuId: 'pns_pork_01', skuName: 'Frozen Pork Belly Strips (冷冻猪五花肉条) 400g', abstractTerm: ['pork belly', '五花肉', '肉'], unitWeight: 400, priceRaw: 45, pricingMode: 'unit' },
-  { vendorId: 'v_m_05', skuId: 'pns_chicken_01', skuName: 'Chilled Yellow Chicken (冰鲜黄油鸡) 1kg', abstractTerm: ['走地鸡'], unitWeight: 1000, priceRaw: 68, pricingMode: 'unit' },
-  { vendorId: 'v_m_05', skuId: 'pns_chicken_02', skuName: 'Fresh Old Hen (散养清远老母鸡) 1.2kg', abstractTerm: ['老母鸡', 'chicken', '鸡'], unitWeight: 1200, priceRaw: 98, pricingMode: 'unit' },
+  { vendorId: 'v_m_05', skuId: 'pns_pork_01', skuName: 'Frozen Pork Belly Strips (冷冻猪五花肉条) 400g', abstractTerm: ['pork belly', '五花肉', '猪肉', 'pork'], unitWeight: 400, priceRaw: 45, pricingMode: 'unit' },
+  { vendorId: 'v_m_05', skuId: 'pns_chicken_01', skuName: 'Chilled Yellow Chicken (冰鲜黄油鸡) 1kg', abstractTerm: ['走地鸡', 'chicken thigh', '鸡腿', '鸡胸', 'chicken breast'], unitWeight: 1000, priceRaw: 68, pricingMode: 'unit' },
+  { vendorId: 'v_m_05', skuId: 'pns_chicken_02', skuName: 'Fresh Old Hen (散养清远老母鸡) 1.2kg', abstractTerm: ['老母鸡', 'chicken', '鸡', 'poultry'], unitWeight: 1200, priceRaw: 98, pricingMode: 'unit' },
+  { vendorId: 'v_m_05', skuId: 'pns_duck_01', skuName: 'Chilled Duck (冰鲜光鸭) 1.5kg', abstractTerm: ['duck', '鸭', '鸭肉', '鸭腿', '鸭胸'], unitWeight: 1500, priceRaw: 88, pricingMode: 'unit' },
+  { vendorId: 'v_m_05', skuId: 'pns_egg_01', skuName: 'Fresh Eggs (新鲜鸡蛋) 12pcs', abstractTerm: ['egg', '鸡蛋', '蛋', 'eggs'], unitWeight: 600, priceRaw: 28, pricingMode: 'unit' },
+  { vendorId: 'v_m_05', skuId: 'pns_pork_rib_01', skuName: 'Pork Spare Ribs (猪排骨) 500g', abstractTerm: ['pork ribs', '排骨', '猪排'], unitWeight: 500, priceRaw: 52, pricingMode: 'unit' },
+  { vendorId: 'v_m_05', skuId: 'pns_lamb_01', skuName: 'Sliced Lamb (羊肉片) 200g', abstractTerm: ['lamb', '羊肉', 'mutton'], unitWeight: 200, priceRaw: 45, pricingMode: 'unit' },
+  { vendorId: 'v_m_05', skuId: 'pns_tofu_01', skuName: 'Silken Tofu (嫩豆腐) 300g', abstractTerm: ['tofu', '豆腐', '嫩豆腐', '老豆腐'], unitWeight: 300, priceRaw: 12, pricingMode: 'unit' },
+  { vendorId: 'v_m_05', skuId: 'pns_potato_01', skuName: 'Fresh Potatoes (新鲜土豆) 1kg', abstractTerm: ['potato', '土豆', '马铃薯'], unitWeight: 1000, priceRaw: 15, pricingMode: 'unit' },
+  { vendorId: 'v_m_05', skuId: 'pns_lotus_01', skuName: 'Fresh Lotus Root (新鲜莲藕) 500g', abstractTerm: ['lotus root', '莲藕', '藕'], unitWeight: 500, priceRaw: 18, pricingMode: 'unit' },
+  { vendorId: 'v_m_05', skuId: 'pns_tomato_01', skuName: 'Fresh Tomatoes (新鲜番茄) 500g', abstractTerm: ['tomato', '番茄', '西红柿'], unitWeight: 500, priceRaw: 14, pricingMode: 'unit' },
+  { vendorId: 'v_m_05', skuId: 'pns_mushroom_01', skuName: 'Fresh Shiitake Mushrooms (鲜香菇) 200g', abstractTerm: ['mushroom', '香菇', '蘑菇', '菌菇'], unitWeight: 200, priceRaw: 22, pricingMode: 'unit' },
   
   // Eat FRESH (v_p_01)
   { vendorId: 'v_p_01', skuId: 'ef_leek_01', skuName: 'Organic Baby Leeks (本地有机幼青蒜) 150g', abstractTerm: ['leeks', '蒜苗', '蒜'], unitWeight: 150, priceRaw: 38, pricingMode: 'unit' },

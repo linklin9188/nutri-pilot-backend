@@ -759,6 +759,10 @@ export function useWeeklyMenu() {
 
         if (!rawPool || cancelled) { setLoading(false); return; }
 
+        // Keyword safety nets for avoid options where DB tags may be missing
+        const DAIRY_KEYWORDS = ['芝士', '奶酪', '奶油', '黄油', '牛奶', '乳酪', 'cheese', 'cream', 'butter', 'milk', 'dairy'];
+        const avoidDairy = localPrefs.avoidTags.includes('dairy') || localPrefs.avoidTags.includes('milk');
+
         // Apply hard filters from user prefs
         const pool = rawPool.filter(dish => {
           // Tag exclusion
@@ -769,6 +773,11 @@ export function useWeeklyMenu() {
           // Ingredient exclusion
           if (localPrefs.avoidIngredients.length > 0 && dish.main_ingredient) {
             if (localPrefs.avoidIngredients.includes(dish.main_ingredient)) return false;
+          }
+          // Dairy keyword safety net (catches dishes missing the dairy tag in DB)
+          if (avoidDairy) {
+            const titleText = ((dish.title_zh ?? '') + ' ' + (dish.title_en ?? '') + ' ' + (dish.description_zh ?? '')).toLowerCase();
+            if (DAIRY_KEYWORDS.some(kw => titleText.includes(kw.toLowerCase()))) return false;
           }
           return true;
         });

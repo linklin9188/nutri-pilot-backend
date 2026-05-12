@@ -51,10 +51,12 @@ const AVOID_OPTIONS = [
 ];
 
 const HEALTH_OPTIONS = [
-  { value: "none", label: "没有特殊情况" },
-  { value: "hypertension", label: "高血压" },
-  { value: "diabetes", label: "糖尿病" },
-  { value: "gout", label: "痛风" },
+  { value: "none",               label: "没有特殊情况" },
+  { value: "hypertension",       label: "高血压" },
+  { value: "diabetes",           label: "糖尿病" },
+  { value: "gout",               label: "痛风" },
+  { value: "low_blood_pressure", label: "低血压" },
+  { value: "anemia",             label: "贫血/补气血" },
 ];
 
 const HOMETOWN_OPTIONS = [

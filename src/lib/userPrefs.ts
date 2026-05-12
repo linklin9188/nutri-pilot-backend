@@ -77,6 +77,8 @@ export function resolveHealthFilters(conditions: string[]): {
     avoidIngredients.push(...GOUT_AVOID_INGREDIENTS);
     avoidHighPurine = true;
   }
+  // low_blood_pressure & anemia: no hard ingredient blocks, but steer toward nourishing dishes
+  // (scored via dietaryGoal preference; no exclusions needed)
   return { avoidTags, avoidIngredients, preferLowSodium, preferLowSugar, avoidHighPurine };
 }
 

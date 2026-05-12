@@ -58,10 +58,12 @@ const QUESTIONS = [
     sub: "AI 会自动优化菜品选择，过滤不适合的食材",
     multi: true,
     options: [
-      { id: "none",         label: "没有特殊情况", icon: "✅" },
-      { id: "hypertension", label: "高血压",       icon: "❤️‍🩹" },
-      { id: "diabetes",     label: "糖尿病",       icon: "🩸" },
-      { id: "gout",         label: "痛风",         icon: "🦵" },
+      { id: "none",          label: "没有特殊情况", icon: "✅" },
+      { id: "hypertension",  label: "高血压",       icon: "❤️‍🩹" },
+      { id: "diabetes",      label: "糖尿病",       icon: "🩸" },
+      { id: "gout",          label: "痛风",         icon: "🦵" },
+      { id: "low_blood_pressure", label: "低血压",  icon: "💙" },
+      { id: "anemia",        label: "贫血/补气血",  icon: "🩷" },
     ],
   },
 ] as const;
@@ -122,6 +124,9 @@ export default function QuickSetup() {
     localStorage.setItem("userDiet", prefs.goal as string);
     localStorage.setItem("userSpice", prefs.spice as string);
     localStorage.setItem("userAvoid", (prefs.avoid as string[]).join(","));
+    // Set family defaults if not already configured
+    if (!localStorage.getItem("nutri_adults")) localStorage.setItem("nutri_adults", "2");
+    if (!localStorage.getItem("nutri_kids"))   localStorage.setItem("nutri_kids",   "0");
     // Notify hooks that preferences changed
     window.dispatchEvent(new Event("nutri-prefs-changed"));
     navigate("/");
