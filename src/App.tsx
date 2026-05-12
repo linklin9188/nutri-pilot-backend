@@ -22,62 +22,6 @@ import SignIn from './pages/SignIn';
 import { LanguageProvider } from './contexts/LanguageContext';
 import { supabase } from './lib/supabase';
 
-// ── Dev-only role switcher (localhost only) ───────────────────────────────────
-const IS_DEV = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-
-function DevRoleSwitcher() {
-  const navigate = useNavigate();
-  const [role, setRole] = useState(localStorage.getItem("nutri_role") ?? "employer");
-  const [open, setOpen] = useState(false);
-
-  if (!IS_DEV) return null;
-
-  function switchTo(r: string) {
-    localStorage.setItem("nutri_role", r);
-    setRole(r);
-    setOpen(false);
-    navigate(r === "helper" ? "/helper" : "/");
-  }
-
-  return (
-    <div style={{ position: "fixed", bottom: 80, right: 16, zIndex: 9999 }}>
-      {open && (
-        <div style={{
-          position: "absolute", bottom: 44, right: 0,
-          background: "#1a1a1a", border: "1px solid rgba(255,255,255,0.12)",
-          borderRadius: 14, padding: "6px 4px", minWidth: 140,
-          boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
-        }}>
-          {["employer", "helper"].map(r => (
-            <button key={r} onClick={() => switchTo(r)}
-              style={{
-                display: "block", width: "100%", textAlign: "left",
-                padding: "9px 14px", fontSize: 13, fontWeight: 600,
-                color: role === r ? "#f7971e" : "rgba(255,255,255,0.75)",
-                background: role === r ? "rgba(247,151,30,0.12)" : "transparent",
-                border: "none", borderRadius: 10, cursor: "pointer",
-              }}>
-              {r === "employer" ? "👔 雇主" : "🧹 工人"}
-              {role === r && " ✓"}
-            </button>
-          ))}
-        </div>
-      )}
-      <button onClick={() => setOpen(v => !v)}
-        title="Dev: switch role"
-        style={{
-          width: 36, height: 36, borderRadius: "50%",
-          background: role === "employer" ? "#f7971e" : "#25D366",
-          border: "2px solid rgba(255,255,255,0.25)",
-          color: "white", fontSize: 16, cursor: "pointer",
-          boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-        }}>
-        {role === "employer" ? "👔" : "🧹"}
-      </button>
-    </div>
-  );
-}
 
 // Smart entry point:
 // - Helper role → /helper
@@ -122,7 +66,6 @@ function AppShell() {
 
   return (
     <>
-    <DevRoleSwitcher />
     <Routes>
       <Route path="/" element={<RootRedirect />} />
       <Route path="/setup" element={<QuickSetup />} />

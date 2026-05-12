@@ -599,6 +599,45 @@ export default function Settings() {
             </div>
           </div>
 
+          {/* ── Role switcher ── */}
+          {(() => {
+            const currentRole = localStorage.getItem("nutri_role") ?? "employer";
+            function switchRole(r: string) {
+              localStorage.setItem("nutri_role", r);
+              navigate(r === "helper" ? "/helper" : "/");
+            }
+            return (
+              <div className="bg-white border border-black/5 rounded-[20px] p-4 shadow-[0_4px_20px_rgba(0,0,0,0.04)]">
+                <p className="text-[12px] text-secondary font-semibold mb-3 uppercase tracking-wider">切换身份</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { role: "employer", label: "雇主", sub: "管理菜单 · 采购", icon: "👔" },
+                    { role: "helper",   label: "工人",  sub: "备菜 · 做饭",    icon: "🧑‍🍳" },
+                  ].map(opt => (
+                    <button
+                      key={opt.role}
+                      onClick={() => switchRole(opt.role)}
+                      className={`flex flex-col items-center gap-1.5 py-4 rounded-2xl border-2 transition-all active:scale-95 ${
+                        currentRole === opt.role
+                          ? "border-primary bg-primary/5"
+                          : "border-black/8 bg-gray-50"
+                      }`}
+                    >
+                      <span className="text-2xl">{opt.icon}</span>
+                      <span className={`text-[14px] font-black ${currentRole === opt.role ? "text-primary" : "text-gray-700"}`}>
+                        {opt.label}
+                      </span>
+                      <span className="text-[11px] text-gray-400">{opt.sub}</span>
+                      {currentRole === opt.role && (
+                        <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full">当前</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
           {/* ── Sign out ── */}
           <button
             onClick={() => {
