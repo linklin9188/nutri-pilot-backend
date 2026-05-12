@@ -39,7 +39,7 @@ const AVOID_OPTION_MAP: Record<string, {
   vegetarianOnly?: boolean;
   label: string;
 }> = {
-  seafood:  { tags: ['seafood'],              label: '不吃海鲜' },
+  seafood:  { tags: ['seafood'], ingredients: ['seafood', 'fish', 'shrimp', 'crab', 'shellfish', 'squid', 'scallop', 'clam', 'lobster', 'salmon', 'tuna', 'cod', 'hairtail', 'seabass', 'oyster'], label: '不吃海鲜' },
   veggie:   { vegetarianOnly: true,           label: '素食' },
   cilantro: { tags: ['cilantro'],             label: '不吃香菜' },
   onion:    { tags: ['onion', 'garlic'],      label: '不吃葱蒜' },
