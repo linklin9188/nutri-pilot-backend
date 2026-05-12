@@ -158,6 +158,31 @@ export default function Home() {
   );
   const { weeklyMenu } = useWeeklyMenu();
 
+  // ── Who's eating today ───────────────────────────────────────────────────────
+  const [allMembers] = useState<{ id: string; name: string; lifeStage: string }[]>(() => {
+    try { return JSON.parse(localStorage.getItem('nutri_family_members') || '[]'); } catch { return []; }
+  });
+  const [eatingIds, setEatingIds] = useState<string[]>(() => {
+    const all: any[] = (() => { try { return JSON.parse(localStorage.getItem('nutri_family_members') || '[]'); } catch { return []; } })();
+    try {
+      const saved = JSON.parse(localStorage.getItem('nutri_eating_today') || 'null');
+      if (Array.isArray(saved) && saved.length > 0) return saved;
+    } catch {}
+    return all.map((m: any) => m.id);
+  });
+
+  function toggleEatingMember(id: string) {
+    setEatingIds(prev => {
+      const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
+      if (next.length === 0) return prev; // at least 1 must be selected
+      localStorage.setItem('nutri_eating_today', JSON.stringify(next));
+      window.dispatchEvent(new Event('nutri-prefs-changed')); // re-triggers menu generation
+      return next;
+    });
+  }
+
+  const MEMBER_COLORS = ['bg-orange-400','bg-blue-400','bg-emerald-400','bg-violet-400','bg-rose-400','bg-amber-400'];
+
   const [menuSwaps, setMenuSwaps] = useState<Record<number, any>>({});
   const [isSwapOpen, setIsSwapOpen] = useState(false);
   const [swappingDishIndex, setSwappingDishIndex] = useState<number | null>(null);
@@ -346,434 +371,330 @@ export default function Home() {
     <div className="min-h-screen max-w-md mx-auto relative" style={{ background: "#f5f5f7", paddingBottom: 100 }}>
 
       {/* ── Header ──────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-50 bg-white/85 backdrop-blur-xl border-b border-black/5"
+      <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-xl border-b border-black/5"
         style={{ paddingTop: "env(safe-area-inset-top, 44px)" }}>
-        <div className="flex items-center justify-between px-5 py-4">
+        <div className="flex items-center justify-between px-5 py-3">
           <div className="flex-1 min-w-0 pr-2">
-            {/* Greeting + date */}
-            <p style={{ fontSize: 12, color: "rgba(0,0,0,0.38)" }}>{greeting} · {dateLabel}</p>
-            {/* Solar term + weather badges */}
-            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+            <p style={{ fontSize: 11, color: "rgba(0,0,0,0.35)" }}>{greeting} · {dateLabel}</p>
+            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold"
                 style={{ background: 'rgba(255,90,31,0.10)', color: '#FF5A1F' }}>
                 {solarTerm.icon} {solarTerm.name}
               </span>
               {weather && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold"
-                  style={{ background: 'rgba(0,0,0,0.05)', color: '#555' }}>
-                  {weather.temp}°C · {weather.label} · 湿度{weather.humidity}%
+                <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.4)', fontWeight: 500 }}>
+                  {weather.temp}°C · {weather.label}
                 </span>
               )}
             </div>
-            {/* Dynamic dietary tip */}
-            <p className="mt-1 font-semibold leading-snug" style={{ fontSize: 13, color: '#1a1a1a' }}>
-              {tip}
-            </p>
+            <p className="mt-0.5 font-semibold leading-tight" style={{ fontSize: 12, color: '#555' }}>{tip}</p>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setIsFridgeScanOpen(true)}
-              className="w-10 h-10 rounded-2xl flex items-center justify-center active:scale-90 transition-transform"
-              style={{ background: "rgba(0,0,0,0.06)" }}
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: 20, color: "#555" }}>kitchen</span>
+          <div className="flex items-center gap-2 shrink-0">
+            <button onClick={() => setIsFridgeScanOpen(true)}
+              className="w-9 h-9 rounded-2xl flex items-center justify-center active:scale-90 transition-transform"
+              style={{ background: "rgba(0,0,0,0.06)" }}>
+              <span className="material-symbols-outlined" style={{ fontSize: 18, color: "#555" }}>kitchen</span>
             </button>
-            <button
-              onClick={() => navigate(isLoggedIn ? "/settings" : "/signin")}
-              className="w-10 h-10 rounded-full flex items-center justify-center overflow-hidden active:scale-90 transition-transform"
-              style={{ background: "linear-gradient(135deg, #FF5A1F, #FF9054)" }}
-            >
-              <span className="material-symbols-outlined text-white" style={{ fontSize: 20 }}>person</span>
+            <button onClick={() => navigate(isLoggedIn ? "/settings" : "/signin")}
+              className="w-9 h-9 rounded-full flex items-center justify-center overflow-hidden active:scale-90 transition-transform"
+              style={{ background: "linear-gradient(135deg, #FF5A1F, #FF9054)" }}>
+              <span className="material-symbols-outlined text-white" style={{ fontSize: 18 }}>person</span>
             </button>
           </div>
         </div>
       </header>
 
-      <main className="px-4 pt-4 flex flex-col gap-4">
+      <main className="flex flex-col gap-3 pt-3 pb-4 px-4">
 
-        {/* ── Anonymous strip ──────────────────────────────────── */}
-        {!isLoggedIn && (
-          <div className="rounded-2xl px-4 py-3 flex items-center gap-3"
-            style={{ background: "rgba(255,90,31,0.06)", border: "1.5px dashed rgba(255,90,31,0.3)" }}>
-            <span style={{ fontSize: 18 }}>🎁</span>
-            <div className="flex-1 min-w-0">
-              <p className="font-semibold" style={{ fontSize: 12, color: "#FF5A1F" }}>访客体验 · 3天免费</p>
-              <p className="truncate" style={{ fontSize: 11, color: "rgba(0,0,0,0.4)" }}>登录解锁家庭健康档案与工人协作</p>
+        {/* ① TODAY'S MENU — Hero ──────────────────────────────── */}
+        <div className="rounded-3xl bg-white overflow-hidden shadow-sm">
+
+          {/* Meal tab bar */}
+          <div className="flex items-center justify-between px-4 pt-4 pb-2">
+            <div className="flex gap-1.5">
+              {(["早餐", "午餐", "晚餐"] as const).map(m => (
+                <button key={m} onClick={() => setMealTime(m)}
+                  className="px-3 py-1.5 rounded-xl font-bold transition-all active:scale-95 text-[13px]"
+                  style={{
+                    background: mealTime === m ? "#FF5A1F" : "rgba(0,0,0,0.05)",
+                    color: mealTime === m ? "white" : "rgba(0,0,0,0.4)",
+                  }}>
+                  {m}
+                </button>
+              ))}
             </div>
-            <button onClick={() => navigate("/signin")}
-              className="px-3 py-1.5 rounded-full font-bold text-white shrink-0 active:scale-95"
-              style={{ fontSize: 12, background: "#FF5A1F" }}>
-              登录
+            <button onClick={() => navigate("/weekly")}
+              style={{ fontSize: 12, color: "#FF5A1F", fontWeight: 700 }}>
+              本周菜单 →
             </button>
           </div>
-        )}
 
-        {/* ── Health Dashboard Hero ────────────────────────────── */}
-        {healthMetrics ? (
-          <div className="rounded-3xl overflow-hidden"
-            style={{ background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 55%, #0f3460 100%)" }}>
-            <div className="px-5 pt-5 pb-5">
-              <div className="flex items-start justify-between mb-3">
-                <div>
-                  <p style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", letterSpacing: "0.08em" }}>
-                    本周家庭营养评分
-                  </p>
-                  <div className="flex items-end gap-2 mt-1">
-                    <span className="font-black" style={{ fontSize: 52, color: "white", lineHeight: 1 }}>
-                      {healthMetrics.score}
+          {/* Who's eating today — only shown when 2+ family members exist */}
+          {allMembers.length >= 2 && (
+            <div className="px-4 pb-3 flex items-center gap-2 overflow-x-auto no-scrollbar">
+              <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.35)', fontWeight: 600, whiteSpace: 'nowrap' }}>今天谁在家</span>
+              {allMembers.map((m, idx) => {
+                const sel = eatingIds.includes(m.id);
+                return (
+                  <button
+                    key={m.id}
+                    onClick={() => toggleEatingMember(m.id)}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[12px] font-bold border-2 transition-all active:scale-95 shrink-0 ${
+                      sel ? 'border-[#FF5A1F] bg-[rgba(255,90,31,0.08)]' : 'border-black/10 bg-black/[0.03]'
+                    }`}
+                    style={{ color: sel ? '#FF5A1F' : 'rgba(0,0,0,0.35)' }}
+                  >
+                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-white font-black ${MEMBER_COLORS[idx % MEMBER_COLORS.length]}`}
+                      style={{ fontSize: 10, opacity: sel ? 1 : 0.45 }}>
+                      {(m.name || '?')[0]}
                     </span>
-                    <span style={{ fontSize: 18, color: "rgba(255,255,255,0.35)", marginBottom: 7 }}>/100</span>
-                    <span className="px-2 py-0.5 rounded-full font-bold ml-1"
-                      style={{
-                        fontSize: 11, marginBottom: 5,
-                        background: healthMetrics.score >= 80
-                          ? "rgba(52,211,153,0.22)"
-                          : healthMetrics.score >= 65
-                          ? "rgba(251,191,36,0.22)"
-                          : "rgba(239,68,68,0.22)",
-                        color: healthMetrics.score >= 80 ? "#34d399" : healthMetrics.score >= 65 ? "#fbbf24" : "#f87171",
-                      }}>
-                      {healthMetrics.score >= 80 ? "优秀" : healthMetrics.score >= 65 ? "良好" : "待改善"}
-                    </span>
+                    {m.name}
+                    {m.lifeStage === '儿童' && sel && (
+                      <span style={{ fontSize: 10 }}>🧒</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Dish list */}
+          <div className="px-4 pb-2">
+            {dishesLoading ? (
+              <div className="flex flex-col gap-3 py-2">
+                {[1, 2, 3].map(i => (
+                  <div key={i} className="flex items-center gap-3 animate-pulse">
+                    <div className="w-16 h-16 rounded-2xl shrink-0" style={{ background: "rgba(0,0,0,0.05)" }} />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-4 rounded-full w-2/3" style={{ background: "rgba(0,0,0,0.05)" }} />
+                      <div className="h-3 rounded-full w-1/3" style={{ background: "rgba(0,0,0,0.05)" }} />
+                    </div>
                   </div>
-                </div>
-                <div className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0"
-                  style={{ background: "rgba(255,255,255,0.08)" }}>
-                  <span className="material-symbols-outlined text-white"
-                    style={{ fontSize: 30, fontVariationSettings: "'FILL' 1" }}>favorite</span>
+                ))}
+              </div>
+            ) : displayMenu.length > 0 ? (
+              <div className="flex flex-col divide-y divide-black/[0.04]">
+                {displayMenu.slice(0, 5).map((dish: any, idx: number) => (
+                  <div key={idx} className="flex items-center gap-3 py-3">
+                    <div className="w-16 h-16 rounded-2xl overflow-hidden shrink-0"
+                      style={{ background: "rgba(0,0,0,0.05)" }}>
+                      <img
+                        src={dish.img || dish.image_url || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=160&h=160&fit=crop"}
+                        alt={dish.title_zh || dish.title}
+                        className="w-full h-full object-cover"
+                        onError={e => { (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=160&h=160&fit=crop"; }}
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold truncate" style={{ fontSize: 16, color: "#1a1a1a" }}>
+                        {dish.title_zh || dish.title}
+                      </p>
+                      <p className="truncate mt-0.5" style={{ fontSize: 12, color: "rgba(0,0,0,0.35)" }}>
+                        {dish.origin_cuisine ? dish.origin_cuisine.replace('_',' ') : (dish.desc || dish.type || '家常菜')}
+                      </p>
+                    </div>
+                    <button onClick={() => openSwapDrawer(idx)}
+                      className="w-8 h-8 rounded-full flex items-center justify-center active:scale-90 shrink-0"
+                      style={{ background: "rgba(0,0,0,0.05)" }}>
+                      <span className="material-symbols-outlined" style={{ fontSize: 17, color: "rgba(0,0,0,0.35)" }}>sync_alt</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="py-10 flex flex-col items-center gap-3">
+                <span className="material-symbols-outlined" style={{ fontSize: 40, color: "rgba(0,0,0,0.1)" }}>restaurant</span>
+                <p style={{ fontSize: 13, color: "rgba(0,0,0,0.35)", textAlign: 'center', lineHeight: 1.6 }}>
+                  暂无{mealTime}菜单<br />先生成本周菜单
+                </p>
+                <button onClick={() => navigate("/weekly")}
+                  className="px-5 py-2 rounded-full font-bold text-white active:scale-95"
+                  style={{ fontSize: 13, background: "#FF5A1F" }}>
+                  生成菜单
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Action row — prep / cook / fridge */}
+          {displayMenu.length > 0 && (
+            <div className="flex border-t border-black/[0.05]">
+              {[
+                { label: "备菜", icon: "menu_book", color: "#6C5CE7", bg: "rgba(108,92,231,0.07)",
+                  action: () => { localStorage.setItem("generatedMenu", JSON.stringify(displayMenu)); navigate("/prep"); } },
+                { label: "烹饪", icon: "skillet", color: "#0077B6", bg: "rgba(0,119,182,0.07)",
+                  action: () => { localStorage.setItem("generatedMenu", JSON.stringify(displayMenu)); navigate("/cook"); } },
+                { label: "扫冰箱", icon: "kitchen", color: "#059669", bg: "rgba(5,150,105,0.07)",
+                  action: () => setIsFridgeScanOpen(true) },
+              ].map((item, i) => (
+                <button key={i} onClick={item.action}
+                  className="flex-1 flex flex-col items-center gap-1 py-3 active:opacity-70 transition-opacity"
+                  style={{ background: item.bg, borderRight: i < 2 ? '1px solid rgba(0,0,0,0.04)' : 'none' }}>
+                  <span className="material-symbols-outlined" style={{ fontSize: 20, color: item.color }}>{item.icon}</span>
+                  <span className="font-semibold" style={{ fontSize: 11, color: item.color }}>{item.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ② PROCUREMENT — Compact action card ───────────────── */}
+        <div className="rounded-2xl bg-white px-4 py-3.5 shadow-sm flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0"
+            style={{ background: "rgba(255,90,31,0.1)" }}>
+            <span className="material-symbols-outlined" style={{ fontSize: 20, color: "#FF5A1F", fontVariationSettings: "'FILL' 1" }}>
+              shopping_cart
+            </span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-bold" style={{ fontSize: 14, color: "#1a1a1a" }}>本周采购清单</p>
+            <p style={{ fontSize: 11, color: "rgba(0,0,0,0.38)" }}>
+              {hasMenu ? "菜单已就绪，查看所需食材" : "先生成本周菜单"}
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              if (hasMenu) {
+                localStorage.setItem("generatedMenu", JSON.stringify(displayMenu));
+                localStorage.setItem("effectivePeople", JSON.stringify(todayAdults + todayKids * 0.5));
+                navigate("/verify");
+              } else {
+                navigate("/weekly");
+              }
+            }}
+            className="px-4 py-2 rounded-xl font-bold text-white shrink-0 active:scale-95 transition-all"
+            style={{ fontSize: 13, background: hasMenu ? "#FF5A1F" : "rgba(0,0,0,0.15)" }}>
+            {hasMenu ? "查看" : "生成"}
+          </button>
+        </div>
+
+        {/* ③ HELPER STATUS — Single row ───────────────────────── */}
+        <div className="rounded-2xl bg-white px-4 py-3.5 shadow-sm flex items-center gap-3">
+          {helperName ? (
+            <>
+              <div className="w-10 h-10 rounded-full flex items-center justify-center font-black text-white shrink-0"
+                style={{ background: "linear-gradient(135deg, #25D366, #128C7E)", fontSize: 16 }}>
+                {helperName.charAt(0).toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-bold truncate" style={{ fontSize: 14, color: "#1a1a1a" }}>{helperName}</p>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                  <p style={{ fontSize: 11, color: "rgba(0,0,0,0.38)" }}>已连接</p>
                 </div>
               </div>
+              <button onClick={() => navigate("/community?view=employer")}
+                className="px-3 py-1.5 rounded-xl font-bold shrink-0 active:scale-95"
+                style={{ fontSize: 12, background: "rgba(255,90,31,0.08)", color: "#FF5A1F" }}>
+                点赞 👑
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center shrink-0 text-xl">👩</div>
+              <div className="flex-1 min-w-0">
+                <p className="font-bold" style={{ fontSize: 14, color: "#1a1a1a" }}>还未绑定工人</p>
+                {inviteCode ? (
+                  <p style={{ fontSize: 11, color: "rgba(0,0,0,0.38)" }}>邀请码：<span className="font-black tracking-widest text-emerald-600">{inviteCode}</span></p>
+                ) : (
+                  <p style={{ fontSize: 11, color: "rgba(0,0,0,0.38)" }}>工人输入邀请码加入</p>
+                )}
+              </div>
+              {inviteCode && (
+                <button onClick={() => {
+                  navigator.clipboard.writeText(inviteCode).then(() => {
+                    setInviteCopied(true);
+                    setTimeout(() => setInviteCopied(false), 2000);
+                  });
+                }}
+                  className="px-3 py-1.5 rounded-xl font-bold text-white shrink-0 active:scale-95 transition-all"
+                  style={{ fontSize: 12, background: inviteCopied ? "#25D366" : "#128C7E" }}>
+                  {inviteCopied ? "已复制 ✓" : "复制码"}
+                </button>
+              )}
+            </>
+          )}
+        </div>
 
-              {/* Score bar */}
-              <div className="h-1.5 rounded-full mb-4" style={{ background: "rgba(255,255,255,0.1)" }}>
-                <div className="h-full rounded-full transition-all duration-700"
-                  style={{
+        {/* ④ NUTRITION SCORE — Compact bottom card ──────────── */}
+        {healthMetrics && (
+          <div className="rounded-2xl bg-white px-4 py-3.5 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="flex items-baseline gap-1 shrink-0">
+                <span className="font-black" style={{ fontSize: 32, color: "#1a1a1a", lineHeight: 1 }}>
+                  {healthMetrics.score}
+                </span>
+                <span style={{ fontSize: 12, color: "rgba(0,0,0,0.3)" }}>/100</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <span className="font-semibold" style={{ fontSize: 12, color: "#1a1a1a" }}>本周营养评分</span>
+                  <span className="px-1.5 py-0.5 rounded-full font-bold text-[10px]"
+                    style={{
+                      background: healthMetrics.score >= 80 ? "rgba(52,211,153,0.15)" : "rgba(251,191,36,0.15)",
+                      color: healthMetrics.score >= 80 ? "#059669" : "#d97706",
+                    }}>
+                    {healthMetrics.score >= 80 ? "优秀" : healthMetrics.score >= 65 ? "良好" : "待改善"}
+                  </span>
+                </div>
+                <div className="w-full h-1.5 rounded-full" style={{ background: "rgba(0,0,0,0.06)" }}>
+                  <div className="h-full rounded-full" style={{
                     width: `${healthMetrics.score}%`,
                     background: "linear-gradient(90deg, #34d399, #10b981)",
+                    transition: "width 0.6s ease",
                   }} />
+                </div>
               </div>
-
-              {/* Compliance pills */}
-              <div className="flex gap-2">
+              <div className="flex gap-2 shrink-0">
                 {[
-                  { label: "低盐", days: healthMetrics.lowSalt, ok: healthMetrics.lowSalt >= 5 },
-                  { label: "低糖", days: healthMetrics.lowSugar, ok: healthMetrics.lowSugar >= 5 },
-                  { label: "低嘌呤", days: healthMetrics.lowPurine, ok: healthMetrics.lowPurine >= 5 },
+                  { label: "低盐", days: healthMetrics.lowSalt },
+                  { label: "低糖", days: healthMetrics.lowSugar },
+                  { label: "低嘌呤", days: healthMetrics.lowPurine },
                 ].map(m => (
-                  <div key={m.label} className="flex-1 rounded-2xl px-3 py-2.5"
-                    style={{ background: "rgba(255,255,255,0.07)" }}>
-                    <div className="flex items-center gap-1 mb-1">
-                      <span style={{ fontSize: 10, color: m.ok ? "#34d399" : "#fbbf24" }}>{m.ok ? "✓" : "⚠"}</span>
-                      <span style={{ fontSize: 11, color: "rgba(255,255,255,0.55)" }}>{m.label}</span>
-                    </div>
-                    <div className="flex items-baseline gap-0.5">
-                      <span className="font-black" style={{ fontSize: 18, color: "white" }}>{m.days}</span>
-                      <span style={{ fontSize: 10, color: "rgba(255,255,255,0.3)" }}>/7天</span>
-                    </div>
+                  <div key={m.label} className="flex flex-col items-center">
+                    <span className="font-black" style={{ fontSize: 13, color: m.days >= 5 ? "#059669" : "#d97706" }}>
+                      {m.days}<span style={{ fontSize: 9, fontWeight: 500, color: "rgba(0,0,0,0.3)" }}>天</span>
+                    </span>
+                    <span style={{ fontSize: 9, color: "rgba(0,0,0,0.35)" }}>{m.label}</span>
                   </div>
                 ))}
               </div>
             </div>
           </div>
-        ) : (
-          /* Day 1: Setup prompt */
-          <div className="rounded-3xl p-5"
-            style={{ background: "linear-gradient(135deg, #FF5A1F 0%, #FF8C54 100%)" }}>
-            <p style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", marginBottom: 6 }}>
-              开始您的家庭健康饮食计划
+        )}
+
+        {/* Day 1 CTA — only when no menu and no metrics */}
+        {!healthMetrics && !hasMenu && (
+          <div className="rounded-2xl p-5" style={{ background: "linear-gradient(135deg, #FF5A1F, #FF8C54)" }}>
+            <h2 className="font-black text-white mb-1" style={{ fontSize: 20 }}>每天不再烦恼"吃什么"</h2>
+            <p style={{ fontSize: 13, color: "rgba(255,255,255,0.8)", lineHeight: 1.5, marginBottom: 14 }}>
+              AI 根据家人健康状况，智能规划一周菜单
             </p>
-            <h2 className="font-black text-white" style={{ fontSize: 22, lineHeight: 1.2, marginBottom: 8 }}>
-              每天不再<br />烦恼"吃什么"
-            </h2>
-            <p style={{ fontSize: 13, color: "rgba(255,255,255,0.75)", lineHeight: 1.55, marginBottom: 18 }}>
-              AI 根据家人健康状况，智能规划低盐低糖低嘌呤的一周菜单
-            </p>
-            <button
-              onClick={() => navigate("/weekly")}
-              className="w-full py-3.5 rounded-2xl font-bold active:scale-[0.98] transition-all"
-              style={{ fontSize: 15, background: "white", color: "#FF5A1F" }}>
+            <button onClick={() => navigate("/weekly")}
+              className="w-full py-3 rounded-2xl font-bold active:scale-[0.98] transition-all"
+              style={{ fontSize: 14, background: "white", color: "#FF5A1F" }}>
               生成本周菜单 →
             </button>
           </div>
         )}
 
-        {/* ── Procurement Card ─────────────────────────────────── */}
-        <div className="rounded-3xl bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                style={{ background: "linear-gradient(135deg, #FF5A1F, #FF9054)" }}>
-                <span className="material-symbols-outlined text-white"
-                  style={{ fontSize: 18, fontVariationSettings: "'FILL' 1" }}>shopping_cart</span>
-              </div>
-              <span className="font-bold" style={{ fontSize: 16, color: "#1a1a1a" }}>本周采购清单</span>
+        {/* Login CTA */}
+        {!isLoggedIn && (
+          <div className="rounded-2xl px-4 py-3 flex items-center gap-3"
+            style={{ background: "rgba(255,90,31,0.05)", border: "1.5px dashed rgba(255,90,31,0.25)" }}>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold" style={{ fontSize: 13, color: "#FF5A1F" }}>登录解锁完整功能</p>
+              <p style={{ fontSize: 11, color: "rgba(0,0,0,0.38)" }}>家庭档案 · 工人协作 · 菜单同步</p>
             </div>
-            {hasMenu && (
-              <span className="px-2 py-1 rounded-full font-semibold"
-                style={{ fontSize: 10, background: "rgba(52,211,153,0.12)", color: "#059669" }}>
-                菜单已生成
-              </span>
-            )}
+            <button onClick={() => navigate("/signin")}
+              className="px-4 py-2 rounded-xl font-bold text-white shrink-0 active:scale-95"
+              style={{ fontSize: 12, background: "#FF5A1F" }}>登录</button>
           </div>
-
-          {hasMenu ? (
-            <>
-              <p style={{ fontSize: 13, color: "rgba(0,0,0,0.42)", lineHeight: 1.55, marginBottom: 12 }}>
-                查看本周所需食材。工人在应用内核对家里已有的，剩余才是需要采购的。
-              </p>
-              <button
-                onClick={() => {
-                  localStorage.setItem("generatedMenu", JSON.stringify(displayMenu));
-                  localStorage.setItem("effectivePeople", JSON.stringify(todayAdults + todayKids * 0.5));
-                  navigate("/verify");
-                }}
-                className="w-full py-3.5 rounded-2xl font-bold text-white flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
-                style={{
-                  fontSize: 15,
-                  background: "linear-gradient(135deg, #FF5A1F, #FF9054)",
-                  boxShadow: "0 6px 20px rgba(255,90,31,0.28)",
-                }}>
-                <span className="material-symbols-outlined" style={{ fontSize: 18 }}>receipt_long</span>
-                查看采购清单
-              </button>
-            </>
-          ) : (
-            <>
-              <p style={{ fontSize: 13, color: "rgba(0,0,0,0.42)", lineHeight: 1.55, marginBottom: 12 }}>
-                先生成本周菜单，AI 自动整理所有食材的采购清单，雇主决定买什么、从哪里买。
-              </p>
-              <button
-                onClick={() => navigate("/weekly")}
-                className="w-full py-3 rounded-2xl font-semibold active:scale-[0.98] transition-all"
-                style={{
-                  fontSize: 14, color: "#FF5A1F",
-                  background: "rgba(255,90,31,0.06)",
-                  border: "1.5px dashed rgba(255,90,31,0.3)",
-                }}>
-                先生成本周菜单 →
-              </button>
-            </>
-          )}
-        </div>
-
-        {/* ── Helper Status Card ───────────────────────────────── */}
-        <div className="rounded-3xl bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                style={{ background: "rgba(37,211,102,0.12)" }}>
-                <span className="material-symbols-outlined"
-                  style={{ fontSize: 18, color: "#25D366", fontVariationSettings: "'FILL' 1" }}>support_agent</span>
-              </div>
-              <span className="font-bold" style={{ fontSize: 16, color: "#1a1a1a" }}>工人状态</span>
-            </div>
-            <button
-              onClick={() => navigate("/community?view=employer")}
-              style={{ fontSize: 12, color: "#FF5A1F", fontWeight: 600 }}>
-              查看社区 →
-            </button>
-          </div>
-
-          {helperName ? (
-            /* Helper linked — show progress */
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center gap-3 px-4 py-3 rounded-2xl"
-                style={{ background: "#f8f8f8" }}>
-                <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white shrink-0"
-                  style={{ background: "linear-gradient(135deg, #25D366, #128C7E)", fontSize: 16 }}>
-                  {helperName.charAt(0).toUpperCase()}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold truncate" style={{ fontSize: 14, color: "#1a1a1a" }}>{helperName}</p>
-                  <p style={{ fontSize: 12, color: "rgba(0,0,0,0.4)" }}>已连接 · 等待任务同步</p>
-                </div>
-                <button
-                  onClick={() => navigate("/community?view=employer")}
-                  className="px-3 py-1.5 rounded-full font-bold text-white shrink-0 active:scale-95"
-                  style={{ fontSize: 11, background: "#FF5A1F" }}>
-                  👑 点赞
-                </button>
-              </div>
-            </div>
-          ) : (
-            /* No helper linked — show invite code */
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center gap-3 px-4 py-3 rounded-2xl" style={{ background: "#f8f8f8" }}>
-                <span style={{ fontSize: 28 }}>👩</span>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold" style={{ fontSize: 14, color: "#1a1a1a" }}>还未绑定工人</p>
-                  <p style={{ fontSize: 12, color: "rgba(0,0,0,0.42)" }}>工人输入邀请码即可加入</p>
-                </div>
-              </div>
-              {inviteCode ? (
-                <div className="flex items-center gap-3 px-4 py-3 rounded-2xl"
-                  style={{ background: "rgba(37,211,102,0.06)", border: "1.5px dashed rgba(37,211,102,0.3)" }}>
-                  <div className="flex-1">
-                    <p style={{ fontSize: 11, color: "rgba(0,0,0,0.4)", marginBottom: 2 }}>工人邀请码</p>
-                    <p className="font-black tracking-[0.18em]" style={{ fontSize: 24, color: "#128C7E", letterSpacing: "0.2em" }}>
-                      {inviteCode}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(inviteCode).then(() => {
-                        setInviteCopied(true);
-                        setTimeout(() => setInviteCopied(false), 2000);
-                      });
-                    }}
-                    className="px-3 py-2 rounded-xl font-bold shrink-0 active:scale-95 transition-all"
-                    style={{ fontSize: 12, background: inviteCopied ? "#25D366" : "#128C7E", color: "white" }}>
-                    {inviteCopied ? "已复制 ✓" : "复制"}
-                  </button>
-                </div>
-              ) : (
-                <div className="h-12 rounded-2xl animate-pulse" style={{ background: "#f0f0f0" }} />
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* ── Today's Menu ─────────────────────────────────────── */}
-        <div className="rounded-3xl bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-bold" style={{ fontSize: 16, color: "#1a1a1a" }}>今日菜单</span>
-              <div className="flex gap-1">
-                {(["早餐", "午餐", "晚餐"] as const).map(m => (
-                  <button
-                    key={m}
-                    onClick={() => setMealTime(m)}
-                    className="px-2.5 py-1 rounded-lg font-semibold transition-all active:scale-95"
-                    style={{
-                      fontSize: 11,
-                      background: mealTime === m ? "#FF5A1F" : "rgba(0,0,0,0.06)",
-                      color: mealTime === m ? "white" : "rgba(0,0,0,0.45)",
-                    }}>
-                    {m}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <button onClick={() => navigate("/weekly")}
-              style={{ fontSize: 12, color: "#FF5A1F", fontWeight: 600, whiteSpace: "nowrap" }}>
-              本周 →
-            </button>
-          </div>
-
-          {dishesLoading ? (
-            <div className="flex flex-col gap-3">
-              {[1, 2, 3].map(i => (
-                <div key={i} className="flex items-center gap-3 animate-pulse">
-                  <div className="w-14 h-14 rounded-2xl shrink-0" style={{ background: "rgba(0,0,0,0.05)" }} />
-                  <div className="flex-1 space-y-2">
-                    <div className="h-4 rounded-full w-2/3" style={{ background: "rgba(0,0,0,0.05)" }} />
-                    <div className="h-3 rounded-full w-1/2" style={{ background: "rgba(0,0,0,0.05)" }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : displayMenu.length > 0 ? (
-            <div className="flex flex-col gap-3">
-              {displayMenu.slice(0, 5).map((dish: any, idx: number) => (
-                <div key={idx} className="flex items-center gap-3">
-                  <div className="w-14 h-14 rounded-2xl overflow-hidden shrink-0"
-                    style={{ background: "rgba(0,0,0,0.05)" }}>
-                    <img
-                      src={dish.img || dish.image_url || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=120&h=120&fit=crop"}
-                      alt={dish.title || dish.title_zh}
-                      className="w-full h-full object-cover"
-                      onError={e => {
-                        (e.target as HTMLImageElement).src =
-                          "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=120&h=120&fit=crop";
-                      }}
-                    />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold truncate" style={{ fontSize: 15, color: "#1a1a1a" }}>
-                      {dish.title_zh || dish.title}
-                    </p>
-                    <p className="truncate" style={{ fontSize: 12, color: "rgba(0,0,0,0.38)" }}>
-                      {dish.desc || dish.type || "家常菜"}
-                    </p>
-                  </div>
-                  <button onClick={() => openSwapDrawer(idx)} className="active:scale-90 transition-transform shrink-0">
-                    <span className="material-symbols-outlined" style={{ fontSize: 20, color: "rgba(0,0,0,0.18)" }}>
-                      swap_horiz
-                    </span>
-                  </button>
-                </div>
-              ))}
-
-              {/* Quick actions below menu */}
-              <div className="flex gap-2 mt-1 pt-3 border-t border-black/5">
-                <button
-                  onClick={() => {
-                    localStorage.setItem("generatedMenu", JSON.stringify(displayMenu));
-                    navigate("/prep");
-                  }}
-                  className="flex-1 py-2.5 rounded-2xl flex items-center justify-center gap-1.5 active:scale-95 transition-all"
-                  style={{ background: "rgba(108,92,231,0.08)" }}>
-                  <span className="material-symbols-outlined" style={{ fontSize: 16, color: "#6C5CE7" }}>menu_book</span>
-                  <span className="font-semibold" style={{ fontSize: 12, color: "#6C5CE7" }}>备菜步骤</span>
-                </button>
-                <button
-                  onClick={() => {
-                    localStorage.setItem("generatedMenu", JSON.stringify(displayMenu));
-                    navigate("/cook");
-                  }}
-                  className="flex-1 py-2.5 rounded-2xl flex items-center justify-center gap-1.5 active:scale-95 transition-all"
-                  style={{ background: "rgba(0,180,216,0.08)" }}>
-                  <span className="material-symbols-outlined" style={{ fontSize: 16, color: "#0077B6" }}>soup_kitchen</span>
-                  <span className="font-semibold" style={{ fontSize: 12, color: "#0077B6" }}>开始烹饪</span>
-                </button>
-                <button
-                  onClick={() => setIsFridgeScanOpen(true)}
-                  className="flex-1 py-2.5 rounded-2xl flex items-center justify-center gap-1.5 active:scale-95 transition-all"
-                  style={{ background: "rgba(16,185,129,0.08)" }}>
-                  <span className="material-symbols-outlined" style={{ fontSize: 16, color: "#059669" }}>kitchen</span>
-                  <span className="font-semibold" style={{ fontSize: 12, color: "#059669" }}>扫冰箱</span>
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="py-8 flex flex-col items-center text-center gap-3">
-              <span className="material-symbols-outlined" style={{ fontSize: 44, color: "rgba(0,0,0,0.12)" }}>
-                restaurant
-              </span>
-              <p style={{ fontSize: 14, color: "rgba(0,0,0,0.38)", lineHeight: 1.5 }}>
-                暂无今日菜单<br />前往生成本周菜单
-              </p>
-              <button
-                onClick={() => navigate("/weekly")}
-                className="px-5 py-2.5 rounded-full font-semibold text-white active:scale-95"
-                style={{ fontSize: 13, background: "linear-gradient(135deg, #FF5A1F, #FF9054)" }}>
-                生成菜单
-              </button>
-            </div>
-          )}
-        </div>
+        )}
 
       </main>
 
-      {/* ── Bottom Tab Bar ───────────────────────────────────────── */}
       <BottomTabBar />
-
-      {/* ── FAB ──────────────────────────────────────────────────── */}
-      <div className="fixed z-40" style={{ bottom: 76, right: 20 }}>
-        <button
-          onClick={fabAction}
-          className="flex items-center gap-2 px-4 h-12 rounded-full font-bold text-white active:scale-95 transition-all"
-          style={{
-            fontSize: 13,
-            background: "linear-gradient(135deg, #FF5A1F, #FF9054)",
-            boxShadow: "0 8px 28px rgba(255,90,31,0.42)",
-          }}>
-          <span className="material-symbols-outlined" style={{ fontSize: 18, fontVariationSettings: "'FILL' 1" }}>
-            {fabIcon}
-          </span>
-          {fabLabel}
-        </button>
-      </div>
 
       {/* Hidden fridge input */}
       <input

@@ -1,557 +1,383 @@
-import React, { useState, useCallback, ReactNode } from "react";
+import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import BottomTabBar from "../components/BottomTabBar";
 
-// ─── helpers ────────────────────────────────────────────────────────────────
+// ─── types ────────────────────────────────────────────────────────────────────
 
-function saveQuickPrefs(updates: Record<string, unknown>) {
-  const existing = JSON.parse(localStorage.getItem("quickPrefs") || "{}");
-  localStorage.setItem("quickPrefs", JSON.stringify({ ...existing, ...updates }));
+type LifeStage = "普通成人" | "孕期" | "哺乳期" | "备孕" | "老人" | "儿童";
+
+interface FamilyMember {
+  id: string;
+  name: string;
+  lifeStage: LifeStage;
+  needs: string[];
+}
+
+// ─── constants ────────────────────────────────────────────────────────────────
+
+const LIFE_STAGES: { value: LifeStage; emoji: string; color: string; bg: string }[] = [
+  { value: "普通成人", emoji: "👤", color: "text-slate-600",  bg: "bg-slate-100" },
+  { value: "孕期",    emoji: "🤰", color: "text-pink-600",   bg: "bg-pink-50"   },
+  { value: "哺乳期",  emoji: "🤱", color: "text-purple-600", bg: "bg-purple-50" },
+  { value: "备孕",    emoji: "🌸", color: "text-rose-600",   bg: "bg-rose-50"   },
+  { value: "老人",    emoji: "👴", color: "text-amber-700",  bg: "bg-amber-50"  },
+  { value: "儿童",    emoji: "🧒", color: "text-blue-600",   bg: "bg-blue-50"   },
+];
+
+const NEED_GROUPS = [
+  {
+    group: "目标",
+    tags: ["减脂", "增肌", "均衡营养", "养生"],
+  },
+  {
+    group: "忌口",
+    tags: ["素食", "不吃海鲜", "不辣", "花生过敏", "忌乳制品", "忌牛羊肉", "不吃香菜"],
+  },
+  {
+    group: "健康",
+    tags: ["高血压", "糖尿病", "痛风", "贫血", "低血压"],
+  },
+];
+
+const AVATAR_COLORS = [
+  "bg-orange-400", "bg-blue-400", "bg-emerald-400", "bg-violet-400",
+  "bg-rose-400", "bg-amber-400", "bg-teal-400", "bg-indigo-400",
+];
+
+function getStageStyle(stage: LifeStage) {
+  return LIFE_STAGES.find(s => s.value === stage) ?? LIFE_STAGES[0];
+}
+
+// ── Migrate old localStorage prefs → first member needs ──────────────────────
+function migrateOldPrefs(): string[] {
+  const prefs = JSON.parse(localStorage.getItem("quickPrefs") || "{}");
+  const needs: string[] = [];
+  if (prefs.goal === "减脂") needs.push("减脂");
+  if (prefs.goal === "增肌") needs.push("增肌");
+  if (prefs.goal === "养生") needs.push("养生");
+  const avoidMap: Record<string, string> = {
+    vegetarian: "素食", no_seafood: "不吃海鲜", peanut_allergy: "花生过敏",
+    no_dairy: "忌乳制品", no_beef_lamb: "忌牛羊肉", no_cilantro: "不吃香菜",
+  };
+  if (Array.isArray(prefs.avoid)) prefs.avoid.forEach((v: string) => { if (avoidMap[v]) needs.push(avoidMap[v]); });
+  const healthMap: Record<string, string> = {
+    hypertension: "高血压", diabetes: "糖尿病", gout: "痛风",
+    anemia: "贫血", low_blood_pressure: "低血压",
+  };
+  if (Array.isArray(prefs.health)) prefs.health.forEach((v: string) => { if (healthMap[v]) needs.push(healthMap[v]); });
+  if (prefs.spice === "不辣") needs.push("不辣");
+  return needs;
+}
+
+function loadMembers(): FamilyMember[] {
+  try {
+    const raw = localStorage.getItem("nutri_family_members");
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return [{ id: "1", name: "我", lifeStage: "普通成人", needs: migrateOldPrefs() }];
+}
+
+function persistMembers(members: FamilyMember[]) {
+  localStorage.setItem("nutri_family_members", JSON.stringify(members));
+  const adults = members.filter(m => m.lifeStage !== "儿童").length;
+  const kids   = members.filter(m => m.lifeStage === "儿童").length;
+  localStorage.setItem("nutri_adults", String(Math.max(1, adults)));
+  localStorage.setItem("nutri_kids",   String(kids));
+
+  const allNeeds = members.flatMap(m => m.needs);
+  const prefs = JSON.parse(localStorage.getItem("quickPrefs") || "{}");
+  const avoidMap: Record<string, string> = {
+    "素食": "vegetarian", "不吃海鲜": "no_seafood", "花生过敏": "peanut_allergy",
+    "忌乳制品": "no_dairy", "忌牛羊肉": "no_beef_lamb", "不吃香菜": "no_cilantro",
+  };
+  const healthMap: Record<string, string> = {
+    "高血压": "hypertension", "糖尿病": "diabetes", "痛风": "gout",
+    "贫血": "anemia", "低血压": "low_blood_pressure",
+  };
+  const avoid  = Object.entries(avoidMap).filter(([k]) => allNeeds.includes(k)).map(([, v]) => v);
+  const health = Object.entries(healthMap).filter(([k]) => allNeeds.includes(k)).map(([, v]) => v);
+  const goal   = ["减脂", "增肌", "养生"].find(g => allNeeds.includes(g)) ?? "均衡";
+  const spice  = allNeeds.includes("不辣") ? "不辣" : (prefs.spice || "微辣");
+  localStorage.setItem("quickPrefs", JSON.stringify({ ...prefs, avoid, health, goal, spice }));
   window.dispatchEvent(new Event("nutri-prefs-changed"));
 }
 
-async function upsertProfile(field: string, value: string) {
-  const userId = localStorage.getItem("userId");
-  if (!userId) return;
-  await supabase
-    .from("user_profiles")
-    .upsert({ id: userId, [field]: value }, { onConflict: "id" });
-}
-
-// ─── types ───────────────────────────────────────────────────────────────────
-
-type SectionId = "family" | "goal" | "spice" | "avoid" | "health" | "hometown" | "age" | "helper";
-
-// ─── constants ───────────────────────────────────────────────────────────────
-
-const GOAL_OPTIONS = [
-  { value: "减脂", label: "减脂", sub: "低卡优先" },
-  { value: "增肌", label: "增肌", sub: "高蛋白" },
-  { value: "均衡", label: "均衡", sub: "均衡营养" },
-  { value: "养生", label: "养生", sub: "食疗调理" },
-];
-
-const SPICE_OPTIONS = [
-  { value: "不辣", label: "不辣", emoji: "🥛" },
-  { value: "微辣", label: "微辣", emoji: "🌶️" },
-  { value: "中辣", label: "中辣", emoji: "🌶️🌶️" },
-  { value: "重辣", label: "重辣", emoji: "🌶️🌶️🌶️" },
-];
-
-const AVOID_OPTIONS = [
-  { value: "none", label: "没有忌口" },
-  { value: "no_seafood", label: "不吃海鲜" },
-  { value: "vegetarian", label: "素食" },
-  { value: "no_cilantro", label: "不吃香菜" },
-  { value: "no_allium", label: "不吃葱蒜" },
-  { value: "no_beef_lamb", label: "忌牛羊肉" },
-  { value: "peanut_allergy", label: "花生过敏" },
-  { value: "no_dairy", label: "忌乳制品" },
-];
-
-const HEALTH_OPTIONS = [
-  { value: "none",               label: "没有特殊情况" },
-  { value: "hypertension",       label: "高血压" },
-  { value: "diabetes",           label: "糖尿病" },
-  { value: "gout",               label: "痛风" },
-  { value: "low_blood_pressure", label: "低血压" },
-  { value: "anemia",             label: "贫血/补气血" },
-];
-
-const HOMETOWN_OPTIONS = [
-  { value: "cantonese", label: "粤菜", emoji: "🇭🇰" },
-  { value: "sichuan", label: "川菜", emoji: "🌶️" },
-  { value: "jiangnan", label: "江南菜", emoji: "🫛" },
-  { value: "northern", label: "北方菜", emoji: "🥟" },
-  { value: "western", label: "西式", emoji: "🍝" },
-  { value: "japanese_korean", label: "日韩", emoji: "🍱" },
-  { value: "southeast_asian", label: "东南亚", emoji: "🥘" },
-];
-
-const AGE_OPTIONS = [
-  { value: "genZ", label: "00后" },
-  { value: "millennial", label: "90后" },
-  { value: "genX", label: "80后" },
-  { value: "boomer", label: "70后及之前" },
-];
-
-// ─── sub-components ──────────────────────────────────────────────────────────
-
-function ChipLabel({ text }: { text: string }) {
-  return (
-    <span className="inline-block px-2.5 py-1 rounded-full text-[12px] font-semibold bg-primary/10 text-primary">
-      {text}
-    </span>
-  );
-}
-
-function UnsetLabel() {
-  return (
-    <span className="inline-block px-2.5 py-1 rounded-full text-[12px] font-semibold bg-black/5 text-secondary">
-      未设置
-    </span>
-  );
-}
-
-interface SectionCardProps {
-  id: SectionId;
-  title: string;
-  icon: string;
-  preview: ReactNode;
-  isOpen: boolean;
-  onToggle: () => void;
-  isComplete: boolean;
-  children: ReactNode;
-}
-
-function SectionCard({ title, icon, preview, isOpen, onToggle, isComplete, children }: SectionCardProps) {
-  return (
-    <div className="bg-white rounded-[20px] shadow-[0_4px_20px_rgba(0,0,0,0.05)] overflow-hidden">
-      <button
-        className="w-full flex items-center justify-between px-5 py-4 active:bg-black/[0.02] transition-colors"
-        onClick={onToggle}
-      >
-        <div className="flex items-center gap-3">
-          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-base ${isComplete ? "bg-emerald-50" : "bg-black/5"}`}>
-            <span className="material-symbols-outlined text-[18px]" style={{ color: isComplete ? "#10b981" : "#9ca3af" }}>
-              {icon}
-            </span>
-          </div>
-          <div className="flex flex-col items-start gap-1">
-            <span className="text-[14px] font-bold text-on-surface leading-none">{title}</span>
-            <div className="mt-1">{preview}</div>
-          </div>
-        </div>
-        <span className="material-symbols-outlined text-secondary text-xl transition-transform duration-200" style={{ transform: isOpen ? "rotate(180deg)" : "rotate(0deg)" }}>
-          expand_more
-        </span>
-      </button>
-
-      {isOpen && (
-        <div className="px-5 pb-5 border-t border-black/5">
-          <div className="pt-4">{children}</div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Stepper({ value, min, max, label, onChange }: { value: number; min: number; max: number; label: string; onChange: (n: number) => void }) {
-  return (
-    <div className="flex items-center justify-between py-3">
-      <span className="text-[14px] font-semibold text-on-surface">{label}</span>
-      <div className="flex items-center gap-4">
-        <button
-          onClick={() => onChange(Math.max(min, value - 1))}
-          className="w-9 h-9 rounded-full border border-black/10 flex items-center justify-center active:scale-95 transition-transform text-on-surface font-bold text-lg"
-        >
-          −
-        </button>
-        <span className="w-6 text-center text-[18px] font-bold text-primary">{value}</span>
-        <button
-          onClick={() => onChange(Math.min(max, value + 1))}
-          className="w-9 h-9 rounded-full bg-primary text-white flex items-center justify-center active:scale-95 transition-transform text-lg font-bold"
-        >
-          +
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function SaveBtn({ onSave }: { onSave: () => void }) {
-  return (
-    <button
-      onClick={onSave}
-      className="mt-4 w-full py-3 bg-primary text-white rounded-[14px] text-[14px] font-bold active:scale-[0.98] transition-transform shadow-[0_4px_16px_rgba(255,90,31,0.25)]"
-    >
-      保存
-    </button>
-  );
-}
-
-interface SingleChipProps {
-  label: string;
-  sub?: string;
-  emoji?: string;
-  selected: boolean;
-  onSelect: () => void;
-}
-
-const SingleChip: React.FC<SingleChipProps> = ({ label, sub, emoji, selected, onSelect }) => (
-  <button
-    onClick={onSelect}
-    className={`flex flex-col items-center justify-center px-3 py-3 rounded-[14px] text-[13px] font-bold border transition-all active:scale-[0.97] ${
-      selected ? "bg-primary/10 text-primary border-primary/30 shadow-[0_0_12px_rgba(255,90,31,0.12)]" : "bg-black/[0.03] text-secondary border-transparent"
-    }`}
-  >
-    {emoji && <span className="text-xl mb-1">{emoji}</span>}
-    <span>{label}</span>
-    {sub && <span className={`text-[11px] mt-0.5 font-medium ${selected ? "text-primary/70" : "text-secondary/70"}`}>{sub}</span>}
-  </button>
-);
-
-interface MultiChipProps {
-  label: string;
-  selected: boolean;
-  onToggle: () => void;
-}
-
-const MultiChip: React.FC<MultiChipProps> = ({ label, selected, onToggle }) => (
-  <button
-    onClick={onToggle}
-    className={`flex items-center gap-1.5 px-3 py-2.5 rounded-[12px] text-[13px] font-semibold border transition-all active:scale-[0.97] ${
-      selected ? "bg-primary/10 text-primary border-primary/30" : "bg-black/[0.03] text-secondary border-transparent"
-    }`}
-  >
-    {selected && <span className="material-symbols-outlined text-[14px]" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>}
-    {label}
-  </button>
-);
-
-// ─── main page ───────────────────────────────────────────────────────────────
+// ─── main page ────────────────────────────────────────────────────────────────
 
 export default function Settings() {
   const navigate = useNavigate();
 
-  // ── read initial state ─────────────────────────────────────────────────────
-  const [adults, setAdults] = useState(() => parseInt(localStorage.getItem("nutri_adults") || "3"));
-  const [kids, setKids] = useState(() => parseInt(localStorage.getItem("nutri_kids") || "0"));
+  const [members,   setMembers]   = useState<FamilyMember[]>(loadMembers);
+  const [openId,    setOpenId]    = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<FamilyMember | null>(null);
 
-  const existingPrefs = JSON.parse(localStorage.getItem("quickPrefs") || "{}");
-
-  const [goal, setGoal] = useState<string>(() => existingPrefs.goal || "");
-  const [spice, setSpice] = useState<string>(() => existingPrefs.spice || "");
-  const [avoid, setAvoid] = useState<string[]>(() => existingPrefs.avoid || []);
-  const [health, setHealth] = useState<string[]>(() => existingPrefs.health || []);
-  const [hometown, setHometown] = useState<string>(() => localStorage.getItem("hometown_cuisine") || "");
-  const [ageGroup, setAgeGroup] = useState<string>(() => localStorage.getItem("age_group") || "");
-
-  // ── helper section ─────────────────────────────────────────────────────────
   const [helperName, setHelperName] = useState(() => localStorage.getItem("helperName") || "Maria Santos");
   const [helperLang, setHelperLang] = useState(() => localStorage.getItem("helperLang") || "tagalog");
   const [helperSaved, setHelperSaved] = useState(false);
+  const [helperOpen,  setHelperOpen]  = useState(false);
 
-  // ── open/close sections ────────────────────────────────────────────────────
-  const [openSection, setOpenSection] = useState<SectionId | null>(null);
+  const currentRole = localStorage.getItem("nutri_role") ?? "employer";
 
-  const toggleSection = useCallback((id: SectionId) => {
-    setOpenSection((prev) => (prev === id ? null : id));
-  }, []);
+  function openMember(m: FamilyMember) {
+    if (openId === m.id) {
+      setOpenId(null);
+      setEditDraft(null);
+    } else {
+      setOpenId(m.id);
+      setEditDraft({ ...m });
+    }
+  }
 
-  // ── completion ─────────────────────────────────────────────────────────────
-  const completedSections = [
-    adults > 0,
-    !!goal,
-    !!spice,
-    avoid.length > 0,
-    health.length > 0,
-    !!hometown,
-    !!ageGroup,
-  ].filter(Boolean).length;
+  function addMember() {
+    const m: FamilyMember = { id: Date.now().toString(), name: "", lifeStage: "普通成人", needs: [] };
+    const next = [...members, m];
+    setMembers(next);
+    setOpenId(m.id);
+    setEditDraft({ ...m });
+  }
 
-  const completionPct = Math.round((completedSections / 7) * 100);
+  function saveMember() {
+    if (!editDraft) return;
+    const next = members.map(m => m.id === editDraft.id ? editDraft : m);
+    setMembers(next);
+    persistMembers(next);
+    setOpenId(null);
+    setEditDraft(null);
+  }
 
-  // ── save handlers ──────────────────────────────────────────────────────────
-  const saveFamily = () => {
-    localStorage.setItem("nutri_adults", String(adults));
-    localStorage.setItem("nutri_kids", String(kids));
-    window.dispatchEvent(new Event("nutri-prefs-changed"));
-    setOpenSection(null);
-  };
+  function removeMember(id: string) {
+    const next = members.filter(m => m.id !== id);
+    setMembers(next);
+    persistMembers(next);
+    setOpenId(null);
+    setEditDraft(null);
+  }
 
-  const saveGoal = () => {
-    localStorage.setItem("userDiet", goal);
-    saveQuickPrefs({ goal });
-    setOpenSection(null);
-  };
+  function toggleNeed(need: string) {
+    setEditDraft(prev => {
+      if (!prev) return prev;
+      const needs = prev.needs.includes(need)
+        ? prev.needs.filter(n => n !== need)
+        : [...prev.needs, need];
+      return { ...prev, needs };
+    });
+  }
 
-  const saveSpice = () => {
-    localStorage.setItem("userSpice", spice);
-    saveQuickPrefs({ spice });
-    setOpenSection(null);
-  };
-
-  const saveAvoid = () => {
-    saveQuickPrefs({ avoid });
-    setOpenSection(null);
-  };
-
-  const saveHealth = () => {
-    saveQuickPrefs({ health });
-    setOpenSection(null);
-  };
-
-  const saveHometown = async () => {
-    localStorage.setItem("hometown_cuisine", hometown);
-    await upsertProfile("hometown_cuisine", hometown);
-    saveQuickPrefs({});
-    setOpenSection(null);
-  };
-
-  const saveAgeGroup = async () => {
-    localStorage.setItem("age_group", ageGroup);
-    await upsertProfile("age_group", ageGroup);
-    saveQuickPrefs({});
-    setOpenSection(null);
-  };
-
-  const saveHelper = async () => {
+  async function saveHelper() {
     localStorage.setItem("helperName", helperName);
     localStorage.setItem("helperLang", helperLang);
-    await upsertProfile("display_name", helperName);
+    const userId = localStorage.getItem("userId");
+    if (userId) await supabase.from("user_profiles").upsert({ id: userId, display_name: helperName }, { onConflict: "id" });
     setHelperSaved(true);
-    setTimeout(() => {
-      setHelperSaved(false);
-      setOpenSection(null);
-    }, 1200);
-  };
+    setTimeout(() => { setHelperSaved(false); setHelperOpen(false); }, 1200);
+  }
 
-  // ── multi-select toggle ────────────────────────────────────────────────────
-  const toggleAvoid = (val: string) => {
-    if (val === "none") {
-      setAvoid(["none"]);
-      return;
-    }
-    setAvoid((prev) => {
-      const without = prev.filter((v) => v !== "none");
-      return without.includes(val) ? without.filter((v) => v !== val) : [...without, val];
-    });
-  };
+  function switchRole(r: string) {
+    localStorage.setItem("nutri_role", r);
+    navigate(r === "helper" ? "/helper" : "/");
+  }
 
-  const toggleHealth = (val: string) => {
-    if (val === "none") {
-      setHealth(["none"]);
-      return;
-    }
-    setHealth((prev) => {
-      const without = prev.filter((v) => v !== "none");
-      return without.includes(val) ? without.filter((v) => v !== val) : [...without, val];
-    });
-  };
-
-  // ── label helpers ──────────────────────────────────────────────────────────
-  const familyLabel = `${adults} 成人 · ${kids} 小孩`;
-  const avoidLabel = avoid.length
-    ? avoid.map((v) => AVOID_OPTIONS.find((o) => o.value === v)?.label).filter(Boolean).join("、")
-    : "";
-  const healthLabel = health.length
-    ? health.map((v) => HEALTH_OPTIONS.find((o) => o.value === v)?.label).filter(Boolean).join("、")
-    : "";
-  const hometownLabel = HOMETOWN_OPTIONS.find((o) => o.value === hometown)?.label || "";
-  const ageLabel = AGE_OPTIONS.find((o) => o.value === ageGroup)?.label || "";
-
-  // ─── render ─────────────────────────────────────────────────────────────────
   return (
     <div className="flex justify-center items-start min-h-screen text-on-surface bg-[#f5f5f7]">
-      <div className="w-full max-w-md min-h-screen relative overflow-x-hidden pb-24">
+      <div className="w-full max-w-md min-h-screen relative overflow-x-hidden pb-28">
 
         {/* ── Header ── */}
-        <header className="sticky top-0 w-full z-50 bg-[#f5f5f7]/90 backdrop-blur-md px-4 h-16 flex items-center gap-3 border-none">
-          <button onClick={() => navigate("/")} className="active:scale-95 transition-transform">
+        <header className="sticky top-0 w-full z-50 bg-[#f5f5f7]/90 backdrop-blur-md px-4 h-16 flex items-center gap-3">
+          <button onClick={() => navigate(-1)} className="active:scale-95 transition-transform">
             <span className="material-symbols-outlined text-primary text-2xl">arrow_back</span>
           </button>
-          <span className="font-bold text-[18px] text-on-surface">个人偏好设置</span>
+          <div>
+            <p className="font-bold text-[18px] text-on-surface leading-tight">家庭成员档案</p>
+            <p className="text-[12px] text-secondary">{members.length} 位成员</p>
+          </div>
         </header>
 
-        {/* ── Completion card ── */}
-        <div className="mx-4 mb-4 rounded-[22px] bg-gradient-to-br from-[#1a1a2e] to-[#2d2d44] p-5 shadow-[0_8px_32px_rgba(0,0,0,0.18)]">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <p className="text-white/60 text-[12px] font-semibold uppercase tracking-wider mb-1">菜单个性化程度</p>
-              <p className="text-white text-[28px] font-bold leading-none">{completionPct}%</p>
-            </div>
-            <div className="text-right">
-              <span className="text-white/80 text-[13px] font-semibold">{completedSections}/7 已完善</span>
-              <p className="text-white/40 text-[11px] mt-0.5">
-                {completionPct < 50 ? "完善更多以获得精准推荐" : completionPct < 100 ? "继续完善，推荐更贴心" : "已完整设置！"}
-              </p>
-            </div>
-          </div>
-          <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
-            <div
-              className="h-full rounded-full transition-all duration-500"
-              style={{
-                width: `${completionPct}%`,
-                background: completionPct === 100 ? "#10b981" : "linear-gradient(90deg, #ff5a1f, #ff8c42)",
-              }}
-            />
-          </div>
-        </div>
-
-        {/* ── Sections ── */}
         <div className="px-4 space-y-3">
 
-          {/* Section 1 — Family */}
-          <SectionCard
-            id="family"
-            title="家庭人数"
-            icon="group"
-            preview={<ChipLabel text={familyLabel} />}
-            isOpen={openSection === "family"}
-            onToggle={() => toggleSection("family")}
-            isComplete={true}
-          >
-            <Stepper value={adults} min={1} max={8} label="成人" onChange={setAdults} />
-            <div className="border-t border-black/5" />
-            <Stepper value={kids} min={0} max={5} label="小孩" onChange={setKids} />
-            <SaveBtn onSave={saveFamily} />
-          </SectionCard>
+          {/* ── Member cards ── */}
+          {members.map((m, idx) => {
+            const isOpen = openId === m.id;
+            const stage  = getStageStyle(m.lifeStage);
+            const draft  = isOpen ? editDraft : null;
 
-          {/* Section 2 — Goal */}
-          <SectionCard
-            id="goal"
-            title="饮食目标"
-            icon="flag"
-            preview={goal ? <ChipLabel text={goal} /> : <UnsetLabel />}
-            isOpen={openSection === "goal"}
-            onToggle={() => toggleSection("goal")}
-            isComplete={!!goal}
-          >
-            <div className="grid grid-cols-2 gap-2">
-              {GOAL_OPTIONS.map((o) => (
-                <SingleChip key={o.value} label={o.label} sub={o.sub} selected={goal === o.value} onSelect={() => setGoal(o.value)} />
-              ))}
-            </div>
-            <SaveBtn onSave={saveGoal} />
-          </SectionCard>
+            return (
+              <div key={m.id} className="bg-white rounded-[22px] shadow-[0_4px_20px_rgba(0,0,0,0.06)] overflow-hidden">
 
-          {/* Section 3 — Spice */}
-          <SectionCard
-            id="spice"
-            title="辣度偏好"
-            icon="local_fire_department"
-            preview={spice ? <ChipLabel text={spice} /> : <UnsetLabel />}
-            isOpen={openSection === "spice"}
-            onToggle={() => toggleSection("spice")}
-            isComplete={!!spice}
-          >
-            <div className="grid grid-cols-2 gap-2">
-              {SPICE_OPTIONS.map((o) => (
-                <SingleChip key={o.value} label={o.label} emoji={o.emoji} selected={spice === o.value} onSelect={() => setSpice(o.value)} />
-              ))}
-            </div>
-            <SaveBtn onSave={saveSpice} />
-          </SectionCard>
+                {/* Card header row */}
+                <button
+                  className="w-full flex items-center gap-4 px-5 py-4 active:bg-black/[0.02] transition-colors text-left"
+                  onClick={() => openMember(m)}
+                >
+                  <div className={`w-12 h-12 rounded-full ${AVATAR_COLORS[idx % AVATAR_COLORS.length]} flex items-center justify-center flex-shrink-0 shadow-sm`}>
+                    <span className="text-white text-[20px] font-black select-none">
+                      {m.name ? m.name[0] : "?"}
+                    </span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-[16px] font-black text-on-surface">{m.name || "新成员"}</span>
+                      <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${stage.bg} ${stage.color}`}>
+                        {stage.emoji} {m.lifeStage}
+                      </span>
+                    </div>
+                    {m.needs.length > 0
+                      ? <p className="text-[12px] text-secondary truncate">{m.needs.join(" · ")}</p>
+                      : <p className="text-[12px] text-secondary/40">点击完善需求</p>
+                    }
+                  </div>
+                  <span
+                    className="material-symbols-outlined text-secondary/60 text-xl flex-shrink-0 transition-transform duration-200"
+                    style={{ transform: isOpen ? "rotate(180deg)" : "rotate(0deg)" }}
+                  >
+                    expand_more
+                  </span>
+                </button>
 
-          {/* Section 4 — Avoid */}
-          <SectionCard
-            id="avoid"
-            title="忌口"
-            icon="no_meals"
-            preview={avoidLabel ? <ChipLabel text={avoidLabel} /> : <UnsetLabel />}
-            isOpen={openSection === "avoid"}
-            onToggle={() => toggleSection("avoid")}
-            isComplete={avoid.length > 0}
-          >
-            <div className="flex flex-wrap gap-2">
-              {AVOID_OPTIONS.map((o) => (
-                <MultiChip key={o.value} label={o.label} selected={avoid.includes(o.value)} onToggle={() => toggleAvoid(o.value)} />
-              ))}
-            </div>
-            <SaveBtn onSave={saveAvoid} />
-          </SectionCard>
+                {/* Inline editor */}
+                {isOpen && draft && (
+                  <div className="border-t border-black/5 px-5 pb-5">
+                    <div className="pt-4 space-y-5">
 
-          {/* Section 5 — Health */}
-          <SectionCard
-            id="health"
-            title="健康状况"
-            icon="health_and_safety"
-            preview={healthLabel ? <ChipLabel text={healthLabel} /> : <UnsetLabel />}
-            isOpen={openSection === "health"}
-            onToggle={() => toggleSection("health")}
-            isComplete={health.length > 0}
-          >
-            <div className="flex flex-wrap gap-2">
-              {HEALTH_OPTIONS.map((o) => (
-                <MultiChip key={o.value} label={o.label} selected={health.includes(o.value)} onToggle={() => toggleHealth(o.value)} />
-              ))}
-            </div>
-            <SaveBtn onSave={saveHealth} />
-          </SectionCard>
+                      {/* Name */}
+                      <div>
+                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2">叫什么</label>
+                        <input
+                          type="text"
+                          value={draft.name}
+                          onChange={e => setEditDraft(prev => prev ? { ...prev, name: e.target.value } : prev)}
+                          placeholder="妈妈 / 爸爸 / 小明…"
+                          className="w-full bg-[#f5f5f7] border border-black/5 rounded-[14px] px-4 py-3 text-[15px] font-bold text-on-surface outline-none focus:border-primary transition-colors"
+                        />
+                      </div>
 
-          {/* Section 6 — Hometown cuisine */}
-          <SectionCard
-            id="hometown"
-            title="籍贯菜系"
-            icon="restaurant"
-            preview={hometownLabel ? <ChipLabel text={hometownLabel} /> : <UnsetLabel />}
-            isOpen={openSection === "hometown"}
-            onToggle={() => toggleSection("hometown")}
-            isComplete={!!hometown}
-          >
-            <div className="grid grid-cols-3 gap-2">
-              {HOMETOWN_OPTIONS.map((o) => (
-                <SingleChip key={o.value} label={o.label} emoji={o.emoji} selected={hometown === o.value} onSelect={() => setHometown(o.value)} />
-              ))}
-            </div>
-            <SaveBtn onSave={saveHometown} />
-          </SectionCard>
+                      {/* Life stage */}
+                      <div>
+                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2">生命阶段</label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {LIFE_STAGES.map(s => (
+                            <button
+                              key={s.value}
+                              onClick={() => setEditDraft(prev => prev ? { ...prev, lifeStage: s.value } : prev)}
+                              className={`flex flex-col items-center py-3 rounded-[14px] border-2 transition-all active:scale-95 ${
+                                draft.lifeStage === s.value
+                                  ? `border-primary ${s.bg}`
+                                  : "border-black/[0.08] bg-black/[0.02]"
+                              }`}
+                            >
+                              <span className="text-2xl mb-0.5">{s.emoji}</span>
+                              <span className={`text-[12px] font-bold ${draft.lifeStage === s.value ? "text-primary" : "text-secondary"}`}>
+                                {s.value}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
 
-          {/* Section 7 — Age group */}
-          <SectionCard
-            id="age"
-            title="年龄段"
-            icon="cake"
-            preview={ageLabel ? <ChipLabel text={ageLabel} /> : <UnsetLabel />}
-            isOpen={openSection === "age"}
-            onToggle={() => toggleSection("age")}
-            isComplete={!!ageGroup}
-          >
-            <div className="grid grid-cols-2 gap-2">
-              {AGE_OPTIONS.map((o) => (
-                <SingleChip key={o.value} label={o.label} selected={ageGroup === o.value} onSelect={() => setAgeGroup(o.value)} />
-              ))}
-            </div>
-            <SaveBtn onSave={saveAgeGroup} />
-          </SectionCard>
+                      {/* Need tags */}
+                      <div>
+                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-3">特殊需求</label>
+                        {NEED_GROUPS.map(({ group, tags }) => (
+                          <div key={group} className="mb-4">
+                            <p className="text-[11px] text-secondary/50 font-semibold mb-2">{group}</p>
+                            <div className="flex flex-wrap gap-2">
+                              {tags.map(tag => {
+                                const sel = draft.needs.includes(tag);
+                                return (
+                                  <button
+                                    key={tag}
+                                    onClick={() => toggleNeed(tag)}
+                                    className={`px-3.5 py-2 rounded-[10px] text-[13px] font-semibold border transition-all active:scale-[0.96] ${
+                                      sel
+                                        ? "bg-primary/10 text-primary border-primary/30"
+                                        : "bg-black/[0.03] text-secondary border-transparent"
+                                    }`}
+                                  >
+                                    {sel && "✓ "}{tag}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
 
-          {/* ── Helper / 菲佣设置 ── */}
+                      {/* Save */}
+                      <button
+                        onClick={saveMember}
+                        className="w-full py-3 bg-primary text-white rounded-[14px] text-[14px] font-bold active:scale-[0.98] transition-transform shadow-[0_4px_16px_rgba(255,90,31,0.25)]"
+                      >
+                        保存
+                      </button>
+
+                      {/* Remove */}
+                      {members.length > 1 && (
+                        <button
+                          onClick={() => removeMember(m.id)}
+                          className="w-full py-2 text-[13px] font-semibold text-red-400 active:scale-[0.98] transition-transform"
+                        >
+                          移除此成员
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* ── Add member ── */}
+          <button
+            onClick={addMember}
+            className="w-full py-4 bg-white rounded-[22px] border-2 border-dashed border-black/10 flex items-center justify-center gap-2 text-secondary font-bold text-[14px] active:scale-[0.98] transition-all"
+          >
+            <span className="material-symbols-outlined text-xl">person_add</span>
+            添加家庭成员
+          </button>
+
+          {/* ── Helper section ── */}
           <div className="pt-2">
-            <p className="text-[11px] font-bold text-secondary/60 uppercase tracking-wider px-1 mb-2">菲佣设置</p>
-            <div className="bg-white rounded-[20px] shadow-[0_4px_20px_rgba(0,0,0,0.05)] overflow-hidden">
+            <p className="text-[11px] font-bold text-secondary/50 uppercase tracking-wider px-1 mb-2">菲佣设置</p>
+            <div className="bg-white rounded-[22px] shadow-[0_4px_20px_rgba(0,0,0,0.05)] overflow-hidden">
               <button
                 className="w-full flex items-center justify-between px-5 py-4 active:bg-black/[0.02] transition-colors"
-                onClick={() => toggleSection("helper")}
+                onClick={() => setHelperOpen(v => !v)}
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-[#F0F4E8] flex items-center justify-center">
-                    <span className="material-symbols-outlined text-[18px] text-[#5F6E40]">person</span>
+                  <div className="w-9 h-9 rounded-full bg-[#F0F4E8] flex items-center justify-center">
+                    <span className="material-symbols-outlined text-[20px] text-[#5F6E40]">person</span>
                   </div>
                   <div>
-                    <span className="text-[14px] font-bold text-on-surface">外佣助手设置</span>
-                    {helperName && openSection !== "helper" && (
-                      <p className="text-[12px] text-secondary mt-0.5">{helperName}</p>
-                    )}
+                    <p className="text-[14px] font-bold text-on-surface">外佣助手设置</p>
+                    {!helperOpen && <p className="text-[12px] text-secondary">{helperName}</p>}
                   </div>
                 </div>
-                <span className="material-symbols-outlined text-secondary text-[20px] transition-transform"
-                  style={{ transform: openSection === "helper" ? "rotate(180deg)" : "rotate(0deg)" }}>
+                <span className="material-symbols-outlined text-secondary/60 text-[20px] transition-transform duration-200"
+                  style={{ transform: helperOpen ? "rotate(180deg)" : "rotate(0deg)" }}>
                   expand_more
                 </span>
               </button>
 
-              {openSection === "helper" && (
+              {helperOpen && (
                 <div className="px-5 pb-5 border-t border-black/5">
                   <div className="pt-4 space-y-4">
                     <div>
-                      <label className="block text-[12px] font-bold text-secondary mb-1.5 uppercase tracking-wide">外佣名字</label>
+                      <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-1.5">外佣名字</label>
                       <input
                         type="text"
                         value={helperName}
-                        onChange={(e) => setHelperName(e.target.value)}
+                        onChange={e => setHelperName(e.target.value)}
                         className="w-full bg-[#f5f5f7] border border-black/5 rounded-[12px] px-4 py-3 text-[14px] font-semibold text-on-surface outline-none focus:border-primary"
                       />
                     </div>
                     <div>
-                      <label className="block text-[12px] font-bold text-secondary mb-1.5 uppercase tracking-wide">下发指令语言</label>
+                      <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-1.5">下发指令语言</label>
                       <div className="flex p-1 bg-black/5 rounded-[12px]">
                         {[
-                          { value: "english", label: "English" },
-                          { value: "tagalog", label: "Tagalog" },
-                          { value: "indonesian", label: "Indonesian" },
-                        ].map((opt) => (
+                          { value: "english",     label: "English"   },
+                          { value: "tagalog",     label: "Tagalog"   },
+                          { value: "indonesian",  label: "Indonesian"},
+                        ].map(opt => (
                           <button
                             key={opt.value}
                             onClick={() => setHelperLang(opt.value)}
@@ -566,20 +392,12 @@ export default function Settings() {
                       onClick={saveHelper}
                       disabled={helperSaved}
                       className="w-full py-3 rounded-[14px] text-[14px] font-bold active:scale-[0.98] transition-all flex items-center justify-center gap-2"
-                      style={{
-                        background: helperSaved ? "#059669" : "#2D3748",
-                        color: "white",
-                      }}
+                      style={{ background: helperSaved ? "#059669" : "#2D3748", color: "white" }}
                     >
-                      {helperSaved ? (
-                        <>
-                          <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
-                          已保存
-                        </>
-                      ) : "保存设置"}
+                      {helperSaved
+                        ? <><span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>已保存</>
+                        : "保存设置"}
                     </button>
-
-                    {/* Invite helper */}
                     <button
                       onClick={() => {
                         const userId = localStorage.getItem("userId") ?? "";
@@ -600,51 +418,35 @@ export default function Settings() {
           </div>
 
           {/* ── Role switcher ── */}
-          {(() => {
-            const currentRole = localStorage.getItem("nutri_role") ?? "employer";
-            function switchRole(r: string) {
-              localStorage.setItem("nutri_role", r);
-              navigate(r === "helper" ? "/helper" : "/");
-            }
-            return (
-              <div className="bg-white border border-black/5 rounded-[20px] p-4 shadow-[0_4px_20px_rgba(0,0,0,0.04)]">
-                <p className="text-[12px] text-secondary font-semibold mb-3 uppercase tracking-wider">切换身份</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { role: "employer", label: "雇主", sub: "管理菜单 · 采购", icon: "👔" },
-                    { role: "helper",   label: "工人",  sub: "备菜 · 做饭",    icon: "🧑‍🍳" },
-                  ].map(opt => (
-                    <button
-                      key={opt.role}
-                      onClick={() => switchRole(opt.role)}
-                      className={`flex flex-col items-center gap-1.5 py-4 rounded-2xl border-2 transition-all active:scale-95 ${
-                        currentRole === opt.role
-                          ? "border-primary bg-primary/5"
-                          : "border-black/8 bg-gray-50"
-                      }`}
-                    >
-                      <span className="text-2xl">{opt.icon}</span>
-                      <span className={`text-[14px] font-black ${currentRole === opt.role ? "text-primary" : "text-gray-700"}`}>
-                        {opt.label}
-                      </span>
-                      <span className="text-[11px] text-gray-400">{opt.sub}</span>
-                      {currentRole === opt.role && (
-                        <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full">当前</span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            );
-          })()}
+          <div className="bg-white border border-black/5 rounded-[22px] p-4 shadow-[0_4px_20px_rgba(0,0,0,0.04)]">
+            <p className="text-[12px] text-secondary font-semibold mb-3 uppercase tracking-wider">切换身份</p>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { role: "employer", label: "雇主", sub: "管理菜单 · 采购", icon: "👔" },
+                { role: "helper",   label: "工人",  sub: "备菜 · 做饭",    icon: "🧑‍🍳" },
+              ].map(opt => (
+                <button
+                  key={opt.role}
+                  onClick={() => switchRole(opt.role)}
+                  className={`flex flex-col items-center gap-1.5 py-4 rounded-2xl border-2 transition-all active:scale-95 ${
+                    currentRole === opt.role ? "border-primary bg-primary/5" : "border-black/[0.08] bg-gray-50"
+                  }`}
+                >
+                  <span className="text-2xl">{opt.icon}</span>
+                  <span className={`text-[14px] font-black ${currentRole === opt.role ? "text-primary" : "text-gray-700"}`}>{opt.label}</span>
+                  <span className="text-[11px] text-gray-400">{opt.sub}</span>
+                  {currentRole === opt.role && (
+                    <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full">当前</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
 
           {/* ── Sign out ── */}
           <button
-            onClick={() => {
-              localStorage.clear();
-              navigate("/login");
-            }}
-            className="w-full bg-white border border-black/5 rounded-[20px] py-4 text-secondary font-bold text-[14px] active:scale-[0.98] transition-transform shadow-[0_4px_20px_rgba(0,0,0,0.04)]"
+            onClick={() => { localStorage.clear(); navigate("/login"); }}
+            className="w-full bg-white border border-black/5 rounded-[22px] py-4 text-secondary font-bold text-[14px] active:scale-[0.98] transition-transform shadow-[0_4px_20px_rgba(0,0,0,0.04)]"
           >
             退出登录
           </button>

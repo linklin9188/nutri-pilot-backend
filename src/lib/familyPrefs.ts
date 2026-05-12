@@ -92,10 +92,13 @@ export const ALLERGY_TITLE_KEYWORDS: Record<AllergyId, string[]> = {
 // ── Dish allergen check ───────────────────────────────────────────────────────
 
 export function dishTriggersAllergy(dish: { main_ingredient?: string; title_zh?: string; title_en?: string }, allergy: AllergyId): boolean {
+  const ingList = ALLERGY_INGREDIENTS[allergy];
+  const kwList  = ALLERGY_TITLE_KEYWORDS[allergy];
+  if (!ingList || !kwList) return false; // unknown allergy type — safe default
   const ingredient = dish.main_ingredient ?? '';
-  if (ALLERGY_INGREDIENTS[allergy].includes(ingredient)) return true;
+  if (ingList.includes(ingredient)) return true;
   const title = ((dish.title_zh ?? '') + ' ' + (dish.title_en ?? '')).toLowerCase();
-  return ALLERGY_TITLE_KEYWORDS[allergy].some(kw => title.includes(kw.toLowerCase()));
+  return kwList.some(kw => title.includes(kw.toLowerCase()));
 }
 
 export function dishAllergyFor(dish: { main_ingredient?: string; title_zh?: string; title_en?: string }, members: FamilyMember[]): FamilyMember[] {

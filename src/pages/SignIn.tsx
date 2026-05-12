@@ -4,12 +4,12 @@
  * /login is the marketing landing page; /signin is this focused form.
  */
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 
-type Step = "choose" | "phone" | "otp";
+type Step = "choose" | "phone";
 type Role = "employer" | "helper";
 
 const COUNTRY_CODES = [
@@ -29,18 +29,29 @@ export default function SignIn() {
   const [step, setStep]           = useState<Step>("choose");
   const [countryCode, setCountryCode] = useState(role === "helper" ? "+63" : "+852");
   const [phone, setPhone]         = useState("");
-  const [otp, setOtp]             = useState(["", "", "", "", "", ""]);
-  const [error, setError]         = useState("");
-  const [sending, setSending]     = useState(false);
-  const [verifying, setVerifying] = useState(false);
-  const [countdown, setCountdown] = useState(0);
-  const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const [error, setError]   = useState("");
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (countdown <= 0) return;
-    const t = setTimeout(() => setCountdown(c => c - 1), 1000);
-    return () => clearTimeout(t);
-  }, [countdown]);
+  // Fixed password for all users during test phase
+  const TEST_PASSWORD = "123456";
+
+  const handleInstagram = async () => {
+    localStorage.setItem("nutri_role", "helper");
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "facebook",
+      options: { redirectTo: `${window.location.origin}/helper`, scopes: "instagram_basic,public_profile" },
+    });
+    if (error) setError(error.message);
+  };
+
+  const handleFacebook = async () => {
+    localStorage.setItem("nutri_role", "helper");
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "facebook",
+      options: { redirectTo: `${window.location.origin}/helper`, scopes: "public_profile" },
+    });
+    if (error) setError(error.message);
+  };
 
   const handleApple = async () => {
     localStorage.setItem("nutri_role", role);
@@ -51,65 +62,40 @@ export default function SignIn() {
     if (error) setError(error.message);
   };
 
-  const handleInstagram = async () => {
-    localStorage.setItem("nutri_role", "helper");
-    // Instagram uses Meta/Facebook OAuth — enable in Supabase Dashboard → Auth → Providers → Facebook
-    // Request instagram_basic scope to get Instagram profile
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "facebook",
-      options: {
-        redirectTo: `${window.location.origin}/helper`,
-        scopes: "instagram_basic,public_profile",
-      },
-    });
-    if (error) setError(error.message);
-  };
-
-  const handleFacebook = async () => {
-    localStorage.setItem("nutri_role", "helper");
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "facebook",
-      options: {
-        redirectTo: `${window.location.origin}/helper`,
-        scopes: "public_profile",
-      },
-    });
-    if (error) setError(error.message);
-  };
-
-  const handleSend = async () => {
+  /**
+   * Phone login — uses email/password internally.
+   * Email = <countryCode><digits>@nutri-pilot.app
+   * Password = TEST_PASSWORD (123456) for all users during test phase.
+   * Auto-creates account on first login.
+   */
+  const handleLogin = async () => {
     const digits = phone.replace(/\D/g, "");
     if (digits.length < 8) return;
-    setSending(true); setError("");
-    try {
-      const { error } = await supabase.auth.signInWithOtp({
-        phone: `${countryCode}${digits}`,
-      });
-      if (error) throw error;
-      setStep("otp");
-      setCountdown(60);
-    } catch (e: any) {
-      setError(e.message ?? "发送失败，请稍后重试");
-    } finally {
-      setSending(false);
-    }
-  };
+    setLoading(true); setError("");
 
-  const handleVerify = async () => {
-    const token = otp.join("");
-    if (token.length < 6) return;
-    setVerifying(true); setError("");
+    const email = `${countryCode.replace("+", "")}${digits}@nutri-pilot.app`;
+
     try {
-      const { data, error } = await supabase.auth.verifyOtp({
-        phone: `${countryCode}${phone.replace(/\D/g, "")}`,
-        token,
-        type: "sms",
-      });
-      if (error) throw error;
-      const userId = data.user?.id;
-      if (!userId) throw new Error("No user");
+      // Try sign in first
+      let { data, error: signInErr } = await supabase.auth.signInWithPassword({ email, password: TEST_PASSWORD });
+
+      // If user doesn't exist yet, sign up then sign in
+      if (signInErr && signInErr.message.toLowerCase().includes("invalid")) {
+        const { error: signUpErr } = await supabase.auth.signUp({ email, password: TEST_PASSWORD });
+        if (signUpErr) throw signUpErr;
+        const result = await supabase.auth.signInWithPassword({ email, password: TEST_PASSWORD });
+        data = result.data;
+        if (result.error) throw result.error;
+      } else if (signInErr) {
+        throw signInErr;
+      }
+
+      const userId = data?.user?.id;
+      if (!userId) throw new Error("登录失败，请重试");
+
       localStorage.setItem("isLoggedIn", "true");
       localStorage.setItem("userId", userId);
+      localStorage.setItem("nutri_user_id", userId);
       localStorage.setItem("nutri_role", role);
 
       if (role === "helper") {
@@ -121,36 +107,19 @@ export default function SignIn() {
         return;
       }
 
+      // Employer: go to setup if first time, else home
       const { data: profile } = await supabase
         .from("user_profiles")
         .select("id")
         .eq("id", userId)
         .maybeSingle();
 
-      if (!profile && !localStorage.getItem("quickPrefs")) {
-        navigate("/setup");
-      } else {
-        navigate("/");
-      }
+      navigate(!profile && !localStorage.getItem("quickPrefs") ? "/setup" : "/");
     } catch (e: any) {
-      setError(
-        e.message === "Token has expired or is invalid"
-          ? "验证码错误或已过期，请重新获取"
-          : (e.message ?? "验证失败，请重试"),
-      );
+      setError(e.message ?? "登录失败，请重试");
     } finally {
-      setVerifying(false);
+      setLoading(false);
     }
-  };
-
-  const handleOtpChange = (idx: number, val: string) => {
-    const ch = val.replace(/\D/g, "").slice(-1);
-    const next = [...otp]; next[idx] = ch; setOtp(next);
-    if (ch && idx < 5) otpRefs.current[idx + 1]?.focus();
-  };
-  const handleOtpKey = (idx: number, e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Backspace" && !otp[idx] && idx > 0)
-      otpRefs.current[idx - 1]?.focus();
   };
 
   return (
@@ -344,144 +313,62 @@ export default function SignIn() {
             className="relative z-10 flex-1 flex flex-col px-6 pt-8 pb-12"
           >
             <h2 className="font-serif font-black text-white mb-1" style={{ fontSize: 28 }}>输入手机号</h2>
-            <p className="text-white/40 mb-8" style={{ fontSize: 14 }}>我们将发送 6 位验证码</p>
+            <p className="text-white/40 mb-8" style={{ fontSize: 14 }}>输入手机号即可登录或注册</p>
 
-            {/* Phone input row: country-code pill + number input side-by-side */}
+            {/* Phone input row */}
             <div className="flex gap-2 mb-3">
-              {/* Country code selector — always visible, tap to cycle */}
               <button
                 onClick={() => {
                   const next = COUNTRY_CODES[(COUNTRY_CODES.findIndex(c => c.code === countryCode) + 1) % COUNTRY_CODES.length];
                   setCountryCode(next.code);
                 }}
                 className="flex-shrink-0 flex items-center gap-1.5 px-3 h-[54px] rounded-2xl active:scale-95 transition-all"
-                style={{
-                  background: "rgba(255,255,255,0.10)",
-                  border: "1.5px solid rgba(255,255,255,0.18)",
-                  minWidth: 90,
-                }}
+                style={{ background: "rgba(255,255,255,0.10)", border: "1.5px solid rgba(255,255,255,0.18)", minWidth: 90 }}
               >
-                <span style={{ fontSize: 20 }}>
-                  {COUNTRY_CODES.find(c => c.code === countryCode)?.flag}
-                </span>
-                <span style={{ fontSize: 15, fontWeight: 600, color: "white", letterSpacing: "0.02em" }}>
-                  {countryCode}
-                </span>
-                {/* chevron */}
+                <span style={{ fontSize: 20 }}>{COUNTRY_CODES.find(c => c.code === countryCode)?.flag}</span>
+                <span style={{ fontSize: 15, fontWeight: 600, color: "white", letterSpacing: "0.02em" }}>{countryCode}</span>
                 <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ opacity: 0.4, marginLeft: 1 }}>
                   <path d="M2 3.5L5 6.5L8 3.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               </button>
 
-              {/* Phone number input */}
               <input
                 type="tel"
                 inputMode="numeric"
                 placeholder={countryCode === "+852" ? "9XXX XXXX" : "138 0000 0000"}
                 value={phone}
                 onChange={e => setPhone(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && handleSend()}
+                onKeyDown={e => e.key === "Enter" && handleLogin()}
+                autoFocus
                 className="flex-1 h-[54px] rounded-2xl px-4 text-white placeholder-white/25 outline-none"
-                style={{
-                  background: "rgba(255,255,255,0.08)",
-                  border: "1.5px solid rgba(255,255,255,0.14)",
-                  fontSize: 18, letterSpacing: "0.06em",
-                }}
+                style={{ background: "rgba(255,255,255,0.08)", border: "1.5px solid rgba(255,255,255,0.14)", fontSize: 18, letterSpacing: "0.06em" }}
               />
             </div>
 
-            {/* Country name hint */}
-            <p className="mb-4 pl-1" style={{ fontSize: 11, color: "rgba(255,255,255,0.28)" }}>
+            <p className="mb-6 pl-1" style={{ fontSize: 11, color: "rgba(255,255,255,0.28)" }}>
               {COUNTRY_CODES.find(c => c.code === countryCode)?.label} · 点击区号可切换
             </p>
 
             {error && <p className="text-red-400 mb-3 text-[13px]">{error}</p>}
 
             <button
-              onClick={handleSend}
-              disabled={sending || phone.replace(/\D/g, "").length < 8}
-              className="w-full h-[54px] rounded-2xl font-semibold flex items-center justify-center transition-all active:scale-[0.97]"
+              onClick={handleLogin}
+              disabled={loading || phone.replace(/\D/g, "").length < 8}
+              className="w-full h-[54px] rounded-2xl font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.97]"
               style={{
-                background: (sending || phone.replace(/\D/g, "").length < 8)
+                background: (loading || phone.replace(/\D/g, "").length < 8)
                   ? "rgba(255,90,31,0.30)"
                   : "linear-gradient(135deg, #FF5A1F, #FF8C54)",
-                boxShadow: (sending || phone.replace(/\D/g, "").length < 8)
-                  ? "none"
-                  : "0 8px 24px rgba(255,90,31,0.30)",
+                boxShadow: (loading || phone.replace(/\D/g, "").length < 8) ? "none" : "0 8px 24px rgba(255,90,31,0.30)",
                 fontSize: 15,
-                color: (sending || phone.replace(/\D/g, "").length < 8)
-                  ? "rgba(255,255,255,0.40)"
-                  : "white",
-                cursor: (sending || phone.replace(/\D/g, "").length < 8) ? "not-allowed" : "pointer",
+                color: (loading || phone.replace(/\D/g, "").length < 8) ? "rgba(255,255,255,0.40)" : "white",
+                cursor: (loading || phone.replace(/\D/g, "").length < 8) ? "not-allowed" : "pointer",
               }}
             >
-              {sending
+              {loading
                 ? <div className="w-5 h-5 border-2 border-white/60 border-t-white rounded-full animate-spin" />
-                : "发送验证码"}
+                : "登录 / 注册"}
             </button>
-          </motion.div>
-        )}
-
-        {/* ── STEP: OTP ────────────────────────────────────────────── */}
-        {step === "otp" && (
-          <motion.div key="otp"
-            initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }}
-            transition={{ duration: 0.22 }}
-            className="relative z-10 flex-1 flex flex-col px-6 pt-8 pb-12"
-          >
-            <h2 className="font-serif font-black text-white mb-2" style={{ fontSize: 28 }}>输入验证码</h2>
-            <p className="text-white/40 mb-8" style={{ fontSize: 14 }}>
-              已发送至 {countryCode} {phone}
-            </p>
-
-            {/* 6-digit boxes */}
-            <div className="grid grid-cols-6 gap-2 mb-4">
-              {otp.map((digit, idx) => (
-                <input
-                  key={idx}
-                  ref={el => { otpRefs.current[idx] = el; }}
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={1}
-                  value={digit}
-                  onChange={e => handleOtpChange(idx, e.target.value)}
-                  onKeyDown={e => handleOtpKey(idx, e)}
-                  autoFocus={idx === 0}
-                  className="w-full rounded-xl text-center text-white font-bold outline-none transition-all"
-                  style={{
-                    height: 48,
-                    fontSize: 22,
-                    background: digit ? "rgba(255,90,31,0.18)" : "rgba(255,255,255,0.08)",
-                    border: digit ? "1.5px solid #FF5A1F" : "1.5px solid rgba(255,255,255,0.12)",
-                    caretColor: "#FF5A1F",
-                  }}
-                />
-              ))}
-            </div>
-
-            {error && <p className="text-red-400 mb-3 text-center text-[13px]">{error}</p>}
-
-            <button onClick={handleVerify}
-              disabled={verifying || otp.join("").length < 6}
-              className="w-full h-[54px] rounded-2xl font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-30 mb-4"
-              style={{
-                background: "linear-gradient(135deg, #FF5A1F, #FF8C54)",
-                boxShadow: "0 8px 24px rgba(255,90,31,0.28)",
-                fontSize: 15, color: "white",
-              }}>
-              {verifying
-                ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                : "验证并登录"}
-            </button>
-
-            <div className="text-center">
-              {countdown > 0
-                ? <p className="text-white/30" style={{ fontSize: 13 }}>{countdown}s 后可重新发送</p>
-                : <button onClick={handleSend} disabled={sending}
-                    className="text-[#FF8C54] transition-colors" style={{ fontSize: 13 }}>
-                    重新发送验证码
-                  </button>}
-            </div>
           </motion.div>
         )}
 

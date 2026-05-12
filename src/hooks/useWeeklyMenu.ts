@@ -40,32 +40,69 @@ export interface WeeklyMenu {
 
 // ── Cache version — bump this whenever the algorithm changes significantly ─────
 // This ensures old cached menus are discarded after an algorithm update.
-const ALGO_VERSION = 'v8'; // bumped: separate lunch/dinner generation
+const ALGO_VERSION = 'v9'; // bumped: per-member dish grouping (adult + kid slots)
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const DAY_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 
+// ── Who's eating today ────────────────────────────────────────────────────────
+
+interface EatingMember { id: string; name: string; lifeStage: string; needs: string[] }
+
+function getEatingMembers(): EatingMember[] {
+  const allMembers: EatingMember[] = (() => {
+    try { return JSON.parse(localStorage.getItem('nutri_family_members') || '[]'); } catch { return []; }
+  })();
+  if (allMembers.length === 0) return [];
+  const raw = localStorage.getItem('nutri_eating_today');
+  if (!raw) return allMembers; // default: everyone
+  try {
+    const ids: string[] = JSON.parse(raw);
+    const filtered = allMembers.filter(m => ids.includes(m.id));
+    return filtered.length > 0 ? filtered : allMembers;
+  } catch { return allMembers; }
+}
+
 /**
- * Map headcount → dishes per day.
- *
- * 中国家庭标准：一人两菜一汤，随人数递增，8人以上按人数直接算。
- *   ≤1   → 3  (2菜1汤)
- *   2-3  → 4  (3菜1汤)
- *   4-5  → 5  (4菜1汤)
- *   6-7  → 6  (5菜1汤)
- *   8+   → round(eff)  每人一道菜，上限20防止离谱
+ * Returns total dishes per day + how many slots are reserved for kid-friendly dishes.
+ * Kid slots: 1 if any kid in today's group, 2 if 2+ kids.
  */
+function calcDishesForToday(): { dishesPerDay: number; kidSlots: number } {
+  const members = getEatingMembers();
+  let kids = 0, adults = 0;
+  if (members.length > 0) {
+    kids   = members.filter(m => m.lifeStage === '儿童').length;
+    adults = members.length - kids;
+  } else {
+    adults = parseInt(localStorage.getItem('nutri_adults') ?? '3', 10);
+    kids   = parseInt(localStorage.getItem('nutri_kids')   ?? '0', 10);
+  }
+  const eff = adults + kids * 0.5;
+  const total =
+    eff <= 1.5 ? 3 :
+    eff <= 3.5 ? 4 :
+    eff <= 5.5 ? 5 :
+    eff <= 7.5 ? 6 :
+    Math.min(20, Math.round(eff));
+  const kidSlots = kids > 0 ? Math.min(kids, 2) : 0;
+  return { dishesPerDay: total, kidSlots };
+}
+
+// Legacy alias (used by swapDish / regenerate where kidSlots doesn't matter)
 function calcDishesPerDay(): number {
-  const adults = parseInt(localStorage.getItem('nutri_adults') ?? '3', 10);
-  const kids   = parseInt(localStorage.getItem('nutri_kids')   ?? '0', 10);
-  const eff    = adults + kids * 0.5;
-  if (eff <= 1.5) return 3;
-  if (eff <= 3.5) return 4;
-  if (eff <= 5.5) return 5;
-  if (eff <= 7.5) return 6;
-  // 8人以上：每人一道菜（上限20）
-  return Math.min(20, Math.round(eff));
+  return calcDishesForToday().dishesPerDay;
+}
+
+/** Stable localStorage cache key — includes algo version, headcount, and eating selection. */
+function getCacheKey(weekStart: string): string {
+  const { dishesPerDay } = calcDishesForToday();
+  const eatingRaw = localStorage.getItem('nutri_eating_today');
+  let eatingKey = 'all';
+  try {
+    if (eatingRaw) eatingKey = (JSON.parse(eatingRaw) as string[]).slice().sort().join('-');
+  } catch {}
+  return `weekly_menu_${ALGO_VERSION}_${weekStart}_p${dishesPerDay}_e${eatingKey}`;
 }
 
 function getMondayISO(): string {
@@ -470,6 +507,7 @@ function generateWeekPlan(
   prefScores: Record<string, number>,
   recentIds: Map<string, number>,
   dishesPerDay = 5,
+  kidSlots = 0,
   spiceBoost = 0,
   ageGroup?: string | null,
   healthPrefs?: { preferLowSodium: boolean; preferLowSugar: boolean; avoidHighPurine: boolean },
@@ -481,8 +519,11 @@ function generateWeekPlan(
   const pickedIngredients: string[] = [];
   const pickedTitleKeywords: string[] = [];   // weekly keyword tracker
 
-  // Use small-family slot template when dishesPerDay ≤ 3
-  const useSmallTemplate = dishesPerDay <= 3;
+  // Adult slots = total minus kid-dedicated slots
+  const adultSlots = Math.max(dishesPerDay - kidSlots, 1);
+
+  // Use small-family slot template when adult slots ≤ 3
+  const useSmallTemplate = adultSlots <= 3;
 
   // Track weekly category counts for hard caps (scale with dishesPerDay)
   const MAX_PER_CATEGORY = getMaxPerCategory(dishesPerDay);
@@ -496,7 +537,7 @@ function generateWeekPlan(
     let allergenDishCountToday = 0;
     const maxAllergenToday = familyPrefs?.maxAllergenDishesPerDay ?? 1;
 
-    for (let slot = 0; slot < dishesPerDay; slot++) {
+    for (let slot = 0; slot < adultSlots; slot++) {
       const slotTemplate = useSmallTemplate ? SLOT_PREFERRED_CATS_SMALL : SLOT_PREFERRED_CATS;
       const preferredCats = slotTemplate[slot] ?? [];
 
@@ -633,6 +674,44 @@ function generateWeekPlan(
       weeklyCatCounts[cat] = (weeklyCatCounts[cat] ?? 0) + 1;
     }
 
+    // ── Kid-dedicated dish slots ──────────────────────────────────────────────
+    // Scored separately with child-friendly criteria: no spicy, prefer light/sweet.
+    // They're added to the same day.dishes array so the whole table shares them.
+    const kidDishes: any[] = [];
+    if (kidSlots > 0) {
+      const kidUsedIds = new Set([...usedIds, ...dayDishes.map(d => d.id)]);
+      const kidCandidates = pool
+        .filter(d => !kidUsedIds.has(d.id))
+        .filter(d => !(d.flavor_tags ?? []).includes('spicy'))          // hard: no spicy
+        .filter(d => !['dessert', 'soup', 'staple'].includes(d.course_type ?? ''))
+        .map(d => {
+          let s = scoreForWeek({
+            dish: d, profile, prefScores, recentIds,
+            pickedIngredients: [...pickedIngredients, ...dayIngredients],
+            pickedTitleKeywords,
+            dayIndex,
+            spiceBoost: -1.0,   // extra spicy penalty for kid pass
+            ageGroup: '00后',   // always use child age mods
+            healthPrefs,
+          });
+          const flavors: string[] = d.flavor_tags ?? [];
+          if (flavors.includes('sweet'))  s += 0.25;
+          if (flavors.includes('light'))  s += 0.20;
+          if (flavors.includes('savory')) s += 0.10;
+          return { dish: d, score: s };
+        })
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 15);
+
+      weightedRandom(kidCandidates, kidSlots).forEach(c => {
+        kidDishes.push(c.dish);
+        const kw = extractTitleKeyword(c.dish.title_zh ?? c.dish.title ?? '');
+        if (kw) pickedTitleKeywords.push(kw);
+        const cat = ingCategory(c.dish.main_ingredient ?? 'other');
+        weeklyCatCounts[cat] = (weeklyCatCounts[cat] ?? 0) + 1;
+      });
+    }
+
     // Track for next day's scoring
     dayIngredients.forEach(ing => pickedIngredients.push(ing));
 
@@ -671,7 +750,7 @@ function generateWeekPlan(
     days.push({
       dayIndex,
       dayLabel: DAY_LABELS[dayIndex],
-      dishes: dayDishes.map(d => enrichRaw(d)),
+      dishes: [...dayDishes, ...kidDishes].map(d => enrichRaw(d)),
       lunchDishes,
     });
   }
@@ -781,11 +860,11 @@ export function useWeeklyMenu() {
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // Re-generate when user updates preferences
+  // Re-generate when user updates preferences or eating selection changes
   useEffect(() => {
     const handler = () => {
       const weekStart = getMondayISO();
-      localStorage.removeItem(`weekly_menu_${ALGO_VERSION}_${weekStart}_p${calcDishesPerDay()}`);
+      localStorage.removeItem(getCacheKey(weekStart));
       setWeeklyMenu(null);
       setRefreshKey(k => k + 1);
     };
@@ -817,10 +896,10 @@ export function useWeeklyMenu() {
         }
       }
 
-      // 2. Try localStorage cache — key includes dishesPerDay so headcount changes bust cache
-      const dishesPerDay = calcDishesPerDay();
-      const lsKey  = `weekly_menu_${ALGO_VERSION}_${weekStart}_p${dishesPerDay}`;
-      const lsRaw  = localStorage.getItem(lsKey);
+      // 2. Try localStorage cache — key includes headcount + eating selection
+      const { dishesPerDay, kidSlots } = calcDishesForToday();
+      const lsKey = getCacheKey(weekStart);
+      const lsRaw = localStorage.getItem(lsKey);
       if (lsRaw) {
         try {
           const parsed = JSON.parse(lsRaw) as WeeklyMenu;
@@ -928,7 +1007,7 @@ export function useWeeklyMenu() {
         };
         const familyPrefs = getFamilyMenuPrefs(dishesPerDay);
         const menu = generateWeekPlan(
-          pool, profile, prefScores, recentIds, dishesPerDay,
+          pool, profile, prefScores, recentIds, dishesPerDay, kidSlots,
           spiceBoost, profile.age_group, healthPrefs, familyPrefs,
         );
 
@@ -937,7 +1016,7 @@ export function useWeeklyMenu() {
         // Persist — mark which algo version generated this menu so DB cache
         // can be invalidated on next algo upgrade (see weekly_menu_algo_ver check above)
         localStorage.setItem(lsKey, JSON.stringify(menu));
-        localStorage.setItem('weekly_menu_algo_ver', ALGO_VERSION);
+        localStorage.setItem('weekly_menu_algo_ver', ALGO_VERSION); // tracks version for DB cache validity
         saveToDB(userId, menu).catch(() => {});
         saveToHistory(userId, menu).catch(() => {});
 
@@ -972,7 +1051,7 @@ export function useWeeklyMenu() {
 
     setWeeklyMenu(updated);
 
-    const lsKey = `weekly_menu_${ALGO_VERSION}_${weeklyMenu.weekStart}_p${calcDishesPerDay()}`;
+    const lsKey = getCacheKey(weeklyMenu.weekStart);
     localStorage.setItem(lsKey, JSON.stringify(updated));
 
     const userId = localStorage.getItem('nutri_user_id') ?? 'anonymous';
@@ -990,7 +1069,7 @@ export function useWeeklyMenu() {
   // Regenerate (discard cache, re-run algorithm)
   function regenerate() {
     if (!weeklyMenu) return;
-    localStorage.removeItem(`weekly_menu_${ALGO_VERSION}_${weeklyMenu.weekStart}_p${calcDishesPerDay()}`);
+    localStorage.removeItem(getCacheKey(weeklyMenu.weekStart));
     setWeeklyMenu(null);
     setLoading(true);
     // Re-trigger useEffect via state reset
