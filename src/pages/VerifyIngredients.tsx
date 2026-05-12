@@ -6,7 +6,7 @@ import { getUserTier, TIER_CONFIG } from "../lib/suppliers";
 import { dishToIngredients, aggregateIngredients, type ShoppingIngredient } from "../lib/dishIngredients";
 
 // Keep in sync with useWeeklyMenu ALGO_VERSION
-const WEEKLY_ALGO_VERSION = 'v7';
+const WEEKLY_ALGO_VERSION = 'v8';
 
 // ── Helper: read headcount from localStorage ──────────────────────────────────
 function readHeadcount(): { adults: number; kids: number } {
@@ -36,7 +36,10 @@ function getDishes(mode: 'today' | 'week'): any[] {
     if (raw) {
       try {
         const menu = JSON.parse(raw);
-        return (menu.days ?? []).flatMap((d: any) => d.dishes ?? []);
+        return (menu.days ?? []).flatMap((d: any) => [
+          ...(d.dishes ?? []),
+          ...(d.lunchDishes ?? []),
+        ]);
       } catch { /* ignore */ }
     }
   }

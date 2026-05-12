@@ -700,6 +700,8 @@ async function loadFromDB(userId: string, weekStart: string): Promise<WeeklyMenu
   ]);
 
   if (dinnerRes.error || !dinnerRes.data || dinnerRes.data.length < 7) return null;
+  // Force regeneration if lunch rows are missing (e.g. saved before lunch was implemented)
+  if (!lunchRes.data || lunchRes.data.length === 0) return null;
 
   const allIds = [
     ...dinnerRes.data.flatMap(r => (r.swapped_dish_ids ?? r.dish_ids) as string[]),
