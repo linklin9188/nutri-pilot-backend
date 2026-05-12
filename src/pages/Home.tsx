@@ -12,6 +12,110 @@ import { analyzeFridgePhoto, fileToBase64, type FridgeDish } from "../lib/gemini
 import { supabase } from "../lib/supabase";
 import BottomTabBar from "../components/BottomTabBar";
 
+// ── Solar term (节气) calculator ─────────────────────────────────────────────
+
+const SOLAR_TERMS: { name: string; month: number; day: number; tip: string; icon: string }[] = [
+  { name: '小寒', month: 1,  day: 5,  tip: '最寒时节，温补御寒，羊肉萝卜汤暖胃驱寒', icon: '❄️' },
+  { name: '大寒', month: 1,  day: 20, tip: '数九严寒，多食牛羊，温热汤粥固护阳气', icon: '🌨️' },
+  { name: '立春', month: 2,  day: 3,  tip: '春日升发，多食韭菜葱蒜，少辛多酸护肝', icon: '🌱' },
+  { name: '雨水', month: 2,  day: 18, tip: '春雨润物，健脾祛湿，薏米山药莲子粥', icon: '🌧️' },
+  { name: '惊蛰', month: 3,  day: 5,  tip: '阳气渐盛，多食绿叶蔬菜，清肝养胃', icon: '🌿' },
+  { name: '春分', month: 3,  day: 20, tip: '阴阳平衡，饮食宜清淡，少油少炸多蒸煮', icon: '☀️' },
+  { name: '清明', month: 4,  day: 4,  tip: '春末湿气重，祛湿健脾，红豆薏米汤为佳', icon: '🌷' },
+  { name: '谷雨', month: 4,  day: 20, tip: '湿气最盛，祛湿养胃，冬瓜扁豆汤去湿', icon: '🌦️' },
+  { name: '立夏', month: 5,  day: 5,  tip: '夏热渐起，清淡为主，少炸多蒸，勿贪生冷', icon: '☀️' },
+  { name: '小满', month: 5,  day: 21, tip: '湿热上升，清热祛湿，绿豆冬瓜苦瓜好时节', icon: '🌤️' },
+  { name: '芒种', month: 6,  day: 6,  tip: '暑热渐盛，消暑去火，苦瓜绿豆汤消热', icon: '🔥' },
+  { name: '夏至', month: 6,  day: 21, tip: '一年最热，清热养心，西瓜莲藕荷叶茶', icon: '🌞' },
+  { name: '小暑', month: 7,  day: 7,  tip: '三伏将至，清热祛湿，薏米冬瓜汤为首选', icon: '🌡️' },
+  { name: '大暑', month: 7,  day: 22, tip: '三伏最热，养阴补气，鸭汤绿豆汤消暑', icon: '🥵' },
+  { name: '立秋', month: 8,  day: 7,  tip: '秋燥初至，润肺养阴，梨子银耳百合汤', icon: '🍂' },
+  { name: '处暑', month: 8,  day: 23, tip: '暑气消退，滋阴润燥，芝麻蜂蜜梨汁养肺', icon: '🌬️' },
+  { name: '白露', month: 9,  day: 7,  tip: '秋凉渐起，养肺防燥，白色食物润肺为佳', icon: '🌾' },
+  { name: '秋分', month: 9,  day: 23, tip: '阴阳平分，滋阴补肺，山药百合粥养秋', icon: '🍁' },
+  { name: '寒露', month: 10, day: 8,  tip: '秋末寒意，补肾养阴，板栗山药温补为宜', icon: '🌰' },
+  { name: '霜降', month: 10, day: 23, tip: '初寒霜降，补脾益胃，牛肉萝卜汤暖身', icon: '🌫️' },
+  { name: '立冬', month: 11, day: 7,  tip: '冬补开始，温阳补肾，羊肉当归温补汤', icon: '🍲' },
+  { name: '小雪', month: 11, day: 22, tip: '天气转冷，益气补血，红枣桂圆暖宫汤', icon: '❄️' },
+  { name: '大雪', month: 12, day: 7,  tip: '数九进补，温阳散寒，姜枣羊肉驱寒汤', icon: '🌨️' },
+  { name: '冬至', month: 12, day: 22, tip: '一年最寒，进补最佳，饺子汤圆暖意浓', icon: '🥟' },
+];
+
+function getCurrentSolarTerm(): typeof SOLAR_TERMS[0] {
+  const now = new Date();
+  const month = now.getMonth() + 1;
+  const day = now.getDate();
+  // Find the most recent solar term that has passed
+  let current = SOLAR_TERMS[SOLAR_TERMS.length - 1];
+  for (let i = SOLAR_TERMS.length - 1; i >= 0; i--) {
+    const st = SOLAR_TERMS[i];
+    if (st.month < month || (st.month === month && st.day <= day)) {
+      current = st;
+      break;
+    }
+  }
+  return current;
+}
+
+// ── Weather tip overlay (weather code + humidity + temp → dietary nudge) ──────
+
+const WEATHER_CODE_LABEL: Record<number, string> = {
+  0: '晴朗', 1: '晴转多云', 2: '多云', 3: '阴天',
+  45: '有雾', 48: '有雾',
+  51: '毛毛雨', 53: '小雨', 55: '中雨',
+  61: '小雨', 63: '中雨', 65: '大雨',
+  80: '阵雨', 81: '阵雨', 82: '暴雨',
+  95: '雷雨', 96: '雷暴', 99: '暴风雨',
+};
+
+function getWeatherAdjustment(temp: number, humidity: number, code: number): string {
+  if (code >= 80) return '雨天湿冷，暖胃为主';
+  if (code >= 51) return '细雨绵绵，驱湿暖身';
+  if (humidity >= 80) return '湿度高，宜祛湿健脾';
+  if (humidity >= 65) return '湿气较重，清淡少油';
+  if (temp >= 32) return '高温酷热，消暑清热';
+  if (temp >= 28) return '天气炎热，宜清淡少炸';
+  if (temp <= 12) return '天寒，温补为主';
+  if (temp <= 18) return '天气凉爽，可适当温补';
+  return '';
+}
+
+interface WeatherInfo {
+  temp: number;
+  humidity: number;
+  code: number;
+  label: string;
+}
+
+function useDailyTip() {
+  const [weather, setWeather] = useState<WeatherInfo | null>(null);
+
+  useEffect(() => {
+    // Default: Hong Kong coordinates; future: use geolocation
+    const url = 'https://api.open-meteo.com/v1/forecast?latitude=22.32&longitude=114.17&current=temperature_2m,relative_humidity_2m,weather_code&timezone=Asia%2FHong_Kong';
+    fetch(url)
+      .then(r => r.json())
+      .then(data => {
+        const cur = data?.current;
+        if (!cur) return;
+        setWeather({
+          temp: Math.round(cur.temperature_2m ?? 25),
+          humidity: Math.round(cur.relative_humidity_2m ?? 70),
+          code: cur.weather_code ?? 0,
+          label: WEATHER_CODE_LABEL[cur.weather_code] ?? '晴朗',
+        });
+      })
+      .catch(() => {/* non-critical */});
+  }, []);
+
+  const solarTerm = getCurrentSolarTerm();
+  const weatherAdj = weather ? getWeatherAdjustment(weather.temp, weather.humidity, weather.code) : '';
+  const tip = weatherAdj || solarTerm.tip;
+
+  return { solarTerm, weather, tip };
+}
+
+// ── Health metrics ─────────────────────────────────────────────────────────────
 function computeHealthMetrics(weeklyMenu: any) {
   if (!weeklyMenu?.days) return null;
   const days = weeklyMenu.days as any[];
@@ -165,6 +269,7 @@ export default function Home() {
   const hasMenu = (weeklyMenu?.days[todayIdx]?.dishes.length ?? storedMenuRaw.length) > 0;
 
   const healthMetrics = computeHealthMetrics(weeklyMenu);
+  const { solarTerm, weather, tip } = useDailyTip();
 
   const now = new Date();
   const hour = now.getHours();
@@ -244,11 +349,26 @@ export default function Home() {
       <header className="sticky top-0 z-50 bg-white/85 backdrop-blur-xl border-b border-black/5"
         style={{ paddingTop: "env(safe-area-inset-top, 44px)" }}>
         <div className="flex items-center justify-between px-5 py-4">
-          <div>
+          <div className="flex-1 min-w-0 pr-2">
+            {/* Greeting + date */}
             <p style={{ fontSize: 12, color: "rgba(0,0,0,0.38)" }}>{greeting} · {dateLabel}</p>
-            <h1 className="font-serif font-black mt-0.5" style={{ fontSize: 24, color: "#1a1a1a" }}>
-              {displayName || "我的家庭餐桌"}
-            </h1>
+            {/* Solar term + weather badges */}
+            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold"
+                style={{ background: 'rgba(255,90,31,0.10)', color: '#FF5A1F' }}>
+                {solarTerm.icon} {solarTerm.name}
+              </span>
+              {weather && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold"
+                  style={{ background: 'rgba(0,0,0,0.05)', color: '#555' }}>
+                  {weather.temp}°C · {weather.label} · 湿度{weather.humidity}%
+                </span>
+              )}
+            </div>
+            {/* Dynamic dietary tip */}
+            <p className="mt-1 font-semibold leading-snug" style={{ fontSize: 13, color: '#1a1a1a' }}>
+              {tip}
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <button
