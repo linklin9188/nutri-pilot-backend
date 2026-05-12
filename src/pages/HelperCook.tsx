@@ -17,30 +17,33 @@ interface TimerState {
 }
 
 // ── Parse heat level from action text ─────────────────────────────────────────
-function parseHeat(text: string): { level: 'high' | 'medium' | 'low' | 'simmer' | null; dial: string | null; label: string; sublabel: string } {
-  if (/大火|high heat/i.test(text)) {
-    const dial = text.match(/[（(](\d+)档[）)]/)?.[ 1] ?? text.match(/(\d+)档/)?.[1] ?? text.match(/level\s*(\d+)/i)?.[1] ?? null;
-    return { level: 'high', dial, label: 'High Heat', sublabel: 'Fast & hot — keep it moving' };
+// Chinese dishes: 大火 / 中火 / 小火 / 慢炖 only — no dial numbers
+// Temperature-based: oven/steak steps that specify °C or 度
+function parseHeat(text: string): {
+  level: 'high' | 'medium' | 'low' | 'simmer' | 'temp' | null;
+  tempC: number | null;
+  label: string;
+  sublabel: string;
+} {
+  // Temperature (oven/steak: 180度, 180°C, 200°C etc)
+  const tempMatch = text.match(/(\d{2,3})\s*(?:°C|℃|度[C℃]?)/);
+  if (tempMatch) {
+    const t = parseInt(tempMatch[1]);
+    return { level: 'temp', tempC: t, label: `${t}°C`, sublabel: t >= 200 ? 'Very hot oven' : t >= 160 ? 'Hot oven' : 'Warm oven' };
   }
-  if (/中火|medium heat/i.test(text)) {
-    const dial = text.match(/[（(](\d+)档[）)]/)?.[ 1] ?? text.match(/(\d+)档/)?.[1] ?? text.match(/level\s*(\d+)/i)?.[1] ?? null;
-    return { level: 'medium', dial, label: 'Medium Heat', sublabel: 'Steady heat — stir evenly' };
-  }
-  if (/小火|文火|low heat/i.test(text)) {
-    const dial = text.match(/[（(](\d+)档[）)]/)?.[ 1] ?? text.match(/(\d+)档/)?.[1] ?? text.match(/level\s*(\d+)/i)?.[1] ?? null;
-    return { level: 'low', dial, label: 'Low Heat', sublabel: 'Gentle simmer — don\'t rush' };
-  }
-  if (/慢炖|焖|simmer/i.test(text)) {
-    return { level: 'simmer', dial: null, label: 'Simmer', sublabel: 'Cover and wait patiently' };
-  }
-  return { level: null, dial: null, label: '', sublabel: '' };
+  if (/大火|high heat/i.test(text))   return { level: 'high',   tempC: null, label: 'High Heat',   sublabel: 'Fast & hot — keep it moving' };
+  if (/中火|medium heat/i.test(text)) return { level: 'medium', tempC: null, label: 'Medium Heat', sublabel: 'Steady heat — stir evenly' };
+  if (/小火|文火|low heat/i.test(text)) return { level: 'low',  tempC: null, label: 'Low Heat',    sublabel: 'Gentle — don\'t rush' };
+  if (/慢炖|焖|simmer/i.test(text))   return { level: 'simmer', tempC: null, label: 'Simmer',      sublabel: 'Cover and wait patiently' };
+  return { level: null, tempC: null, label: '', sublabel: '' };
 }
 
 const HEAT_CONFIG = {
-  high:   { bg: '#FF4500', light: 'rgba(255,69,0,0.12)',   border: 'rgba(255,69,0,0.3)',   icon: '🔥🔥🔥', barColor: '#FF4500' },
-  medium: { bg: '#FF8C00', light: 'rgba(255,140,0,0.12)', border: 'rgba(255,140,0,0.3)',  icon: '🔥🔥',   barColor: '#FF8C00' },
-  low:    { bg: '#4DA6FF', light: 'rgba(77,166,255,0.12)', border: 'rgba(77,166,255,0.3)', icon: '🔥',     barColor: '#4DA6FF' },
-  simmer: { bg: '#00B4A0', light: 'rgba(0,180,160,0.12)',  border: 'rgba(0,180,160,0.3)',  icon: '♨️',     barColor: '#00B4A0' },
+  high:   { bg: '#FF4500', light: 'rgba(255,69,0,0.12)',   border: 'rgba(255,69,0,0.3)',   icon: '🔥🔥🔥' },
+  medium: { bg: '#FF8C00', light: 'rgba(255,140,0,0.12)', border: 'rgba(255,140,0,0.3)',  icon: '🔥🔥' },
+  low:    { bg: '#4DA6FF', light: 'rgba(77,166,255,0.12)', border: 'rgba(77,166,255,0.3)', icon: '🔥' },
+  simmer: { bg: '#00B4A0', light: 'rgba(0,180,160,0.12)',  border: 'rgba(0,180,160,0.3)',  icon: '♨️' },
+  temp:   { bg: '#9B59B6', light: 'rgba(155,89,182,0.12)', border: 'rgba(155,89,182,0.3)', icon: '🌡️' },
 };
 
 function formatTime(seconds: number) {
@@ -164,7 +167,7 @@ function CookingScreen({ dish, onBack }: { dish: DishWithCook; onBack: () => voi
   const isFirst = currentIdx === 0;
   const isLast = currentIdx === steps.length - 1;
   const isDone = completed.has(currentIdx);
-  const heat = step ? parseHeat(step.action_zh) : { level: null, dial: null, label: '', sublabel: '' };
+  const heat = step ? parseHeat(step.action_zh) : { level: null, tempC: null, label: '', sublabel: '' };
   const heatCfg = heat.level ? HEAT_CONFIG[heat.level] : null;
   const timer = timers[currentIdx];
   const timerRunning = timer?.running ?? false;
@@ -305,17 +308,10 @@ function CookingScreen({ dish, onBack }: { dish: DishWithCook; onBack: () => voi
               {heatCfg.icon}
             </div>
             <div>
-              <div className="flex items-baseline gap-2 flex-wrap">
-                <p className="font-black" style={{ fontSize: 24, color: heatCfg.bg, lineHeight: 1 }}>
-                  {heat.label}
-                </p>
-                {heat.dial && (
-                  <span className="font-black px-2 py-0.5 rounded-lg" style={{ fontSize: 14, color: heatCfg.bg, background: heatCfg.bg + '22' }}>
-                    Lv.{heat.dial}
-                  </span>
-                )}
-              </div>
-              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', marginTop: 2 }}>
+              <p className="font-black" style={{ fontSize: 26, color: heatCfg.bg, lineHeight: 1 }}>
+                {heat.label}
+              </p>
+              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', marginTop: 4 }}>
                 {heat.sublabel}
               </p>
             </div>

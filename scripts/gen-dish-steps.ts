@@ -57,7 +57,7 @@ interface PrepStep {
 
 interface CookStep {
   step: number;
-  action_zh: string;   // heat level (大火/中火/小火 + 档位数字) + duration + visual cue
+  action_zh: string;   // heat level (大火/中火/小火, or °C for oven/steak) + duration + visual cue
   action_en: string;
   duration_min: number;
 }
@@ -91,7 +91,8 @@ async function generateBatch(dishes: DishRow[]): Promise<GeminiResult[]> {
 【2】cook_steps（烹饪机器人执行步骤）
 要求：
 - 8-12步，按顺序执行
-- 每步必须包含：火候（大火/中火/小火 + 档位数字如"大火9档"）、时长（X分钟或X秒）、引用格位（如"A格鸡肉"）
+- 每步必须包含：火候（只写大火/中火/小火三档，烤箱/牛排等西式菜写温度如"180°C"）、时长（X分钟或X秒）、引用格位（如"A格鸡肉"）
+- 不要写档位数字（不要"9档"、"level 9"等）
 - 用可观察判断标准（如"变色"、"出香味"、"冒大泡"）
 - 不要写"适量"，所有用量要具体
 - duration_min：该步骤耗时（分钟，可以是0.5=30秒）
@@ -118,9 +119,9 @@ ${JSON.stringify(dishes.map(d => ({
       {"tray": "C", "ingredient_zh": "葱花", "ingredient_en": "Spring onion", "amount_g": 10, "action_zh": "葱切末，装小碗备用（上桌前撒）", "action_en": "Finely chop, place in small bowl (sprinkle before serving)"}
     ],
     "cook_steps": [
-      {"step": 1, "action_zh": "锅中加食用油30ml，大火（9档）烧热1分钟至油面微微冒烟", "action_en": "Add 30ml oil, high heat (level 9) for 1 min until oil shimmers", "duration_min": 1},
-      {"step": 2, "action_zh": "下D格姜蒜，中火（6档）爆香30秒至出香味", "action_en": "Add D-tray ginger & garlic, medium heat (level 6) for 30 sec until fragrant", "duration_min": 0.5},
-      {"step": 3, "action_zh": "下A格鸡肉，大火（8档）翻炒2分钟至表面全部变色", "action_en": "Add A-tray chicken, high heat (level 8) stir-fry 2 min until all surfaces change color", "duration_min": 2}
+      {"step": 1, "action_zh": "锅中加食用油30ml，大火烧热1分钟至油面微微冒烟", "action_en": "Add 30ml oil, high heat for 1 min until oil shimmers", "duration_min": 1},
+      {"step": 2, "action_zh": "下D格姜蒜，中火爆香30秒至出香味", "action_en": "Add D-tray ginger & garlic, medium heat for 30 sec until fragrant", "duration_min": 0.5},
+      {"step": 3, "action_zh": "下A格鸡肉，大火翻炒2分钟至表面全部变色", "action_en": "Add A-tray chicken, high heat stir-fry 2 min until all surfaces change color", "duration_min": 2}
     ]
   }
 ]
