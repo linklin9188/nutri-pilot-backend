@@ -130,8 +130,17 @@ export default function HelperPrep() {
             )}
           </div>
         </div>
-        <button onClick={toggleLanguage} className="w-8 h-8 rounded-full bg-black/5 hover:bg-black/10 font-bold text-[12px] active:scale-95">
-          {language === 'en' ? 'EN' : '中'}
+        {/* Language toggle pill */}
+        <button
+          onClick={toggleLanguage}
+          className="flex items-center rounded-full bg-black/5 p-1 gap-0.5 active:scale-95 transition-transform"
+        >
+          <span className={`px-2.5 py-1 rounded-full text-[12px] font-bold transition-all ${language === 'zh' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-400'}`}>
+            中
+          </span>
+          <span className={`px-2.5 py-1 rounded-full text-[12px] font-bold transition-all ${language === 'en' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-400'}`}>
+            EN
+          </span>
         </button>
       </header>
 
@@ -240,7 +249,7 @@ export default function HelperPrep() {
                       {title}
                     </h2>
                     {subtitle && (
-                      <p className="text-[12px] text-gray-400 mt-0.5 truncate">{subtitle}</p>
+                      <p className="text-[14px] text-gray-400 mt-0.5 truncate">{subtitle}</p>
                     )}
                     {/* Per-dish progress */}
                     {steps.length > 0 && (
@@ -344,12 +353,12 @@ export default function HelperPrep() {
                                             )}
                                           </div>
                                           {ingAlt && (
-                                            <p className={`text-[12px] mt-0.5 ${isDone ? 'text-gray-300' : 'text-gray-400'}`}>
+                                            <p className={`text-[15px] font-semibold mt-0.5 ${isDone ? 'text-gray-300' : 'text-gray-400'}`}>
                                               {ingAlt}
                                             </p>
                                           )}
                                           {action && (
-                                            <p className={`text-[13px] mt-1 leading-snug ${isDone ? 'line-through text-gray-300' : 'text-gray-500'}`}>
+                                            <p className={`text-[14px] mt-1 leading-snug ${isDone ? 'line-through text-gray-300' : 'text-gray-500'}`}>
                                               {action}
                                             </p>
                                           )}
