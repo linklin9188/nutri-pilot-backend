@@ -116,6 +116,15 @@ export default function Settings() {
   const [helperLang, setHelperLang] = useState(() => localStorage.getItem("helperLang") || "tagalog");
   const [helperSaved, setHelperSaved] = useState(false);
   const [helperOpen,  setHelperOpen]  = useState(false);
+  const [hasHelper, setHasHelper] = useState(() => localStorage.getItem("nutri_has_helper") === "true");
+
+  function toggleHasHelper() {
+    const next = !hasHelper;
+    setHasHelper(next);
+    localStorage.setItem("nutri_has_helper", String(next));
+    // Invalidate menu cache so it regenerates with new setting
+    window.dispatchEvent(new Event("nutri-prefs-changed"));
+  }
 
   const currentRole = localStorage.getItem("nutri_role") ?? "employer";
 
@@ -338,6 +347,31 @@ export default function Settings() {
           {/* ── Helper section ── */}
           <div className="pt-2">
             <p className="text-[11px] font-bold text-secondary/50 uppercase tracking-wider px-1 mb-2">菲佣设置</p>
+
+            {/* Has-helper toggle */}
+            <div className="bg-white rounded-[22px] shadow-[0_4px_20px_rgba(0,0,0,0.05)] px-5 py-4 mb-3 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-[#FFF3E0] flex items-center justify-center">
+                  <span className="material-symbols-outlined text-[20px] text-[#FF8C54]">cooking</span>
+                </div>
+                <div>
+                  <p className="text-[14px] font-bold text-on-surface">家中有菲佣做饭</p>
+                  <p className="text-[11px] text-secondary mt-0.5">
+                    {hasHelper ? '菜单优先推易执行菜（每天最多1道高难度）' : '关闭时按正常算法生成'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={toggleHasHelper}
+                className="relative w-12 h-6 rounded-full transition-all flex-shrink-0"
+                style={{ background: hasHelper ? '#FF5A1F' : 'rgba(0,0,0,0.12)' }}
+              >
+                <span
+                  className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all"
+                  style={{ left: hasHelper ? '26px' : '2px' }}
+                />
+              </button>
+            </div>
             <div className="bg-white rounded-[22px] shadow-[0_4px_20px_rgba(0,0,0,0.05)] overflow-hidden">
               <button
                 className="w-full flex items-center justify-between px-5 py-4 active:bg-black/[0.02] transition-colors"

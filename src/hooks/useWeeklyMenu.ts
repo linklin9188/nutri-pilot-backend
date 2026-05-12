@@ -288,11 +288,12 @@ interface WeeklyScoreParams {
   spiceBoost?: number;              // from userPrefs
   ageGroup?: string | null;
   healthPrefs?: { preferLowSodium: boolean; preferLowSugar: boolean; avoidHighPurine: boolean };
+  helperMode?: boolean;             // household has a helper — prefer low execution_level
 }
 
 function scoreForWeek({
   dish, profile, prefScores, recentIds, pickedIngredients, pickedTitleKeywords, dayIndex,
-  spiceBoost = 0, ageGroup, healthPrefs,
+  spiceBoost = 0, ageGroup, healthPrefs, helperMode = false,
 }: WeeklyScoreParams): number {
   const flavorTags: string[]  = dish.flavor_tags ?? [];
   const healthTags: string[]  = dish.health_benefit_tags ?? [];
@@ -393,6 +394,13 @@ function scoreForWeek({
       const highPurineIngredients = ['shellfish', 'crab', 'scallop', 'clam', 'oyster'];
       if (highPurineIngredients.includes(dish.main_ingredient ?? '')) score -= 0.30;
     }
+  }
+
+  // ── 12. Helper-mode: prefer execution_level 1-2, penalise 3 ─────────────
+  if (helperMode) {
+    const lvl: number = dish.execution_level ?? 2;
+    if (lvl === 1) score += 0.30;
+    else if (lvl === 3) score -= 0.45;
   }
 
   return score;
@@ -512,6 +520,7 @@ function generateWeekPlan(
   ageGroup?: string | null,
   healthPrefs?: { preferLowSodium: boolean; preferLowSugar: boolean; avoidHighPurine: boolean },
   familyPrefs?: ReturnType<typeof getFamilyMenuPrefs>,
+  helperMode = false,
 ): WeeklyMenu {
   const weekStart = getMondayISO();
   const days: WeeklyDayMenu[] = [];
@@ -536,6 +545,9 @@ function generateWeekPlan(
     // Track allergen dishes per day (soft-cap at 25% of daily slots)
     let allergenDishCountToday = 0;
     const maxAllergenToday = familyPrefs?.maxAllergenDishesPerDay ?? 1;
+
+    // Helper mode: track level-3 count per day (hard cap = 1)
+    let level3CountToday = 0;
 
     for (let slot = 0; slot < adultSlots; slot++) {
       const slotTemplate = useSmallTemplate ? SLOT_PREFERRED_CATS_SMALL : SLOT_PREFERRED_CATS;
@@ -584,6 +596,9 @@ function generateWeekPlan(
           return true;
         })
         .map(d => {
+          // Helper mode hard cap: skip level-3 dish if already have one today
+          if (helperMode && level3CountToday >= 1 && (d.execution_level ?? 2) === 3) return null;
+
           let score = scoreForWeek({
             dish: d, profile, prefScores, recentIds,
             pickedIngredients: [...pickedIngredients, ...dayIngredients],
@@ -592,6 +607,7 @@ function generateWeekPlan(
             spiceBoost,
             ageGroup,
             healthPrefs,
+            helperMode,
           });
 
           // ── Family multi-goal scoring ───────────────────────────────────
@@ -646,6 +662,7 @@ function generateWeekPlan(
 
           return { dish: d, score };
         })
+        .filter((x): x is { dish: any; score: number } => x !== null)
         .sort((a, b) => b.score - a.score)
         .slice(0, 25);
 
@@ -657,6 +674,9 @@ function generateWeekPlan(
       dayDishes.push(picked);
       dayIngredients.push(picked.main_ingredient ?? 'other');
       usedIds.add(picked.id);
+
+      // Track level-3 count for helper mode hard cap
+      if (helperMode && (picked.execution_level ?? 2) === 3) level3CountToday++;
 
       // Track allergen dish count for today's soft-cap
       if (familyPrefs && familyPrefs.allergyMembers.length > 0) {
@@ -1006,9 +1026,10 @@ export function useWeeklyMenu() {
           avoidHighPurine: localPrefs.avoidHighPurine,
         };
         const familyPrefs = getFamilyMenuPrefs(dishesPerDay);
+        const helperMode = localStorage.getItem('nutri_has_helper') === 'true';
         const menu = generateWeekPlan(
           pool, profile, prefScores, recentIds, dishesPerDay, kidSlots,
-          spiceBoost, profile.age_group, healthPrefs, familyPrefs,
+          spiceBoost, profile.age_group, healthPrefs, familyPrefs, helperMode,
         );
 
         if (cancelled) return;
