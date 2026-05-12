@@ -30,33 +30,36 @@ function readHeadcount(): { adults: number; kids: number } {
   return { adults, kids };
 }
 
-function getDishes(mode: 'today' | 'week'): any[] {
-  if (mode === 'today') {
-    const raw = localStorage.getItem('generatedMenu');
-    if (!raw) return [];
-    try { return JSON.parse(raw); } catch { return []; }
-  }
-
+function loadWeekMenu(): any | null {
   const weekStart = getWeekStart();
   const prefix = `weekly_menu_${WEEKLY_ALGO_VERSION}_${weekStart}`;
-
-  // Scan all localStorage keys with prefix (handles eating-key suffix)
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
     if (key && key.startsWith(prefix)) {
       const raw = localStorage.getItem(key);
       if (raw) {
-        try {
-          const menu = JSON.parse(raw);
-          return (menu.days ?? []).flatMap((d: any) => [
-            ...(d.dishes ?? []),
-            ...(d.lunchDishes ?? []),
-          ]);
-        } catch { /* ignore */ }
+        try { return JSON.parse(raw); } catch { /* ignore */ }
       }
     }
   }
-  return [];
+  return null;
+}
+
+function getDishes(mode: 'today' | 'week'): any[] {
+  const weekMenu = loadWeekMenu();
+  if (!weekMenu) return [];
+
+  const days: any[] = weekMenu.days ?? [];
+
+  if (mode === 'week') {
+    return days.flatMap((d: any) => [...(d.dishes ?? []), ...(d.lunchDishes ?? [])]);
+  }
+
+  // Today: find the entry matching today's date
+  const today = new Date().toISOString().slice(0, 10);
+  const todayEntry = days.find((d: any) => d.date === today) ?? days[0];
+  if (!todayEntry) return [];
+  return [...(todayEntry.dishes ?? []), ...(todayEntry.lunchDishes ?? [])];
 }
 
 function formatWeight(ing: AggregatedIngredient): string {
