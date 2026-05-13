@@ -19,12 +19,12 @@ import type { SupabaseDish } from '../hooks/useSupabaseMenu';
 
 // ── Public types ─────────────────────────────────────────────────────────────
 
-export type BanquetOccasion =
-  | 'friends'             // 朋友聚餐
-  | 'kids_party'          // 儿童派对
-  | 'elder_celebration'   // 长辈寿宴
-  | 'family_feast'        // 家庭团圆 (春节/中秋)
-  | 'colleague';          // 同事聚会
+// Occasion was removed in favour of letting the headcount mix (adults / kids /
+// elders) and specialNeeds drive the menu directly — the supposed differences
+// between 'friends gathering' / 'colleague gathering' / 'elder celebration'
+// produced near-identical scoring once measured. The type alias is kept so
+// callers don't break but every value resolves to the same neutral preset.
+export type BanquetOccasion = 'home_gathering';
 
 export type CuisineStyle =
   | 'chinese'
@@ -53,7 +53,9 @@ export type BanquetSpecialNeed =
   | 'pregnancy';    // 孕妇（怀孕）
 
 export interface BanquetOptions {
-  occasion:      BanquetOccasion;
+  /** Reserved for backwards-compat — always 'home_gathering'. The headcount
+   *  mix below is what actually drives the menu. */
+  occasion?:     BanquetOccasion;
   adults:        number;
   kids:          number;
   elders:        number;
@@ -157,57 +159,47 @@ export interface BanquetMenu {
   courses:      BanquetCourse[];
 }
 
-// ── Occasion metadata (shown in UI + drives scoring) ─────────────────────────
+// ── Dynamic tag bonuses driven by who's at the table ─────────────────────────
+// Replaces the OCCASIONS preset list. With more kids the menu drifts toward
+// sweet/crispy/colorful and away from spicy; with more elders toward soft /
+// nourish / light and away from very_spicy / fried. Adult-dominated tables
+// fall back to neutral 'shareable' scoring.
 
-export const OCCASIONS: Record<BanquetOccasion, {
-  label: string;
-  sub:   string;
-  emoji: string;
-  /** Health-benefit / flavor tag bonuses applied during scoring. */
-  bonusTags: string[];
-  /** Tags to push down (negative score). */
-  penaltyTags: string[];
-  /** "Centerpiece" main_ingredient values that get a big boost (one per menu). */
-  signatureIngredients?: string[];
-}> = {
-  friends: {
-    label: '朋友聚餐',
-    sub:   '轻松愉快，荤素均衡',
-    emoji: '👨‍👩‍👧‍👦',
-    bonusTags: ['popular', 'shareable'],
-    penaltyTags: [],
-  },
-  kids_party: {
-    label: '儿童派对',
-    sub:   '颜色丰富，不辣易吃',
-    emoji: '🎂',
-    bonusTags: ['sweet', 'crispy'],
-    penaltyTags: ['very_spicy', 'spicy', 'extra_spicy'],
-  },
-  elder_celebration: {
-    label: '长辈寿宴',
-    sub:   '滋补软糯，寓意吉祥',
-    emoji: '🎉',
-    bonusTags: ['nourish', 'soft', 'light'],
-    penaltyTags: ['very_spicy', 'fried'],
-    signatureIngredients: ['fish', 'noodle', 'chicken'],
-  },
-  family_feast: {
-    label: '家庭团圆',
-    sub:   '大菜上桌，年味十足',
-    emoji: '🧧',
-    bonusTags: ['festive', 'savory'],
-    penaltyTags: [],
-    signatureIngredients: ['fish', 'pork', 'chicken', 'duck'],
-  },
-  colleague: {
-    label: '同事聚会',
-    sub:   '人人爱吃，预算友好',
-    emoji: '🥂',
-    bonusTags: ['popular'],
-    penaltyTags: [],
-  },
-};
+interface DynamicScoring { bonusTags: string[]; penaltyTags: string[]; signatureIngredients?: string[]; }
+
+function scoringFromHeadcount(opts: BanquetOptions): DynamicScoring {
+  const bonus: Set<string> = new Set();
+  const penalty: Set<string> = new Set();
+  const signature: Set<string> = new Set();
+
+  if (opts.kids > 0) {
+    bonus.add('sweet');
+    bonus.add('crispy');
+    penalty.add('very_spicy');
+    penalty.add('spicy');
+    penalty.add('extra_spicy');
+    penalty.add('bitter');
+  }
+  if (opts.elders > 0) {
+    bonus.add('nourish');
+    bonus.add('soft');
+    bonus.add('light');
+    penalty.add('very_spicy');
+    penalty.add('fried');
+    signature.add('fish');
+    signature.add('chicken');
+  }
+  if (opts.adults > 0 && opts.kids === 0 && opts.elders === 0) {
+    bonus.add('shareable');
+    bonus.add('popular');
+  }
+
+  return {
+    bonusTags:   [...bonus],
+    penaltyTags: [...penalty],
+    signatureIngredients: signature.size > 0 ? [...signature] : undefined,
+  };
+}
 
 export const AVOID_LABELS: Record<BanquetAvoidId, { label: string; emoji: string }> = {
   seafood:      { label: '不吃海鲜',     emoji: '🦐' },
@@ -288,16 +280,15 @@ function scoreDish(dish: SupabaseDish, opts: BanquetOptions, hasKids: boolean): 
   const cuisine    = ((dish as any).origin_cuisine ?? '') as string;
   const ingredient = ((dish as any).main_ingredient ?? '') as string;
 
-  const occasion = OCCASIONS[opts.occasion];
+  const dyn = scoringFromHeadcount(opts);
 
-  // Occasion tag bonuses
-  for (const tag of occasion.bonusTags) {
+  for (const tag of dyn.bonusTags) {
     if (flavorTags.includes(tag) || healthTags.includes(tag)) score += 0.15;
   }
-  for (const tag of occasion.penaltyTags) {
+  for (const tag of dyn.penaltyTags) {
     if (flavorTags.includes(tag)) score -= 0.30;
   }
-  if (occasion.signatureIngredients?.includes(ingredient)) score += 0.10;
+  if (dyn.signatureIngredients?.includes(ingredient)) score += 0.10;
 
   // Cuisine style match
   if (opts.cuisineStyle === 'chinese' && /chinese|cantonese|sichuan|hunan|jiangsu|northern/i.test(cuisine)) score += 0.20;

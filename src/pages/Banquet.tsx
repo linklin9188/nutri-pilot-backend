@@ -12,22 +12,21 @@ import { useState } from "react";
 import { useNavigate, Navigate } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
 import {
-  OCCASIONS, CUISINES, AVOID_LABELS, SPECIAL_NEED_LABELS,
+  CUISINES, AVOID_LABELS, SPECIAL_NEED_LABELS,
   planBanquet, swapBanquetDish,
-  type BanquetOccasion, type CuisineStyle, type BanquetMenu, type BanquetCourse,
+  type CuisineStyle, type BanquetMenu, type BanquetCourse,
   type BanquetAvoidId, type BanquetSpecialNeed,
 } from "../lib/banquet";
 import { useSubscription } from "../lib/subscription";
 import BottomTabBar from "../components/BottomTabBar";
 
-type Step = "occasion" | "headcount" | "cuisine" | "result";
+type Step = "headcount" | "cuisine" | "result";
 
 export default function Banquet() {
   const navigate = useNavigate();
   const { isPro, loading } = useSubscription();
 
-  const [step, setStep]             = useState<Step>("occasion");
-  const [occasion, setOccasion]     = useState<BanquetOccasion>("friends");
+  const [step, setStep]             = useState<Step>("headcount");
   const [adults, setAdults]         = useState(10);
   const [kids, setKids]             = useState(0);
   const [elders, setElders]         = useState(0);
@@ -62,7 +61,7 @@ export default function Banquet() {
     setGenerating(true);
     try {
       const result = await planBanquet({
-        occasion, adults, kids, elders, cuisineStyle: cuisine,
+        adults, kids, elders, cuisineStyle: cuisine,
         extraAvoid:   avoidIds,
         specialNeeds: specialIds,
       });
@@ -105,17 +104,13 @@ export default function Banquet() {
   return (
     <div className="min-h-screen flex flex-col max-w-md mx-auto bg-[#f5f5f5]">
       <Header step={step} onBack={() => {
-        if (step === "occasion") navigate(-1);
-        else if (step === "headcount") setStep("occasion");
+        if (step === "headcount") navigate(-1);
         else if (step === "cuisine")   setStep("headcount");
         else                            setStep("cuisine");
       }} />
 
       <main className="flex-1 px-5 py-5 pb-32 space-y-5">
         <AnimatePresence mode="wait">
-          {step === "occasion" && (
-            <OccasionStep key="occ" value={occasion} onChange={v => { setOccasion(v); setStep("headcount"); }} />
-          )}
           {step === "headcount" && (
             <HeadcountStep key="head"
               adults={adults} kids={kids} elders={elders}
@@ -150,9 +145,8 @@ export default function Banquet() {
 
 function Header({ step, onBack }: { step: Step; onBack: () => void }) {
   const labels: Record<Step, { title: string; sub: string }> = {
-    occasion:  { title: "家宴菜单", sub: "1 / 3 · 选择场合" },
-    headcount: { title: "家宴菜单", sub: "2 / 3 · 人数与构成" },
-    cuisine:   { title: "家宴菜单", sub: "3 / 3 · 风格 · 忌口 · 特殊需求" },
+    headcount: { title: "家宴菜单", sub: "1 / 2 · 餐桌人数" },
+    cuisine:   { title: "家宴菜单", sub: "2 / 2 · 风格 · 忌口 · 特殊需求" },
     result:    { title: "家宴菜单", sub: "已为你安排" },
   };
   const { title, sub } = labels[step];
@@ -181,43 +175,6 @@ function Header({ step, onBack }: { step: Step; onBack: () => void }) {
   );
 }
 
-// ── Step 1: Occasion ──────────────────────────────────────────────────────────
-
-function OccasionStep({
-  value, onChange,
-}: { value: BanquetOccasion; onChange: (v: BanquetOccasion) => void }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 }}
-      transition={{ duration: 0.25 }}
-      className="space-y-3"
-    >
-      <p className="text-[13px] text-gray-500 px-1">什么场合？AI 会根据场合调菜</p>
-      <div className="grid grid-cols-2 gap-3">
-        {(Object.keys(OCCASIONS) as BanquetOccasion[]).map(key => {
-          const o = OCCASIONS[key];
-          const active = value === key;
-          return (
-            <button
-              key={key}
-              onClick={() => onChange(key)}
-              className="rounded-2xl p-4 text-left transition-all active:scale-[0.97]"
-              style={{
-                background: "white",
-                border: active ? "2px solid #FF5A1F" : "2px solid transparent",
-                boxShadow: active ? "0 8px 24px rgba(255,90,31,0.15)" : "0 2px 8px rgba(0,0,0,0.04)",
-              }}
-            >
-              <p className="text-[32px] mb-1">{o.emoji}</p>
-              <p className="font-bold text-[14px]">{o.label}</p>
-              <p className="text-[11px] text-gray-400 mt-0.5 leading-snug">{o.sub}</p>
-            </button>
-          );
-        })}
-      </div>
-    </motion.div>
-  );
-}
 
 // ── Step 2: Headcount ─────────────────────────────────────────────────────────
 
@@ -435,7 +392,16 @@ function ResultStep({
   onSwap: (courseKey: BanquetCourse["key"], dishId: string) => void;
   onRestart: () => void;
 }) {
-  const occ = OCCASIONS[menu.options.occasion];
+  // Compose a one-line tag based on who's at the table, replacing the old
+  // hard-coded occasion label.
+  const tableLine = (() => {
+    const { kids, elders, adults } = menu.options;
+    if (kids > 0 && elders > 0) return "🏠 家宴 · 老少同席";
+    if (kids > 0)                return "🎂 儿童在场，菜单偏温和";
+    if (elders > 0)              return "🍵 长辈在场，菜单偏滋补";
+    if (adults >= 8)             return "🥂 多人聚餐";
+    return "👨‍👩‍👧‍👦 家宴";
+  })();
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }}
@@ -450,7 +416,7 @@ function ResultStep({
           boxShadow: "0 12px 32px rgba(255,90,31,0.30)",
         }}
       >
-        <p className="text-[12px] uppercase tracking-widest opacity-80">{occ.emoji} {occ.label}</p>
+        <p className="text-[12px] uppercase tracking-widest opacity-80">{tableLine}</p>
         <h2 className="font-serif font-black text-[26px] leading-tight mt-1">
           {menu.headcount} 人席 · {menu.totalDishes} 道菜
         </h2>
