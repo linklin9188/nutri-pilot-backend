@@ -293,7 +293,27 @@ export default function Home() {
     return dinner.length > 0 ? dinner : storedMenuRaw;
   })();
 
-  const displayMenu: any[] = baseMenu.map((dish, idx) => menuSwaps[idx] || dish);
+  // Display order: 肉 → 海鲜 → 蔬菜 → 主食 → 汤 → 甜品.
+  // Drives "what to cook first" reading flow on the home card.
+  const SEAFOOD_INGREDIENTS = new Set([
+    'seafood','fish','shrimp','crab','shellfish','squid','scallop','clam',
+    'lobster','salmon','tuna','cod','hairtail','seabass','oyster',
+  ]);
+  const courseRank = (dish: any): number => {
+    const ct  = (dish.course_type ?? '') as string;
+    const ing = ((dish.main_ingredient ?? '') as string).toLowerCase();
+    if (ct === 'main_protein' && SEAFOOD_INGREDIENTS.has(ing)) return 1; // 海鲜
+    if (ct === 'main_protein') return 0;     // 肉/禽/蛋
+    if (ct === 'veggie_dish')  return 2;     // 蔬菜
+    if (ct === 'staple')       return 3;     // 主食
+    if (ct === 'soup')         return 4;     // 汤
+    if (ct === 'dessert')      return 5;     // 甜品
+    return 6;                                // unknown last
+  };
+  const displayMenu: any[] = baseMenu
+    .map((dish, idx) => menuSwaps[idx] || dish)
+    .slice()
+    .sort((a, b) => courseRank(a) - courseRank(b));
   const hasMenu = (weeklyMenu?.days[todayIdx]?.dishes.length ?? storedMenuRaw.length) > 0;
 
   const healthMetrics = computeHealthMetrics(weeklyMenu);
@@ -393,15 +413,14 @@ export default function Home() {
             <p className="mt-0.5 font-semibold leading-tight" style={{ fontSize: 12, color: '#555' }}>{tip}</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {/* Single 扫一扫 entry — duplicates removed (action row + avatar to settings).
+                Settings now lives only in the bottom tab bar. */}
             <button onClick={() => setIsFridgeScanOpen(true)}
-              className="w-9 h-9 rounded-2xl flex items-center justify-center active:scale-90 transition-transform"
-              style={{ background: "rgba(0,0,0,0.06)" }}>
-              <span className="material-symbols-outlined" style={{ fontSize: 18, color: "#555" }}>kitchen</span>
-            </button>
-            <button onClick={() => navigate(isLoggedIn ? "/settings" : "/signin")}
-              className="w-9 h-9 rounded-full flex items-center justify-center overflow-hidden active:scale-90 transition-transform"
+              className="w-10 h-10 rounded-2xl flex items-center justify-center active:scale-90 transition-transform"
               style={{ background: "linear-gradient(135deg, #FF5A1F, #FF9054)" }}>
-              <span className="material-symbols-outlined text-white" style={{ fontSize: 18 }}>person</span>
+              <span className="material-symbols-outlined text-white" style={{ fontSize: 20, fontVariationSettings: "'FILL' 1" }}>
+                qr_code_scanner
+              </span>
             </button>
           </div>
         </div>
@@ -441,19 +460,15 @@ export default function Home() {
                 <button
                   key={m.id}
                   onClick={() => toggleEatingMember(m.id)}
-                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[12px] font-bold border-2 transition-all active:scale-95 shrink-0 ${
-                    sel ? 'border-[#FF5A1F] bg-[rgba(255,90,31,0.08)]' : 'border-black/10 bg-black/[0.03]'
+                  title={m.name}
+                  className={`p-0.5 rounded-full border-2 transition-all active:scale-95 shrink-0 ${
+                    sel ? 'border-[#FF5A1F]' : 'border-transparent opacity-50'
                   }`}
-                  style={{ color: sel ? '#FF5A1F' : 'rgba(0,0,0,0.35)' }}
                 >
-                  <span className={`w-5 h-5 rounded-full flex items-center justify-center text-white font-black ${MEMBER_COLORS[idx % MEMBER_COLORS.length]}`}
-                    style={{ fontSize: 10, opacity: sel ? 1 : 0.45 }}>
+                  <span className={`w-7 h-7 rounded-full flex items-center justify-center text-white font-black ${MEMBER_COLORS[idx % MEMBER_COLORS.length]}`}
+                    style={{ fontSize: 12 }}>
                     {(m.name || '?')[0]}
                   </span>
-                  {m.name}
-                  {m.lifeStage === '儿童' && sel && (
-                    <span style={{ fontSize: 10 }}>🧒</span>
-                  )}
                 </button>
               );
             })}
@@ -528,17 +543,16 @@ export default function Home() {
           {/* Action row — prep / cook / fridge */}
           {displayMenu.length > 0 && (
             <div className="flex border-t border-black/[0.05]">
+              {/* 扫冰箱 removed — duplicated the 扫一扫 button in the top-right header. */}
               {[
                 { label: "备菜", icon: "menu_book", color: "#6C5CE7", bg: "rgba(108,92,231,0.07)",
                   action: () => { localStorage.setItem("generatedMenu", JSON.stringify(displayMenu)); navigate("/prep"); } },
                 { label: "烹饪", icon: "skillet", color: "#0077B6", bg: "rgba(0,119,182,0.07)",
                   action: () => { localStorage.setItem("generatedMenu", JSON.stringify(displayMenu)); navigate("/cook"); } },
-                { label: "扫冰箱", icon: "kitchen", color: "#059669", bg: "rgba(5,150,105,0.07)",
-                  action: () => setIsFridgeScanOpen(true) },
-              ].map((item, i) => (
+              ].map((item, i, arr) => (
                 <button key={i} onClick={item.action}
                   className="flex-1 flex flex-col items-center gap-1 py-3 active:opacity-70 transition-opacity"
-                  style={{ background: item.bg, borderRight: i < 2 ? '1px solid rgba(0,0,0,0.04)' : 'none' }}>
+                  style={{ background: item.bg, borderRight: i < arr.length - 1 ? '1px solid rgba(0,0,0,0.04)' : 'none' }}>
                   <span className="material-symbols-outlined" style={{ fontSize: 20, color: item.color }}>{item.icon}</span>
                   <span className="font-semibold" style={{ fontSize: 11, color: item.color }}>{item.label}</span>
                 </button>
@@ -592,9 +606,12 @@ export default function Home() {
             </span>
           </div>
           <div className="flex-1 min-w-0">
-            <p className="font-bold" style={{ fontSize: 14, color: "#1a1a1a" }}>本周采购清单</p>
+            {/* 'Procurement' shortcut card. Duplicates the 采购 bottom tab; kept
+                as a discoverability nudge while users learn the app. Slated
+                for removal once feature is established. */}
+            <p className="font-bold" style={{ fontSize: 14, color: "#1a1a1a" }}>采购清单</p>
             <p style={{ fontSize: 11, color: "rgba(0,0,0,0.38)" }}>
-              {hasMenu ? "菜单已就绪，查看所需食材" : "先生成本周菜单"}
+              {hasMenu ? "菜单已就绪，查看所需食材" : "先生成菜单"}
             </p>
           </div>
           <button

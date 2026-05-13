@@ -518,15 +518,40 @@ function ResultStep({
       {/* Action footer */}
       <div className="space-y-2 pt-3">
         <button
+          onClick={() => {
+            // Persist the banquet menu so /verify can aggregate ingredients
+            // sized for the actual headcount (not the weekly menu's family).
+            localStorage.setItem(
+              "banquet_menu_current",
+              JSON.stringify({
+                adults: menu.options.adults,
+                kids:   menu.options.kids,
+                elders: menu.options.elders,
+                cuisineStyle: menu.options.cuisineStyle,
+                specialNeeds: menu.options.specialNeeds ?? [],
+                extraAvoid:   menu.options.extraAvoid ?? [],
+                dishes: menu.courses.flatMap(c => c.dishes),
+                createdAt: Date.now(),
+              })
+            );
+            window.location.href = "/verify?from=banquet";
+          }}
+          className="w-full h-12 rounded-2xl font-bold text-[14px] text-white flex items-center justify-center gap-2 active:scale-95"
+          style={{
+            background: "linear-gradient(135deg, #16a34a, #22c55e)",
+            boxShadow: "0 6px 18px rgba(22,163,74,0.25)",
+          }}
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: 18 }}>shopping_cart</span>
+          一键生成采购清单（按 {menu.headcount} 人）
+        </button>
+        <button
           onClick={onRestart}
-          className="w-full h-12 rounded-2xl font-bold text-[14px] active:scale-95"
+          className="w-full h-11 rounded-2xl font-bold text-[13px] active:scale-95"
           style={{ background: "rgba(0,0,0,0.06)", color: "#555" }}
         >
           重新规划
         </button>
-        <p className="text-[10px] text-gray-400 text-center">
-          小提示：长按菜品图标可加入「本周菜单」或「收藏」（后续上线）
-        </p>
       </div>
     </motion.div>
   );

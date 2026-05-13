@@ -80,6 +80,34 @@ function readHeadcount(): { adults: number; kids: number } {
   return { adults, kids };
 }
 
+// Banquet payload written by Banquet.tsx when the user taps "一键生成采购清单".
+// We keep it loose-typed because the source of truth lives in lib/banquet.ts.
+interface StoredBanquet {
+  adults: number; kids: number; elders: number;
+  dishes: any[];
+  createdAt: number;
+}
+
+function loadBanquet(): StoredBanquet | null {
+  try {
+    const raw = localStorage.getItem('banquet_menu_current');
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed.dishes?.length) return null;
+    // Stale guard: drop banquets older than 24h to avoid surprising the
+    // user with a forgotten list the next day.
+    if (Date.now() - (parsed.createdAt ?? 0) > 24 * 60 * 60 * 1000) {
+      localStorage.removeItem('banquet_menu_current');
+      return null;
+    }
+    return parsed as StoredBanquet;
+  } catch { return null; }
+}
+
+function clearBanquet() {
+  localStorage.removeItem('banquet_menu_current');
+}
+
 function loadWeekMenu(): any | null {
   const weekStart = getWeekStart();
   const prefix = `weekly_menu_${WEEKLY_ALGO_VERSION}_${weekStart}`;
@@ -177,18 +205,51 @@ function SupplierRow({ groupLabel }: { groupLabel: string }) {
   );
 }
 
+type ShopMode = 'today' | 'week' | 'banquet';
+
 // ── Main component ─────────────────────────────────────────────────────────────
 export default function VerifyIngredients() {
   const navigate = useNavigate();
   const { t } = useLanguage();
-  const [mode, setMode] = useState<'today' | 'week'>('week');
+
+  // If the user just arrived from /banquet, default to that view.
+  const arrivedFromBanquet = typeof window !== 'undefined'
+    && window.location.search.includes('from=banquet')
+    && !!loadBanquet();
+
+  const [mode, setMode] = useState<ShopMode>(arrivedFromBanquet ? 'banquet' : 'week');
   const [ingredients, setIngredients] = useState<AggregatedIngredient[]>([]);
   const [dishCount, setDishCount] = useState(0);
+  const [banquetHeads, setBanquetHeads] = useState(0);
   // true = "已有"，false = "需要买"
   const [haveIt, setHaveIt] = useState<Record<string, boolean>>({});
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
+    if (mode === 'banquet') {
+      const banquet = loadBanquet();
+      if (!banquet) {
+        // Banquet expired or never set — fall back gracefully.
+        setMode('week');
+        return;
+      }
+      // Kids 0.5 + elders 0.8 mirrors the banquet algorithm dish-load math.
+      // We bias slightly higher than dishToIngredients's default (kids*0.5)
+      // because banquet portions tend to run larger than weekday family meals.
+      const banquetAdultEquivalent = Math.ceil(
+        banquet.adults + banquet.elders * 0.9 + banquet.kids * 0.5
+      );
+      setBanquetHeads(banquet.adults + banquet.kids + banquet.elders);
+      setDishCount(banquet.dishes.length);
+
+      const allRaw = banquet.dishes.flatMap(dish =>
+        dishToIngredients(dish, banquetAdultEquivalent, 0)
+      );
+      setIngredients(aggregateIngredients(allRaw));
+      setHaveIt({});
+      return;
+    }
+
     const { adults, kids } = readHeadcount();
     const dishes = getDishes(mode);
     setDishCount(dishes.length);
@@ -280,10 +341,12 @@ export default function VerifyIngredients() {
         <div className="flex-1">
           <h1 className="text-[18px] font-bold">{t('Shopping List', '采购清单')}</h1>
           <p className="text-[11px] text-gray-400 mt-0.5">
-            {t(
-              `${mode === 'week' ? 'This week' : 'Today'} · ${dishCount} dishes · ${ingredients.length} items`,
-              `${mode === 'week' ? '本周' : '今日'} · ${dishCount} 道菜 · ${ingredients.length} 种食材`
-            )}
+            {mode === 'banquet'
+              ? `家宴 ${banquetHeads} 人 · ${dishCount} 道菜 · ${ingredients.length} 种食材`
+              : t(
+                  `${mode === 'week' ? 'This week' : 'Today'} · ${dishCount} dishes · ${ingredients.length} items`,
+                  `${mode === 'week' ? '本周' : '今日'} · ${dishCount} 道菜 · ${ingredients.length} 种食材`
+                )}
           </p>
         </div>
         <div
@@ -299,9 +362,9 @@ export default function VerifyIngredients() {
       </header>
 
       <main className={`flex-1 px-4 py-4 space-y-4 ${isHelper ? 'pb-36' : 'pb-52'}`}>
-        {/* Mode toggle */}
+        {/* Mode toggle — banquet appears only when a banquet payload exists */}
         <div className="bg-white rounded-2xl p-1.5 flex gap-1 shadow-sm">
-          {(['today', 'week'] as const).map(m => (
+          {(['today', 'week', ...(loadBanquet() ? ['banquet'] : [])] as ShopMode[]).map(m => (
             <button
               key={m}
               onClick={() => setMode(m)}
@@ -309,12 +372,36 @@ export default function VerifyIngredients() {
                 mode === m ? 'bg-[#FF5A1F] text-white shadow' : 'text-gray-400'
               }`}
             >
-              {m === 'today'
-                ? t("Today's menu", '今日菜单')
-                : t("This week's menu", '本周菜单')}
+              {m === 'today'   ? t("Today's menu", '今日菜单')
+               : m === 'week'  ? t("This week's menu", '本周菜单')
+               :                 `🎉 ${t('Banquet', '家宴')}`}
             </button>
           ))}
         </div>
+
+        {/* Banquet mode banner with discard option */}
+        {mode === 'banquet' && (
+          <div className="rounded-2xl p-3 flex items-center gap-2"
+            style={{
+              background: "linear-gradient(135deg, rgba(255,215,0,0.12), rgba(255,165,0,0.06))",
+              border: "1px solid rgba(255,165,0,0.30)",
+            }}>
+            <span className="text-[18px]">🎉</span>
+            <div className="flex-1 min-w-0">
+              <p className="font-bold text-[12px]" style={{ color: "#7a4d00" }}>
+                家宴采购清单 · 按 {banquetHeads} 人席份量
+              </p>
+              <p className="text-[10px] text-gray-500">数量已按宴会规模放大</p>
+            </div>
+            <button
+              onClick={() => { clearBanquet(); setMode('week'); }}
+              className="text-[11px] font-bold px-2 py-1 rounded-full"
+              style={{ background: "rgba(0,0,0,0.06)", color: "#666" }}
+            >
+              清空
+            </button>
+          </div>
+        )}
 
         {/* Empty state — message + CTA differ by role */}
         {ingredients.length === 0 && (
