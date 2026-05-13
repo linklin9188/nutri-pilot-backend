@@ -30,7 +30,7 @@ import { supabase } from './lib/supabase';
 // - Return employer visit → Home
 function RootRedirect() {
   const isLoggedIn = localStorage.getItem("isLoggedIn") === "true";
-  if (!isLoggedIn) return <Navigate to="/signin" replace />;
+  if (!isLoggedIn) return <Navigate to="/login" replace />;
 
   const role = localStorage.getItem("nutri_role");
   if (role === "helper") return <Navigate to="/helper" replace />;
