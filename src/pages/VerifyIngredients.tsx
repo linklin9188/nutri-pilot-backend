@@ -4,7 +4,7 @@ import { dishToIngredients, aggregateIngredients, type AggregatedIngredient } fr
 import * as XLSX from "xlsx";
 
 // Keep in sync with useWeeklyMenu ALGO_VERSION
-const WEEKLY_ALGO_VERSION = 'v11';
+const WEEKLY_ALGO_VERSION = 'v12';
 
 // ── Category grouping ─────────────────────────────────────────────────────────
 const CATEGORY_GROUPS: { label: string; emoji: string; categories: string[] }[] = [

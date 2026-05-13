@@ -40,7 +40,7 @@ export interface WeeklyMenu {
 
 // ── Cache version — bump this whenever the algorithm changes significantly ─────
 // This ensures old cached menus are discarded after an algorithm update.
-const ALGO_VERSION = 'v11'; // bumped: +223 TheMealDB dishes imported
+const ALGO_VERSION = 'v12'; // bumped: eating members now drive hard filters + goal scoring
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -934,7 +934,32 @@ export function useWeeklyMenu() {
       // 3. Generate fresh plan
       try {
         // Read user preferences (quickPrefs → legacy fallback)
-        const localPrefs = getUserPrefs();
+        const basePrefs = getUserPrefs();
+
+        // Merge hard filters from all eating members (union of avoids, most restrictive spice)
+        const eatingNow = getEatingMembers(); // reads nutri_family_members filtered by nutri_eating_today
+        const extraIngredients: string[] = [];
+        const extraTags: string[] = [];
+        let extraVegetarian = false;
+        let mostRestrictiveSpice = basePrefs.spiceBoost ?? 0;
+
+        for (const m of eatingNow) {
+          const needs: string[] = (m as any).needs ?? [];
+          if (needs.includes('不辣'))    mostRestrictiveSpice = Math.min(mostRestrictiveSpice, -0.80);
+          if (needs.includes('不吃海鲜')) extraIngredients.push('seafood','fish','shrimp','crab','squid','scallop','clam','salmon','cod','seabass','hairtail');
+          if (needs.includes('忌牛羊肉')) extraIngredients.push('beef','lamb','mutton');
+          if (needs.includes('花生过敏')) extraTags.push('peanut');
+          if (needs.includes('忌乳制品')) extraTags.push('dairy','milk');
+          if (needs.includes('素食'))    extraVegetarian = true;
+        }
+
+        const localPrefs = {
+          ...basePrefs,
+          spiceBoost:       mostRestrictiveSpice,
+          avoidIngredients: [...new Set([...basePrefs.avoidIngredients, ...extraIngredients])],
+          avoidTags:        [...new Set([...basePrefs.avoidTags, ...(mostRestrictiveSpice <= -0.80 ? ['spicy'] : []), ...extraTags])],
+          vegetarianOnly:   basePrefs.vegetarianOnly || extraVegetarian,
+        };
 
         // Fetch dish pool (dinner + all-type, limit 400)
         let poolQuery = supabase

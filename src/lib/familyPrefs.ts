@@ -107,12 +107,63 @@ export function dishAllergyFor(dish: { main_ingredient?: string; title_zh?: stri
 
 // ── Storage helpers ───────────────────────────────────────────────────────────
 
+// ── Convert nutri_family_members (Settings format) → FamilyMember ────────────
+
+function convertNutriMembers(
+  raw: Array<{ id: string; name: string; lifeStage: string; needs: string[] }>
+): FamilyMember[] {
+  const NEEDS_TO_GOAL: Record<string, GoalId> = {
+    '减脂': 'fat_loss', '增肌': 'muscle_gain',
+    '养生': 'nourish',  '均衡营养': 'maintain',
+  };
+  const NEEDS_TO_ALLERGY: Record<string, AllergyId> = {
+    '不吃海鲜': 'seafood', '忌乳制品': 'dairy',
+    '花生过敏': 'peanut',  '忌牛羊肉': 'beef_lamb',
+  };
+  const NEEDS_TO_CONDITION: Record<string, ConditionId> = {
+    '高血压': 'hypertension', '糖尿病': 'diabetes',
+    '痛风':   'gout',         '贫血':   'anemia',
+    '低血压': 'low_blood_pressure',
+  };
+  const STAGE_GOALS: Record<string, GoalId[]> = {
+    '孕期': ['nourish'], '哺乳期': ['nourish'],
+    '老人': ['nourish'], '儿童': ['growth', 'maintain'],
+  };
+
+  return raw.map(m => {
+    const stageGoals: GoalId[] = STAGE_GOALS[m.lifeStage] ?? [];
+    const needsGoals: GoalId[] = m.needs.map(n => NEEDS_TO_GOAL[n]).filter(Boolean) as GoalId[];
+    const goals = [...new Set([...stageGoals, ...needsGoals])] as GoalId[];
+    return {
+      id: m.id,
+      name: m.name || '成员',
+      emoji: m.lifeStage === '儿童' ? '🧒' : '🧑',
+      relation: (m.lifeStage === '儿童' ? 'child' : 'adult') as 'adult' | 'child',
+      goals: goals.length > 0 ? goals : ['maintain' as GoalId],
+      allergies: m.needs.map(n => NEEDS_TO_ALLERGY[n]).filter(Boolean) as AllergyId[],
+      conditions: m.needs.map(n => NEEDS_TO_CONDITION[n]).filter(Boolean) as ConditionId[],
+    };
+  });
+}
+
 export function loadFamilyMembers(): FamilyMember[] {
+  // Prefer new-format family_members if it exists
   try {
     const raw = localStorage.getItem('family_members');
-    if (!raw) return [];
-    return JSON.parse(raw) as FamilyMember[];
-  } catch { return []; }
+    if (raw) {
+      const parsed = JSON.parse(raw) as FamilyMember[];
+      if (parsed.length > 0) return parsed;
+    }
+  } catch {}
+  // Fall back to nutri_family_members (Settings page format)
+  try {
+    const raw = localStorage.getItem('nutri_family_members');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return convertNutriMembers(parsed);
+    }
+  } catch {}
+  return [];
 }
 
 export function saveFamilyMembers(members: FamilyMember[]) {
@@ -121,10 +172,23 @@ export function saveFamilyMembers(members: FamilyMember[]) {
 }
 
 export function loadHomeToday(members: FamilyMember[]): string[] {
-  const raw = localStorage.getItem('home_today');
-  if (!raw || raw === 'all') return members.map(m => m.id);
-  const ids = raw.split(',').filter(Boolean);
-  return ids.filter(id => members.some(m => m.id === id));
+  // Try home_today (old format: comma-separated)
+  const raw1 = localStorage.getItem('home_today');
+  if (raw1 && raw1 !== 'all') {
+    const ids = raw1.split(',').filter(Boolean);
+    const valid = ids.filter(id => members.some(m => m.id === id));
+    if (valid.length > 0) return valid;
+  }
+  // Fall back to nutri_eating_today (Home page format: JSON array)
+  try {
+    const raw2 = localStorage.getItem('nutri_eating_today');
+    if (raw2) {
+      const ids: string[] = JSON.parse(raw2);
+      const valid = ids.filter(id => members.some(m => m.id === id));
+      if (valid.length > 0) return valid;
+    }
+  } catch {}
+  return members.map(m => m.id);
 }
 
 export function saveHomeToday(ids: string[]) {
