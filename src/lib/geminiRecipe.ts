@@ -98,9 +98,12 @@ export function getOrderLinks(dishName: string): ExternalOrderLink[] {
 export async function generateCookingSteps(
   dishName: string,
   servings = 4,
-  language: 'zh' | 'en' = 'zh',
+  language: 'zh' | 'zh-Hant' | 'en' | 'tl' = 'zh',
 ): Promise<AIDish> {
-  const langInstruction = language === 'zh'
+  // Normalize: 繁體 → Chinese instruction; tagalog → English (until we add
+  // Tagalog recipe templates).
+  const wantChinese = language === 'zh' || language === 'zh-Hant';
+  const langInstruction = wantChinese
     ? 'All text fields in Chinese (Simplified). name_en in English.'
     : 'All text fields in English. name_zh in Chinese (Simplified).';
 

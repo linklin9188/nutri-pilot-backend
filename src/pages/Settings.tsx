@@ -3,6 +3,44 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import BottomTabBar from "../components/BottomTabBar";
 import { useSubscription } from "../lib/subscription";
+import { useLanguage, LANGUAGE_LABEL, type Language } from "../contexts/LanguageContext";
+
+// 4-language picker (简 / 繁 / EN / Tagalog).
+function LanguageCard() {
+  const { language, setLanguage } = useLanguage();
+  const langs: { id: Language; flag: string }[] = [
+    { id: 'zh',        flag: '🇨🇳' },
+    { id: 'zh-Hant',   flag: '🇭🇰' },
+    { id: 'en',        flag: '🇬🇧' },
+    { id: 'tl',        flag: '🇵🇭' },
+  ];
+  return (
+    <div className="bg-white border border-black/5 rounded-[22px] p-4 shadow-[0_4px_20px_rgba(0,0,0,0.04)]">
+      <p className="text-[12px] text-secondary font-semibold mb-3 uppercase tracking-wider">
+        语言 · Language
+      </p>
+      <div className="grid grid-cols-4 gap-2">
+        {langs.map(l => (
+          <button
+            key={l.id}
+            onClick={() => setLanguage(l.id)}
+            className={`flex flex-col items-center gap-0.5 py-2 rounded-2xl border-2 transition-all active:scale-95 ${
+              language === l.id ? "border-primary bg-primary/5" : "border-black/[0.08] bg-gray-50"
+            }`}
+          >
+            <span className="text-[20px]">{l.flag}</span>
+            <span className={`text-[11px] font-bold ${language === l.id ? "text-primary" : "text-gray-700"}`}>
+              {LANGUAGE_LABEL[l.id]}
+            </span>
+          </button>
+        ))}
+      </div>
+      <p className="text-[10px] text-gray-400 mt-2 leading-snug">
+        繁體適合香港 / 台灣本地用户；Tagalog 给菲律宾家务助理使用。
+      </p>
+    </div>
+  );
+}
 
 // ── Membership entry shown above 退出登录 ──────────────────────────────────────
 function MembershipCard() {
@@ -475,6 +513,9 @@ export default function Settings() {
           {/* Role switcher removed — identity is picked once at /signin.
               Keeping it here was confusing (one user shouldn't be both
               employer and helper on the same account). */}
+
+          {/* ── Language picker ── */}
+          <LanguageCard />
 
           {/* ── Membership ── */}
           <MembershipCard />

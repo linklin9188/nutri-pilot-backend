@@ -13,7 +13,8 @@ const COUNTRY_CODES = [
 
 export default function Login() {
   const navigate = useNavigate();
-  const { t, toggleLanguage, language } = useLanguage();
+  const { t, toggleLanguage, isEnglishish } = useLanguage();
+  const showEnglish = isEnglishish;
 
   // ── step flow ──────────────────────────────────────────────────────
   const [step, setStep] = useState<Step>("login");
@@ -244,7 +245,7 @@ export default function Login() {
         <button onClick={toggleLanguage}
           className="w-9 h-9 rounded-full flex items-center justify-center text-[12px] font-bold text-white/70 hover:text-white transition-colors"
           style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.10)" }}>
-          {language === "en" ? "EN" : "中"}
+          {showEnglish ? "EN" : "中"}
         </button>
       </header>
 
@@ -643,7 +644,7 @@ export default function Login() {
                 <div key={section.icon} className="space-y-4">
                   <h3 className="text-[14px] font-semibold flex items-center gap-2 text-white/80" style={{ letterSpacing: "0.04em" }}>
                     <span className="material-symbols-outlined text-[18px] text-[#FF5A1F]">{section.icon}</span>
-                    {language === "en" ? section.q.en : section.q.zh}
+                    {showEnglish ? section.q.en : section.q.zh}
                   </h3>
                   <div className="flex flex-wrap gap-2">
                     {section.opts.map(opt => {
@@ -655,7 +656,7 @@ export default function Login() {
                             ? { background: "#FF5A1F", color: "white", fontWeight: 600, boxShadow: "0 0 16px rgba(255,90,31,0.35)", border: "1px solid transparent" }
                             : { background: "rgba(255,255,255,0.09)", border: "1px solid rgba(255,255,255,0.13)", color: "rgba(255,255,255,0.70)", backdropFilter: "blur(8px)" }
                           }>
-                          {language === "en" ? opt.en : opt.zh}
+                          {showEnglish ? opt.en : opt.zh}
                         </button>
                       );
                     })}

@@ -28,7 +28,10 @@ interface DishWithPrep {
 export default function HelperPrep() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { t, toggleLanguage, language } = useLanguage();
+  const { t, toggleLanguage, isChinese } = useLanguage();
+  // Treat 繁體 the same as 简体 for content selection; treat 'tl' (Tagalog,
+  // helper only) the same as English until Tagalog strings exist.
+  const useChineseContent = isChinese;
 
   const [dishes, setDishes]       = useState<DishWithPrep[]>([]);
   const [loading, setLoading]     = useState(true);
@@ -135,10 +138,10 @@ export default function HelperPrep() {
           onClick={toggleLanguage}
           className="flex items-center rounded-full bg-black/5 p-1 gap-0.5 active:scale-95 transition-transform"
         >
-          <span className={`px-2.5 py-1 rounded-full text-[12px] font-bold transition-all ${language === 'zh' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-400'}`}>
+          <span className={`px-2.5 py-1 rounded-full text-[12px] font-bold transition-all ${useChineseContent ? 'bg-white shadow-sm text-gray-900' : 'text-gray-400'}`}>
             中
           </span>
-          <span className={`px-2.5 py-1 rounded-full text-[12px] font-bold transition-all ${language === 'en' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-400'}`}>
+          <span className={`px-2.5 py-1 rounded-full text-[12px] font-bold transition-all ${!useChineseContent ? 'bg-white shadow-sm text-gray-900' : 'text-gray-400'}`}>
             EN
           </span>
         </button>
@@ -196,8 +199,8 @@ export default function HelperPrep() {
 
         {dishes.map((dish, dishIndex) => {
           const steps = dish.prep_steps_json ?? [];
-          const title = language === 'zh' ? dish.title_zh : (dish.title_en ?? dish.title_zh);
-          const subtitle = language === 'zh' ? (dish.title_en ?? '') : dish.title_zh;
+          const title = useChineseContent ? dish.title_zh : (dish.title_en ?? dish.title_zh);
+          const subtitle = useChineseContent ? (dish.title_en ?? '') : dish.title_zh;
           const done = isDishDone(dish);
           const doneCount = dishDoneCount(dish);
           const isOpen = expandedDish === dish.id;
@@ -303,7 +306,7 @@ export default function HelperPrep() {
                                     {cfg.icon}
                                   </span>
                                   <span className={`font-bold text-[12px] uppercase tracking-wider ${cfg.color}`}>
-                                    {language === 'zh' ? cfg.zh : cfg.en}
+                                    {useChineseContent ? cfg.zh : cfg.en}
                                   </span>
                                 </div>
 
@@ -311,11 +314,11 @@ export default function HelperPrep() {
                                   {trayItems.map(({ step, idx }) => {
                                     const key = `${dish.id}-${idx}`;
                                     const isDone = completed.has(key);
-                                    const action = language === 'zh' ? step.action_zh : (step.action_en ?? step.action_zh);
-                                    const ingName = language === 'en'
+                                    const action = useChineseContent ? step.action_zh : (step.action_en ?? step.action_zh);
+                                    const ingName = !useChineseContent
                                       ? (step.ingredient_en || step.ingredient_zh)
                                       : step.ingredient_zh;
-                                    const ingAlt = language === 'en' ? step.ingredient_zh : step.ingredient_en;
+                                    const ingAlt = !useChineseContent ? step.ingredient_zh : step.ingredient_en;
 
                                     return (
                                       <motion.button

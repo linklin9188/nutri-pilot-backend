@@ -4,6 +4,7 @@ import { dishToIngredients, aggregateIngredients, type AggregatedIngredient } fr
 import * as XLSX from "xlsx";
 import BottomTabBar from "../components/BottomTabBar";
 import { useLanguage } from "../contexts/LanguageContext";
+import { getHKAlias } from "../lib/hkNames";
 
 // Keep in sync with useWeeklyMenu ALGO_VERSION
 const WEEKLY_ALGO_VERSION = 'v15';
@@ -140,15 +141,33 @@ function getDishes(mode: 'today' | 'week'): any[] {
   return [...(todayEntry.dishes ?? []), ...(todayEntry.lunchDishes ?? [])];
 }
 
-function formatWeight(ing: AggregatedIngredient): string {
+// Three weight units the shopping list can render in.
+//   'metric' — kg / g  (default, matches mainland habit)
+//   'hk_jin' — 港斤 (司马斤 = 600g) / 両 (37.5g) — wet-market default
+//   'lb'     — 磅 (453.6g) / oz — premium-store / online supermarket default
+type WeightUnit = 'metric' | 'hk_jin' | 'lb';
+
+const HK_JIN_G = 600;       // 1 司马斤 = 600g
+const HK_LIANG_G = 37.5;    // 1 両 = 1/16 港斤
+const LB_G = 453.59237;
+
+function formatWeight(ing: AggregatedIngredient, unit: WeightUnit = 'metric'): string {
   if (ing.unit === 'piece') {
     const count = Math.round(ing.weightGrams / 60);
     return `×${count}个`;
   }
-  if (ing.weightGrams >= 1000) {
-    return `${(ing.weightGrams / 1000).toFixed(1)}kg`;
+  const g = ing.weightGrams;
+  if (unit === 'hk_jin') {
+    // Prefer 港斤 when ≥ half a 港斤, otherwise 両.
+    if (g >= HK_JIN_G / 2) return `${(g / HK_JIN_G).toFixed(1)}港斤`;
+    return `${Math.round(g / HK_LIANG_G)}両`;
   }
-  return `${ing.weightGrams}g`;
+  if (unit === 'lb') {
+    if (g >= LB_G / 2) return `${(g / LB_G).toFixed(1)}磅`;
+    return `${(g / (LB_G / 16)).toFixed(1)}oz`;
+  }
+  if (g >= 1000) return `${(g / 1000).toFixed(1)}kg`;
+  return `${g}g`;
 }
 
 function buildShoppingText(grouped: { group: string; items: AggregatedIngredient[] }[], needToBuy: AggregatedIngredient[]): string {
@@ -224,6 +243,11 @@ export default function VerifyIngredients() {
   // true = "已有"，false = "需要买"
   const [haveIt, setHaveIt] = useState<Record<string, boolean>>({});
   const [copied, setCopied] = useState(false);
+  const [weightUnit, setWeightUnit] = useState<WeightUnit>(() =>
+    (localStorage.getItem('nutri_weight_unit') as WeightUnit) || 'metric'
+  );
+  // Persist the user's pick so the choice survives reloads.
+  useEffect(() => { localStorage.setItem('nutri_weight_unit', weightUnit); }, [weightUnit]);
 
   useEffect(() => {
     if (mode === 'banquet') {
@@ -379,6 +403,27 @@ export default function VerifyIngredients() {
           ))}
         </div>
 
+        {/* Weight unit toggle — defaults to metric. 港斤 covers wet-market shopping,
+            磅 covers premium-store / online supermarket pricing. */}
+        <div className="flex items-center gap-1 text-[11px]">
+          <span className="text-gray-400 mr-1">单位</span>
+          {([
+            { id: 'metric', label: '克 / kg' },
+            { id: 'hk_jin', label: '港斤 · 両' },
+            { id: 'lb',     label: '磅 · oz' },
+          ] as { id: WeightUnit; label: string }[]).map(u => (
+            <button
+              key={u.id}
+              onClick={() => setWeightUnit(u.id)}
+              className={`px-2 py-1 rounded-full font-bold transition-all ${
+                weightUnit === u.id ? 'bg-[#FF5A1F] text-white' : 'bg-white text-gray-500 border border-black/10'
+              }`}
+            >
+              {u.label}
+            </button>
+          ))}
+        </div>
+
         {/* Banquet mode banner with discard option */}
         {mode === 'banquet' && (
           <div className="rounded-2xl p-3 flex items-center gap-2"
@@ -473,15 +518,33 @@ export default function VerifyIngredients() {
 
                     {/* Name */}
                     <div className="flex-1 text-left">
-                      <p
-                        className="font-semibold text-[15px]"
-                        style={{
-                          color: have ? '#ef4444' : '#1a1a1a',
-                          textDecoration: have ? 'line-through' : 'none',
-                        }}
-                      >
-                        {item.nameZh}
-                      </p>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p
+                          className="font-semibold text-[15px]"
+                          style={{
+                            color: have ? '#ef4444' : '#1a1a1a',
+                            textDecoration: have ? 'line-through' : 'none',
+                          }}
+                        >
+                          {item.nameZh}
+                        </p>
+                        {(() => {
+                          // Show Cantonese / Hong Kong-style name when different
+                          // from the Mandarin one — saves wet-market confusion
+                          // for mainlanders just arrived in HK.
+                          const alias = getHKAlias(item.nameZh);
+                          if (!alias?.yue || alias.yue === item.nameZh) return null;
+                          return (
+                            <span
+                              className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md"
+                              style={{ background: 'rgba(255,90,31,0.10)', color: '#FF5A1F' }}
+                              title={alias.note ?? ''}
+                            >
+                              港: {alias.yue.split(' / ')[0]}
+                            </span>
+                          );
+                        })()}
+                      </div>
                       {item.dishes.length > 0 && (
                         <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-1">
                           {item.dishes.slice(0, 2).join(' · ')}
@@ -498,7 +561,7 @@ export default function VerifyIngredients() {
                           textDecoration: have ? 'line-through' : 'none',
                         }}
                       >
-                        {formatWeight(item)}
+                        {formatWeight(item, weightUnit)}
                       </span>
                       <span className="text-[10px] font-semibold" style={{ color: have ? '#ef4444' : 'rgba(0,0,0,0.3)' }}>
                         {have ? '已有 ✓' : '需购买'}

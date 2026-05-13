@@ -1,45 +1,68 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
-type Language = 'en' | 'zh';
+/**
+ * Language matrix. We split Chinese into 简体 / 繁體 so HK / TW users get the
+ * familiar character set, and add Tagalog so Filipino domestic helpers get
+ * their first-language step-by-step prep instructions.
+ *
+ *   zh     — 简体中文 (default for mainland / employer)
+ *   zh-Hant — 繁體中文  (HK / TW / older mainland users mixing with HK family)
+ *   en     — English  (international users / fallback)
+ *   tl     — Tagalog  (Filipino helper view default)
+ */
+export type Language = 'zh' | 'zh-Hant' | 'en' | 'tl';
 
 interface LanguageContextType {
   language: Language;
   setLanguage: (lang: Language) => void;
-  toggleLanguage: () => void;
+  toggleLanguage: () => void;        // legacy 2-way toggle (zh ↔ en)
+  cycleLanguage: () => void;         // walks the full matrix
   t: (en: string, zh: string) => string;
+  isChinese: boolean;                // true for zh AND zh-Hant
+  isEnglishish: boolean;             // true for en AND tl (until Tagalog strings land)
 }
 
-// Also widen setLanguage to mark the user pick as explicit.
+/** Standalone helpers — handy in non-React modules (e.g. geminiRecipe). */
+export const isChinese = (lang: Language) => lang === 'zh' || lang === 'zh-Hant';
+export const isEnglishish = (lang: Language) => lang === 'en' || lang === 'tl';
+
+// Approximate fall-back chain when a string isn't translated yet.
+const FALLBACK: Record<Language, Language> = {
+  zh:        'zh',
+  'zh-Hant': 'zh',     // 繁體 falls back to 简体 (close enough)
+  en:        'en',
+  tl:        'en',     // Tagalog falls back to English (interfaces only)
+};
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
+function defaultForRole(): Language {
+  const role = localStorage.getItem('nutri_role');
+  // Helpers default to English; the helper view will switch to Tagalog
+  // once we expose a Tagalog button. We don't auto-pick Tagalog because
+  // English is a safe assumption when we don't know the helper's origin.
+  return role === 'helper' ? 'en' : 'zh';
+}
+
 export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [hasExplicitPref, setHasExplicitPref] = useState<boolean>(() => {
-    const saved = localStorage.getItem('appLanguage');
-    return saved === 'en' || saved === 'zh';
+    const saved = localStorage.getItem('appLanguage') as Language | null;
+    return saved === 'zh' || saved === 'zh-Hant' || saved === 'en' || saved === 'tl';
   });
   const [language, setLanguage] = useState<Language>(() => {
-    const saved = localStorage.getItem('appLanguage');
-    if (saved === 'en' || saved === 'zh') return saved;
-    // Helper role defaults to English, employer defaults to Chinese
-    const role = localStorage.getItem('nutri_role');
-    return role === 'helper' ? 'en' : 'zh';
+    const saved = localStorage.getItem('appLanguage') as Language | null;
+    if (saved === 'zh' || saved === 'zh-Hant' || saved === 'en' || saved === 'tl') return saved;
+    return defaultForRole();
   });
 
-  // Persist explicit user picks. We only flip hasExplicitPref via the toggle
-  // (below) so that role-driven defaults can still apply on first login.
   useEffect(() => {
     if (hasExplicitPref) localStorage.setItem('appLanguage', language);
   }, [language, hasExplicitPref]);
 
-  // When the user logs in or switches role, re-derive the default language
-  // unless they've made an explicit pick already. Triggered by the
-  // 'nutri-prefs-changed' event that login handlers / Settings dispatch.
   useEffect(() => {
     const sync = () => {
       if (hasExplicitPref) return;
-      const role = localStorage.getItem('nutri_role');
-      setLanguage(role === 'helper' ? 'en' : 'zh');
+      setLanguage(defaultForRole());
     };
     window.addEventListener('nutri-prefs-changed', sync);
     window.addEventListener('storage', sync);
@@ -49,13 +72,31 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
   }, [hasExplicitPref]);
 
+  // 2-way toggle preserved for existing callers (zh / en switch in HelperPrep
+  // header, Login chip, etc.). Walks zh ↔ en regardless of intermediate state.
   const toggleLanguage = () => {
     setHasExplicitPref(true);
     setLanguage(prev => prev === 'en' ? 'zh' : 'en');
   };
 
+  // Cycles through the full 4-language matrix; used by the language picker in
+  // Settings where users can explicitly land on 繁體 or Tagalog.
+  const cycleLanguage = () => {
+    setHasExplicitPref(true);
+    setLanguage(prev => {
+      const order: Language[] = ['zh', 'zh-Hant', 'en', 'tl'];
+      return order[(order.indexOf(prev) + 1) % order.length];
+    });
+  };
+
+  // t(en, zh) — kept binary-compatible with all existing call sites.
+  // - For 'zh-Hant' we serve the same string as 'zh' (good enough for now;
+  //   replace with a real S2T table later if you want Hong Kong character forms).
+  // - For 'tl' we serve English until the helper-specific Tagalog strings
+  //   are added explicitly via t() overrides on a per-page basis.
   const t = (en: string, zh: string) => {
-    return language === 'en' ? en : zh;
+    const effective = FALLBACK[language] ?? language;
+    return effective === 'en' ? en : zh;
   };
 
   const explicitSetLanguage = (lang: Language) => {
@@ -64,7 +105,17 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   return (
-    <LanguageContext.Provider value={{ language, setLanguage: explicitSetLanguage, toggleLanguage, t }}>
+    <LanguageContext.Provider
+      value={{
+        language,
+        setLanguage: explicitSetLanguage,
+        toggleLanguage,
+        cycleLanguage,
+        t,
+        isChinese:    isChinese(language),
+        isEnglishish: isEnglishish(language),
+      }}
+    >
       {children}
     </LanguageContext.Provider>
   );
@@ -76,4 +127,12 @@ export const useLanguage = () => {
     throw new Error('useLanguage must be used within a LanguageProvider');
   }
   return context;
+};
+
+/** Display label for the active language. */
+export const LANGUAGE_LABEL: Record<Language, string> = {
+  zh:        '简体',
+  'zh-Hant': '繁體',
+  en:        'EN',
+  tl:        'Tagalog',
 };
