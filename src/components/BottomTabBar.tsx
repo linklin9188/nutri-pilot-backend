@@ -6,11 +6,10 @@
 import { useNavigate, useLocation } from "react-router-dom";
 
 const TABS = [
-  { icon: "home",           label: "首页",  route: "/"         },
-  { icon: "calendar_month", label: "菜单",  route: "/weekly"   },
-  { icon: "shopping_cart",  label: "采购",  route: "/verify"   },
-  { icon: "groups",         label: "社区",  route: "/community"},
-  { icon: "settings",       label: "设置",  route: "/settings" },
+  { icon: "home",           label: "首页",  route: "/"        },
+  { icon: "calendar_month", label: "菜单",  route: "/weekly"  },
+  { icon: "shopping_cart",  label: "采购",  route: "/verify"  },
+  { icon: "settings",       label: "设置",  route: "/settings"},
 ];
 
 export default function BottomTabBar() {
