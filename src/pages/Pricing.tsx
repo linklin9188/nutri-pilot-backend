@@ -73,6 +73,7 @@ const PLANS = [
 
 const PRO_FEATURES = [
   { emoji: "⭐", title: "米其林灵感菜单", desc: "解锁主厨级菜谱、精致摆盘与高端食材组合" },
+  { emoji: "🎉", title: "宴请规划",       desc: "10–20 人宴席按场合自动排菜（朋友 / 儿童派对 / 寿宴…）" },
   { emoji: "🛒", title: "高端食材采购源", desc: "City'super、SOLE、HKTVmall Premium 直送" },
   { emoji: "👨‍👩‍👧", title: "无限家庭成员", desc: "家庭多人偏好聚合，外佣/长辈/儿童分别建档" },
   { emoji: "📅", title: "全周菜单解锁", desc: "免费版只能看本周前 3 天，Pro 解锁完整 7 天" },

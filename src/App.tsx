@@ -20,6 +20,7 @@ import Settings from './pages/Settings';
 import WeeklyMenu from './pages/WeeklyMenu';
 import SignIn from './pages/SignIn';
 import Pricing from './pages/Pricing';
+import Banquet from './pages/Banquet';
 import { LanguageProvider } from './contexts/LanguageContext';
 import { supabase } from './lib/supabase';
 
@@ -87,6 +88,7 @@ function AppShell() {
       <Route path="/helper" element={<HelperHome />} />
       <Route path="/community" element={<Community />} />
       <Route path="/pricing" element={<Pricing />} />
+      <Route path="/banquet" element={<Banquet />} />
     </Routes>
     </>
   );

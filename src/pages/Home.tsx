@@ -547,7 +547,43 @@ export default function Home() {
           )}
         </div>
 
-        {/* ② PROCUREMENT — Compact action card ───────────────── */}
+        {/* ② BANQUET — Pro feature, plans 10–20 guest menu ───── */}
+        <button
+          onClick={() => navigate("/banquet")}
+          className="rounded-2xl px-4 py-3.5 shadow-sm flex items-center gap-3 text-left transition-all active:scale-[0.99] w-full"
+          style={{
+            background: "linear-gradient(135deg, #FFF8E1 0%, #FFEBC8 100%)",
+            border: "1px solid rgba(255,193,7,0.30)",
+          }}
+        >
+          <div className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 text-[22px]"
+            style={{ background: "linear-gradient(135deg, #FFD700, #FFA500)" }}>
+            🎉
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5">
+              <p className="font-bold" style={{ fontSize: 14, color: "#1a1a1a" }}>宴请规划</p>
+              <span
+                className="text-[9px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap"
+                style={{
+                  background: "linear-gradient(135deg, #FFD700, #FFA500)",
+                  color: "white",
+                }}
+              >
+                ⭐ Pro
+              </span>
+            </div>
+            <p className="truncate" style={{ fontSize: 11, color: "rgba(0,0,0,0.50)" }}>
+              10–20 人聚餐 / 寿宴 / 儿童派对自动排菜
+            </p>
+          </div>
+          <span className="material-symbols-outlined shrink-0"
+            style={{ fontSize: 18, color: "rgba(0,0,0,0.30)" }}>
+            chevron_right
+          </span>
+        </button>
+
+        {/* ③ PROCUREMENT — Compact action card ───────────────── */}
         <div className="rounded-2xl bg-white px-4 py-3.5 shadow-sm flex items-center gap-3">
           <div className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0"
             style={{ background: "rgba(255,90,31,0.1)" }}>

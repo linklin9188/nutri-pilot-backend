@@ -14,7 +14,7 @@ import { useNavigate } from "react-router-dom";
 import { useSubscription } from "../lib/subscription";
 
 interface ProGateProps {
-  feature: "michelin" | "premium_sourcing";
+  feature: "michelin" | "premium_sourcing" | "banquet";
   reason?: string;          // override the default teaser headline
   children: React.ReactNode;
 }
@@ -29,6 +29,11 @@ const FEATURE_COPY: Record<ProGateProps["feature"], { title: string; sub: string
     emoji: "🛒",
     title: "高端食材采购源",
     sub: "City'super、SOLE、HKTVmall Premium 直送，品质可追溯",
+  },
+  banquet: {
+    emoji: "🎉",
+    title: "宴请规划",
+    sub: "10–20 人宴席自动排菜，按场合 / 人数 / 风格定制",
   },
 };
 
