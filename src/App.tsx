@@ -21,6 +21,8 @@ import WeeklyMenu from './pages/WeeklyMenu';
 import SignIn from './pages/SignIn';
 import Pricing from './pages/Pricing';
 import Banquet from './pages/Banquet';
+import ProWellness from './pages/ProWellness';
+import ProSchoolBalance from './pages/ProSchoolBalance';
 import { LanguageProvider } from './contexts/LanguageContext';
 import { supabase } from './lib/supabase';
 
@@ -89,6 +91,8 @@ function AppShell() {
       <Route path="/community" element={<Community />} />
       <Route path="/pricing" element={<Pricing />} />
       <Route path="/banquet" element={<Banquet />} />
+      <Route path="/pro/wellness" element={<ProWellness />} />
+      <Route path="/pro/school-balance" element={<ProSchoolBalance />} />
     </Routes>
     </>
   );

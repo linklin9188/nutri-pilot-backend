@@ -74,7 +74,9 @@ const PLANS = [
 const PRO_FEATURES = [
   { emoji: "⭐", title: "米其林灵感菜单", desc: "解锁主厨级菜谱、精致摆盘与高端食材组合" },
   { emoji: "🎉", title: "家宴菜单",       desc: "在家请客 10–20 人，按场合 / 忌口 / 孕妇·助长高自动排菜" },
-  { emoji: "🛒", title: "高端食材采购源", desc: "City'super、SOLE、HKTVmall Premium 直送" },
+  { emoji: "🌿", title: "港式祛湿调理",   desc: "按节气 + 身体感受推汤水：冬瓜薏米 / 五指毛桃 / 川贝雪梨…" },
+  { emoji: "🎒", title: "学校营养补全",   desc: "输入孩子在校菜单，AI 推荐补全缺口的家常晚餐 3 道" },
+  { emoji: "🛒", title: "高端食材采购源", desc: "City'super、SOLE、HKTVmall Premium 直送（即将上线）" },
   { emoji: "👨‍👩‍👧", title: "无限家庭成员", desc: "家庭多人偏好聚合，外佣/长辈/儿童分别建档" },
   { emoji: "📅", title: "全周菜单解锁", desc: "免费版只能看本周前 3 天，Pro 解锁完整 7 天" },
   { emoji: "🔄", title: "无限菜品替换", desc: "不喜欢的菜，一键 AI 换一道（同营养水平）" },

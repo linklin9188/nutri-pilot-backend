@@ -606,6 +606,50 @@ export default function Home() {
           </span>
         </button>
 
+        {/* ②.5 Pro 工具箱 — 祛湿调理 + 学校营养补全 (horizontal pair) */}
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            onClick={() => navigate("/pro/wellness")}
+            className="rounded-2xl px-3 py-3.5 shadow-sm text-left transition-all active:scale-[0.98]"
+            style={{
+              background: "linear-gradient(135deg, #E8F5E9 0%, #C8E6C9 100%)",
+              border: "1px solid rgba(46,125,50,0.20)",
+            }}
+          >
+            <div className="flex items-center gap-1.5 mb-1">
+              <span className="text-[18px]">🌿</span>
+              <span className="text-[8px] font-bold px-1 py-0.5 rounded-full whitespace-nowrap"
+                style={{ background: "linear-gradient(135deg, #FFD700, #FFA500)", color: "white" }}>
+                Pro
+              </span>
+            </div>
+            <p className="font-bold text-[13px]" style={{ color: "#1a1a1a" }}>港式祛湿调理</p>
+            <p className="text-[10px] leading-tight mt-0.5" style={{ color: "rgba(0,0,0,0.50)" }}>
+              按节气推汤水 / 凉茶
+            </p>
+          </button>
+          <button
+            onClick={() => navigate("/pro/school-balance")}
+            className="rounded-2xl px-3 py-3.5 shadow-sm text-left transition-all active:scale-[0.98]"
+            style={{
+              background: "linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 100%)",
+              border: "1px solid rgba(25,118,210,0.20)",
+            }}
+          >
+            <div className="flex items-center gap-1.5 mb-1">
+              <span className="text-[18px]">🎒</span>
+              <span className="text-[8px] font-bold px-1 py-0.5 rounded-full whitespace-nowrap"
+                style={{ background: "linear-gradient(135deg, #FFD700, #FFA500)", color: "white" }}>
+                Pro
+              </span>
+            </div>
+            <p className="font-bold text-[13px]" style={{ color: "#1a1a1a" }}>学校营养补全</p>
+            <p className="text-[10px] leading-tight mt-0.5" style={{ color: "rgba(0,0,0,0.50)" }}>
+              输入校餐 / 补晚餐
+            </p>
+          </button>
+        </div>
+
         {/* ③ PROCUREMENT — Compact action card ───────────────── */}
         <div className="rounded-2xl bg-white px-4 py-3.5 shadow-sm flex items-center gap-3">
           <div className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0"
