@@ -8,7 +8,10 @@ import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useRecommendDishes, fetchSwapOptions, type SupabaseDish } from "../hooks/useSupabaseMenu";
 import { useWeeklyMenu } from "../hooks/useWeeklyMenu";
-import { analyzeFridgePhoto, fileToBase64, type FridgeDish } from "../lib/geminiVision";
+import {
+  analyzeFridgePhoto, fileToBase64,
+  type ScannedDish, type ScanScene, type ScanLocale,
+} from "../lib/geminiVision";
 import { supabase } from "../lib/supabase";
 import BottomTabBar from "../components/BottomTabBar";
 
@@ -195,8 +198,10 @@ export default function Home() {
   const [isFridgeScanOpen, setIsFridgeScanOpen] = useState(false);
   const [fridgeScanLoading, setFridgeScanLoading] = useState(false);
   const [fridgeIngredients, setFridgeIngredients] = useState<string[]>([]);
-  const [fridgeDishes, setFridgeDishes] = useState<FridgeDish[]>([]);
+  const [fridgeDishes, setFridgeDishes] = useState<ScannedDish[]>([]);
   const [fridgeError, setFridgeError] = useState<string | null>(null);
+  const [scanScene, setScanScene]   = useState<ScanScene>('fridge');     // 冰箱 vs 超市货架
+  const [scanLocale, setScanLocale] = useState<ScanLocale>('zh');         // 简体 / 繁體 输出
   const [fridgePreview, setFridgePreview] = useState<string | null>(null);
 
   const [breakfastPool, setBreakfastPool] = useState<any[]>([]);
@@ -380,7 +385,11 @@ export default function Home() {
     setIsFridgeScanOpen(true);
     try {
       const { base64, mimeType } = await fileToBase64(file);
-      const result = await analyzeFridgePhoto(base64, mimeType);
+      // Scene + locale picked in the drawer header drive the prompt:
+      // - fridge → suggest dishes from visible ingredients
+      // - market → suggest dishes to shop FOR based on shelf items
+      // - locale → simplified vs traditional Chinese output
+      const result = await analyzeFridgePhoto(base64, mimeType, scanScene, scanLocale);
       setFridgeIngredients(result.detected_ingredients);
       setFridgeDishes(result.dishes);
     } catch {
@@ -846,12 +855,45 @@ export default function Home() {
           <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setIsFridgeScanOpen(false)} />
           <div className="relative bg-white w-full max-w-md mx-auto rounded-t-[32px] pt-4 pb-10 px-6 shadow-2xl">
             <div className="w-12 h-1.5 rounded-full mx-auto mb-4" style={{ background: "rgba(0,0,0,0.1)" }} />
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="font-bold" style={{ fontSize: 20 }}>冰箱扫一扫</h2>
+            <div className="flex justify-between items-center mb-3">
+              <h2 className="font-bold" style={{ fontSize: 20 }}>📷 扫一扫</h2>
               <button className="w-8 h-8 rounded-full flex items-center justify-center"
                 style={{ background: "rgba(0,0,0,0.06)" }} onClick={() => setIsFridgeScanOpen(false)}>
                 <span className="material-symbols-outlined" style={{ fontSize: 18 }}>close</span>
               </button>
+            </div>
+
+            {/* Scene picker + 简/繁 locale toggle — both are picked BEFORE
+                shooting so the prompt sent to Gemini knows what to generate. */}
+            <div className="flex items-center gap-2 mb-3">
+              <div className="bg-black/[0.04] p-0.5 rounded-full flex-1 flex gap-0.5">
+                {([
+                  { id: 'fridge', label: '冰箱 / 食材', emoji: '🧊' },
+                  { id: 'market', label: '超市货架',   emoji: '🛒' },
+                ] as { id: ScanScene; label: string; emoji: string }[]).map(s => (
+                  <button key={s.id}
+                    onClick={() => setScanScene(s.id)}
+                    className={`flex-1 px-3 py-1.5 rounded-full text-[12px] font-bold transition-all ${
+                      scanScene === s.id ? 'bg-white shadow text-gray-900' : 'text-gray-500'
+                    }`}>
+                    {s.emoji} {s.label}
+                  </button>
+                ))}
+              </div>
+              <div className="bg-black/[0.04] p-0.5 rounded-full flex gap-0.5">
+                {([
+                  { id: 'zh',      label: '简' },
+                  { id: 'zh-Hant', label: '繁' },
+                ] as { id: ScanLocale; label: string }[]).map(l => (
+                  <button key={l.id}
+                    onClick={() => setScanLocale(l.id)}
+                    className={`px-2.5 py-1.5 rounded-full text-[12px] font-bold transition-all ${
+                      scanLocale === l.id ? 'bg-white shadow text-gray-900' : 'text-gray-500'
+                    }`}>
+                    {l.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {fridgePreview && (
@@ -896,39 +938,52 @@ export default function Home() {
                     </div>
                   </div>
                 )}
-                <p style={{ fontSize: 11, color: "rgba(0,0,0,0.38)", letterSpacing: "0.08em" }} className="mb-3">
-                  推荐做法（3种）
-                </p>
-                <div className="space-y-3 mb-6">
-                  {fridgeDishes.map((dish, i) => (
-                    <div key={i} className="p-4 rounded-2xl border shadow-sm bg-white"
-                      style={{ borderColor: "rgba(0,0,0,0.06)" }}>
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1">
-                          <p className="font-bold" style={{ fontSize: 15 }}>{dish.name_zh}</p>
-                          <p style={{ fontSize: 11, color: "rgba(0,0,0,0.38)" }}>{dish.name_en}</p>
-                        </div>
-                        <div className="flex flex-col items-end gap-1">
-                          <span className="px-2 py-0.5 rounded-md font-semibold"
-                            style={{ fontSize: 11, background: "rgba(0,0,0,0.06)", color: "rgba(0,0,0,0.45)" }}>
-                            {dish.cook_method}
-                          </span>
-                          <span className="px-2 py-0.5 rounded-md font-semibold"
-                            style={{
-                              fontSize: 10,
-                              background: dish.difficulty === "简单" ? "rgba(52,211,153,0.1)" : "rgba(251,191,36,0.1)",
-                              color: dish.difficulty === "简单" ? "#059669" : "#d97706",
-                            }}>
-                            {dish.difficulty} · {dish.time_minutes}分钟
-                          </span>
-                        </div>
-                      </div>
-                      <p style={{ fontSize: 12, color: "rgba(0,0,0,0.45)", lineHeight: 1.55 }} className="mt-2">
-                        {dish.description}
+                {/* Group dishes by cuisine: 中式 first, 西式 below.
+                    Older payloads without a 'cuisine' field default to chinese. */}
+                {([
+                  { key: 'chinese' as const, label: '中式推荐', emoji: '🥢' },
+                  { key: 'western' as const, label: '西式推荐', emoji: '🍝' },
+                ]).map(group => {
+                  const items = fridgeDishes.filter(d => (d.cuisine ?? 'chinese') === group.key);
+                  if (items.length === 0) return null;
+                  return (
+                    <div key={group.key} className="mb-5">
+                      <p className="mb-2" style={{ fontSize: 11, color: "rgba(0,0,0,0.50)", letterSpacing: "0.08em", fontWeight: 700 }}>
+                        {group.emoji} {group.label}（{items.length} 道）
                       </p>
+                      <div className="space-y-3">
+                        {items.map((dish, i) => (
+                          <div key={`${group.key}-${i}`} className="p-4 rounded-2xl border shadow-sm bg-white"
+                            style={{ borderColor: "rgba(0,0,0,0.06)" }}>
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1">
+                                <p className="font-bold" style={{ fontSize: 15 }}>{dish.name_zh}</p>
+                                <p style={{ fontSize: 11, color: "rgba(0,0,0,0.38)" }}>{dish.name_en}</p>
+                              </div>
+                              <div className="flex flex-col items-end gap-1">
+                                <span className="px-2 py-0.5 rounded-md font-semibold"
+                                  style={{ fontSize: 11, background: "rgba(0,0,0,0.06)", color: "rgba(0,0,0,0.45)" }}>
+                                  {dish.cook_method}
+                                </span>
+                                <span className="px-2 py-0.5 rounded-md font-semibold"
+                                  style={{
+                                    fontSize: 10,
+                                    background: dish.difficulty === "简单" ? "rgba(52,211,153,0.1)" : "rgba(251,191,36,0.1)",
+                                    color: dish.difficulty === "简单" ? "#059669" : "#d97706",
+                                  }}>
+                                  {dish.difficulty} · {dish.time_minutes}分钟
+                                </span>
+                              </div>
+                            </div>
+                            <p style={{ fontSize: 12, color: "rgba(0,0,0,0.45)", lineHeight: 1.55 }} className="mt-2">
+                              {dish.description}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  ))}
-                </div>
+                  );
+                })}
                 <button className="w-full h-12 rounded-2xl font-semibold active:scale-95"
                   style={{ fontSize: 13, background: "rgba(0,0,0,0.05)", color: "rgba(0,0,0,0.45)" }}
                   onClick={() => fridgeInputRef.current?.click()}>
@@ -940,10 +995,13 @@ export default function Home() {
             {!fridgeScanLoading && !fridgeError && fridgeDishes.length === 0 && !fridgePreview && (
               <div className="flex flex-col items-center py-10 gap-4">
                 <span className="material-symbols-outlined" style={{ fontSize: 56, color: "rgba(0,0,0,0.12)" }}>
-                  kitchen
+                  {scanScene === 'market' ? 'storefront' : 'kitchen'}
                 </span>
                 <p style={{ fontSize: 14, color: "rgba(0,0,0,0.38)", textAlign: "center", lineHeight: 1.5 }}>
-                  拍一张冰箱或食材照片<br />AI 帮你想三种做法
+                  {scanScene === 'market'
+                    ? '拍一张超市货架照片'
+                    : '拍一张冰箱或食材照片'}<br />
+                  AI 给你 <span style={{ color: '#FF5A1F', fontWeight: 700 }}>3 道中式 + 3 道西式</span>
                 </p>
                 <button
                   className="px-6 py-3 rounded-2xl font-semibold text-white flex items-center gap-2 active:scale-95"
