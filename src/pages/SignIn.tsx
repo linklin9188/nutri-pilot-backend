@@ -63,58 +63,37 @@ export default function SignIn() {
   };
 
   /**
-   * Phone login — uses email/password internally.
-   * Email = <countryCode><digits>@nutri-pilot.app
-   * Password = TEST_PASSWORD (123456) for all users during test phase.
-   * Auto-creates account on first login.
+   * Phone login — test phase: localStorage-based identity.
+   * Maps phone number → stable UUID stored on device.
+   * No Supabase email auth required.
    */
   const handleLogin = async () => {
     const digits = phone.replace(/\D/g, "");
     if (digits.length < 8) return;
     setLoading(true); setError("");
 
-    const email = `${countryCode.replace("+", "")}${digits}@nutri-pilot.app`;
+    const phoneKey = `${countryCode}${digits}`;
 
     try {
-      // Try sign in first
-      let { data, error: signInErr } = await supabase.auth.signInWithPassword({ email, password: TEST_PASSWORD });
-
-      // If user doesn't exist yet, sign up then sign in
-      if (signInErr && signInErr.message.toLowerCase().includes("invalid")) {
-        const { error: signUpErr } = await supabase.auth.signUp({ email, password: TEST_PASSWORD });
-        if (signUpErr) throw signUpErr;
-        const result = await supabase.auth.signInWithPassword({ email, password: TEST_PASSWORD });
-        data = result.data;
-        if (result.error) throw result.error;
-      } else if (signInErr) {
-        throw signInErr;
+      // Get or create a stable userId for this phone number on this device
+      let userId = localStorage.getItem(`nutri_uid_${phoneKey}`);
+      if (!userId) {
+        userId = crypto.randomUUID();
+        localStorage.setItem(`nutri_uid_${phoneKey}`, userId);
       }
-
-      const userId = data?.user?.id;
-      if (!userId) throw new Error("登录失败，请重试");
 
       localStorage.setItem("isLoggedIn", "true");
       localStorage.setItem("userId", userId);
       localStorage.setItem("nutri_user_id", userId);
       localStorage.setItem("nutri_role", role);
+      localStorage.setItem("nutri_phone", phoneKey);
 
       if (role === "helper") {
-        await supabase.from("user_profiles").upsert(
-          { id: userId, role: "helper", ...(inviteEmployerId ? { employer_id: inviteEmployerId } : {}) },
-          { onConflict: "id" }
-        );
         navigate("/helper");
         return;
       }
 
-      // Employer: go to setup if first time, else home
-      const { data: profile } = await supabase
-        .from("user_profiles")
-        .select("id")
-        .eq("id", userId)
-        .maybeSingle();
-
-      navigate(!profile && !localStorage.getItem("quickPrefs") ? "/setup" : "/");
+      navigate(!localStorage.getItem("quickPrefs") ? "/setup" : "/");
     } catch (e: any) {
       setError(e.message ?? "登录失败，请重试");
     } finally {

@@ -429,34 +429,40 @@ export default function Home() {
             </button>
           </div>
 
-          {/* Who's eating today — only shown when 2+ family members exist */}
-          {allMembers.length >= 2 && (
-            <div className="px-4 pb-3 flex items-center gap-2 overflow-x-auto no-scrollbar">
-              <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.35)', fontWeight: 600, whiteSpace: 'nowrap' }}>今天谁在家</span>
-              {allMembers.map((m, idx) => {
-                const sel = eatingIds.includes(m.id);
-                return (
-                  <button
-                    key={m.id}
-                    onClick={() => toggleEatingMember(m.id)}
-                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[12px] font-bold border-2 transition-all active:scale-95 shrink-0 ${
-                      sel ? 'border-[#FF5A1F] bg-[rgba(255,90,31,0.08)]' : 'border-black/10 bg-black/[0.03]'
-                    }`}
-                    style={{ color: sel ? '#FF5A1F' : 'rgba(0,0,0,0.35)' }}
-                  >
-                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-white font-black ${MEMBER_COLORS[idx % MEMBER_COLORS.length]}`}
-                      style={{ fontSize: 10, opacity: sel ? 1 : 0.45 }}>
-                      {(m.name || '?')[0]}
-                    </span>
-                    {m.name}
-                    {m.lifeStage === '儿童' && sel && (
-                      <span style={{ fontSize: 10 }}>🧒</span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          )}
+          {/* Who's eating today — always visible */}
+          <div className="px-4 pb-3 flex items-center gap-2 overflow-x-auto no-scrollbar">
+            <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.35)', fontWeight: 600, whiteSpace: 'nowrap' }}>今天谁在家</span>
+            {allMembers.map((m, idx) => {
+              const sel = eatingIds.includes(m.id);
+              return (
+                <button
+                  key={m.id}
+                  onClick={() => toggleEatingMember(m.id)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[12px] font-bold border-2 transition-all active:scale-95 shrink-0 ${
+                    sel ? 'border-[#FF5A1F] bg-[rgba(255,90,31,0.08)]' : 'border-black/10 bg-black/[0.03]'
+                  }`}
+                  style={{ color: sel ? '#FF5A1F' : 'rgba(0,0,0,0.35)' }}
+                >
+                  <span className={`w-5 h-5 rounded-full flex items-center justify-center text-white font-black ${MEMBER_COLORS[idx % MEMBER_COLORS.length]}`}
+                    style={{ fontSize: 10, opacity: sel ? 1 : 0.45 }}>
+                    {(m.name || '?')[0]}
+                  </span>
+                  {m.name}
+                  {m.lifeStage === '儿童' && sel && (
+                    <span style={{ fontSize: 10 }}>🧒</span>
+                  )}
+                </button>
+              );
+            })}
+            <button
+              onClick={() => navigate('/settings')}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[12px] font-bold border-2 border-dashed border-black/10 shrink-0 active:scale-95 transition-all"
+              style={{ color: 'rgba(0,0,0,0.28)' }}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 13 }}>add</span>
+              {allMembers.length <= 1 ? '添加家人' : '管理'}
+            </button>
+          </div>
 
           {/* Dish list */}
           <div className="px-4 pb-2">
