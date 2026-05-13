@@ -16,6 +16,10 @@ export default function BottomTabBar() {
   const navigate  = useNavigate();
   const { pathname } = useLocation();
 
+  // Helper role has its own task-card landing page; the employer tab bar
+  // (首页/菜单/采购/设置) would be confusing for them.
+  if (localStorage.getItem("nutri_role") === "helper") return null;
+
   function isActive(route: string) {
     if (route === "/") return pathname === "/";
     return pathname.startsWith(route);

@@ -246,10 +246,13 @@ export default function Home() {
         });
     }
 
-    // Fetch breakfast dishes pool
+    // Fetch breakfast dishes pool — use '*' to avoid silent failure when columns change.
+    // Previously selected 'type' which doesn't exist in the dishes table (column is
+    // 'course_type'); the bad query returned an error and left breakfastPool empty,
+    // causing Home's breakfast tab to permanently show "暂无早餐菜单".
     supabase
       .from('dishes')
-      .select('id, title_zh, title_en, image_url, description_zh, description_en, type')
+      .select('*')
       .eq('meal_type', 'breakfast')
       .limit(20)
       .then(({ data }) => { if (data && data.length > 0) setBreakfastPool(data); });

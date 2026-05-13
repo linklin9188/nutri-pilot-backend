@@ -127,6 +127,11 @@ export default function QuickSetup() {
     // Set family defaults if not already configured
     if (!localStorage.getItem("nutri_adults")) localStorage.setItem("nutri_adults", "2");
     if (!localStorage.getItem("nutri_kids"))   localStorage.setItem("nutri_kids",   "0");
+    // Mark as logged in (test phase: completing setup = logged in)
+    if (!localStorage.getItem("isLoggedIn")) {
+      localStorage.setItem("isLoggedIn", "true");
+      localStorage.setItem("userId", crypto.randomUUID());
+    }
     // Notify hooks that preferences changed
     window.dispatchEvent(new Event("nutri-prefs-changed"));
     navigate("/");
@@ -239,7 +244,14 @@ export default function QuickSetup() {
 
           {/* Skip */}
           {step === 0 && (
-            <button onClick={() => { localStorage.setItem("quickPrefs", JSON.stringify({ goal: "balanced", spice: "mild", avoid: ["none"], setupAt: Date.now() })); navigate("/"); }}
+            <button onClick={() => {
+              localStorage.setItem("quickPrefs", JSON.stringify({ goal: "balanced", spice: "mild", avoid: ["none"], setupAt: Date.now() }));
+              if (!localStorage.getItem("isLoggedIn")) {
+                localStorage.setItem("isLoggedIn", "true");
+                localStorage.setItem("userId", crypto.randomUUID());
+              }
+              navigate("/");
+            }}
               className="mt-4 text-center text-white/25 hover:text-white/50 transition-colors"
               style={{ fontSize: 12, letterSpacing: "0.06em" }}>
               跳过，先看看菜单

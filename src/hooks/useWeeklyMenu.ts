@@ -27,10 +27,19 @@ import { getFamilyMenuPrefs, familyGoalScore, dishTriggersAllergy } from '../lib
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface WeeklyDayMenu {
+  date: string;          // ISO date string for this day (YYYY-MM-DD)
   dayIndex: number;      // 0=Mon … 6=Sun
   dayLabel: string;      // 周一 … 周日
   dishes: SupabaseDish[];       // dinner dishes
   lunchDishes: SupabaseDish[];  // lunch dishes (simpler, 1-2 items)
+}
+
+// weekStart is YYYY-MM-DD (Monday). Returns YYYY-MM-DD for weekStart + dayIndex days,
+// computed in local time so that the value matches the user's calendar day.
+function dateForDayIndex(weekStart: string, dayIndex: number): string {
+  const [y, m, d] = weekStart.split('-').map(Number);
+  const date = new Date(y, m - 1, d + dayIndex);
+  return formatLocalDate(date);
 }
 
 export interface WeeklyMenu {
@@ -40,7 +49,7 @@ export interface WeeklyMenu {
 
 // ── Cache version — bump this whenever the algorithm changes significantly ─────
 // This ensures old cached menus are discarded after an algorithm update.
-const ALGO_VERSION = 'v13'; // fix: fat_loss goal now matches DB tag 'lose_weight'
+const ALGO_VERSION = 'v15'; // fix: days[i].date in local-time format (was UTC-shifted)
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -105,12 +114,21 @@ function getCacheKey(weekStart: string): string {
   return `weekly_menu_${ALGO_VERSION}_${weekStart}_p${dishesPerDay}_e${eatingKey}`;
 }
 
+// Always use the local-time date to avoid UTC offset shifting the value to the
+// previous day for users east of UTC.
+function formatLocalDate(d: Date): string {
+  const y  = d.getFullYear();
+  const m  = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
+
 function getMondayISO(): string {
   const d = new Date();
   const day = d.getDay(); // 0=Sun
   const diff = day === 0 ? -6 : 1 - day;
   d.setDate(d.getDate() + diff);
-  return d.toISOString().slice(0, 10);
+  return formatLocalDate(d);
 }
 
 // Weighted random pick: higher score → higher probability
@@ -768,6 +786,7 @@ function generateWeekPlan(
       .map(c => enrichRaw(c.dish));
 
     days.push({
+      date: dateForDayIndex(weekStart, dayIndex),
       dayIndex,
       dayLabel: DAY_LABELS[dayIndex],
       dishes: [...dayDishes, ...kidDishes].map(d => enrichRaw(d)),
@@ -817,9 +836,11 @@ async function loadFromDB(userId: string, weekStart: string): Promise<WeeklyMenu
   const days: WeeklyDayMenu[] = dinnerRes.data.map(row => {
     const dinnerIds = (row.swapped_dish_ids ?? row.dish_ids) as string[];
     const lunchIds  = lunchMap.get(row.day_index as number) ?? [];
+    const dayIndex  = row.day_index as number;
     return {
-      dayIndex:    row.day_index as number,
-      dayLabel:    DAY_LABELS[row.day_index as number],
+      date:        dateForDayIndex(weekStart, dayIndex),
+      dayIndex,
+      dayLabel:    DAY_LABELS[dayIndex],
       dishes:      dinnerIds.map(id => dishMap.get(id)).filter(Boolean).map(d => enrichRaw(d)),
       lunchDishes: lunchIds.map(id => dishMap.get(id)).filter(Boolean).map(d => enrichRaw(d)),
     };

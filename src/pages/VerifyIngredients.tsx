@@ -2,9 +2,11 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { dishToIngredients, aggregateIngredients, type AggregatedIngredient } from "../lib/dishIngredients";
 import * as XLSX from "xlsx";
+import BottomTabBar from "../components/BottomTabBar";
+import { useLanguage } from "../contexts/LanguageContext";
 
 // Keep in sync with useWeeklyMenu ALGO_VERSION
-const WEEKLY_ALGO_VERSION = 'v13';
+const WEEKLY_ALGO_VERSION = 'v15';
 
 // ── Category grouping ─────────────────────────────────────────────────────────
 const CATEGORY_GROUPS: { label: string; emoji: string; categories: string[] }[] = [
@@ -15,13 +17,27 @@ const CATEGORY_GROUPS: { label: string; emoji: string; categories: string[] }[] 
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+// Use local-time date strings so they match the values stored in weekly_menu
+// (which is also generated in local time). toISOString() would shift the
+// value to the previous day for users east of UTC.
+function formatLocalDate(d: Date): string {
+  const y  = d.getFullYear();
+  const m  = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
+
+function getTodayLocal(): string {
+  return formatLocalDate(new Date());
+}
+
 function getWeekStart(): string {
   const today = new Date();
   const day = today.getDay();
   const diff = day === 0 ? -6 : 1 - day;
   const monday = new Date(today);
   monday.setDate(today.getDate() + diff);
-  return monday.toISOString().slice(0, 10);
+  return formatLocalDate(monday);
 }
 
 function readHeadcount(): { adults: number; kids: number } {
@@ -55,8 +71,8 @@ function getDishes(mode: 'today' | 'week'): any[] {
     return days.flatMap((d: any) => [...(d.dishes ?? []), ...(d.lunchDishes ?? [])]);
   }
 
-  // Today: find the entry matching today's date
-  const today = new Date().toISOString().slice(0, 10);
+  // Today: find the entry matching today's date (local time)
+  const today = getTodayLocal();
   const todayEntry = days.find((d: any) => d.date === today) ?? days[0];
   if (!todayEntry) return [];
   return [...(todayEntry.dishes ?? []), ...(todayEntry.lunchDishes ?? [])];
@@ -91,6 +107,7 @@ function buildShoppingText(grouped: { group: string; items: AggregatedIngredient
 // ── Main component ─────────────────────────────────────────────────────────────
 export default function VerifyIngredients() {
   const navigate = useNavigate();
+  const { t } = useLanguage();
   const [mode, setMode] = useState<'today' | 'week'>('week');
   const [ingredients, setIngredients] = useState<AggregatedIngredient[]>([]);
   const [dishCount, setDishCount] = useState(0);
@@ -174,6 +191,8 @@ export default function VerifyIngredients() {
   };
 
   const isHelper = localStorage.getItem("nutri_role") === "helper";
+  // Employer view shows the bottom tab bar; lift the footer above it.
+  const footerBottomClass = isHelper ? 'bottom-0' : 'bottom-[60px]';
 
   return (
     <div className="min-h-screen flex flex-col max-w-md mx-auto bg-[#f5f5f5]">
@@ -186,9 +205,12 @@ export default function VerifyIngredients() {
           <span className="material-symbols-outlined text-[20px]">arrow_back</span>
         </button>
         <div className="flex-1">
-          <h1 className="text-[18px] font-bold">采购清单</h1>
+          <h1 className="text-[18px] font-bold">{t('Shopping List', '采购清单')}</h1>
           <p className="text-[11px] text-gray-400 mt-0.5">
-            {mode === 'week' ? '本周' : '今日'} · {dishCount} 道菜 · {ingredients.length} 种食材
+            {t(
+              `${mode === 'week' ? 'This week' : 'Today'} · ${dishCount} dishes · ${ingredients.length} items`,
+              `${mode === 'week' ? '本周' : '今日'} · ${dishCount} 道菜 · ${ingredients.length} 种食材`
+            )}
           </p>
         </div>
         <div
@@ -199,11 +221,11 @@ export default function VerifyIngredients() {
             color: haveCount === ingredients.length && ingredients.length > 0 ? '#25D366' : '#FF5A1F',
           }}
         >
-          {haveCount}/{ingredients.length} 已有
+          {haveCount}/{ingredients.length} {t('have', '已有')}
         </div>
       </header>
 
-      <main className="flex-1 px-4 py-4 space-y-4 pb-36">
+      <main className={`flex-1 px-4 py-4 space-y-4 ${isHelper ? 'pb-36' : 'pb-52'}`}>
         {/* Mode toggle */}
         <div className="bg-white rounded-2xl p-1.5 flex gap-1 shadow-sm">
           {(['today', 'week'] as const).map(m => (
@@ -214,24 +236,47 @@ export default function VerifyIngredients() {
                 mode === m ? 'bg-[#FF5A1F] text-white shadow' : 'text-gray-400'
               }`}
             >
-              {m === 'today' ? '今日菜单' : '本周菜单'}
+              {m === 'today'
+                ? t("Today's menu", '今日菜单')
+                : t("This week's menu", '本周菜单')}
             </button>
           ))}
         </div>
 
-        {/* Empty state */}
+        {/* Empty state — message + CTA differ by role */}
         {ingredients.length === 0 && (
           <div className="text-center py-20 text-gray-400">
             <span className="material-symbols-outlined text-5xl mb-3 block">shopping_basket</span>
-            <p className="font-medium">还没有菜单</p>
-            <p className="text-sm mt-1">请先在首页生成{mode === 'week' ? '本周' : '今日'}菜单</p>
-            <button
-              onClick={() => navigate('/')}
-              className="mt-4 px-5 py-2.5 rounded-full text-[13px] font-bold text-white"
-              style={{ background: 'linear-gradient(135deg, #FF5A1F, #FF8C54)' }}
-            >
-              去生成菜单
-            </button>
+            {isHelper ? (
+              <>
+                <p className="font-medium">{t('No menu yet', '还没有菜单')}</p>
+                <p className="text-sm mt-1">
+                  {t('Ask the employer to generate the menu first',
+                     '请等雇主在首页生成菜单')}
+                </p>
+                <button
+                  onClick={() => navigate('/helper')}
+                  className="mt-4 px-5 py-2.5 rounded-full text-[13px] font-bold text-white"
+                  style={{ background: 'linear-gradient(135deg, #FF5A1F, #FF8C54)' }}
+                >
+                  {t('Back to tasks', '返回任务')}
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="font-medium">还没有菜单</p>
+                <p className="text-sm mt-1">
+                  请先在首页生成{mode === 'week' ? '本周' : '今日'}菜单
+                </p>
+                <button
+                  onClick={() => navigate('/')}
+                  className="mt-4 px-5 py-2.5 rounded-full text-[13px] font-bold text-white"
+                  style={{ background: 'linear-gradient(135deg, #FF5A1F, #FF8C54)' }}
+                >
+                  去生成菜单
+                </button>
+              </>
+            )}
           </div>
         )}
 
@@ -309,7 +354,7 @@ export default function VerifyIngredients() {
 
       {/* Footer */}
       {ingredients.length > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t border-black/5 px-5 py-4 space-y-3">
+        <div className={`fixed ${footerBottomClass} left-0 right-0 max-w-md mx-auto bg-white border-t border-black/5 px-5 py-4 space-y-3`}>
           {/* Summary bar */}
           <div className="flex items-center justify-between">
             <div>
@@ -363,6 +408,8 @@ export default function VerifyIngredients() {
           )}
         </div>
       )}
+
+      <BottomTabBar />
     </div>
   );
 }

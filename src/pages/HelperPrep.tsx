@@ -190,7 +190,7 @@ export default function HelperPrep() {
 
         {!loading && dishes.length === 0 && (
           <div className="text-center py-20 text-gray-400 text-[14px]">
-            {t("No menu found. Go back and generate today's menu first.", "没有找到菜单，请先返回生成今日菜单。")}
+            {t("No menu yet. Ask the employer to generate today's menu first.", "还没有菜单，请等雇主生成今日菜单。")}
           </div>
         )}
 

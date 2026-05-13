@@ -89,7 +89,7 @@ function DishListScreen({ dishes, loading, onSelect }: {
           <div className="flex flex-col items-center justify-center py-24 gap-3">
             <span className="text-5xl">🍽</span>
             <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14, textAlign: 'center' }}>
-              No menu found.{'\n'}Please generate today's menu first.
+              No menu yet.{'\n'}Ask the employer to generate today's menu first.
             </p>
           </div>
         ) : (
