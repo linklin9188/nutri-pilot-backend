@@ -178,13 +178,43 @@ export default function Pricing() {
                 </p>
               </div>
             </div>
+            {/* Stripe Customer Portal → manage card / cancel / download invoices */}
+            <button
+              onClick={async () => {
+                setLoading(true); setMessage(null);
+                try {
+                  const userId = localStorage.getItem("userId") ?? "";
+                  const resp = await fetch(
+                    `${import.meta.env.VITE_SUPABASE_URL ?? ""}/functions/v1/create-portal-session`,
+                    {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ user_id: userId, return_url: window.location.href }),
+                    }
+                  );
+                  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                  const { url } = await resp.json();
+                  if (!url) throw new Error("missing portal url");
+                  window.location.href = url;
+                } catch (e: any) {
+                  setMessage(`无法打开管理页面：${e.message}。检查 create-portal-session Edge Function 是否已部署。`);
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              disabled={loading}
+              className="w-full h-11 rounded-2xl font-bold text-[13px] active:scale-95 disabled:opacity-50"
+              style={{ background: "rgba(255,90,31,0.10)", color: "#FF5A1F" }}
+            >
+              {loading ? "正在打开 Stripe…" : "管理订阅 / 换卡 / 取消"}
+            </button>
             <button
               onClick={() => {
                 if (confirm("确定要取消 Pro 状态吗？仅 dev 测试用。")) devCancelPro();
               }}
-              className="w-full text-[12px] text-gray-400 underline"
+              className="w-full text-[11px] text-gray-400 underline"
             >
-              取消 Pro（dev）
+              取消 Pro（dev only）
             </button>
           </section>
         )}

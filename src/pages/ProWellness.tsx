@@ -9,9 +9,10 @@
  * 上 health_benefit_tag 包含 'damp_relief' / 'detox' / 'nourish' 的菜。
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, Navigate } from "react-router-dom";
 import { useSubscription } from "../lib/subscription";
+import { supabase } from "../lib/supabase";
 import BottomTabBar from "../components/BottomTabBar";
 
 type Season = 'spring' | 'summer' | 'autumn' | 'winter';
@@ -108,13 +109,71 @@ export default function ProWellness() {
 
   const [season, setSeason]     = useState<Season>(currentSeason());
   const [symptoms, setSymptoms] = useState<Symptom[]>([]);
+  const [dbDishes, setDbDishes] = useState<any[]>([]);
+  const [loadingDb, setLoadingDb] = useState(true);
+
+  // Pull real dishes that carry调理 tags from Supabase. We don't filter by
+  // season at the query layer (no season tag in DB yet); the local season +
+  // symptom filters apply on the result.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from('dishes')
+        .select('id, title_zh, title_en, image_url, health_benefit_tags, flavor_tags, course_type, main_ingredient, origin_cuisine')
+        // Tags that exist in this DB: damp_clear / detox / nourish / immunity / boost_immunity
+        .or(
+          'health_benefit_tags.cs.{damp_clear},' +
+          'health_benefit_tags.cs.{detox},' +
+          'health_benefit_tags.cs.{nourish},' +
+          'health_benefit_tags.cs.{immunity},' +
+          'health_benefit_tags.cs.{boost_immunity}'
+        )
+        .limit(80);
+      if (cancelled) return;
+      setDbDishes(data ?? []);
+      setLoadingDb(false);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Season → preferred tags (heuristic until we add a real seasonal tag).
+  const SEASON_TAGS: Record<Season, string[]> = {
+    spring: ['damp_clear', 'detox'],
+    summer: ['damp_clear', 'detox'],
+    autumn: ['nourish', 'detox'],
+    winter: ['nourish', 'immunity', 'boost_immunity'],
+  };
+
+  // Symptom → DB tag / keyword hints.
+  const SYMPTOM_TAGS: Record<Symptom, string[]> = {
+    damp:        ['damp_clear'],
+    heat:        ['detox'],
+    sore_throat: ['nourish', 'detox'],
+    tired:       ['nourish', 'immunity', 'boost_immunity'],
+    cold:        ['nourish', 'immunity'],
+  };
 
   // All hooks must run unconditionally — early returns go *below* them.
   const recipes = useMemo(() => {
-    return WELLNESS_RECIPES
+    // 1) Static curated list (always in the result, season-filtered).
+    const curated = WELLNESS_RECIPES
       .filter(r => r.seasons.includes(season))
       .filter(r => symptoms.length === 0 || r.symptoms.some(s => symptoms.includes(s)));
-  }, [season, symptoms]);
+
+    // 2) DB dishes that match the season's preferred tags + chosen symptoms.
+    const seasonTags = SEASON_TAGS[season];
+    const symptomTags = symptoms.flatMap(s => SYMPTOM_TAGS[s]);
+    const wantedTags = [...new Set([...seasonTags, ...symptomTags])];
+    const dbHits = dbDishes
+      .filter(d => {
+        const tags = (d.health_benefit_tags ?? []) as string[];
+        return tags.some(t => wantedTags.includes(t));
+      })
+      .slice(0, 12);
+
+    return { curated, db: dbHits };
+  }, [season, symptoms, dbDishes]);
 
   if (loading) {
     return (
@@ -221,20 +280,19 @@ export default function ProWellness() {
           </div>
         </section>
 
-        {/* Recipe list */}
+        {/* Curated recipe list (the 9 hand-picked汤水) */}
         <section className="space-y-2">
           <div className="flex items-center justify-between px-1">
-            <p className="text-[13px] font-bold text-gray-700">推荐 · {recipes.length} 道</p>
-            {recipes.length === 0 && (
-              <p className="text-[11px] text-gray-400">没匹配上，试试换一个季节</p>
+            <p className="text-[13px] font-bold text-gray-700">
+              主厨精选 · {recipes.curated.length} 道
+            </p>
+            {recipes.curated.length === 0 && (
+              <p className="text-[11px] text-gray-400">本季没匹配，看下方菜谱库</p>
             )}
           </div>
           <div className="space-y-2">
-            {recipes.map(r => (
-              <div
-                key={r.id}
-                className="bg-white rounded-2xl p-4 shadow-sm flex gap-3"
-              >
+            {recipes.curated.map(r => (
+              <div key={r.id} className="bg-white rounded-2xl p-4 shadow-sm flex gap-3">
                 <span className="text-[28px] flex-shrink-0">{r.emoji}</span>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5 flex-wrap">
@@ -250,12 +308,65 @@ export default function ProWellness() {
                       {r.category}
                     </span>
                   </div>
-                  <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">
-                    {r.effect}
-                  </p>
-                  <p className="text-[10px] text-gray-400 mt-1">
-                    料：{r.ingredients.join('、')}
-                  </p>
+                  <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">{r.effect}</p>
+                  <p className="text-[10px] text-gray-400 mt-1">料：{r.ingredients.join('、')}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* DB-backed dishes — pulled live from the dishes table by health tag.
+            These are real recipes the menu engine already knows, so users can
+            re-cook them through the regular cook flow later. */}
+        <section className="space-y-2">
+          <div className="flex items-center justify-between px-1">
+            <p className="text-[13px] font-bold text-gray-700">
+              菜谱库匹配 · {loadingDb ? '…' : recipes.db.length} 道
+            </p>
+            <span className="text-[10px] text-gray-400">来自菜库的调理菜</span>
+          </div>
+          {loadingDb && (
+            <div className="flex items-center justify-center py-6">
+              <div className="w-5 h-5 border-2 border-gray-300 border-t-[#2E7D32] rounded-full animate-spin" />
+            </div>
+          )}
+          {!loadingDb && recipes.db.length === 0 && (
+            <div className="bg-white rounded-2xl p-4 text-[12px] text-gray-400 text-center">
+              库里没有匹配这个季节+症状的调理菜，先按上面的主厨精选煲一道
+            </div>
+          )}
+          <div className="space-y-2">
+            {recipes.db.map(d => (
+              <div key={d.id} className="bg-white rounded-2xl p-3 flex gap-3 shadow-sm">
+                <div className="w-14 h-14 rounded-xl overflow-hidden flex-shrink-0"
+                  style={{ background: "rgba(0,0,0,0.05)" }}>
+                  {d.image_url ? (
+                    <img src={d.image_url} alt={d.title_zh}
+                      className="w-full h-full object-cover"
+                      onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                  ) : <div className="w-full h-full flex items-center justify-center text-[18px]">🍵</div>}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <p className="font-bold text-[14px]">{d.title_zh}</p>
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md"
+                      style={{ background: 'rgba(0,0,0,0.05)', color: '#666' }}>
+                      {d.origin_cuisine ?? '家常'}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {(d.health_benefit_tags ?? []).slice(0, 3).map((t: string) => (
+                      <span key={t} className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md"
+                        style={{ background: 'rgba(46,125,50,0.10)', color: '#2E7D32' }}>
+                        {t === 'damp_clear' ? '祛湿' :
+                         t === 'detox'      ? '清热排毒' :
+                         t === 'nourish'    ? '滋补' :
+                         t === 'immunity' || t === 'boost_immunity' ? '提升免疫' :
+                         t}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               </div>
             ))}

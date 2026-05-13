@@ -13,6 +13,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate, Navigate } from "react-router-dom";
 import { useSubscription } from "../lib/subscription";
+import { analyzeSchoolLunch, type BalanceAnalysis } from "../lib/geminiSchoolBalance";
 import BottomTabBar from "../components/BottomTabBar";
 
 type Nutrient = 'protein' | 'veggie' | 'carb' | 'calcium' | 'iron' | 'omega3';
@@ -87,6 +88,10 @@ export default function ProSchoolBalance() {
 
   const [lunchText, setLunchText] = useState('');
   const [manualCovered, setManualCovered] = useState<Set<Nutrient>>(new Set());
+  const [ageBracket, setAgeBracket] = useState<'幼儿园' | '小学低年级' | '小学高年级' | '初中'>('小学低年级');
+  const [aiAnalyzing, setAiAnalyzing] = useState(false);
+  const [aiResult,    setAiResult]    = useState<BalanceAnalysis | null>(null);
+  const [aiError,     setAiError]     = useState<string | null>(null);
 
   // All hooks must run unconditionally — early returns go below them.
   const covered = useMemo(() => {
@@ -107,6 +112,20 @@ export default function ProSchoolBalance() {
     scored.sort((a, b) => b.score - a.score || a.r.time_min - b.r.time_min);
     return scored.slice(0, 3).map(s => s.r);
   }, [missing.join(',')]);
+
+  async function runAI() {
+    if (!lunchText.trim()) return;
+    setAiAnalyzing(true);
+    setAiError(null);
+    try {
+      const r = await analyzeSchoolLunch(lunchText, ageBracket);
+      setAiResult(r);
+    } catch (e: any) {
+      setAiError(e?.message ?? 'AI 分析失败');
+    } finally {
+      setAiAnalyzing(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -163,7 +182,7 @@ export default function ProSchoolBalance() {
           </p>
         </section>
 
-        {/* Step 1: lunch input */}
+        {/* Step 1: lunch input + age + AI trigger */}
         <section className="space-y-2">
           <p className="text-[13px] font-bold text-gray-700 px-1">① 今天学校吃了什么</p>
           <textarea
@@ -172,6 +191,41 @@ export default function ProSchoolBalance() {
             placeholder="例如：grilled chicken, brown rice, broccoli, apple, milk"
             className="w-full min-h-[80px] rounded-2xl p-3 text-[13px] bg-white border border-black/10 focus:outline-none focus:border-[#1976D2]"
           />
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <span className="text-[10px] text-gray-400 mr-1">孩子阶段</span>
+            {(['幼儿园','小学低年级','小学高年级','初中'] as const).map(a => (
+              <button
+                key={a}
+                onClick={() => setAgeBracket(a)}
+                className="rounded-full px-2.5 py-1 text-[11px] font-semibold transition-all"
+                style={{
+                  background: ageBracket === a ? '#1976D2' : 'white',
+                  color: ageBracket === a ? 'white' : '#444',
+                  border: ageBracket === a ? '1px solid #1976D2' : '1px solid rgba(0,0,0,0.10)',
+                }}
+              >
+                {a}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={runAI}
+            disabled={!lunchText.trim() || aiAnalyzing}
+            className="w-full mt-2 h-11 rounded-2xl font-bold text-white text-[13px] active:scale-[0.98] disabled:opacity-40 flex items-center justify-center gap-2"
+            style={{
+              background: 'linear-gradient(135deg, #1976D2, #42A5F5)',
+              boxShadow: '0 6px 18px rgba(25,118,210,0.25)',
+            }}
+          >
+            {aiAnalyzing ? (
+              <><div className="w-4 h-4 border-2 border-white/60 border-t-white rounded-full animate-spin" /> AI 分析中…</>
+            ) : (
+              <>✨ 用 AI 分析营养差距</>
+            )}
+          </button>
+          {aiError && (
+            <p className="text-[11px] text-red-500">AI 不可用，回退到快速识别：{aiError}</p>
+          )}
           <p className="text-[10px] text-gray-400">中英文都可以；可以直接抄学校 Parent Portal 上的菜单。</p>
         </section>
 
@@ -207,8 +261,41 @@ export default function ProSchoolBalance() {
           </div>
         </section>
 
-        {/* Step 3: missing summary */}
-        {missing.length > 0 && (
+        {/* AI summary banner — shown when we have a Gemini result */}
+        {aiResult && (
+          <section className="rounded-2xl p-4"
+            style={{
+              background: "linear-gradient(135deg, rgba(25,118,210,0.10), rgba(66,165,245,0.05))",
+              border: "1px solid rgba(25,118,210,0.30)",
+            }}>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-[18px]">✨</span>
+              <p className="font-bold text-[13px]" style={{ color: "#0d47a1" }}>AI 营养分析</p>
+            </div>
+            <p className="text-[12px]" style={{ color: "#0d47a1" }}>{aiResult.reasoning}</p>
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              <span className="text-[10px] font-bold mr-1" style={{ color: "#0d47a1" }}>已覆盖：</span>
+              {aiResult.covered.map(n => (
+                <span key={n} className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                  style={{ background: 'rgba(25,118,210,0.12)', color: '#1976D2' }}>
+                  {NUTRIENT_META[n]?.emoji} {NUTRIENT_META[n]?.label}
+                </span>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-1.5 mt-1.5">
+              <span className="text-[10px] font-bold mr-1" style={{ color: "#dc2626" }}>晚餐需补：</span>
+              {aiResult.missing.map(n => (
+                <span key={n} className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                  style={{ background: 'rgba(239,68,68,0.12)', color: '#dc2626' }}>
+                  {NUTRIENT_META[n]?.emoji} {NUTRIENT_META[n]?.label}
+                </span>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Step 3: missing summary (fallback heuristic) */}
+        {!aiResult && missing.length > 0 && (
           <section className="rounded-2xl p-4 bg-white shadow-sm">
             <p className="text-[13px] font-bold text-gray-700">⚠️ 晚餐建议补 {missing.length} 类营养</p>
             <div className="flex flex-wrap gap-1.5 mt-2">
@@ -222,36 +309,43 @@ export default function ProSchoolBalance() {
           </section>
         )}
 
-        {/* Step 4: suggested dishes */}
-        {suggestions.length > 0 && (
-          <section className="space-y-2">
-            <p className="text-[13px] font-bold text-gray-700 px-1">③ 推荐晚餐 · {suggestions.length} 道</p>
-            {suggestions.map((r, i) => (
-              <div key={i} className="bg-white rounded-2xl p-4 shadow-sm flex gap-3">
-                <span className="text-[28px] flex-shrink-0">{r.emoji}</span>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="font-bold text-[14px]">{r.name_zh}</p>
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md"
-                      style={{ background: 'rgba(0,0,0,0.05)', color: '#666' }}>
-                      {r.time_min} 分钟
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-gray-400 mt-0.5">{r.name_en}</p>
-                  <p className="text-[12px] text-gray-600 mt-1.5 leading-relaxed">{r.blurb}</p>
-                  <div className="flex flex-wrap gap-1 mt-1.5">
-                    {r.covers.map(n => (
-                      <span key={n} className="text-[10px] font-bold px-1.5 py-0.5 rounded-md"
-                        style={{ background: 'rgba(25,118,210,0.10)', color: '#1976D2' }}>
-                        {NUTRIENT_META[n].emoji} 补{NUTRIENT_META[n].label}
+        {/* Step 4: suggested dishes — prefer AI suggestions when available,
+            fall back to the local heuristic-picked list. */}
+        {(() => {
+          const list = aiResult?.suggestions?.length ? aiResult.suggestions : suggestions;
+          if (list.length === 0) return null;
+          return (
+            <section className="space-y-2">
+              <p className="text-[13px] font-bold text-gray-700 px-1">
+                ③ 推荐晚餐 · {list.length} 道 {aiResult ? '· AI 推荐' : ''}
+              </p>
+              {list.map((r, i) => (
+                <div key={i} className="bg-white rounded-2xl p-4 shadow-sm flex gap-3">
+                  <span className="text-[28px] flex-shrink-0">{r.emoji}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-bold text-[14px]">{r.name_zh}</p>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md"
+                        style={{ background: 'rgba(0,0,0,0.05)', color: '#666' }}>
+                        {r.time_min} 分钟
                       </span>
-                    ))}
+                    </div>
+                    <p className="text-[11px] text-gray-400 mt-0.5">{r.name_en}</p>
+                    <p className="text-[12px] text-gray-600 mt-1.5 leading-relaxed">{r.blurb}</p>
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {r.covers.map(n => (
+                        <span key={n} className="text-[10px] font-bold px-1.5 py-0.5 rounded-md"
+                          style={{ background: 'rgba(25,118,210,0.10)', color: '#1976D2' }}>
+                          {NUTRIENT_META[n]?.emoji} 补{NUTRIENT_META[n]?.label}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </section>
-        )}
+              ))}
+            </section>
+          );
+        })()}
 
         {missing.length === 0 && lunchText && (
           <section className="rounded-2xl p-4 bg-white shadow-sm text-center">

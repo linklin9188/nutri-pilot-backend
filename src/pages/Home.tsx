@@ -570,85 +570,9 @@ export default function Home() {
           </div>
         </div>
 
-        {/* ② BANQUET — Pro feature, plans 10–20 guest menu ───── */}
-        <button
-          onClick={() => navigate("/banquet")}
-          className="rounded-2xl px-4 py-3.5 shadow-sm flex items-center gap-3 text-left transition-all active:scale-[0.99] w-full"
-          style={{
-            background: "linear-gradient(135deg, #FFF8E1 0%, #FFEBC8 100%)",
-            border: "1px solid rgba(255,193,7,0.30)",
-          }}
-        >
-          <div className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 text-[22px]"
-            style={{ background: "linear-gradient(135deg, #FFD700, #FFA500)" }}>
-            🎉
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5">
-              <p className="font-bold" style={{ fontSize: 14, color: "#1a1a1a" }}>家宴菜单</p>
-              <span
-                className="text-[9px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap"
-                style={{
-                  background: "linear-gradient(135deg, #FFD700, #FFA500)",
-                  color: "white",
-                }}
-              >
-                ⭐ Pro
-              </span>
-            </div>
-            <p className="truncate" style={{ fontSize: 11, color: "rgba(0,0,0,0.50)" }}>
-              在家请客 · 按人数 / 忌口 / 特殊需求排菜
-            </p>
-          </div>
-          <span className="material-symbols-outlined shrink-0"
-            style={{ fontSize: 18, color: "rgba(0,0,0,0.30)" }}>
-            chevron_right
-          </span>
-        </button>
-
-        {/* ②.5 Pro 工具箱 — 祛湿调理 + 学校营养补全 (horizontal pair) */}
-        <div className="grid grid-cols-2 gap-3">
-          <button
-            onClick={() => navigate("/pro/wellness")}
-            className="rounded-2xl px-3 py-3.5 shadow-sm text-left transition-all active:scale-[0.98]"
-            style={{
-              background: "linear-gradient(135deg, #E8F5E9 0%, #C8E6C9 100%)",
-              border: "1px solid rgba(46,125,50,0.20)",
-            }}
-          >
-            <div className="flex items-center gap-1.5 mb-1">
-              <span className="text-[18px]">🌿</span>
-              <span className="text-[8px] font-bold px-1 py-0.5 rounded-full whitespace-nowrap"
-                style={{ background: "linear-gradient(135deg, #FFD700, #FFA500)", color: "white" }}>
-                Pro
-              </span>
-            </div>
-            <p className="font-bold text-[13px]" style={{ color: "#1a1a1a" }}>港式祛湿调理</p>
-            <p className="text-[10px] leading-tight mt-0.5" style={{ color: "rgba(0,0,0,0.50)" }}>
-              按节气推汤水 / 凉茶
-            </p>
-          </button>
-          <button
-            onClick={() => navigate("/pro/school-balance")}
-            className="rounded-2xl px-3 py-3.5 shadow-sm text-left transition-all active:scale-[0.98]"
-            style={{
-              background: "linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 100%)",
-              border: "1px solid rgba(25,118,210,0.20)",
-            }}
-          >
-            <div className="flex items-center gap-1.5 mb-1">
-              <span className="text-[18px]">🎒</span>
-              <span className="text-[8px] font-bold px-1 py-0.5 rounded-full whitespace-nowrap"
-                style={{ background: "linear-gradient(135deg, #FFD700, #FFA500)", color: "white" }}>
-                Pro
-              </span>
-            </div>
-            <p className="font-bold text-[13px]" style={{ color: "#1a1a1a" }}>学校营养补全</p>
-            <p className="text-[10px] leading-tight mt-0.5" style={{ color: "rgba(0,0,0,0.50)" }}>
-              输入校餐 / 补晚餐
-            </p>
-          </button>
-        </div>
+        {/* Pro entry cards (家宴 / 祛湿 / 学校营养) moved out of Home into
+            Settings → 会员 Pro · 工具箱 — keeps the homepage focused on the
+            day-to-day menu / cook / shop loop. */}
 
         {/* ③ PROCUREMENT — Compact action card ───────────────── */}
         <div className="rounded-2xl bg-white px-4 py-3.5 shadow-sm flex items-center gap-3">

@@ -56,12 +56,23 @@
    - `STRIPE_SECRET_KEY` = `sk_test_...`
    - `STRIPE_WEBHOOK_SECRET` = `whsec_...`
    - （`SUPABASE_URL` 和 `SUPABASE_SERVICE_ROLE_KEY` 是自动注入的，不用手动加）
-3. 部署函数：
+3. 部署三个函数（用脚本一把梭）：
+   ```bash
+   cd supabase/functions
+   ./deploy.sh
+   ```
+   或者手动：
    ```bash
    supabase functions deploy create-checkout-session
+   supabase functions deploy create-portal-session
    supabase functions deploy stripe-webhook --no-verify-jwt
    ```
    `stripe-webhook` 必须 `--no-verify-jwt`，因为 Stripe 不发 Authorization header；我们通过签名校验做认证。
+4. **Customer Portal**（让用户自助换卡 / 取消 / 下载发票）：
+   Stripe Dashboard → Settings → Billing → Customer portal → 打开开关，
+   开启 payment methods / cancel subscription / plan switch 等功能。
+   前端 `Pricing` 页右上"管理订阅"按钮调 `create-portal-session` 拿到
+   一次性 URL 跳过去。
 
 ### 3. 前端环境变量
 
