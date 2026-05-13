@@ -549,25 +549,25 @@ export default function Home() {
             )}
           </div>
 
-          {/* Action row — prep / cook / fridge */}
-          {displayMenu.length > 0 && (
-            <div className="flex border-t border-black/[0.05]">
-              {/* 扫冰箱 removed — duplicated the 扫一扫 button in the top-right header. */}
-              {[
-                { label: "备菜", icon: "menu_book", color: "#6C5CE7", bg: "rgba(108,92,231,0.07)",
-                  action: () => { localStorage.setItem("generatedMenu", JSON.stringify(displayMenu)); navigate("/prep"); } },
-                { label: "烹饪", icon: "skillet", color: "#0077B6", bg: "rgba(0,119,182,0.07)",
-                  action: () => { localStorage.setItem("generatedMenu", JSON.stringify(displayMenu)); navigate("/cook"); } },
-              ].map((item, i, arr) => (
-                <button key={i} onClick={item.action}
-                  className="flex-1 flex flex-col items-center gap-1 py-3 active:opacity-70 transition-opacity"
-                  style={{ background: item.bg, borderRight: i < arr.length - 1 ? '1px solid rgba(0,0,0,0.04)' : 'none' }}>
-                  <span className="material-symbols-outlined" style={{ fontSize: 20, color: item.color }}>{item.icon}</span>
-                  <span className="font-semibold" style={{ fontSize: 11, color: item.color }}>{item.label}</span>
-                </button>
-              ))}
-            </div>
-          )}
+          {/* Action row — 备菜 / 烹饪. Always shown so the cook entry doesn't
+              vanish before the user generates a menu. When the menu is empty
+              we still navigate; the destination page shows its own empty state
+              ('请先生成本周菜单'). */}
+          <div className="flex border-t border-black/[0.05]">
+            {[
+              { label: "备菜", icon: "menu_book", color: "#6C5CE7", bg: "rgba(108,92,231,0.07)",
+                action: () => { localStorage.setItem("generatedMenu", JSON.stringify(displayMenu)); navigate("/prep"); } },
+              { label: "烹饪", icon: "skillet", color: "#0077B6", bg: "rgba(0,119,182,0.07)",
+                action: () => { localStorage.setItem("generatedMenu", JSON.stringify(displayMenu)); navigate("/cook"); } },
+            ].map((item, i, arr) => (
+              <button key={i} onClick={item.action}
+                className="flex-1 flex flex-col items-center gap-1 py-3 active:opacity-70 transition-opacity"
+                style={{ background: item.bg, borderRight: i < arr.length - 1 ? '1px solid rgba(0,0,0,0.04)' : 'none' }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 20, color: item.color }}>{item.icon}</span>
+                <span className="font-semibold" style={{ fontSize: 11, color: item.color }}>{item.label}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* ② BANQUET — Pro feature, plans 10–20 guest menu ───── */}

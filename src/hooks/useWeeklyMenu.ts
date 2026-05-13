@@ -49,7 +49,7 @@ export interface WeeklyMenu {
 
 // ── Cache version — bump this whenever the algorithm changes significantly ─────
 // This ensures old cached menus are discarded after an algorithm update.
-const ALGO_VERSION = 'v15'; // fix: days[i].date in local-time format (was UTC-shifted)
+const ALGO_VERSION = 'v16'; // lunch scales with headcount + forces soup at 3+ dishes
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -754,36 +754,56 @@ function generateWeekPlan(
     dayIngredients.forEach(ing => pickedIngredients.push(ing));
 
     // ── Generate lunch dishes ─────────────────────────────────────────────────
-    // Lunch is separate from dinner: simpler, 1 dish (2 for large families).
-    // Drawn from the same pool but must differ from that day's dinner dishes.
-    // Lunch dishes are NOT added to usedIds so they can repeat across days.
-    const lunchCount = Math.max(1, Math.floor(dishesPerDay / 4));
+    // Lunch scales with headcount (one less than dinner — most families have
+    // smaller appetites at noon but still want 2+ dishes on the table):
+    //   1 人  (dishesPerDay=3) → 午餐 2 道
+    //   2 人  (dishesPerDay=4) → 午餐 3 道（含 1 汤）
+    //   4 人  (dishesPerDay=5) → 午餐 4 道（含 1 汤）
+    //   6+ 人 (dishesPerDay=6+) → 午餐 dishesPerDay-1 道（含 1 汤）
+    // Soup is included as one of the slots once we hit 3+ dishes, so lunch
+    // becomes 主菜 + 配菜 + 汤 instead of just a plate.
+    const lunchCount        = Math.max(2, dishesPerDay - 1);
+    const lunchIncludesSoup = lunchCount >= 3;
     const dinnerIds = new Set(dayDishes.map(d => d.id));
 
-    const lunchCandidates = pool
+    // Split the pool into non-soup vs soup; for lunch we pick all but one
+    // from non-soup, and force exactly 1 soup when lunchIncludesSoup.
+    const scoreLunch = (d: any) => {
+      let score = scoreForWeek({
+        dish: d, profile, prefScores, recentIds,
+        pickedIngredients: dayIngredients,
+        pickedTitleKeywords: [],
+        dayIndex, spiceBoost, ageGroup, healthPrefs,
+      });
+      const ct = d.course_type ?? '';
+      const cat = ingCategory(d.main_ingredient ?? 'other');
+      // Lighter / quicker dishes preferred at noon.
+      if (ct === 'staple' || cat === 'carb') score += 0.35;
+      if ((d.flavor_tags ?? []).includes('light')) score += 0.15;
+      return { dish: d, score };
+    };
+
+    const nonSoupPool = pool
       .filter(d => !dinnerIds.has(d.id))
       .filter(d => (d.course_type ?? '') !== 'dessert')
-      .map(d => {
-        let score = scoreForWeek({
-          dish: d, profile, prefScores, recentIds,
-          pickedIngredients: dayIngredients,
-          pickedTitleKeywords: [],
-          dayIndex, spiceBoost, ageGroup, healthPrefs,
-        });
-        const ct = d.course_type ?? '';
-        const cat = ingCategory(d.main_ingredient ?? 'other');
-        // Prefer staples (fried rice, noodles) and light dishes for lunch
-        if (ct === 'staple' || cat === 'carb') score += 0.35;
-        if ((d.flavor_tags ?? []).includes('light')) score += 0.15;
-        // Penalise soups — lunch is meant to be a plate, not a pot
-        if (ct === 'soup') score -= 0.40;
-        return { dish: d, score };
-      })
+      .filter(d => (d.course_type ?? '') !== 'soup')
+      .map(scoreLunch)
       .sort((a, b) => b.score - a.score)
-      .slice(0, 20);
+      .slice(0, 25);
 
-    const lunchDishes = weightedRandom(lunchCandidates, lunchCount)
-      .map(c => enrichRaw(c.dish));
+    const soupPool = pool
+      .filter(d => !dinnerIds.has(d.id))
+      .filter(d => (d.course_type ?? '') === 'soup')
+      .map(scoreLunch)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10);
+
+    const lunchPlateCount = lunchIncludesSoup ? lunchCount - 1 : lunchCount;
+    const lunchPlates = weightedRandom(nonSoupPool, lunchPlateCount).map(c => enrichRaw(c.dish));
+    const lunchSoups  = lunchIncludesSoup && soupPool.length > 0
+      ? weightedRandom(soupPool, 1).map(c => enrichRaw(c.dish))
+      : [];
+    const lunchDishes = [...lunchPlates, ...lunchSoups];
 
     days.push({
       date: dateForDayIndex(weekStart, dayIndex),

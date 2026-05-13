@@ -1,3 +1,5 @@
+import { refineCut } from './ingredientCuts';
+
 /**
  * dishIngredients.ts
  *
@@ -190,11 +192,17 @@ export function dishToIngredients(dish: any, adults: number, kids: number): Shop
     });
   } else {
     const mainW = Math.round(baseG * effectivePeople);
-    const ingZh = ING_ZH[ingKey] ?? '食材';
+    // Refine the coarse 'pork' / 'chicken' label into the actual cut by
+    // reading the dish title (糖醋排骨 → 猪小排, 可乐鸡翅 → 鸡翅).
+    // refineCut returns null for ingKeys without a rules table (e.g. obscure
+    // 'other') — in that case we fall back to the legacy generic label.
+    const refined = refineCut(ingKey, dishTitle);
+    const ingZh = refined?.nameZh ?? (ING_ZH[ingKey] ?? '食材');
+    const ingEn = refined?.nameEn ?? mainIngEn(ingKey);
     result.push({
       id: `${dishId}_main`,
       dishId, dishTitle,
-      name: `${ingZh} (${mainIngEn(ingKey)})`,
+      name: `${ingZh} (${ingEn})`,
       nameZh: ingZh,
       type: ingType,
       weightGrams: mainW,
