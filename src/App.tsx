@@ -24,10 +24,14 @@ import { supabase } from './lib/supabase';
 
 
 // Smart entry point:
+// - Not logged in → /signin
 // - Helper role → /helper
 // - First employer visit (no quickPrefs) → /setup
 // - Return employer visit → Home
 function RootRedirect() {
+  const isLoggedIn = localStorage.getItem("isLoggedIn") === "true";
+  if (!isLoggedIn) return <Navigate to="/signin" replace />;
+
   const role = localStorage.getItem("nutri_role");
   if (role === "helper") return <Navigate to="/helper" replace />;
   const hasPrefs = !!localStorage.getItem("quickPrefs");
