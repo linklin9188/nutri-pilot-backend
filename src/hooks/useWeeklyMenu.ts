@@ -40,7 +40,7 @@ export interface WeeklyMenu {
 
 // ── Cache version — bump this whenever the algorithm changes significantly ─────
 // This ensures old cached menus are discarded after an algorithm update.
-const ALGO_VERSION = 'v10'; // bumped: invalidate cache to pick up new DB dishes
+const ALGO_VERSION = 'v11'; // bumped: +223 TheMealDB dishes imported
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
