@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { dishToIngredients, aggregateIngredients, type AggregatedIngredient } from "../lib/dishIngredients";
 import * as XLSX from "xlsx";
@@ -190,6 +190,113 @@ function extractGroupLabel(prefixed: string): string {
   return prefixed.replace(/^\S+\s*/, '');
 }
 
+// ── Shopping schedule (split weekly buy into 2-3 trips) ──────────────────────
+// HK kitchens have small fridges and people typically shop 2-3 times a week
+// (not all-at-once like a mainland weekend warehouse run). Plan:
+//   • 肉禽蛋: one trip on Monday (freezer-friendly).
+//   • 海鲜:   split across the week — once per "seafood day". A 海鲜 trip
+//             buys for the next seafood day; we round-down to the trip-day
+//             before it (Mon → 周一 trip; Thu → 周三 trip).
+//   • 蔬菜豆腐: every 2 days for freshness — 周一 / 周三 / 周五.
+//   • 主食调味: groups with the Monday trip (long shelf life).
+//
+// The output is a list of "shopping trips", each with a date label + the
+// AggregatedIngredient[] to buy on that day.
+
+const TRIP_DAY_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+
+interface ShoppingTrip {
+  dayIndex: number;          // 0=Mon..6=Sun
+  label: string;             // '周一' / '周三'
+  emoji: string;
+  reason: string;            // 一句话解释为什么是这一天
+  items: AggregatedIngredient[];
+}
+
+/**
+ * Walk the weekly menu day-by-day to learn when each ingredient category is
+ * actually used, then bucket ingredients into 2-3 shopping trips.
+ */
+function buildShoppingSchedule(
+  ingredients: AggregatedIngredient[],
+  weekMenu: any,
+): ShoppingTrip[] {
+  if (!weekMenu?.days?.length) return [];
+
+  // Which day-indexes use 海鲜 / 蔬菜 / 肉?
+  const seafoodDays: number[] = [];
+  const veggieDays:  number[] = [];
+  weekMenu.days.forEach((day: any, i: number) => {
+    const dayDishes = [...(day.dishes ?? []), ...(day.lunchDishes ?? [])];
+    for (const d of dayDishes) {
+      const ing = (d.main_ingredient ?? '').toLowerCase();
+      const ct  = (d.course_type ?? '');
+      if (['seafood','fish','shrimp','crab','squid','scallop','clam',
+           'salmon','tuna','cod','hairtail','seabass','oyster','lobster'].includes(ing)) {
+        if (!seafoodDays.includes(i)) seafoodDays.push(i);
+      }
+      if (ct === 'veggie_dish' && !veggieDays.includes(i)) veggieDays.push(i);
+    }
+  });
+  seafoodDays.sort((a,b) => a-b);
+  veggieDays.sort((a,b) => a-b);
+
+  // Pick the trip days: Monday always, then Wed/Fri based on what's used.
+  // We map each seafood/veggie use day to a trip day on/before it.
+  const tripDays = new Set<number>([0]);                          // 周一
+  const usesVeggieAfterMid = veggieDays.some(d => d >= 3);        // 蔬菜 周四 / 周五 / 周末 → 周三 trip
+  const usesVeggieLate = veggieDays.some(d => d >= 5);            // 蔬菜 周末 → 周五 trip
+  if (veggieDays.length > 2 || usesVeggieAfterMid) tripDays.add(2);  // 周三
+  if (usesVeggieLate)                              tripDays.add(4);  // 周五
+  // Seafood: if there's a seafood day on Thursday onward, add a Wed restock.
+  if (seafoodDays.some(d => d >= 3)) tripDays.add(2);
+
+  // Map an ingredient → which trip day it goes on.
+  const tripFor = (ing: AggregatedIngredient): number => {
+    const cat = ing.category;
+    // 肉禽蛋 + 主食 + 调味: 周一 一次买齐.
+    if (['pork','beef','poultry','egg','carb','condiment'].includes(cat)) return 0;
+    // 海鲜: 找下一个 seafood 用日，回退到 <= 当日的最近一个 trip.
+    if (cat === 'seafood') {
+      // First trip covers seafood for days 0-2; later trips cover days 3+.
+      const firstLate = seafoodDays.find(d => d >= 3);
+      if (firstLate != null && tripDays.has(2)) return 2;
+      return 0;
+    }
+    // 蔬菜豆腐 / 其他: 三段分布. Items get distributed round-robin across
+    // available trip days so each trip has fresh produce.
+    const veggieIdx = ingredients
+      .filter(x => ['veggie','tofu','other'].includes(x.category))
+      .findIndex(x => x.nameZh === ing.nameZh);
+    const trips = [...tripDays].sort((a,b) => a-b);
+    return trips[Math.max(0, veggieIdx) % trips.length] ?? 0;
+  };
+
+  // Group.
+  const groups = new Map<number, AggregatedIngredient[]>();
+  for (const ing of ingredients) {
+    const day = tripFor(ing);
+    if (!groups.has(day)) groups.set(day, []);
+    groups.get(day)!.push(ing);
+  }
+
+  const reasons: Record<number, { emoji: string; reason: string }> = {
+    0: { emoji: '📦', reason: '肉禽蛋 + 整周耐放食材一次买齐' },
+    2: { emoji: '🥬', reason: '补充第二批蔬菜，海鲜（如有用）' },
+    4: { emoji: '🌿', reason: '周末蔬菜补货' },
+  };
+
+  return [...groups.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([dayIndex, items]) => ({
+      dayIndex,
+      label: TRIP_DAY_LABELS[dayIndex],
+      emoji: reasons[dayIndex]?.emoji ?? '🛒',
+      reason: reasons[dayIndex]?.reason ?? '采购日',
+      items,
+    }));
+}
+
 function SupplierRow({ groupLabel }: { groupLabel: string }) {
   const shops = SHOPS_BY_GROUP[groupLabel];
   if (!shops || shops.length === 0) return null;
@@ -248,6 +355,17 @@ export default function VerifyIngredients() {
   );
   // Persist the user's pick so the choice survives reloads.
   useEffect(() => { localStorage.setItem('nutri_weight_unit', weightUnit); }, [weightUnit]);
+
+  // 'by-category' (existing) vs 'by-trip' (split into 2-3 shopping days).
+  const [view, setView] = useState<'category' | 'trip'>('category');
+  // Cache the schedule per current ingredients/mode so we don't recompute on
+  // every render (computing requires reading the weekly menu off localStorage).
+  const schedule = useMemo<ShoppingTrip[]>(() => {
+    if (mode !== 'week') return [];
+    const weekMenu = loadWeekMenu();
+    if (!weekMenu) return [];
+    return buildShoppingSchedule(ingredients, weekMenu);
+  }, [ingredients, mode]);
 
   useEffect(() => {
     if (mode === 'banquet') {
@@ -424,6 +542,28 @@ export default function VerifyIngredients() {
           ))}
         </div>
 
+        {/* By-category vs by-trip view toggle — only useful in 本周菜单 mode.
+            By-trip splits the weekly buy into 2-3 trips (Mon / Wed / Fri)
+            to match HK small-fridge shopping habits. */}
+        {mode === 'week' && schedule.length > 1 && (
+          <div className="bg-white rounded-2xl p-1.5 flex gap-1 shadow-sm">
+            {([
+              { id: 'category', label: '按类别' },
+              { id: 'trip',     label: `按采购日 · ${schedule.length} 次` },
+            ] as { id: typeof view; label: string }[]).map(v => (
+              <button
+                key={v.id}
+                onClick={() => setView(v.id)}
+                className={`flex-1 py-2 rounded-xl text-[12px] font-bold transition-all ${
+                  view === v.id ? 'bg-[#FF5A1F] text-white' : 'text-gray-400'
+                }`}
+              >
+                {v.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Banquet mode banner with discard option */}
         {mode === 'banquet' && (
           <div className="rounded-2xl p-3 flex items-center gap-2"
@@ -485,8 +625,54 @@ export default function VerifyIngredients() {
           </div>
         )}
 
-        {/* Category groups */}
-        {grouped.map(({ group, items }) => (
+        {/* By-trip schedule: render shopping-day cards instead of category groups */}
+        {view === 'trip' && mode === 'week' && schedule.map(trip => (
+          <section key={trip.dayIndex}>
+            <div className="flex items-center gap-2 mb-2 px-1">
+              <span className="text-[20px]">{trip.emoji}</span>
+              <div className="flex-1">
+                <p className="font-bold text-[14px]">{trip.label} · {trip.items.length} 项</p>
+                <p className="text-[10px] text-gray-400">{trip.reason}</p>
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl overflow-hidden shadow-sm">
+              {trip.items.map((item, i) => {
+                const have = !!haveIt[item.nameZh];
+                return (
+                  <button
+                    key={item.nameZh}
+                    onClick={() => toggleHave(item.nameZh)}
+                    className={`w-full flex items-center gap-4 px-4 py-3 transition-all active:scale-[0.99] ${
+                      i !== trip.items.length - 1 ? 'border-b border-black/[0.05]' : ''
+                    }`}
+                    style={{ background: have ? 'rgba(37,211,102,0.04)' : 'white' }}
+                  >
+                    <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 transition-all"
+                      style={{ background: have ? '#ef4444' : 'rgba(0,0,0,0.08)' }}>
+                      {have && (
+                        <span className="material-symbols-outlined text-white"
+                          style={{ fontSize: 16, fontVariationSettings: "'FILL' 1" }}>check</span>
+                      )}
+                    </div>
+                    <div className="flex-1 text-left">
+                      <p className="font-semibold text-[14px]"
+                        style={{ color: have ? '#ef4444' : '#1a1a1a', textDecoration: have ? 'line-through' : 'none' }}>
+                        {item.nameZh}
+                      </p>
+                    </div>
+                    <span className="text-[13px] font-bold"
+                      style={{ color: have ? '#ef4444' : '#1a1a1a', textDecoration: have ? 'line-through' : 'none' }}>
+                      {formatWeight(item, weightUnit)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        ))}
+
+        {/* Category groups (default view) */}
+        {view === 'category' && grouped.map(({ group, items }) => (
           <section key={group}>
             <p className="text-[13px] font-bold text-gray-500 mb-2 px-1">{group}</p>
             <div className="bg-white rounded-2xl overflow-hidden shadow-sm">
