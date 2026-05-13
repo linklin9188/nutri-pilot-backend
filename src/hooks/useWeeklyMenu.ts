@@ -40,7 +40,7 @@ export interface WeeklyMenu {
 
 // ── Cache version — bump this whenever the algorithm changes significantly ─────
 // This ensures old cached menus are discarded after an algorithm update.
-const ALGO_VERSION = 'v12'; // bumped: eating members now drive hard filters + goal scoring
+const ALGO_VERSION = 'v13'; // fix: fat_loss goal now matches DB tag 'lose_weight'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

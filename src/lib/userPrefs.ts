@@ -84,7 +84,7 @@ export function resolveHealthFilters(conditions: string[]): {
 
 // QuickSetup goal → dietary_goal tag used in health_benefit_tags scoring
 const GOAL_MAP: Record<string, string> = {
-  fatloss:  'fat_loss',
+  fatloss:  'lose_weight',  // DB uses 'lose_weight', not 'fat_loss'
   muscle:   'muscle_gain',
   balanced: 'maintain',
   nourish:  'nourish',

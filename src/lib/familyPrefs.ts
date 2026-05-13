@@ -50,7 +50,7 @@ export interface FamilyMember {
 
 const GOAL_TO_DB_TAGS: Record<GoalId, string[]> = {
   muscle_gain: ['muscle_gain'],
-  fat_loss:    ['fat_loss'],
+  fat_loss:    ['fat_loss', 'lose_weight'],
   blood_tonic: ['nourish'],        // proxy: nourish tag + iron ingredient bonus
   growth:      ['muscle_gain', 'maintain'],
   nourish:     ['nourish'],
