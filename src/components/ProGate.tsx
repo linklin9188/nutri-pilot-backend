@@ -32,8 +32,8 @@ const FEATURE_COPY: Record<ProGateProps["feature"], { title: string; sub: string
   },
   banquet: {
     emoji: "🎉",
-    title: "宴请规划",
-    sub: "10–20 人宴席自动排菜，按场合 / 人数 / 风格定制",
+    title: "家宴菜单",
+    sub: "在家请客 10–20 人，按人数 / 忌口 / 孕妇·助长高定制",
   },
 };
 

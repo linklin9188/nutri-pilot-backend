@@ -16,6 +16,40 @@ const CATEGORY_GROUPS: { label: string; emoji: string; categories: string[] }[] 
   { label: '主食调味', emoji: '🌾', categories: ['carb', 'condiment'] },
 ];
 
+// Per-group store recommendations. Three picks each, ordered street → super → premium
+// so the user has a value-vs-quality choice. IDs reference src/lib/suppliers.ts;
+// keep them in sync if a supplier is renamed there.
+interface ShopPick {
+  name:   string;    // brand name shown on the chip
+  emoji:  string;
+  tier:   '街市' | '超市' | '高端' | '线上';
+  blurb:  string;    // one-line value prop
+  color:  string;    // tier accent color
+}
+
+const SHOPS_BY_GROUP: Record<string, ShopPick[]> = {
+  '肉禽蛋': [
+    { name: '街市肉档',         emoji: '🥩', tier: '街市', blurb: '当日宰杀，砍切到位',     color: '#FF8C54' },
+    { name: '百佳',             emoji: '🛒', tier: '超市', blurb: '门店密集，价格稳定',     color: '#3B82F6' },
+    { name: "City'super 肉品",  emoji: '✨', tier: '高端', blurb: '和牛 / 安格斯精选',       color: '#FFB347' },
+  ],
+  '海鲜水产': [
+    { name: '街市鱼档',         emoji: '🐟', tier: '街市', blurb: '活鲜捞起，老板代杀',     color: '#FF8C54' },
+    { name: 'HKTVmall Premium', emoji: '🌊', tier: '线上', blurb: '冷链直送，到家不化',     color: '#16a34a' },
+    { name: 'SOLE 海鲜',        emoji: '🦞', tier: '高端', blurb: '挪威三文鱼 / 法国生蚝',   color: '#FFB347' },
+  ],
+  '蔬菜豆腐': [
+    { name: '街市菜档',         emoji: '🥬', tier: '街市', blurb: '本地农场当日采',         color: '#FF8C54' },
+    { name: '惠康有机',         emoji: '🛒', tier: '超市', blurb: '有机认证，价格友好',     color: '#3B82F6' },
+    { name: 'Pacific Organic',  emoji: '🌱', tier: '高端', blurb: '欧盟标准 / 日本时蔬',     color: '#FFB347' },
+  ],
+  '主食调味': [
+    { name: '百佳粮油',         emoji: '🛒', tier: '超市', blurb: '米面油醋一站补齐',       color: '#3B82F6' },
+    { name: '华润万家',         emoji: '🏬', tier: '超市', blurb: '内地粮油副食专区',       color: '#3B82F6' },
+    { name: 'HKTVmall 粮油',    emoji: '📦', tier: '线上', blurb: '大件下单送到家',         color: '#16a34a' },
+  ],
+};
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 // Use local-time date strings so they match the values stored in weekly_menu
 // (which is also generated in local time). toISOString() would shift the
@@ -102,6 +136,45 @@ function buildShoppingText(grouped: { group: string; items: AggregatedIngredient
   }
   lines.push('— 由 NutriPilot 生成');
   return lines.join('\n');
+}
+
+// "🥩 肉禽蛋" → "肉禽蛋"
+function extractGroupLabel(prefixed: string): string {
+  return prefixed.replace(/^\S+\s*/, '');
+}
+
+function SupplierRow({ groupLabel }: { groupLabel: string }) {
+  const shops = SHOPS_BY_GROUP[groupLabel];
+  if (!shops || shops.length === 0) return null;
+
+  return (
+    <div className="mt-2.5 mx-1">
+      <p className="text-[10px] font-bold text-gray-400 mb-1.5 uppercase tracking-wider">
+        推荐采购点 · 3 家
+      </p>
+      <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+        {shops.map((s, i) => (
+          <div
+            key={i}
+            className="flex-shrink-0 bg-white rounded-2xl p-3 shadow-sm"
+            style={{ width: 150, borderLeft: `3px solid ${s.color}` }}
+          >
+            <div className="flex items-center gap-1.5 mb-1">
+              <span className="text-[18px]">{s.emoji}</span>
+              <span
+                className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+                style={{ background: `${s.color}1A`, color: s.color }}
+              >
+                {s.tier}
+              </span>
+            </div>
+            <p className="font-bold text-[12px] leading-tight">{s.name}</p>
+            <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">{s.blurb}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 // ── Main component ─────────────────────────────────────────────────────────────
@@ -348,6 +421,9 @@ export default function VerifyIngredients() {
                 );
               })}
             </div>
+
+            {/* Supplier recommendations for this group — 3 picks (街市/超市/高端) */}
+            <SupplierRow groupLabel={items.length > 0 ? extractGroupLabel(group) : ''} />
           </section>
         ))}
       </main>

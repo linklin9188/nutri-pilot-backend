@@ -9,11 +9,13 @@
  */
 
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Navigate } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
 import {
-  OCCASIONS, CUISINES, planBanquet, swapBanquetDish,
+  OCCASIONS, CUISINES, AVOID_LABELS, SPECIAL_NEED_LABELS,
+  planBanquet, swapBanquetDish,
   type BanquetOccasion, type CuisineStyle, type BanquetMenu, type BanquetCourse,
+  type BanquetAvoidId, type BanquetSpecialNeed,
 } from "../lib/banquet";
 import { useSubscription } from "../lib/subscription";
 import BottomTabBar from "../components/BottomTabBar";
@@ -30,10 +32,17 @@ export default function Banquet() {
   const [kids, setKids]             = useState(0);
   const [elders, setElders]         = useState(0);
   const [cuisine, setCuisine]       = useState<CuisineStyle>("chinese");
+  const [avoidIds, setAvoidIds]     = useState<BanquetAvoidId[]>([]);
+  const [specialIds, setSpecialIds] = useState<BanquetSpecialNeed[]>([]);
 
   const [generating, setGenerating] = useState(false);
   const [menu, setMenu]             = useState<BanquetMenu | null>(null);
   const [swapping, setSwapping]     = useState<string | null>(null);
+
+  const toggleAvoid = (id: BanquetAvoidId) =>
+    setAvoidIds(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
+  const toggleSpecial = (id: BanquetSpecialNeed) =>
+    setSpecialIds(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
 
   // ── Pro gate ─────────────────────────────────────────────────────────────
   if (loading) {
@@ -43,11 +52,10 @@ export default function Banquet() {
       </div>
     );
   }
-  if (!isPro) {
-    // Redirect to pricing. Push state so back works.
-    navigate("/pricing", { replace: true });
-    return null;
-  }
+  // Free users go to /pricing. Using <Navigate> avoids triggering a router
+  // update during the Banquet render (React warns when setState fires inside
+  // another component's render path).
+  if (!isPro) return <Navigate to="/pricing" replace />;
 
   // ── Flow handlers ────────────────────────────────────────────────────────
   async function handleGenerate() {
@@ -55,6 +63,8 @@ export default function Banquet() {
     try {
       const result = await planBanquet({
         occasion, adults, kids, elders, cuisineStyle: cuisine,
+        extraAvoid:   avoidIds,
+        specialNeeds: specialIds,
       });
       setMenu(result);
       setStep("result");
@@ -116,6 +126,8 @@ export default function Banquet() {
           {step === "cuisine" && (
             <CuisineStep key="cui"
               value={cuisine} onChange={setCuisine}
+              avoidIds={avoidIds} toggleAvoid={toggleAvoid}
+              specialIds={specialIds} toggleSpecial={toggleSpecial}
               onGenerate={handleGenerate}
               generating={generating} />
           )}
@@ -138,10 +150,10 @@ export default function Banquet() {
 
 function Header({ step, onBack }: { step: Step; onBack: () => void }) {
   const labels: Record<Step, { title: string; sub: string }> = {
-    occasion:  { title: "宴请规划", sub: "1 / 3 · 选择场合" },
-    headcount: { title: "宴请规划", sub: "2 / 3 · 人数与构成" },
-    cuisine:   { title: "宴请规划", sub: "3 / 3 · 菜系风格" },
-    result:    { title: "宴会菜单", sub: "已为你安排" },
+    occasion:  { title: "家宴菜单", sub: "1 / 3 · 选择场合" },
+    headcount: { title: "家宴菜单", sub: "2 / 3 · 人数与构成" },
+    cuisine:   { title: "家宴菜单", sub: "3 / 3 · 风格 · 忌口 · 特殊需求" },
+    result:    { title: "家宴菜单", sub: "已为你安排" },
   };
   const { title, sub } = labels[step];
   return (
@@ -290,39 +302,105 @@ function Stepper({
 // ── Step 3: Cuisine ───────────────────────────────────────────────────────────
 
 function CuisineStep({
-  value, onChange, onGenerate, generating,
+  value, onChange,
+  avoidIds, toggleAvoid,
+  specialIds, toggleSpecial,
+  onGenerate, generating,
 }: {
   value: CuisineStyle; onChange: (v: CuisineStyle) => void;
+  avoidIds: BanquetAvoidId[];  toggleAvoid: (id: BanquetAvoidId) => void;
+  specialIds: BanquetSpecialNeed[]; toggleSpecial: (id: BanquetSpecialNeed) => void;
   onGenerate: () => void; generating: boolean;
 }) {
   return (
     <motion.div
       initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 }}
       transition={{ duration: 0.25 }}
-      className="space-y-4"
+      className="space-y-5"
     >
-      <p className="text-[13px] text-gray-500 px-1">想吃什么风格？</p>
-      <div className="grid grid-cols-2 gap-3">
-        {(Object.keys(CUISINES) as CuisineStyle[]).map(key => {
-          const c = CUISINES[key];
-          const active = value === key;
-          return (
-            <button
-              key={key}
-              onClick={() => onChange(key)}
-              className="rounded-2xl p-5 text-center transition-all active:scale-[0.97]"
-              style={{
-                background: "white",
-                border: active ? "2px solid #FF5A1F" : "2px solid transparent",
-                boxShadow: active ? "0 8px 24px rgba(255,90,31,0.15)" : "0 2px 8px rgba(0,0,0,0.04)",
-              }}
-            >
-              <p className="text-[32px] mb-2">{c.emoji}</p>
-              <p className="font-bold text-[14px]">{c.label}</p>
-            </button>
-          );
-        })}
-      </div>
+      {/* Cuisine */}
+      <section className="space-y-3">
+        <p className="text-[13px] text-gray-500 px-1 font-bold">菜系风格</p>
+        <div className="grid grid-cols-4 gap-2">
+          {(Object.keys(CUISINES) as CuisineStyle[]).map(key => {
+            const c = CUISINES[key];
+            const active = value === key;
+            return (
+              <button
+                key={key}
+                onClick={() => onChange(key)}
+                className="rounded-2xl p-3 text-center transition-all active:scale-[0.97]"
+                style={{
+                  background: "white",
+                  border: active ? "2px solid #FF5A1F" : "2px solid transparent",
+                  boxShadow: active ? "0 6px 18px rgba(255,90,31,0.15)" : "0 2px 8px rgba(0,0,0,0.04)",
+                }}
+              >
+                <p className="text-[22px] mb-0.5">{c.emoji}</p>
+                <p className="font-bold text-[11px]">{c.label}</p>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* Special needs */}
+      <section className="space-y-2">
+        <p className="text-[13px] text-gray-500 px-1 font-bold">特殊需求（可多选）</p>
+        <div className="flex flex-wrap gap-2">
+          {(Object.keys(SPECIAL_NEED_LABELS) as BanquetSpecialNeed[]).map(id => {
+            const n = SPECIAL_NEED_LABELS[id];
+            const active = specialIds.includes(id);
+            return (
+              <button
+                key={id}
+                onClick={() => toggleSpecial(id)}
+                className="rounded-2xl px-3 py-2.5 text-left transition-all active:scale-[0.97]"
+                style={{
+                  background: active ? "rgba(255,90,31,0.10)" : "white",
+                  border: active ? "1.5px solid #FF5A1F" : "1.5px solid transparent",
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+                  minWidth: "calc(50% - 4px)",
+                }}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-[20px]">{n.emoji}</span>
+                  <p className="font-bold text-[13px]">{n.label}</p>
+                </div>
+                <p className="text-[10px] text-gray-400 mt-0.5 leading-snug">{n.sub}</p>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* Avoid */}
+      <section className="space-y-2">
+        <p className="text-[13px] text-gray-500 px-1 font-bold">忌口（可多选）</p>
+        <div className="flex flex-wrap gap-1.5">
+          {(Object.keys(AVOID_LABELS) as BanquetAvoidId[]).map(id => {
+            const a = AVOID_LABELS[id];
+            const active = avoidIds.includes(id);
+            return (
+              <button
+                key={id}
+                onClick={() => toggleAvoid(id)}
+                className="rounded-full px-3 py-1.5 transition-all active:scale-95 inline-flex items-center gap-1"
+                style={{
+                  background: active ? "#FF5A1F" : "white",
+                  border: active ? "1px solid #FF5A1F" : "1px solid rgba(0,0,0,0.10)",
+                  color: active ? "white" : "#444",
+                  fontSize: 12,
+                  fontWeight: 600,
+                }}
+              >
+                <span>{a.emoji}</span>
+                {a.label}
+              </button>
+            );
+          })}
+        </div>
+      </section>
 
       <button
         onClick={onGenerate}
@@ -340,7 +418,7 @@ function CuisineStep({
             AI 编排中…
           </>
         ) : (
-          <>✨ 生成宴会菜单</>
+          <>✨ 生成家宴菜单</>
         )}
       </button>
     </motion.div>
@@ -380,6 +458,24 @@ function ResultStep({
           大人 {menu.options.adults} · 小朋友 {menu.options.kids} · 长辈 {menu.options.elders}
           {" · "}{CUISINES[menu.options.cuisineStyle].label}
         </p>
+        {(menu.options.specialNeeds?.length || menu.options.extraAvoid?.length) ? (
+          <div className="flex flex-wrap gap-1.5 mt-3">
+            {menu.options.specialNeeds?.map(id => (
+              <span key={id}
+                className="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                style={{ background: "rgba(255,255,255,0.20)", color: "white" }}>
+                {SPECIAL_NEED_LABELS[id].emoji} {SPECIAL_NEED_LABELS[id].label}
+              </span>
+            ))}
+            {menu.options.extraAvoid?.map(id => (
+              <span key={id}
+                className="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                style={{ background: "rgba(0,0,0,0.20)", color: "white" }}>
+                忌 {AVOID_LABELS[id].label}
+              </span>
+            ))}
+          </div>
+        ) : null}
       </section>
 
       {/* Courses */}

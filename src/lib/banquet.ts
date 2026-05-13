@@ -24,7 +24,6 @@ export type BanquetOccasion =
   | 'kids_party'          // 儿童派对
   | 'elder_celebration'   // 长辈寿宴
   | 'family_feast'        // 家庭团圆 (春节/中秋)
-  | 'business'            // 商务宴请
   | 'colleague';          // 同事聚会
 
 export type CuisineStyle =
@@ -33,12 +32,109 @@ export type CuisineStyle =
   | 'mixed'
   | 'japanese';
 
+/** Avoid options the user can toggle right inside the banquet flow.
+ *  Stacks on top of whatever the global userPrefs already excludes. */
+export type BanquetAvoidId =
+  | 'seafood'      // 不吃海鲜
+  | 'veggie'       // 全素
+  | 'spicy'        // 完全不辣
+  | 'beef'         // 忌牛羊肉
+  | 'peanut'       // 花生过敏
+  | 'dairy'        // 忌乳制品
+  | 'cilantro'     // 不吃香菜
+  | 'onion'        // 不吃葱蒜
+  | 'five_pungent'; // 不吃五辛（佛家素）
+
+/** Optional menu biases. 'growth' boosts calcium/protein-rich dishes for
+ *  kids; 'pregnancy' boosts folate / iron / calcium / safe-DHA dishes
+ *  while hard-blocking unsafe items (raw fish, high-mercury fish, etc.). */
+export type BanquetSpecialNeed =
+  | 'growth'        // 助长高（儿童成长）
+  | 'pregnancy';    // 孕妇（怀孕）
+
 export interface BanquetOptions {
   occasion:      BanquetOccasion;
   adults:        number;
   kids:          number;
   elders:        number;
   cuisineStyle:  CuisineStyle;
+  /** Per-banquet avoids selected in the wizard. Empty = use just userPrefs. */
+  extraAvoid?:   BanquetAvoidId[];
+  /** Optional dietary biases (e.g. growth for kids). */
+  specialNeeds?: BanquetSpecialNeed[];
+}
+
+// What each banquet-flow avoid actually excludes from the dish pool.
+const BANQUET_AVOID_RULES: Record<BanquetAvoidId, {
+  ingredients?: string[];     // main_ingredient values
+  tags?:        string[];     // flavor / health tags
+  titleKeywords?: string[];   // safety net for missing tags
+  vegetarianOnly?: boolean;
+}> = {
+  seafood:  { ingredients: ['seafood', 'fish', 'shrimp', 'crab', 'shellfish', 'squid', 'scallop', 'clam', 'lobster', 'salmon', 'tuna', 'cod', 'hairtail', 'seabass', 'oyster'],
+              titleKeywords: ['鱼', '虾', '蟹', '贝', '鱿鱼', '龙虾', '带鱼', '生蚝', '海鲜'] },
+  veggie:   { vegetarianOnly: true },
+  spicy:    { tags: ['spicy', 'very_spicy', 'extra_spicy'] },
+  beef:     { ingredients: ['beef', 'lamb', 'mutton'], titleKeywords: ['牛肉', '羊肉', '牛排', '羊排'] },
+  peanut:   { tags: ['peanut'], titleKeywords: ['花生'] },
+  dairy:    { tags: ['dairy', 'milk'], titleKeywords: ['芝士', '奶酪', '奶油', '黄油', '牛奶', '乳酪', 'cheese', 'cream', 'butter', 'milk'] },
+  cilantro: { tags: ['cilantro'], titleKeywords: ['香菜'] },
+  onion:    { tags: ['onion', 'garlic'], titleKeywords: ['葱', '蒜', '洋葱'] },
+  // Buddhist 五辛: 葱 / 蒜 / 韭 / 薤 / 兴渠. Strict — vegetarian + no allium family.
+  five_pungent: {
+    vegetarianOnly: true,
+    ingredients: ['onion', 'garlic', 'leek', 'chives', 'shallot', 'scallion'],
+    tags: ['onion', 'garlic'],
+    titleKeywords: ['葱', '蒜', '韭', '洋葱', '薤'],
+  },
+};
+
+// Growth-friendly ingredients for kids (calcium + protein + zinc).
+const GROWTH_BOOST_INGREDIENTS = new Set([
+  'tofu', 'milk', 'cheese', 'yogurt', 'egg', 'salmon', 'sardine',
+  'beef', 'chicken', 'pork', 'shrimp', 'fish',
+  'spinach', 'broccoli', 'bok_choy', 'kale', 'sesame', 'walnut', 'cashew',
+]);
+
+// Pregnancy-friendly ingredients — folate, iron, calcium, omega-3, protein.
+// Liver is rich in iron but contains very high vitamin A; intentionally NOT
+// included to avoid hypervitaminosis A risk in pregnancy.
+const PREGNANCY_BOOST_INGREDIENTS = new Set([
+  'spinach', 'broccoli', 'bok_choy', 'kale', 'asparagus',  // folate
+  'tofu', 'milk', 'cheese', 'yogurt', 'sesame',            // calcium
+  'beef', 'pork', 'chicken', 'egg',                        // iron + protein
+  'salmon', 'sardine',                                     // safe-DHA fish
+  'sweet_potato', 'pumpkin', 'carrot',                     // vitamin A from beta-carotene (safe)
+]);
+
+// Pregnancy-unsafe items — hard filter, regardless of cuisine. Covers raw
+// proteins, high-mercury fish, alcohol-cooked dishes, unpasteurised soft
+// cheeses, and cured / smoked meats with listeria risk.
+const PREGNANCY_AVOID_TITLE_KEYWORDS = [
+  '生鱼片', '刺身', '寿司', '生蚝', '生蛋', '溏心', '太阳蛋',
+  '金枪鱼', '吞拿鱼', '剑鱼', '旗鱼', '鲨鱼', '马林鱼', '马鲛鱼',
+  '醉', '酒酿', '黄酒', '米酒', '料酒', '烈酒',
+  '布里', '卡门贝尔', 'brie', 'camembert', 'feta', '蓝纹', 'blue cheese',
+  '生火腿', '帕尔玛火腿', 'prosciutto', '腊肉', '腌肉',
+  '动物肝', '猪肝', '鸡肝', '鹅肝', 'liver', 'foie gras',
+];
+const PREGNANCY_AVOID_INGREDIENTS = new Set([
+  'tuna', 'swordfish', 'shark', 'marlin', 'mackerel_king',
+  'liver', 'pork_liver', 'chicken_liver', 'organ',
+]);
+const PREGNANCY_AVOID_TAGS = ['raw', 'sashimi', 'high_mercury', 'alcohol', 'cured'];
+
+function passesPregnancy(dish: SupabaseDish): boolean {
+  const title = (((dish as any).title_zh ?? '') + ' ' + ((dish as any).title_en ?? '')).toLowerCase();
+  const ingredient = ((dish as any).main_ingredient ?? '') as string;
+  const allTags = [
+    ...(((dish as any).flavor_tags ?? []) as string[]),
+    ...(((dish as any).health_benefit_tags ?? []) as string[]),
+  ];
+  if (PREGNANCY_AVOID_INGREDIENTS.has(ingredient)) return false;
+  if (PREGNANCY_AVOID_TAGS.some(t => allTags.includes(t))) return false;
+  if (PREGNANCY_AVOID_TITLE_KEYWORDS.some(k => title.includes(k.toLowerCase()))) return false;
+  return true;
 }
 
 export interface BanquetCourse {
@@ -104,14 +200,6 @@ export const OCCASIONS: Record<BanquetOccasion, {
     penaltyTags: [],
     signatureIngredients: ['fish', 'pork', 'chicken', 'duck'],
   },
-  business: {
-    label: '商务宴请',
-    sub:   '体面精致，贵气得体',
-    emoji: '💼',
-    bonusTags: ['premium', 'elegant'],
-    penaltyTags: ['casual'],
-    signatureIngredients: ['seafood', 'beef', 'fish'],
-  },
   colleague: {
     label: '同事聚会',
     sub:   '人人爱吃，预算友好',
@@ -119,6 +207,23 @@ export const OCCASIONS: Record<BanquetOccasion, {
     bonusTags: ['popular'],
     penaltyTags: [],
   },
+};
+
+export const AVOID_LABELS: Record<BanquetAvoidId, { label: string; emoji: string }> = {
+  seafood:      { label: '不吃海鲜',     emoji: '🦐' },
+  veggie:       { label: '全素',         emoji: '🥦' },
+  spicy:        { label: '完全不辣',     emoji: '🥛' },
+  beef:         { label: '忌牛羊肉',     emoji: '🐄' },
+  peanut:       { label: '花生过敏',     emoji: '🥜' },
+  dairy:        { label: '忌乳制品',     emoji: '🥛' },
+  cilantro:     { label: '不吃香菜',     emoji: '🌿' },
+  onion:        { label: '不吃葱蒜',     emoji: '🧄' },
+  five_pungent: { label: '不吃五辛（佛家）', emoji: '🪷' },
+};
+
+export const SPECIAL_NEED_LABELS: Record<BanquetSpecialNeed, { label: string; emoji: string; sub: string }> = {
+  growth:    { label: '助长高',  emoji: '📏', sub: '钙·蛋白·锌的儿童成长营养' },
+  pregnancy: { label: '孕妇',    emoji: '🤰', sub: '叶酸·铁·钙·安全 DHA，自动避开生食 / 高汞鱼 / 酒酿' },
 };
 
 export const CUISINES: Record<CuisineStyle, { label: string; emoji: string }> = {
@@ -210,11 +315,37 @@ function scoreDish(dish: SupabaseDish, opts: BanquetOptions, hasKids: boolean): 
     if (kidFriendly) score += 0.08;
   }
 
+  // Special-need scoring biases
+  if (opts.specialNeeds?.includes('growth') && GROWTH_BOOST_INGREDIENTS.has(ingredient)) {
+    score += 0.20;
+  }
+  if (opts.specialNeeds?.includes('pregnancy') && PREGNANCY_BOOST_INGREDIENTS.has(ingredient)) {
+    score += 0.20;
+  }
+
   // Engagement signal — community-loved dishes float up
   const employerLikes = ((dish as any).employer_crown_likes ?? 0) as number;
   if (employerLikes > 0) score += Math.min(0.15, employerLikes * 0.02);
 
   return score;
+}
+
+// Applies an avoid rule set as a hard filter. Returns true if the dish passes.
+function passesAvoid(dish: SupabaseDish, avoidIds: BanquetAvoidId[]): boolean {
+  const title    = (((dish as any).title_zh ?? '') + ' ' + ((dish as any).title_en ?? '')).toLowerCase();
+  const ingredient = ((dish as any).main_ingredient ?? '') as string;
+  const flavorTags = ((dish as any).flavor_tags ?? []) as string[];
+  const healthTags = ((dish as any).health_benefit_tags ?? []) as string[];
+  const allTags = [...flavorTags, ...healthTags];
+
+  for (const id of avoidIds) {
+    const rule = BANQUET_AVOID_RULES[id];
+    if (rule.vegetarianOnly && !(dish as any).is_vegan) return false;
+    if (rule.ingredients?.includes(ingredient)) return false;
+    if (rule.tags?.some(t => allTags.includes(t))) return false;
+    if (rule.titleKeywords?.some(k => title.includes(k.toLowerCase()))) return false;
+  }
+  return true;
 }
 
 // Weighted random sampling (highest score = highest probability).
@@ -258,8 +389,10 @@ export async function planBanquet(opts: BanquetOptions): Promise<BanquetMenu> {
     allocated += n;
   });
 
-  // Fetch a generous dish pool. Apply hard filters from userPrefs.
+  // Fetch a generous dish pool. Hard filters: global userPrefs + per-banquet
+  // avoids picked in the wizard.
   const prefs = getUserPrefs();
+  const extraAvoid = opts.extraAvoid ?? [];
   const { data: rawPool } = await supabase
     .from('dishes')
     .select('*')
@@ -272,6 +405,8 @@ export async function planBanquet(opts: BanquetOptions): Promise<BanquetMenu> {
     if (prefs.avoidTags.some(t => allTags.includes(t))) return false;
     if (prefs.avoidIngredients.includes((d as any).main_ingredient ?? '')) return false;
     if (prefs.vegetarianOnly && !(d as any).is_vegan) return false;
+    if (!passesAvoid(d, extraAvoid)) return false;
+    if (opts.specialNeeds?.includes('pregnancy') && !passesPregnancy(d)) return false;
     return true;
   });
 

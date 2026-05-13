@@ -562,7 +562,7 @@ export default function Home() {
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5">
-              <p className="font-bold" style={{ fontSize: 14, color: "#1a1a1a" }}>宴请规划</p>
+              <p className="font-bold" style={{ fontSize: 14, color: "#1a1a1a" }}>家宴菜单</p>
               <span
                 className="text-[9px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap"
                 style={{
@@ -574,7 +574,7 @@ export default function Home() {
               </span>
             </div>
             <p className="truncate" style={{ fontSize: 11, color: "rgba(0,0,0,0.50)" }}>
-              10–20 人聚餐 / 寿宴 / 儿童派对自动排菜
+              在家请客 · 按人数 / 忌口 / 特殊需求排菜
             </p>
           </div>
           <span className="material-symbols-outlined shrink-0"
