@@ -19,6 +19,7 @@ import AIPilot from './pages/AIPilot';
 import Settings from './pages/Settings';
 import WeeklyMenu from './pages/WeeklyMenu';
 import SignIn from './pages/SignIn';
+import Pricing from './pages/Pricing';
 import { LanguageProvider } from './contexts/LanguageContext';
 import { supabase } from './lib/supabase';
 
@@ -85,6 +86,7 @@ function AppShell() {
       <Route path="/signin" element={<SignIn />} />
       <Route path="/helper" element={<HelperHome />} />
       <Route path="/community" element={<Community />} />
+      <Route path="/pricing" element={<Pricing />} />
     </Routes>
     </>
   );

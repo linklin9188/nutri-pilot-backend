@@ -14,6 +14,7 @@ import {
   loadFamilyMembers, loadHomeToday, saveHomeToday, dishAllergyFor,
   type FamilyMember,
 } from "../lib/familyPrefs";
+import { useSubscription } from "../lib/subscription";
 
 // ── Day tabs ──────────────────────────────────────────────────────────────────
 
@@ -295,6 +296,11 @@ export default function WeeklyMenu() {
   const [selectedDay, setSelectedDay] = useState(todayIdx);
   const [breakfastPool, setBreakfastPool] = useState<SupabaseDish[]>([]);
 
+  // Michelin-mode toggle. The toggle exists for everyone, but only Pro users
+  // can actually activate it; free users tapping it land on /pricing.
+  const { isPro } = useSubscription();
+  const [michelinMode, setMichelinMode] = useState(false);
+
   // Family member state
   const [familyMembers] = useState<FamilyMember[]>(() => loadFamilyMembers());
   const [homeToday, setHomeToday] = useState<string[]>(() =>
@@ -382,13 +388,23 @@ export default function WeeklyMenu() {
               : "AI 智能规划 · 每周更新"}
           </p>
         </div>
-        <div
-          className="flex items-center gap-1 px-3 py-1 rounded-full"
-          style={{ background: "linear-gradient(135deg, rgba(255,90,31,0.2), rgba(255,140,84,0.15))", border: "1px solid rgba(255,90,31,0.3)" }}
+        {/* Mode toggle: AI 规划 ↔ 米其林 (Pro) */}
+        <button
+          onClick={() => {
+            if (!isPro) { navigate("/pricing"); return; }
+            setMichelinMode(m => !m);
+          }}
+          className="flex items-center gap-1 px-3 py-1 rounded-full transition-all active:scale-95"
+          style={michelinMode && isPro
+            ? { background: "linear-gradient(135deg, #FFD700, #FFA500)", border: "1px solid rgba(255,215,0,0.6)", boxShadow: "0 4px 14px rgba(255,165,0,0.30)" }
+            : { background: "linear-gradient(135deg, rgba(255,90,31,0.2), rgba(255,140,84,0.15))", border: "1px solid rgba(255,90,31,0.3)" }
+          }
         >
-          <span style={{ fontSize: 12 }}>✨</span>
-          <span className="text-white/80 font-semibold" style={{ fontSize: 11 }}>AI 规划</span>
-        </div>
+          <span style={{ fontSize: 12 }}>{michelinMode && isPro ? "⭐" : "✨"}</span>
+          <span className="font-semibold" style={{ fontSize: 11, color: michelinMode && isPro ? "#1a1a1a" : "rgba(255,255,255,0.80)" }}>
+            {michelinMode && isPro ? "米其林" : isPro ? "AI 规划" : "升级米其林"}
+          </span>
+        </button>
       </div>
 
       {/* ── Day Tabs ────────────────────────────────────────────── */}

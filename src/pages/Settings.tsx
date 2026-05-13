@@ -2,6 +2,41 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import BottomTabBar from "../components/BottomTabBar";
+import { useSubscription } from "../lib/subscription";
+
+// ── Membership entry shown above 退出登录 ──────────────────────────────────────
+function MembershipCard() {
+  const navigate = useNavigate();
+  const { isPro, plan, endsAt } = useSubscription();
+  return (
+    <button
+      onClick={() => navigate("/pricing")}
+      className="w-full rounded-[22px] p-4 text-left transition-all active:scale-[0.98] flex items-center gap-3"
+      style={isPro
+        ? { background: "white", border: "1px solid rgba(255,90,31,0.20)", boxShadow: "0 4px 20px rgba(255,90,31,0.08)" }
+        : { background: "linear-gradient(135deg, #FF5A1F, #FF8C54)", boxShadow: "0 8px 24px rgba(255,90,31,0.30)" }
+      }
+    >
+      <span className="text-[28px]">{isPro ? "✨" : "⭐"}</span>
+      <div className="flex-1">
+        <p className="font-bold text-[15px]" style={{ color: isPro ? "#1a1a1a" : "white" }}>
+          {isPro ? "爱吃 Pro 会员" : "升级到 爱吃 Pro"}
+        </p>
+        <p className="text-[12px]" style={{ color: isPro ? "rgba(0,0,0,0.45)" : "rgba(255,255,255,0.85)" }}>
+          {isPro
+            ? `${plan === "pro_yearly" ? "年度" : plan === "pro_halfyear" ? "半年" : "月度"}${endsAt ? ` · 到期 ${endsAt.toISOString().slice(0,10)}` : ""}`
+            : "解锁米其林菜单 + 高端食材采购"}
+        </p>
+      </div>
+      <span
+        className="material-symbols-outlined"
+        style={{ fontSize: 20, color: isPro ? "rgba(0,0,0,0.30)" : "rgba(255,255,255,0.80)" }}
+      >
+        chevron_right
+      </span>
+    </button>
+  );
+}
 
 // ─── types ────────────────────────────────────────────────────────────────────
 
@@ -85,21 +120,13 @@ function persistMembers(members: FamilyMember[]) {
   localStorage.setItem("nutri_adults", String(Math.max(1, adults)));
   localStorage.setItem("nutri_kids",   String(kids));
 
-  const allNeeds = members.flatMap(m => m.needs);
-  const prefs = JSON.parse(localStorage.getItem("quickPrefs") || "{}");
-  const avoidMap: Record<string, string> = {
-    "素食": "vegetarian", "不吃海鲜": "no_seafood", "花生过敏": "peanut_allergy",
-    "忌乳制品": "no_dairy", "忌牛羊肉": "no_beef_lamb", "不吃香菜": "no_cilantro",
-  };
-  const healthMap: Record<string, string> = {
-    "高血压": "hypertension", "糖尿病": "diabetes", "痛风": "gout",
-    "贫血": "anemia", "低血压": "low_blood_pressure",
-  };
-  const avoid  = Object.entries(avoidMap).filter(([k]) => allNeeds.includes(k)).map(([, v]) => v);
-  const health = Object.entries(healthMap).filter(([k]) => allNeeds.includes(k)).map(([, v]) => v);
-  const goal   = ["减脂", "增肌", "养生"].find(g => allNeeds.includes(g)) ?? "均衡";
-  const spice  = allNeeds.includes("不辣") ? "不辣" : (prefs.spice || "微辣");
-  localStorage.setItem("quickPrefs", JSON.stringify({ ...prefs, avoid, health, goal, spice }));
+  // NOTE: We intentionally do NOT overwrite quickPrefs here.
+  // quickPrefs holds the QuickSetup answers (english id format like 'fatloss'/'seafood'),
+  // which userPrefs.ts/getUserPrefs uses as the authoritative source.
+  // The menu algorithm (useWeeklyMenu.ts → getEatingMembers) reads nutri_family_members
+  // directly and unions every member's chinese needs ("不吃海鲜", etc) on top of basePrefs.
+  // Earlier this code wrote chinese goal ("增肌") and aliased avoid ids ("no_seafood")
+  // back into quickPrefs, which broke GOAL_MAP/AVOID_OPTION_MAP lookup.
   window.dispatchEvent(new Event("nutri-prefs-changed"));
 }
 
@@ -476,6 +503,9 @@ export default function Settings() {
               ))}
             </div>
           </div>
+
+          {/* ── Membership ── */}
+          <MembershipCard />
 
           {/* ── Sign out ── */}
           <button
