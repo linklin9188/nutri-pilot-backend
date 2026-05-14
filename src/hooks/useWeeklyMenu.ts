@@ -49,7 +49,7 @@ export interface WeeklyMenu {
 
 // ── Cache version — bump this whenever the algorithm changes significantly ─────
 // This ensures old cached menus are discarded after an algorithm update.
-const ALGO_VERSION = 'v17'; // veg keyword dedup + strict daily category coverage
+const ALGO_VERSION = 'v18'; // lunch as 3-dish set meal: 盖饭/意面 + 1 菜 + 1 汤
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -792,44 +792,53 @@ function generateWeekPlan(
     // Track for next day's scoring
     dayIngredients.forEach(ing => pickedIngredients.push(ing));
 
-    // ── Generate lunch dishes ─────────────────────────────────────────────────
-    // Lunch scales with headcount (one less than dinner — most families have
-    // smaller appetites at noon but still want 2+ dishes on the table):
-    //   1 人  (dishesPerDay=3) → 午餐 2 道
-    //   2 人  (dishesPerDay=4) → 午餐 3 道（含 1 汤）
-    //   4 人  (dishesPerDay=5) → 午餐 4 道（含 1 汤）
-    //   6+ 人 (dishesPerDay=6+) → 午餐 dishesPerDay-1 道（含 1 汤）
-    // Soup is included as one of the slots once we hit 3+ dishes, so lunch
-    // becomes 主菜 + 配菜 + 汤 instead of just a plate.
-    const lunchCount        = Math.max(2, dishesPerDay - 1);
-    const lunchIncludesSoup = lunchCount >= 3;
+    // ── Generate lunch as a 3-dish 套餐 ─────────────────────────────────
+    // Lunch is intentionally a fixed-shape "set meal" regardless of family
+    // size — portions scale outside this algo, not the dish count:
+    //   • slot 0: 主食 / 盖饭 / 意面 / 拌面 / 炒饭 (one-bowl, includes carbs + some protein)
+    //   • slot 1: 1 份配菜（蔬菜/凉菜/小炒）
+    //   • slot 2: 1 份汤
+    // This matches the HK family lunch pattern (think 茶餐厅 set lunch) and
+    // is much faster to prep than the previous "scattered 4 dishes" lunch.
     const dinnerIds = new Set(dayDishes.map(d => d.id));
 
-    // Split the pool into non-soup vs soup; for lunch we pick all but one
-    // from non-soup, and force exactly 1 soup when lunchIncludesSoup.
     const scoreLunch = (d: any) => {
       let score = scoreForWeek({
         dish: d, profile, prefScores, recentIds,
         pickedIngredients: dayIngredients,
-        pickedTitleKeywords: [],
+        pickedTitleKeywords,         // share weekly title dedup (no repeating 娃娃菜 in lunch either)
         dayIndex, spiceBoost, ageGroup, healthPrefs,
       });
-      const ct = d.course_type ?? '';
-      const cat = ingCategory(d.main_ingredient ?? 'other');
-      // Lighter / quicker dishes preferred at noon.
-      if (ct === 'staple' || cat === 'carb') score += 0.35;
       if ((d.flavor_tags ?? []).includes('light')) score += 0.15;
       return { dish: d, score };
     };
 
-    const nonSoupPool = pool
+    // 1. staple pool — rice bowls / pasta / noodles / 炒饭 / 盖饭
+    const staplePool = pool
       .filter(d => !dinnerIds.has(d.id))
-      .filter(d => (d.course_type ?? '') !== 'dessert')
-      .filter(d => (d.course_type ?? '') !== 'soup')
+      .filter(d => {
+        const ct = d.course_type ?? '';
+        const cat = ingCategory(d.main_ingredient ?? 'other');
+        return ct === 'staple' || cat === 'carb';
+      })
       .map(scoreLunch)
       .sort((a, b) => b.score - a.score)
-      .slice(0, 25);
+      .slice(0, 15);
 
+    // 2. veggie / side pool — plant-based, NOT staple and NOT soup
+    const veggiePool = pool
+      .filter(d => !dinnerIds.has(d.id))
+      .filter(d => {
+        const ct = d.course_type ?? '';
+        const cat = ingCategory(d.main_ingredient ?? 'other');
+        if (ct === 'staple' || ct === 'soup' || ct === 'dessert') return false;
+        return cat === 'plant' || ct === 'veggie_dish';
+      })
+      .map(scoreLunch)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 15);
+
+    // 3. soup pool — same as dinner soup pool
     const soupPool = pool
       .filter(d => !dinnerIds.has(d.id))
       .filter(d => (d.course_type ?? '') === 'soup')
@@ -837,12 +846,17 @@ function generateWeekPlan(
       .sort((a, b) => b.score - a.score)
       .slice(0, 10);
 
-    const lunchPlateCount = lunchIncludesSoup ? lunchCount - 1 : lunchCount;
-    const lunchPlates = weightedRandom(nonSoupPool, lunchPlateCount).map(c => enrichRaw(c.dish));
-    const lunchSoups  = lunchIncludesSoup && soupPool.length > 0
-      ? weightedRandom(soupPool, 1).map(c => enrichRaw(c.dish))
-      : [];
-    const lunchDishes = [...lunchPlates, ...lunchSoups];
+    const stapleLunch = weightedRandom(staplePool, 1).map(c => enrichRaw(c.dish));
+    const veggieLunch = weightedRandom(veggiePool, 1).map(c => enrichRaw(c.dish));
+    const soupLunch   = weightedRandom(soupPool,   1).map(c => enrichRaw(c.dish));
+
+    // Track lunch picks in pickedTitleKeywords so they don't repeat across days
+    [...stapleLunch, ...veggieLunch, ...soupLunch].forEach(d => {
+      const kw = extractTitleKeyword(d.title_zh ?? d.title ?? '');
+      if (kw) pickedTitleKeywords.push(kw);
+    });
+
+    const lunchDishes = [...stapleLunch, ...veggieLunch, ...soupLunch];
 
     days.push({
       date: dateForDayIndex(weekStart, dayIndex),
