@@ -23,6 +23,7 @@ import { type SupabaseDish } from './useSupabaseMenu';
 import { FLAVOR_COL, HEALTH_COL, CUISINE_COL } from './preferenceColMap';
 import { getUserPrefs } from '../lib/userPrefs';
 import { getFamilyMenuPrefs, familyGoalScore, dishTriggersAllergy } from '../lib/familyPrefs';
+import { loadIntentBias, applyIntentBias, getIntentHash } from '../lib/intentBias';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -49,7 +50,7 @@ export interface WeeklyMenu {
 
 // ── Cache version — bump this whenever the algorithm changes significantly ─────
 // This ensures old cached menus are discarded after an algorithm update.
-const ALGO_VERSION = 'v18'; // lunch as 3-dish set meal: 盖饭/意面 + 1 菜 + 1 汤
+const ALGO_VERSION = 'v19'; // user intent bias layer (natural-language menu re-roll)
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -111,7 +112,8 @@ function getCacheKey(weekStart: string): string {
   try {
     if (eatingRaw) eatingKey = (JSON.parse(eatingRaw) as string[]).slice().sort().join('-');
   } catch {}
-  return `weekly_menu_${ALGO_VERSION}_${weekStart}_p${dishesPerDay}_e${eatingKey}`;
+  const intentKey = getIntentHash();
+  return `weekly_menu_${ALGO_VERSION}_${weekStart}_p${dishesPerDay}_e${eatingKey}_i${intentKey}`;
 }
 
 // Always use the local-time date to avoid UTC offset shifting the value to the
@@ -437,6 +439,13 @@ function scoreForWeek({
     if (lvl === 1) score += 0.30;
     else if (lvl === 3) score -= 0.45;
   }
+
+  // ── 13. User intent bias (free-text re-generation request) ─────────────
+  // Reads localStorage on every call; cheap because bias is tiny JSON. The
+  // strict slot enforcement above (-2.5 / wrong macro per slot) still wins,
+  // so bias can only reorder within a slot's candidates — it can't change
+  // a soup slot into a meat slot.
+  score = applyIntentBias(score, dish, loadIntentBias());
 
   return score;
 }
@@ -983,7 +992,11 @@ export function useWeeklyMenu() {
       setRefreshKey(k => k + 1);
     };
     window.addEventListener('nutri-prefs-changed', handler);
-    return () => window.removeEventListener('nutri-prefs-changed', handler);
+    window.addEventListener('nutri-intent-bias-changed', handler);
+    return () => {
+      window.removeEventListener('nutri-prefs-changed', handler);
+      window.removeEventListener('nutri-intent-bias-changed', handler);
+    };
   }, []);
 
   useEffect(() => {

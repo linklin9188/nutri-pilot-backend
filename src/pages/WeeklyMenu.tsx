@@ -17,6 +17,8 @@ import {
 } from "../lib/familyPrefs";
 import { useSubscription } from "../lib/subscription";
 import { elevateDayToMichelin, type MichelinDish } from "../lib/geminiMichelin";
+import IntentRegenModal from "../components/IntentRegenModal";
+import { loadIntentBias, clearIntentBias, type IntentBias } from "../lib/intentBias";
 
 // ── Day tabs ──────────────────────────────────────────────────────────────────
 
@@ -321,6 +323,15 @@ export default function WeeklyMenu() {
   // can actually activate it; free users tapping it land on /pricing.
   const { isPro } = useSubscription();
   const [michelinMode, setMichelinMode] = useState(false);
+
+  // Intent re-generation modal + active bias chips
+  const [intentOpen, setIntentOpen] = useState(false);
+  const [intentBias, setIntentBias] = useState<IntentBias | null>(() => loadIntentBias());
+  useEffect(() => {
+    const sync = () => setIntentBias(loadIntentBias());
+    window.addEventListener('nutri-intent-bias-changed', sync);
+    return () => window.removeEventListener('nutri-intent-bias-changed', sync);
+  }, []);
   // Michelin overlay state, keyed by dish.id so we can map back per-card.
   const [michelinByDishId, setMichelinByDishId] = useState<Record<string, MichelinDish>>({});
   // Per-date load/error tracking so flipping days mid-load doesn't re-trigger.
@@ -477,6 +488,19 @@ export default function WeeklyMenu() {
               : "AI 智能规划 · 每周更新"}
           </p>
         </div>
+        {/* Intent re-generation — natural-language menu re-roll. */}
+        <button
+          onClick={() => setIntentOpen(true)}
+          className="flex items-center gap-1 px-2.5 py-1 rounded-full transition-all active:scale-95"
+          style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.10)" }}
+          title="说说你想要什么菜单，AI 重新生成"
+        >
+          <span style={{ fontSize: 12 }}>📝</span>
+          <span className="font-semibold" style={{ fontSize: 11, color: "rgba(255,255,255,0.75)" }}>
+            重新生成
+          </span>
+        </button>
+
         {/* Mode toggle: AI 规划 ↔ 米其林 (Pro) */}
         <button
           onClick={() => {
@@ -540,6 +564,37 @@ export default function WeeklyMenu() {
           <p className="mt-2 text-white/30" style={{ fontSize: 11, letterSpacing: "0.04em" }}>
             🔓 免费查看今天起 3 天 · 登录解锁完整 7 天
           </p>
+        )}
+
+        {/* Active intent-bias chips — let user see what biases are in effect, with an [x] to clear. */}
+        {intentBias && intentBias.chips.length > 0 && (
+          <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+            <span className="text-white/40" style={{ fontSize: 10 }}>本周偏好：</span>
+            {intentBias.chips.map((c, i) => (
+              <span key={i}
+                className="px-2 py-0.5 rounded-full font-semibold"
+                style={{
+                  background: "rgba(255,215,0,0.12)",
+                  border: "1px solid rgba(255,215,0,0.30)",
+                  color: "#FFD700", fontSize: 10,
+                }}>
+                {c}
+              </span>
+            ))}
+            <button
+              onClick={() => {
+                clearIntentBias();
+                // Force regen by clearing cache
+                Object.keys(localStorage).filter(k => k.startsWith('weekly_menu_')).forEach(k => localStorage.removeItem(k));
+                window.dispatchEvent(new Event('nutri-prefs-changed'));
+              }}
+              className="ml-1 w-5 h-5 rounded-full flex items-center justify-center active:scale-90"
+              style={{ background: "rgba(255,255,255,0.08)" }}
+              title="清除本周偏好"
+            >
+              <span className="material-symbols-outlined text-white/50" style={{ fontSize: 12 }}>close</span>
+            </button>
+          </div>
         )}
 
         {/* Michelin elevation status — only when toggle is ON */}
@@ -726,6 +781,9 @@ export default function WeeklyMenu() {
       </div>
 
       <BottomTabBar />
+
+      {/* Intent re-generation modal — natural-language menu re-roll */}
+      <IntentRegenModal open={intentOpen} onClose={() => setIntentOpen(false)} />
     </div>
   );
 }
