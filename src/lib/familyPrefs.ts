@@ -210,16 +210,33 @@ export interface FamilyMenuPrefs {
 
   // All members home today
   homeMembers: FamilyMember[];
+
+  // True when any home member is pregnant (lifeStage='孕期'). Enables the
+  // pregnancy ban/prefer rules in src/lib/pregnancy.ts.
+  hasPregnant: boolean;
 }
 
 export function getFamilyMenuPrefs(dishesPerDay = 4): FamilyMenuPrefs {
   const members = loadFamilyMembers();
+
+  // Detect pregnant members directly from the raw nutri_family_members JSON
+  // (the post-convert FamilyMember interface intentionally drops lifeStage).
+  let hasPregnant = false;
+  try {
+    const rawJson = localStorage.getItem('nutri_family_members');
+    if (rawJson) {
+      const raw = JSON.parse(rawJson) as Array<{ lifeStage?: string }>;
+      hasPregnant = raw.some(m => m.lifeStage === '孕期');
+    }
+  } catch {}
+
   if (members.length === 0) {
     return {
       goalWeights: {},
       allergyMembers: [],
       maxAllergenDishesPerDay: Math.floor(dishesPerDay * 0.25),
       homeMembers: [],
+      hasPregnant,
     };
   }
 
@@ -251,6 +268,7 @@ export function getFamilyMenuPrefs(dishesPerDay = 4): FamilyMenuPrefs {
     allergyMembers,
     maxAllergenDishesPerDay: Math.max(1, Math.floor(dishesPerDay * 0.25)),
     homeMembers: active,
+    hasPregnant,
   };
 }
 

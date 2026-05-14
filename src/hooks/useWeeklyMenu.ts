@@ -24,6 +24,7 @@ import { FLAVOR_COL, HEALTH_COL, CUISINE_COL } from './preferenceColMap';
 import { getUserPrefs } from '../lib/userPrefs';
 import { getFamilyMenuPrefs, familyGoalScore, dishTriggersAllergy } from '../lib/familyPrefs';
 import { loadIntentBias, applyIntentBias, getIntentHash } from '../lib/intentBias';
+import { applyPregnancyAdjustments } from '../lib/pregnancy';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -50,7 +51,7 @@ export interface WeeklyMenu {
 
 // ── Cache version — bump this whenever the algorithm changes significantly ─────
 // This ensures old cached menus are discarded after an algorithm update.
-const ALGO_VERSION = 'v21'; // lunch usedIds dedup + 4-slot template for families with kids
+const ALGO_VERSION = 'v22'; // pregnancy safety: ban raw seafood / high-mercury fish + prefer iron/folate
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -326,11 +327,12 @@ interface WeeklyScoreParams {
   ageGroup?: string | null;
   healthPrefs?: { preferLowSodium: boolean; preferLowSugar: boolean; avoidHighPurine: boolean };
   helperMode?: boolean;             // household has a helper — prefer low execution_level
+  hasPregnant?: boolean;            // household has a pregnant member — applies pregnancy ban/prefer rules
 }
 
 function scoreForWeek({
   dish, profile, prefScores, recentIds, pickedIngredients, pickedTitleKeywords, dayIndex,
-  spiceBoost = 0, ageGroup, healthPrefs, helperMode = false,
+  spiceBoost = 0, ageGroup, healthPrefs, helperMode = false, hasPregnant = false,
 }: WeeklyScoreParams): number {
   const flavorTags: string[]  = dish.flavor_tags ?? [];
   const healthTags: string[]  = dish.health_benefit_tags ?? [];
@@ -440,7 +442,13 @@ function scoreForWeek({
     else if (lvl === 3) score -= 0.45;
   }
 
-  // ── 13. User intent bias (free-text re-generation request) ─────────────
+  // ── 13. Pregnancy safety + nutrition (when any home member is 孕期) ─────
+  // Hard ban on raw seafood / high-mercury fish / soft cheese (-5.0 to -3.5).
+  // Soft boost on iron/folate/calcium-rich ingredients (+0.5 each).
+  // See src/lib/pregnancy.ts for the full rule lists.
+  score = applyPregnancyAdjustments(score, dish, { hasPregnant });
+
+  // ── 14. User intent bias (free-text re-generation request) ─────────────
   // Reads localStorage on every call; cheap because bias is tiny JSON. The
   // strict slot enforcement above (-2.5 / wrong macro per slot) still wins,
   // so bias can only reorder within a slot's candidates — it can't change
@@ -667,6 +675,7 @@ function generateWeekPlan(
             ageGroup,
             healthPrefs,
             helperMode,
+            hasPregnant: familyPrefs?.hasPregnant ?? false,
           });
 
           // ── Family multi-goal scoring ───────────────────────────────────
@@ -794,6 +803,7 @@ function generateWeekPlan(
             spiceBoost: -1.0,   // extra spicy penalty for kid pass
             ageGroup: '00后',   // always use child age mods
             healthPrefs,
+            hasPregnant: familyPrefs?.hasPregnant ?? false,
           });
           const flavors: string[] = d.flavor_tags ?? [];
           if (flavors.includes('sweet'))  s += 0.25;
@@ -832,6 +842,7 @@ function generateWeekPlan(
         pickedIngredients: dayIngredients,
         pickedTitleKeywords,         // share weekly title dedup (no repeating 娃娃菜 in lunch either)
         dayIndex, spiceBoost, ageGroup, healthPrefs,
+        hasPregnant: familyPrefs?.hasPregnant ?? false,
       });
       if ((d.flavor_tags ?? []).includes('light')) score += 0.15;
       return { dish: d, score };
