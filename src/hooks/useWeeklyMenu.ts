@@ -50,7 +50,7 @@ export interface WeeklyMenu {
 
 // ── Cache version — bump this whenever the algorithm changes significantly ─────
 // This ensures old cached menus are discarded after an algorithm update.
-const ALGO_VERSION = 'v19'; // user intent bias layer (natural-language menu re-roll)
+const ALGO_VERSION = 'v20'; // dinner slot 2 (蔬菜) must be non-soup veggie
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -632,10 +632,12 @@ function generateWeekPlan(
 
           // Soup slot: only allow soups (or light dishes if no soup available)
           if (isSoupSlot && !isSoup && cat !== 'plant' && cat !== 'other') return false;
-          // Non-soup slots (standard): block soups from slots 0, 1, 4
-          if (!useSmallTemplate && isSoup && (slot === 0 || slot === 1 || slot === 4)) return false;
-          // Non-soup slots (small template): block soups from slots 0, 1
-          if (useSmallTemplate && isSoup && slot !== 2) return false;
+          // Soups ONLY belong in the dedicated soup slot — block from every
+          // other slot in both templates. Previously slot 2 (veggie) wasn't
+          // blocked, so e.g. 蛋花汤 (course=soup, main=egg/plant) could win
+          // the veggie slot, resulting in two soups per day.
+          if (!useSmallTemplate && isSoup && slot !== 3) return false;
+          if (useSmallTemplate  && isSoup && slot !== 2) return false;
 
           return true;
         })
