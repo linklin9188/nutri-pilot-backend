@@ -31,9 +31,9 @@ import BottomTabBar from "../components/BottomTabBar";
 // created. Until then the "升级" button surfaces a configuration message and
 // the dev override button is shown for local testing.
 const STRIPE_PRICE_IDS: Record<Exclude<SubscriptionPlan, "free">, string> = {
-  pro_monthly:  "",  // e.g. "price_1Pxxxx" — fill in
-  pro_halfyear: "",
-  pro_yearly:   "",
+  pro_monthly:  "price_1TWmfdLBQDUfsQf3bPrGpKkG",  // HK$66/月
+  pro_halfyear: "price_1TWmiQLBQDUfsQf3XELFQsp8",  // HK$199/半年
+  pro_yearly:   "price_1TWmjFLBQDUfsQf3SErUBlHz",  // HK$365/年
 };
 
 // Early-bird promo: monthly subscribers pay HK$30 for the first 3 months
