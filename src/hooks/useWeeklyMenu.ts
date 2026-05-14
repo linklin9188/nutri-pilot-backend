@@ -50,7 +50,7 @@ export interface WeeklyMenu {
 
 // ── Cache version — bump this whenever the algorithm changes significantly ─────
 // This ensures old cached menus are discarded after an algorithm update.
-const ALGO_VERSION = 'v20'; // dinner slot 2 (蔬菜) must be non-soup veggie
+const ALGO_VERSION = 'v21'; // lunch usedIds dedup + 4-slot template for families with kids
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -569,14 +569,27 @@ function generateWeekPlan(
   const weekStart = getMondayISO();
   const days: WeeklyDayMenu[] = [];
   const usedIds = new Set<string>();
+  // Track lunch picks across all 7 days so the same staple/veggie/soup
+  // doesn't repeat in another lunch (previously 干炒牛河 / 日式味噌汤 etc.
+  // showed up 3× per week because lunch only filtered by today's dinner).
+  const lunchUsedIds = new Set<string>();
   const pickedIngredients: string[] = [];
   const pickedTitleKeywords: string[] = [];   // weekly keyword tracker
 
-  // Adult slots = total minus kid-dedicated slots
-  const adultSlots = Math.max(dishesPerDay - kidSlots, 1);
-
-  // Use small-family slot template when adult slots ≤ 3
-  const useSmallTemplate = adultSlots <= 3;
+  // Small-family template is only for the smallest tables (≤3 dishes total),
+  // where physical slot count can't fit the 4 macros (肉/海鲜/蔬菜/汤).
+  // For 4+ dishes we always use the standard 4-slot template — even when the
+  // family has kids — and bake kid-friendly bias into the scoring instead of
+  // sacrificing a slot. Previously kidSlots=1 with dishesPerDay=4 gave only
+  // 3 adult slots and the small template's meat/plant/soup pattern (no
+  // seafood at all).
+  const useSmallTemplate = dishesPerDay <= 3;
+  const adultSlots = useSmallTemplate
+    ? Math.max(dishesPerDay - kidSlots, 1)
+    : dishesPerDay;
+  // For ≥4-dish families with kids, the dedicated kid slot disappears; we
+  // overlay kid-friendly preferences inside scoreForWeek instead.
+  const effectiveKidSlots = useSmallTemplate ? kidSlots : 0;
 
   // Track weekly category counts for hard caps (scale with dishesPerDay)
   const MAX_PER_CATEGORY = getMaxPerCategory(dishesPerDay);
@@ -766,7 +779,7 @@ function generateWeekPlan(
     // Scored separately with child-friendly criteria: no spicy, prefer light/sweet.
     // They're added to the same day.dishes array so the whole table shares them.
     const kidDishes: any[] = [];
-    if (kidSlots > 0) {
+    if (effectiveKidSlots > 0) {
       const kidUsedIds = new Set([...usedIds, ...dayDishes.map(d => d.id)]);
       const kidCandidates = pool
         .filter(d => !kidUsedIds.has(d.id))
@@ -791,7 +804,7 @@ function generateWeekPlan(
         .sort((a, b) => b.score - a.score)
         .slice(0, 15);
 
-      weightedRandom(kidCandidates, kidSlots).forEach(c => {
+      weightedRandom(kidCandidates, effectiveKidSlots).forEach(c => {
         kidDishes.push(c.dish);
         const kw = extractTitleKeyword(c.dish.title_zh ?? c.dish.title ?? '');
         if (kw) pickedTitleKeywords.push(kw);
@@ -826,7 +839,7 @@ function generateWeekPlan(
 
     // 1. staple pool — rice bowls / pasta / noodles / 炒饭 / 盖饭
     const staplePool = pool
-      .filter(d => !dinnerIds.has(d.id))
+      .filter(d => !usedIds.has(d.id) && !lunchUsedIds.has(d.id))
       .filter(d => {
         const ct = d.course_type ?? '';
         const cat = ingCategory(d.main_ingredient ?? 'other');
@@ -838,7 +851,7 @@ function generateWeekPlan(
 
     // 2. veggie / side pool — plant-based, NOT staple and NOT soup
     const veggiePool = pool
-      .filter(d => !dinnerIds.has(d.id))
+      .filter(d => !usedIds.has(d.id) && !lunchUsedIds.has(d.id))
       .filter(d => {
         const ct = d.course_type ?? '';
         const cat = ingCategory(d.main_ingredient ?? 'other');
@@ -851,7 +864,7 @@ function generateWeekPlan(
 
     // 3. soup pool — same as dinner soup pool
     const soupPool = pool
-      .filter(d => !dinnerIds.has(d.id))
+      .filter(d => !usedIds.has(d.id) && !lunchUsedIds.has(d.id))
       .filter(d => (d.course_type ?? '') === 'soup')
       .map(scoreLunch)
       .sort((a, b) => b.score - a.score)
@@ -861,13 +874,18 @@ function generateWeekPlan(
     const veggieLunch = weightedRandom(veggiePool, 1).map(c => enrichRaw(c.dish));
     const soupLunch   = weightedRandom(soupPool,   1).map(c => enrichRaw(c.dish));
 
-    // Track lunch picks in pickedTitleKeywords so they don't repeat across days
-    [...stapleLunch, ...veggieLunch, ...soupLunch].forEach(d => {
+    // Track lunch picks across days so they can't repeat — also feed title
+    // keywords into the weekly dedup tracker, and add IDs to usedIds so a
+    // future day's dinner won't re-pick a lunch dish either.
+    const allLunchPicks = [...stapleLunch, ...veggieLunch, ...soupLunch];
+    allLunchPicks.forEach(d => {
+      lunchUsedIds.add(d.id);
+      usedIds.add(d.id);
       const kw = extractTitleKeyword(d.title_zh ?? d.title ?? '');
       if (kw) pickedTitleKeywords.push(kw);
     });
 
-    const lunchDishes = [...stapleLunch, ...veggieLunch, ...soupLunch];
+    const lunchDishes = allLunchPicks;
 
     days.push({
       date: dateForDayIndex(weekStart, dayIndex),
