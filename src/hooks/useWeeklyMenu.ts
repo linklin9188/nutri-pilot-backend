@@ -49,7 +49,7 @@ export interface WeeklyMenu {
 
 // ── Cache version — bump this whenever the algorithm changes significantly ─────
 // This ensures old cached menus are discarded after an algorithm update.
-const ALGO_VERSION = 'v16'; // lunch scales with headcount + forces soup at 3+ dishes
+const ALGO_VERSION = 'v17'; // veg keyword dedup + strict daily category coverage
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -186,13 +186,27 @@ function ingCategory(ing: string): string {
 }
 
 // ── Title keyword deduplication ───────────────────────────────────────────────
-// Prevents e.g. 孜然排骨 + 糖醋排骨 + 排骨汤 all appearing in one week.
+// Prevents e.g. 孜然排骨 + 糖醋排骨 + 排骨汤 all appearing in one week, AND
+// 虾米娃娃菜 + 蒜蓉娃娃菜 (different main_ingredient but same headline vegetable).
 // Each keyword is extracted from the Chinese dish title; if it's already been
 // used N times this week, a strong penalty is applied to all dishes sharing it.
+//
+// Order matters: longer / more specific keywords first, so 大白菜 matches before
+// 白菜 catches it (extractTitleKeyword returns the first match).
 const TITLE_KEYWORDS = [
+  // Proteins
   '排骨', '鸡腿', '鸡翅', '鸡胸', '全鸡', '烤鸡',
   '牛腩', '牛排', '牛肉', '羊肉', '五花肉', '猪蹄',
   '虾', '螃蟹', '鱼', '贝', '蛤',
+  // Headline vegetables — these are the dish's defining ingredient and
+  // shouldn't appear twice within a week even if the protein differs.
+  '娃娃菜', '上海青', '油麦菜', '空心菜', '茼蒿', '荠菜',
+  '菜心', '白菜', '菠菜', '芥蓝', '芥菜',
+  '西兰花', '花椰菜', '芦笋', '青椒', '红椒', '彩椒',
+  '茄子', '土豆', '冬瓜', '南瓜', '丝瓜', '苦瓜',
+  '黄瓜', '番茄', '玉米', '萝卜', '胡萝卜', '莲藕',
+  '豆腐', '豆角', '四季豆', '芸豆', '蚕豆', '毛豆',
+  '木耳', '香菇', '蘑菇', '金针菇', '杏鲍菇',
 ];
 
 function extractTitleKeyword(titleZh: string): string | null {
@@ -200,19 +214,22 @@ function extractTitleKeyword(titleZh: string): string | null {
 }
 
 // Max times any single category may appear per 7-day week.
-// These are WEEKLY caps across all days — for large families (8+ people),
-// a single day can have multiple slots, so weekly caps scale accordingly.
-// Formula: base × ceil(dishesPerDay / 5) — loosens cap for bigger tables.
+// Caps are at least 7 (= 1/day) for the macro categories the user wants
+// every day (肉/海鲜/蔬菜/汤), so v17's strict per-slot enforcement can
+// actually find candidates all 7 days. Daily diversity is handled by the
+// same-category-in-same-day penalty in scoreForWeek (-0.45 / repeat), so
+// you still get rotation within a day.
+// Formula: max(7, base × scale) — loosens for bigger families.
 function getMaxPerCategory(dishesPerDay: number): Record<string, number> {
   const scale = Math.max(1, Math.ceil(dishesPerDay / 5));
   return {
-    seafood: 2  * scale,
-    pork:    3  * scale,
-    beef:    2  * scale,
-    poultry: 3  * scale,
-    plant:   99,           // no effective cap for vegetables
-    carb:    7,            // 1/day max (always in slot 4 only)
-    other:   7  * scale,
+    seafood: Math.max(7, 2 * scale),  // ≥1/day for "海鲜每天有"
+    pork:    Math.max(7, 3 * scale),
+    beef:    Math.max(4, 2 * scale),  // beef less common in HK; cap stays moderate
+    poultry: Math.max(7, 3 * scale),
+    plant:   99,                       // no effective cap for vegetables
+    carb:    7,                        // 1/day max (always in slot 4 only)
+    other:   7 * scale,
   };
 }
 
@@ -660,6 +677,28 @@ function generateWeekPlan(
           if ((slot === 1 || slot === 2) && ct === 'veggie_dish' && !isSoupSlot) score += 0.18;
           if (isSoupSlot && ct === 'soup') score += 0.30;    // strong pull to soup slot
           if (isSoupSlot && ct === 'veggie_dish') score += 0.10;
+
+          // ── Strict daily macro coverage ───────────────────────────────────
+          // Each day should hit 肉 / 海鲜 / 蔬菜 / 汤 (and 主食 for ≥5 slots),
+          // so we apply heavy penalties to wrong-category dishes per slot. The
+          // penalty is graceful — if a category has no candidates (e.g. user
+          // has seafood allergy, no seafood in pool), the algo falls through
+          // to other categories rather than producing an empty slot.
+          if (!useSmallTemplate && dishesPerDay >= 4) {
+            // slot 0: 肉 (pork/beef/poultry) — block seafood here so it has
+            // its own slot below, and block plant so slot 0 isn't a salad.
+            if (slot === 0 && (cat === 'seafood' || cat === 'plant' || cat === 'other')) {
+              score -= 2.5;
+            }
+            // slot 1: 海鲜 (seafood) — strong pull
+            if (slot === 1 && cat !== 'seafood') score -= 2.5;
+            // slot 2: 蔬菜 (plant) — strong pull
+            if (slot === 2 && cat !== 'plant') score -= 2.5;
+            // slot 3: 汤 (course_type='soup') — strong pull
+            if (slot === 3 && ct !== 'soup') score -= 2.5;
+            // slot 4 (staple, only present when dishesPerDay≥5) already
+            // hard-filtered by isStaple check above.
+          }
 
           // Same-category-in-same-day penalty (prevents e.g. two veggie dishes in slot 1+2)
           const sameCatInDay = dayIngredients.filter(i => ingCategory(i) === cat).length;
