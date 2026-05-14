@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import BottomTabBar from "../components/BottomTabBar";
 import { useSubscription } from "../lib/subscription";
+import { promoDaysLeft } from "../lib/promo";
 import { useLanguage, LANGUAGE_LABEL, type Language } from "../contexts/LanguageContext";
 
 // 4-language picker (简 / 繁 / EN / Tagalog).
@@ -100,30 +101,54 @@ function ProToolbox() {
 // ── Membership entry shown above 退出登录 ──────────────────────────────────────
 function MembershipCard() {
   const navigate = useNavigate();
-  const { isPro, plan, endsAt } = useSubscription();
+  const { isPro, proReason, plan, endsAt } = useSubscription();
+  const daysLeft = promoDaysLeft();
+
+  // Four visual states, ordered most-specific first:
+  //   1. promo   → green "拓客期免费"
+  //   2. helper  → grey "助理永久免费"
+  //   3. paid    → white "Pro 会员 · 套餐 + 到期"
+  //   4. none    → orange CTA "升级到 Pro"
+  const variant = proReason; // 'promo' | 'helper' | 'paid' | 'none'
+
+  const styleMap = {
+    promo:  { bg: "linear-gradient(135deg, #16a34a, #22c55e)", shadow: "0 8px 24px rgba(34,197,94,0.30)", textColor: "white", subColor: "rgba(255,255,255,0.85)", chevColor: "rgba(255,255,255,0.80)" },
+    helper: { bg: "white", shadow: "0 4px 20px rgba(0,0,0,0.04)", textColor: "#1a1a1a", subColor: "rgba(0,0,0,0.45)", chevColor: "rgba(0,0,0,0.30)" },
+    paid:   { bg: "white", shadow: "0 4px 20px rgba(255,90,31,0.08)", textColor: "#1a1a1a", subColor: "rgba(0,0,0,0.45)", chevColor: "rgba(0,0,0,0.30)" },
+    none:   { bg: "linear-gradient(135deg, #FF5A1F, #FF8C54)", shadow: "0 8px 24px rgba(255,90,31,0.30)", textColor: "white", subColor: "rgba(255,255,255,0.85)", chevColor: "rgba(255,255,255,0.80)" },
+  }[variant];
+
+  const icon  = variant === 'promo' ? '🎉'
+             : variant === 'helper' ? '🧑‍🍳'
+             : variant === 'paid'   ? '✨'
+             : '⭐';
+
+  const title = variant === 'promo' ? '拓客期免费 · 全功能解锁'
+              : variant === 'helper' ? '助理永久免费'
+              : variant === 'paid'   ? '爱吃 Pro 会员'
+              : '升级到 爱吃 Pro';
+
+  const sub = variant === 'promo' ? (daysLeft > 0 ? `剩余 ${daysLeft} 天 · 期满前不会扣款` : '拓客期已结束')
+            : variant === 'helper' ? '家政助理使用爱吃从不收费'
+            : variant === 'paid'   ? `${plan === 'pro_yearly' ? '年度' : plan === 'pro_halfyear' ? '半年' : '月度'}${endsAt ? ` · 到期 ${endsAt.toISOString().slice(0,10)}` : ''}`
+            : '解锁米其林菜单 + 高端食材采购';
+
+  const border = variant === 'paid' ? '1px solid rgba(255,90,31,0.20)' : 'none';
+
   return (
     <button
       onClick={() => navigate("/pricing")}
       className="w-full rounded-[22px] p-4 text-left transition-all active:scale-[0.98] flex items-center gap-3"
-      style={isPro
-        ? { background: "white", border: "1px solid rgba(255,90,31,0.20)", boxShadow: "0 4px 20px rgba(255,90,31,0.08)" }
-        : { background: "linear-gradient(135deg, #FF5A1F, #FF8C54)", boxShadow: "0 8px 24px rgba(255,90,31,0.30)" }
-      }
+      style={{ background: styleMap.bg, border, boxShadow: styleMap.shadow }}
     >
-      <span className="text-[28px]">{isPro ? "✨" : "⭐"}</span>
+      <span className="text-[28px]">{icon}</span>
       <div className="flex-1">
-        <p className="font-bold text-[15px]" style={{ color: isPro ? "#1a1a1a" : "white" }}>
-          {isPro ? "爱吃 Pro 会员" : "升级到 爱吃 Pro"}
-        </p>
-        <p className="text-[12px]" style={{ color: isPro ? "rgba(0,0,0,0.45)" : "rgba(255,255,255,0.85)" }}>
-          {isPro
-            ? `${plan === "pro_yearly" ? "年度" : plan === "pro_halfyear" ? "半年" : "月度"}${endsAt ? ` · 到期 ${endsAt.toISOString().slice(0,10)}` : ""}`
-            : "解锁米其林菜单 + 高端食材采购"}
-        </p>
+        <p className="font-bold text-[15px]" style={{ color: styleMap.textColor }}>{title}</p>
+        <p className="text-[12px]" style={{ color: styleMap.subColor }}>{sub}</p>
       </div>
       <span
         className="material-symbols-outlined"
-        style={{ fontSize: 20, color: isPro ? "rgba(0,0,0,0.30)" : "rgba(255,255,255,0.80)" }}
+        style={{ fontSize: 20, color: styleMap.chevColor }}
       >
         chevron_right
       </span>

@@ -17,6 +17,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "./supabase";
+import { effectiveProReason, type ProReason } from "./promo";
 
 const LS_IS_PRO    = "nutri_is_pro";
 const LS_SUB_END   = "nutri_sub_end_at";
@@ -25,7 +26,13 @@ const LS_PLAN      = "nutri_sub_plan";
 export type SubscriptionPlan = "free" | "pro_monthly" | "pro_halfyear" | "pro_yearly";
 
 export interface SubscriptionState {
+  /** Effective: paid OR promo OR helper. Use this for paywall gates. */
   isPro: boolean;
+  /** True only when the user actually paid (or dev-activated). Used by the
+   *  Membership card to distinguish "your subscription" from "promo unlock". */
+  isPaidPro: boolean;
+  /** Why the user is effectively Pro — drives UI copy. */
+  proReason: ProReason;
   plan: SubscriptionPlan;
   endsAt: Date | null;      // null when free or perpetual
   loading: boolean;
@@ -37,12 +44,20 @@ function readLocal(): SubscriptionState {
   const endsAt = endRaw ? new Date(endRaw) : null;
   const plan   = (localStorage.getItem(LS_PLAN) as SubscriptionPlan) ?? "free";
   // If the recorded subscription end has passed, treat the user as free.
-  const effectivelyPro = isPro && (!endsAt || endsAt.getTime() > Date.now());
-  return { isPro: effectivelyPro, plan: effectivelyPro ? plan : "free", endsAt, loading: false };
+  const paidIsPro = isPro && (!endsAt || endsAt.getTime() > Date.now());
+  const reason = effectiveProReason({ paidIsPro });
+  return {
+    isPro:     reason !== 'none',
+    isPaidPro: paidIsPro,
+    proReason: reason,
+    plan:      paidIsPro ? plan : "free",
+    endsAt,
+    loading:   false,
+  };
 }
 
-function writeLocal(s: Omit<SubscriptionState, "loading">) {
-  localStorage.setItem(LS_IS_PRO, String(s.isPro));
+function writeLocal(s: { isPaidPro: boolean; plan: SubscriptionPlan; endsAt: Date | null }) {
+  localStorage.setItem(LS_IS_PRO, String(s.isPaidPro));
   if (s.endsAt) localStorage.setItem(LS_SUB_END, s.endsAt.toISOString());
   else localStorage.removeItem(LS_SUB_END);
   localStorage.setItem(LS_PLAN, s.plan);
@@ -68,14 +83,10 @@ export async function refreshSubscriptionFromSupabase(): Promise<SubscriptionSta
   const plan   = ((data as any).subscription_plan as SubscriptionPlan) ?? "free";
   const endsAt = endRaw ? new Date(endRaw) : null;
 
-  const effectivelyPro = isPro && (!endsAt || endsAt.getTime() > Date.now());
-  const next: Omit<SubscriptionState, "loading"> = {
-    isPro: effectivelyPro,
-    plan: effectivelyPro ? plan : "free",
-    endsAt,
-  };
-  writeLocal(next);
-  return { ...next, loading: false };
+  const paidIsPro = isPro && (!endsAt || endsAt.getTime() > Date.now());
+  writeLocal({ isPaidPro: paidIsPro, plan: paidIsPro ? plan : "free", endsAt });
+  // readLocal will mix in promo / helper state via effectiveProReason.
+  return readLocal();
 }
 
 /** Hook for components. Returns the cached state immediately, refreshes on mount. */
@@ -114,9 +125,9 @@ export function devActivatePro(plan: SubscriptionPlan = "pro_monthly") {
                : 1;
   const ends = new Date();
   ends.setMonth(ends.getMonth() + months);
-  writeLocal({ isPro: true, plan, endsAt: ends });
+  writeLocal({ isPaidPro: true, plan, endsAt: ends });
 }
 
 export function devCancelPro() {
-  writeLocal({ isPro: false, plan: "free", endsAt: null });
+  writeLocal({ isPaidPro: false, plan: "free", endsAt: null });
 }

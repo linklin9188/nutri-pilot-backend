@@ -25,6 +25,7 @@ import {
   devCancelPro,
   type SubscriptionPlan,
 } from "../lib/subscription";
+import { promoDaysLeft, promoEndDate } from "../lib/promo";
 import BottomTabBar from "../components/BottomTabBar";
 
 // Stripe Payment Link / Price IDs are filled in once the Stripe products are
@@ -85,7 +86,9 @@ const PRO_FEATURES = [
 export default function Pricing() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { isPro, plan: currentPlan, endsAt } = useSubscription();
+  const { isPro, isPaidPro, proReason, plan: currentPlan, endsAt } = useSubscription();
+  const daysLeft = promoDaysLeft();
+  const promoEnd = promoEndDate();
   const [selected, setSelected] = useState<Exclude<SubscriptionPlan, "free">>("pro_halfyear");
   const [loading, setLoading]   = useState(false);
   const [message, setMessage]   = useState<string | null>(null);
@@ -162,8 +165,42 @@ export default function Pricing() {
 
       <main className="flex-1 px-5 py-5 pb-52 space-y-5">
 
-        {/* Already-Pro state */}
-        {isPro && (
+        {/* 拓客期免费 banner — for the first 90 days every employer is free. */}
+        {proReason === 'promo' && (
+          <section
+            className="rounded-3xl p-6 text-white"
+            style={{
+              background: "linear-gradient(135deg, #16a34a 0%, #22c55e 60%, #4ade80 100%)",
+              boxShadow: "0 12px 32px rgba(34,197,94,0.30)",
+            }}
+          >
+            <p className="text-[12px] uppercase tracking-widest opacity-80">🎉 拓客期免费</p>
+            <h2 className="font-serif font-black text-[26px] leading-tight mt-1">
+              3 个月内<br />全部 Pro 功能免费
+            </h2>
+            <p className="mt-3 text-[13px] opacity-90 leading-relaxed">
+              米其林菜单、家宴排菜、港式祛湿、学校营养补全、收藏菜单… 都已为你解锁。
+              {daysLeft > 0 ? `剩余 ${daysLeft} 天（到 ${promoEnd.toISOString().slice(0, 10)}）。` : ''}
+            </p>
+            <p className="mt-2 text-[11px] opacity-75">免费体验期结束后才需要订阅，不会有任何自动扣款。</p>
+          </section>
+        )}
+
+        {/* Helper-永久免费 banner — defensive, helpers normally don't reach this page. */}
+        {proReason === 'helper' && (
+          <section className="bg-white rounded-3xl p-6 shadow-sm space-y-2">
+            <div className="flex items-center gap-3">
+              <span className="text-[32px]">🧑‍🍳</span>
+              <div>
+                <h2 className="font-bold text-[18px]">助理永久免费</h2>
+                <p className="text-[12px] text-gray-500">家政助理使用爱吃从不收费，请放心使用。</p>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* Already-paid state — only show when the user actually paid Stripe. */}
+        {isPaidPro && (
           <section className="bg-white rounded-3xl p-6 shadow-sm space-y-3">
             <div className="flex items-center gap-3">
               <span className="text-[32px]">✨</span>

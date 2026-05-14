@@ -5,6 +5,7 @@ import { useLanguage } from "../contexts/LanguageContext";
 import { supabase } from "../lib/supabase";
 import { type PrepStep } from "../hooks/useSupabaseMenu";
 import { useFeedbackEngine } from "../hooks/useFeedbackEngine";
+import { formatIngredientQty } from "../lib/quantity";
 
 const TRAY_CONFIG: Record<string, { zh: string; en: string; color: string; bg: string; icon: string }> = {
   A: { zh: '主料',  en: 'Main',     color: 'text-red-600',   bg: 'bg-red-50 border-red-200',     icon: 'restaurant' },
@@ -304,18 +305,21 @@ export default function HelperPrep() {
 
                             return (
                               <div key={tray}>
-                                {/* Tray group label */}
+                                {/* Tray group label: "A 主料" / "B 配菜" — letter is the physical tray code */}
                                 <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border mb-2 ${cfg.bg}`}>
                                   <span className={`material-symbols-outlined text-[13px] ${cfg.color}`} style={{ fontVariationSettings: "'FILL' 1" }}>
                                     {cfg.icon}
                                   </span>
-                                  <span className={`font-bold text-[12px] uppercase tracking-wider ${cfg.color}`}>
+                                  <span className={`font-black text-[12px] tracking-wider ${cfg.color}`}>
+                                    {tray}
+                                  </span>
+                                  <span className={`font-bold text-[12px] ${cfg.color}`}>
                                     {useChineseContent ? cfg.zh : cfg.en}
                                   </span>
                                 </div>
 
                                 <div className="flex flex-col gap-2">
-                                  {trayItems.map(({ step, idx }) => {
+                                  {trayItems.map(({ step, idx }, slotI) => {
                                     const key = `${dish.id}-${idx}`;
                                     const isDone = completed.has(key);
                                     const action = useChineseContent ? step.action_zh : (step.action_en ?? step.action_zh);
@@ -323,6 +327,12 @@ export default function HelperPrep() {
                                       ? (step.ingredient_en || step.ingredient_zh)
                                       : step.ingredient_zh;
                                     const ingAlt = !useChineseContent ? step.ingredient_zh : step.ingredient_en;
+                                    // Slot label like "A1" / "A2" — the physical tray slot a helper
+                                    // can match against the labeled tray in the kitchen.
+                                    const slotLabel = `${tray}${slotI + 1}`;
+                                    // Friendly quantity — converts grams to pieces for eggs / garlic /
+                                    // scallion / ginger (see lib/quantity.ts).
+                                    const qtyLabel = formatIngredientQty(step.ingredient_zh, step.amount_g);
 
                                     return (
                                       <motion.button
@@ -335,15 +345,16 @@ export default function HelperPrep() {
                                             : 'bg-gray-50 border border-gray-100'
                                         }`}
                                       >
-                                        {/* Check circle */}
-                                        <div className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-all ${
+                                        {/* Slot pill (A1 / A2 …) — flips to ✓ when the helper checks it off. */}
+                                        <div className={`shrink-0 min-w-[40px] h-9 px-2 rounded-2xl flex items-center justify-center font-black text-[13px] transition-all ${
                                           isDone
-                                            ? 'bg-emerald-500 shadow-sm'
-                                            : 'border-2 border-gray-200 bg-white'
+                                            ? 'bg-emerald-500 text-white shadow-sm'
+                                            : `${cfg.bg} ${cfg.color} border`
                                         }`}>
-                                          {isDone && (
-                                            <span className="material-symbols-outlined text-white text-[16px]" style={{ fontVariationSettings: "'FILL' 1" }}>check</span>
-                                          )}
+                                          {isDone
+                                            ? <span className="material-symbols-outlined text-white text-[16px]" style={{ fontVariationSettings: "'FILL' 1" }}>check</span>
+                                            : slotLabel
+                                          }
                                         </div>
 
                                         <div className="flex-1 min-w-0">
@@ -351,11 +362,11 @@ export default function HelperPrep() {
                                             <span className={`font-black text-[17px] leading-tight ${isDone ? 'line-through text-gray-400' : 'text-gray-900'}`}>
                                               {ingName}
                                             </span>
-                                            {step.amount_g > 0 && (
+                                            {qtyLabel && (
                                               <span className={`text-[14px] font-bold px-2 py-0.5 rounded-lg ${
                                                 isDone ? 'text-gray-300 bg-gray-100' : 'text-gray-700 bg-white border border-gray-200'
                                               }`}>
-                                                {step.amount_g}g
+                                                {qtyLabel}
                                               </span>
                                             )}
                                           </div>
