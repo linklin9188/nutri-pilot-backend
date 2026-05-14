@@ -166,16 +166,30 @@ async function syncSubscriptionRow(
   const isPro =
     subscription.status === "active" || subscription.status === "trialing";
 
-  await supabase
+  // Use UPSERT so a row gets created when this is the user's first paid
+  // checkout (e.g. the test-phase localStorage userId doesn't have a
+  // pre-existing user_profiles row yet). Also surfaces errors instead of
+  // silently swallowing them.
+  const { data, error } = await supabase
     .from("user_profiles")
-    .update({
-      is_pro:                  isPro,
-      subscription_plan:       plan,
-      subscription_end_at:     new Date(subscription.current_period_end * 1000).toISOString(),
-      stripe_customer_id:      customerId,
-      stripe_subscription_id:  subscription.id,
-    })
-    .eq("id", userId);
+    .upsert(
+      {
+        id:                      userId,
+        is_pro:                  isPro,
+        subscription_plan:       plan,
+        subscription_end_at:     new Date(subscription.current_period_end * 1000).toISOString(),
+        stripe_customer_id:      customerId,
+        stripe_subscription_id:  subscription.id,
+      },
+      { onConflict: "id" },
+    )
+    .select();
+
+  if (error) {
+    console.error("syncSubscriptionRow upsert failed:", userId, error);
+    throw new Error(`user_profiles upsert failed: ${error.message}`);
+  }
+  console.log("syncSubscriptionRow OK:", userId, "→", data?.length, "rows touched");
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
