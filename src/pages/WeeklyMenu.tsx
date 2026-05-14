@@ -3,7 +3,7 @@
  * Design: consistent with Home.tsx (dark bg, white cards, #FF5A1F orange accents)
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
 import { useWeeklyMenu } from "../hooks/useWeeklyMenu";
@@ -12,9 +12,11 @@ import { supabase } from "../lib/supabase";
 import BottomTabBar from "../components/BottomTabBar";
 import {
   loadFamilyMembers, loadHomeToday, saveHomeToday, dishAllergyFor,
+  ALLERGY_INGREDIENTS,
   type FamilyMember,
 } from "../lib/familyPrefs";
 import { useSubscription } from "../lib/subscription";
+import { elevateDayToMichelin, type MichelinDish } from "../lib/geminiMichelin";
 
 // ── Day tabs ──────────────────────────────────────────────────────────────────
 
@@ -65,10 +67,11 @@ function pickBreakfast(pool: SupabaseDish[], dayIndex: number): SupabaseDish[] {
 
 // ── DishCard ──────────────────────────────────────────────────────────────────
 
-function DishCard({ dish, small = false, familyMembers = [], homeToday = [] }: {
+function DishCard({ dish, small = false, familyMembers = [], homeToday = [], michelin }: {
   dish: SupabaseDish; small?: boolean;
   familyMembers?: FamilyMember[];
   homeToday?: string[];
+  michelin?: MichelinDish;
 }) {
   const activeMembers = familyMembers.filter(m => homeToday.includes(m.id));
   const cannotEat = activeMembers.length > 0 ? dishAllergyFor(dish as any, activeMembers) : [];
@@ -121,12 +124,27 @@ function DishCard({ dish, small = false, familyMembers = [], homeToday = [] }: {
         style={{ background: tc, fontSize: 10, letterSpacing: "0.04em" }}>
         {tl}
       </div>
+      {/* Michelin star badge */}
+      {michelin && (
+        <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded-full font-bold"
+          style={{
+            background: "linear-gradient(135deg, #FFD700, #FFA500)",
+            color: "#1a1a1a", fontSize: 9, letterSpacing: "0.04em",
+            boxShadow: "0 2px 6px rgba(255,165,0,0.4)",
+          }}>
+          ⭐ {michelin.prep_minutes}分
+        </div>
+      )}
       {/* Title */}
       <div className="absolute bottom-0 left-0 right-0 p-2">
         <p className="text-white font-semibold leading-tight" style={{ fontSize: small ? 11 : 12 }}>
-          {dish.title || dish.title_zh}
+          {michelin?.name_zh || dish.title || dish.title_zh}
         </p>
-        {!small && dish.description_en && (
+        {michelin ? (
+          <p className="mt-0.5 leading-tight" style={{ fontSize: 9, color: "#FFD700" }}>
+            ⭐ {michelin.technique}
+          </p>
+        ) : !small && dish.description_en && (
           <p className="text-white/50 mt-0.5" style={{ fontSize: 10 }}>
             {dish.description_en}
           </p>
@@ -147,10 +165,11 @@ function DishCard({ dish, small = false, familyMembers = [], homeToday = [] }: {
 // ── MealSection ───────────────────────────────────────────────────────────────
 
 function MealSection({
-  mealIdx, dishes, familyMembers = [], homeToday = [],
+  mealIdx, dishes, familyMembers = [], homeToday = [], michelinByDishId = {},
 }: {
   mealIdx: number; dishes: SupabaseDish[];
   familyMembers?: FamilyMember[]; homeToday?: string[];
+  michelinByDishId?: Record<string, MichelinDish>;
 }) {
   const meal = MEALS[mealIdx];
 
@@ -181,7 +200,9 @@ function MealSection({
       {/* Horizontal scroll */}
       <div className="flex gap-3 overflow-x-auto px-5 pb-1" style={{ scrollbarWidth: "none" }}>
         {dishes.map(dish => (
-          <DishCard key={dish.id} dish={dish} familyMembers={familyMembers} homeToday={homeToday} />
+          <DishCard key={dish.id} dish={dish}
+            familyMembers={familyMembers} homeToday={homeToday}
+            michelin={michelinByDishId[dish.id]} />
         ))}
       </div>
     </div>
@@ -300,6 +321,12 @@ export default function WeeklyMenu() {
   // can actually activate it; free users tapping it land on /pricing.
   const { isPro } = useSubscription();
   const [michelinMode, setMichelinMode] = useState(false);
+  // Michelin overlay state, keyed by dish.id so we can map back per-card.
+  const [michelinByDishId, setMichelinByDishId] = useState<Record<string, MichelinDish>>({});
+  // Per-date load/error tracking so flipping days mid-load doesn't re-trigger.
+  const [michelinLoadingDates, setMichelinLoadingDates] = useState<Set<string>>(new Set());
+  const [michelinDoneDates,    setMichelinDoneDates]    = useState<Set<string>>(new Set());
+  const [michelinErrorMsg,     setMichelinErrorMsg]     = useState<string | null>(null);
 
   // Family member state
   const [familyMembers] = useState<FamilyMember[]>(() => loadFamilyMembers());
@@ -329,6 +356,68 @@ export default function WeeklyMenu() {
   const lunch    = dayMenu?.lunchDishes ?? [];
   const breakfast = pickBreakfast(breakfastPool, effectiveDay);
   const nutrition = getDayNutrition([...lunch, ...dinner]);
+
+  // Avoid-ingredients union for the household (only members at home today).
+  const avoidIngredients = useMemo(() => {
+    const active = familyMembers.filter(m => homeToday.includes(m.id));
+    const set = new Set<string>();
+    for (const m of active) {
+      for (const a of m.allergies) {
+        for (const ing of ALLERGY_INGREDIENTS[a] ?? []) set.add(ing);
+      }
+    }
+    return Array.from(set);
+  }, [familyMembers, homeToday]);
+
+  // Trigger Gemini Michelin elevation for the currently-viewed day when:
+  //   • Pro user has toggled Michelin ON
+  //   • this date hasn't been elevated yet and isn't currently loading
+  //   • there's lunch / dinner data to elevate (skip if the day is empty)
+  useEffect(() => {
+    if (!michelinMode || !isPro) return;
+    if (!dayMenu || !dayMenu.date) return;
+    const date = dayMenu.date;
+    if (michelinDoneDates.has(date) || michelinLoadingDates.has(date)) return;
+    const dishes = [...lunch, ...dinner];
+    if (dishes.length === 0) return;
+
+    setMichelinErrorMsg(null);
+    setMichelinLoadingDates(prev => { const n = new Set(prev); n.add(date); return n; });
+
+    elevateDayToMichelin({
+      date,
+      dayLabel: dayMenu.dayLabel,
+      avoidIngredients,
+      dishes: dishes.map(d => ({
+        id: d.id,
+        title_zh: d.title_zh,
+        main_ingredient: d.main_ingredient,
+        course_type: d.course_type ?? d.type,
+      })),
+    })
+      .then(result => {
+        setMichelinByDishId(prev => {
+          const next = { ...prev };
+          for (const md of result.dishes) next[md.source_id] = md;
+          return next;
+        });
+        setMichelinDoneDates(prev => { const n = new Set(prev); n.add(date); return n; });
+      })
+      .catch(err => {
+        console.error('[Michelin] elevation failed', err);
+        setMichelinErrorMsg(err?.message ?? '米其林生成失败');
+      })
+      .finally(() => {
+        setMichelinLoadingDates(prev => { const n = new Set(prev); n.delete(date); return n; });
+      });
+  // We intentionally trigger off the elevated-day key, not the dish array
+  // identity, so swapping homeToday doesn't blow away cached elevations.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [michelinMode, isPro, dayMenu?.date, lunch.length, dinner.length]);
+
+  const currentDate = dayMenu?.date ?? '';
+  const isElevating = michelinMode && isPro && michelinLoadingDates.has(currentDate);
+  const overlayForDay = (michelinMode && isPro) ? michelinByDishId : {};
 
   function handleShoppingList() {
     if (!isLoggedIn) {
@@ -452,6 +541,30 @@ export default function WeeklyMenu() {
             🔓 免费查看今天起 3 天 · 登录解锁完整 7 天
           </p>
         )}
+
+        {/* Michelin elevation status — only when toggle is ON */}
+        {michelinMode && isPro && isElevating && (
+          <div className="mt-2 flex items-center gap-2 px-3 py-1.5 rounded-xl"
+            style={{ background: "rgba(255,215,0,0.10)", border: "1px solid rgba(255,215,0,0.25)" }}>
+            <span className="material-symbols-outlined animate-spin" style={{ fontSize: 14, color: "#FFD700" }}>
+              progress_activity
+            </span>
+            <span style={{ fontSize: 11, color: "#FFD700", letterSpacing: "0.04em" }}>
+              米其林大厨正在重新设计这一天的菜品…
+            </span>
+          </div>
+        )}
+        {michelinMode && isPro && michelinErrorMsg && !isElevating && (
+          <div className="mt-2 flex items-center gap-2 px-3 py-1.5 rounded-xl"
+            style={{ background: "rgba(255,90,31,0.10)", border: "1px solid rgba(255,90,31,0.25)" }}>
+            <span className="material-symbols-outlined" style={{ fontSize: 14, color: "#FF8C54" }}>
+              error_outline
+            </span>
+            <span style={{ fontSize: 11, color: "#FF8C54", letterSpacing: "0.04em" }}>
+              {michelinErrorMsg}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* ── 谁在家今天 ────────────────────────────────────────────── */}
@@ -537,9 +650,9 @@ export default function WeeklyMenu() {
                     </div>
                   ) : (
                     <>
-                      <MealSection mealIdx={0} dishes={breakfast} familyMembers={familyMembers} homeToday={homeToday} />
-                      <MealSection mealIdx={1} dishes={lunch} familyMembers={familyMembers} homeToday={homeToday} />
-                      <MealSection mealIdx={2} dishes={dinner} familyMembers={familyMembers} homeToday={homeToday} />
+                      <MealSection mealIdx={0} dishes={breakfast} familyMembers={familyMembers} homeToday={homeToday} michelinByDishId={overlayForDay} />
+                      <MealSection mealIdx={1} dishes={lunch}     familyMembers={familyMembers} homeToday={homeToday} michelinByDishId={overlayForDay} />
+                      <MealSection mealIdx={2} dishes={dinner}    familyMembers={familyMembers} homeToday={homeToday} michelinByDishId={overlayForDay} />
                     </>
                   )}
 

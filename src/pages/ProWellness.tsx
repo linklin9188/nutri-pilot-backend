@@ -14,6 +14,7 @@ import { useNavigate, Navigate } from "react-router-dom";
 import { useSubscription } from "../lib/subscription";
 import { supabase } from "../lib/supabase";
 import BottomTabBar from "../components/BottomTabBar";
+import { HeartButton } from "../components/HeartButton";
 
 type Season = 'spring' | 'summer' | 'autumn' | 'winter';
 type Symptom = 'damp' | 'heat' | 'cold' | 'tired' | 'sore_throat';
@@ -368,6 +369,7 @@ export default function ProWellness() {
                     ))}
                   </div>
                 </div>
+                <HeartButton dish={d} sourceTag="祛湿" size={18} />
               </div>
             ))}
           </div>

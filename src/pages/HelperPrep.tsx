@@ -28,7 +28,7 @@ interface DishWithPrep {
 export default function HelperPrep() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { t, toggleLanguage, isChinese } = useLanguage();
+  const { t, t3, toggleLanguage, isChinese } = useLanguage();
   // Treat 繁體 the same as 简体 for content selection; treat 'tl' (Tagalog,
   // helper only) the same as English until Tagalog strings exist.
   const useChineseContent = isChinese;
@@ -125,10 +125,12 @@ export default function HelperPrep() {
             <span className="material-symbols-outlined text-[20px]">arrow_back</span>
           </button>
           <div>
-            <span className="text-[18px] font-bold tracking-tight">{t("Prep Guide", "备菜清单")}</span>
+            <span className="text-[18px] font-bold tracking-tight">
+              {t3("Prep Guide", "备菜清单", "Gabay sa Paghahanda")}
+            </span>
             {totalSteps > 0 && (
               <p className="text-[12px] text-gray-400 mt-0.5">
-                {doneSteps}/{totalSteps} {t('done', '项完成')}
+                {doneSteps}/{totalSteps} {t3('done', '项完成', 'tapos')}
               </p>
             )}
           </div>
@@ -187,13 +189,15 @@ export default function HelperPrep() {
       <main className="px-4 pt-4 flex flex-col gap-3">
         {loading && (
           <div className="text-center py-20 text-gray-400 text-[14px]">
-            {t("Loading prep guide...", "加载备菜清单中...")}
+            {t3("Loading prep guide...", "加载备菜清单中...", "Naglo-load ng gabay...")}
           </div>
         )}
 
         {!loading && dishes.length === 0 && (
           <div className="text-center py-20 text-gray-400 text-[14px]">
-            {t("No menu yet. Ask the employer to generate today's menu first.", "还没有菜单，请等雇主生成今日菜单。")}
+            {t3("No menu yet. Ask the employer to generate today's menu first.",
+                "还没有菜单，请等雇主生成今日菜单。",
+                "Wala pang menu. Hintayin ang employer na gumawa ng menu ngayon.")}
           </div>
         )}
 
@@ -421,8 +425,10 @@ export default function HelperPrep() {
             </span>
             <span className="text-[15px]">
               {allDone
-                ? t("All Done — Start Cooking!", "备菜完成 — 开始烹饪！")
-                : t("Start Cooking", "开始烹饪")}
+                ? t3("All Done — Start Cooking!",
+                     "备菜完成 — 开始烹饪！",
+                     "Tapos na — Simulan ang Pagluluto!")
+                : t3("Start Cooking", "开始烹饪", "Simulan ang Pagluluto")}
             </span>
             <span className="material-symbols-outlined text-[18px]">arrow_forward_ios</span>
           </button>

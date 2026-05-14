@@ -15,6 +15,7 @@ import { useNavigate, Navigate } from "react-router-dom";
 import { useSubscription } from "../lib/subscription";
 import { analyzeSchoolLunch, type BalanceAnalysis } from "../lib/geminiSchoolBalance";
 import BottomTabBar from "../components/BottomTabBar";
+import { HeartButton } from "../components/HeartButton";
 
 type Nutrient = 'protein' | 'veggie' | 'carb' | 'calcium' | 'iron' | 'omega3';
 
@@ -341,6 +342,11 @@ export default function ProSchoolBalance() {
                       ))}
                     </div>
                   </div>
+                  <HeartButton
+                    dish={{ id: `school-${r.name_zh}`, title_zh: r.name_zh, title_en: r.name_en }}
+                    sourceTag="学校营养"
+                    size={18}
+                  />
                 </div>
               ))}
             </section>

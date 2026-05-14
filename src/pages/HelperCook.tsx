@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { type CookStep } from "../hooks/useSupabaseMenu";
+import { useLanguage } from "../contexts/LanguageContext";
 
 interface DishWithCook {
   id: string;
@@ -63,6 +64,7 @@ function DishListScreen({ dishes, loading, onSelect }: {
   onSelect: (dish: DishWithCook) => void;
 }) {
   const navigate = useNavigate();
+  const { t3 } = useLanguage();
   return (
     <div className="min-h-screen flex flex-col max-w-md mx-auto" style={{ background: '#0a0a0a' }}>
       {/* Header */}
@@ -74,8 +76,12 @@ function DishListScreen({ dishes, loading, onSelect }: {
             <span className="material-symbols-outlined text-white" style={{ fontSize: 20 }}>arrow_back</span>
           </button>
           <div>
-            <h1 className="text-white font-black" style={{ fontSize: 22 }}>Today's Cooking</h1>
-            <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>Choose a dish to start · 今日菜单</p>
+            <h1 className="text-white font-black" style={{ fontSize: 22 }}>
+              {t3("Today's Cooking", "今日烹饪", "Pagluluto Ngayon")}
+            </h1>
+            <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>
+              {t3("Choose a dish to start", "选一道菜开始", "Pumili ng ulam")}
+            </p>
           </div>
         </div>
       </header>
@@ -89,7 +95,11 @@ function DishListScreen({ dishes, loading, onSelect }: {
           <div className="flex flex-col items-center justify-center py-24 gap-3">
             <span className="text-5xl">🍽</span>
             <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14, textAlign: 'center' }}>
-              No menu yet.{'\n'}Ask the employer to generate today's menu first.
+              {t3(
+                "No menu yet. Ask the employer to generate today's menu first.",
+                "还没有菜单，请等雇主生成今日菜单。",
+                "Wala pang menu. Hintayin ang employer na gumawa ng menu."
+              )}
             </p>
           </div>
         ) : (

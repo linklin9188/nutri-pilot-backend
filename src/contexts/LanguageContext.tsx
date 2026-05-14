@@ -18,8 +18,14 @@ interface LanguageContextType {
   toggleLanguage: () => void;        // legacy 2-way toggle (zh ↔ en)
   cycleLanguage: () => void;         // walks the full matrix
   t: (en: string, zh: string) => string;
+  /** 3-language helper for content authored with Tagalog — used in helper-
+   *  facing views (HelperHome / HelperPrep / HelperCook). Falls back to
+   *  English when the Tagalog string isn't provided, and to the Chinese
+   *  string for zh / zh-Hant users. */
+  t3: (en: string, zh: string, tl: string) => string;
   isChinese: boolean;                // true for zh AND zh-Hant
   isEnglishish: boolean;             // true for en AND tl (until Tagalog strings land)
+  isTagalog: boolean;                // true for tl only
 }
 
 /** Standalone helpers — handy in non-React modules (e.g. geminiRecipe). */
@@ -99,6 +105,15 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return effective === 'en' ? en : zh;
   };
 
+  // 3-language helper. Use this in helper-facing screens that have explicit
+  // Tagalog wording. Mainland-en / international-en users still see the
+  // English string.
+  const t3 = (en: string, zh: string, tl: string) => {
+    if (language === 'tl')  return tl;
+    if (language === 'en')  return en;
+    return zh;   // 'zh' and 'zh-Hant' both fall here
+  };
+
   const explicitSetLanguage = (lang: Language) => {
     setHasExplicitPref(true);
     setLanguage(lang);
@@ -112,8 +127,10 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         toggleLanguage,
         cycleLanguage,
         t,
+        t3,
         isChinese:    isChinese(language),
         isEnglishish: isEnglishish(language),
+        isTagalog:    language === 'tl',
       }}
     >
       {children}

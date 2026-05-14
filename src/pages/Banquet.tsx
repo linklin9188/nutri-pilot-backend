@@ -19,6 +19,7 @@ import {
 } from "../lib/banquet";
 import { useSubscription } from "../lib/subscription";
 import BottomTabBar from "../components/BottomTabBar";
+import { HeartButton } from "../components/HeartButton";
 
 type Step = "headcount" | "cuisine" | "result";
 
@@ -496,6 +497,7 @@ function ResultStep({
                     {(dish as any).cook_time_min ? `${(dish as any).cook_time_min} 分钟` : "—"}
                   </p>
                 </div>
+                <HeartButton dish={dish as any} sourceTag="家宴" size={18} />
                 <button
                   onClick={() => onSwap(course.key, dish.id)}
                   disabled={swapping === dish.id}

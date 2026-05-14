@@ -23,6 +23,7 @@ import Pricing from './pages/Pricing';
 import Banquet from './pages/Banquet';
 import ProWellness from './pages/ProWellness';
 import ProSchoolBalance from './pages/ProSchoolBalance';
+import Favorites from './pages/Favorites';
 import { LanguageProvider } from './contexts/LanguageContext';
 import { supabase } from './lib/supabase';
 
@@ -93,6 +94,7 @@ function AppShell() {
       <Route path="/banquet" element={<Banquet />} />
       <Route path="/pro/wellness" element={<ProWellness />} />
       <Route path="/pro/school-balance" element={<ProSchoolBalance />} />
+      <Route path="/favorites" element={<Favorites />} />
     </Routes>
     </>
   );

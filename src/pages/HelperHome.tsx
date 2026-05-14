@@ -5,6 +5,7 @@
 import { useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { useLanguage } from "../contexts/LanguageContext";
 
 interface DayDish {
   title?: string;
@@ -13,47 +14,62 @@ interface DayDish {
   image_url?: string;
 }
 
-const TASKS = [
-  {
-    id: "shopping",
-    icon: "fact_check",
-    label: "Check Ingredients at Home",
-    desc: "Tick off what's already in the pantry",
-    gradient: "linear-gradient(135deg, #FF5A1F, #FF9054)",
-    shadow: "rgba(255,90,31,0.35)",
-    route: "/verify",
-  },
-  {
-    id: "prep",
-    icon: "menu_book",
-    label: "Prep Steps",
-    desc: "How to prepare & portion ingredients",
-    gradient: "linear-gradient(135deg, #6C5CE7, #a29bfe)",
-    shadow: "rgba(108,92,231,0.35)",
-    route: "/prep",
-  },
-  {
-    id: "cook",
-    icon: "soup_kitchen",
-    label: "Start Cooking",
-    desc: "Step-by-step guide · Voice control",
-    gradient: "linear-gradient(135deg, #00B4D8, #0077B6)",
-    shadow: "rgba(0,180,216,0.35)",
-    route: "/cook",
-  },
-  {
-    id: "community",
-    icon: "groups",
-    label: "Cooking Community",
-    desc: "Share your dishes · Earn Friday rewards",
-    gradient: "linear-gradient(135deg, #f7971e, #ffd200)",
-    shadow: "rgba(255,210,0,0.35)",
-    route: "/community",
-  },
-];
+// Task list — labels resolved at render time so we can pick zh / en / tl.
+// `tl` strings are the Tagalog wording a Filipino domestic helper would
+// recognize on a kitchen task card.
+function buildTasks(t3: (en: string, zh: string, tl: string) => string) {
+  return [
+    {
+      id: "shopping",
+      icon: "fact_check",
+      label: t3("Check Ingredients at Home", "检查家中食材", "Suriin ang mga sangkap sa bahay"),
+      desc:  t3("Tick off what's already in the pantry",
+                "勾出家里已经有的",
+                "Lagyan ng tsek ang mga nasa kusina na"),
+      gradient: "linear-gradient(135deg, #FF5A1F, #FF9054)",
+      shadow: "rgba(255,90,31,0.35)",
+      route: "/verify",
+    },
+    {
+      id: "prep",
+      icon: "menu_book",
+      label: t3("Prep Steps", "备菜步骤", "Mga Hakbang sa Paghahanda"),
+      desc:  t3("How to prepare & portion ingredients",
+                "如何备料 / 切配",
+                "Paano ihanda at hatiin ang sangkap"),
+      gradient: "linear-gradient(135deg, #6C5CE7, #a29bfe)",
+      shadow: "rgba(108,92,231,0.35)",
+      route: "/prep",
+    },
+    {
+      id: "cook",
+      icon: "soup_kitchen",
+      label: t3("Start Cooking", "开始烹饪", "Simulan ang Pagluluto"),
+      desc:  t3("Step-by-step guide · Voice control",
+                "一步步指引 · 语音控制",
+                "Hakbang-hakbang · Kontrol sa boses"),
+      gradient: "linear-gradient(135deg, #00B4D8, #0077B6)",
+      shadow: "rgba(0,180,216,0.35)",
+      route: "/cook",
+    },
+    {
+      id: "community",
+      icon: "groups",
+      label: t3("Cooking Community", "厨艺社区", "Komunidad ng Pagluluto"),
+      desc:  t3("Share your dishes · Earn Friday rewards",
+                "分享菜品 · 周五领奖励",
+                "Ibahagi ang pagkain · Premyo tuwing Biyernes"),
+      gradient: "linear-gradient(135deg, #f7971e, #ffd200)",
+      shadow: "rgba(255,210,0,0.35)",
+      route: "/community",
+    },
+  ];
+}
 
 export default function HelperHome() {
   const navigate = useNavigate();
+  const { t3, isTagalog, isChinese } = useLanguage();
+  const TASKS = buildTasks(t3);
   const [dishes, setDishes] = useState<DayDish[]>([]);
   const [helperName, setHelperName] = useState("");
   const [isLinked, setIsLinked] = useState(false);
@@ -65,12 +81,15 @@ export default function HelperHome() {
 
   const now = new Date();
   const hour = now.getHours();
-  const greeting =
-    hour < 12 ? "Good morning" :
-    hour < 17 ? "Good afternoon" :
-    "Good evening";
+  const greeting = hour < 12
+    ? t3("Good morning", "早上好", "Magandang umaga")
+    : hour < 17
+    ? t3("Good afternoon", "下午好", "Magandang hapon")
+    : t3("Good evening", "晚上好", "Magandang gabi");
 
-  const dateLabel = now.toLocaleDateString("en-HK", {
+  // Locale-appropriate date string.
+  const dateLocale = isChinese ? "zh-HK" : isTagalog ? "fil-PH" : "en-HK";
+  const dateLabel = now.toLocaleDateString(dateLocale, {
     weekday: "long", month: "long", day: "numeric",
   });
 
@@ -150,7 +169,7 @@ export default function HelperHome() {
           <div>
             <p style={{ fontSize: 13, color: "rgba(255,255,255,0.38)" }}>{greeting}</p>
             <h1 className="font-serif font-black text-white mt-0.5" style={{ fontSize: 28 }}>
-              {helperName || "My Tasks"}
+              {helperName || t3("My Tasks", "我的任务", "Mga Gawain Ko")}
             </h1>
           </div>
           <div className="w-12 h-12 rounded-2xl flex items-center justify-center"
@@ -166,7 +185,9 @@ export default function HelperHome() {
           <span className="material-symbols-outlined text-white/40" style={{ fontSize: 14 }}>calendar_today</span>
           <span style={{ fontSize: 12, color: "rgba(255,255,255,0.45)" }}>{dateLabel}</span>
           <span className="ml-auto" style={{ fontSize: 11, color: "rgba(255,255,255,0.28)" }}>
-            {dishes.length > 0 ? `${dishes.length} dishes today` : "No menu yet"}
+            {dishes.length > 0
+              ? t3(`${dishes.length} dishes today`, `今日 ${dishes.length} 道菜`, `${dishes.length} ulam ngayon`)
+              : t3("No menu yet", "还没有菜单", "Wala pang menu")}
           </span>
         </div>
       </div>
@@ -175,7 +196,7 @@ export default function HelperHome() {
       {dishes.length > 0 && (
         <div className="relative z-10 px-5 mb-5">
           <p className="mb-2" style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", letterSpacing: "0.08em" }}>
-            TODAY'S MENU
+            {t3("TODAY'S MENU", "今日菜单", "MENU NGAYON").toUpperCase()}
           </p>
           <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
             {dishes.map((dish, i) => (
@@ -205,18 +226,30 @@ export default function HelperHome() {
           <div className="flex items-center gap-3 px-4 py-3 rounded-2xl"
             style={{ background: "rgba(37,211,102,0.12)", border: "1px solid rgba(37,211,102,0.25)" }}>
             <span className="material-symbols-outlined text-[#25D366]" style={{ fontSize: 20, fontVariationSettings: "'FILL' 1" }}>check_circle</span>
-            <p style={{ fontSize: 13, color: "#25D366", fontWeight: 600 }}>Linked to employer's household! 🎉</p>
+            <p style={{ fontSize: 13, color: "#25D366", fontWeight: 600 }}>
+              {t3("Linked to employer's household! 🎉",
+                  "已绑定雇主家庭 🎉",
+                  "Nakaugnay na sa employer! 🎉")}
+            </p>
           </div>
         ) : isLinked ? (
           <div className="flex items-center gap-3 px-4 py-3 rounded-2xl"
             style={{ background: "rgba(37,211,102,0.08)", border: "1px solid rgba(37,211,102,0.15)" }}>
             <span className="material-symbols-outlined text-[#25D366]" style={{ fontSize: 18, fontVariationSettings: "'FILL' 1" }}>link</span>
-            <p style={{ fontSize: 12, color: "rgba(255,255,255,0.55)" }}>Connected to employer household</p>
+            <p style={{ fontSize: 12, color: "rgba(255,255,255,0.55)" }}>
+              {t3("Connected to employer household",
+                  "已连接雇主家庭",
+                  "Konektado sa employer")}
+            </p>
           </div>
         ) : showCodeInput ? (
           <div className="flex flex-col gap-2 px-4 py-4 rounded-2xl"
             style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)" }}>
-            <p style={{ fontSize: 12, color: "rgba(255,255,255,0.6)", marginBottom: 4 }}>Enter the 6-digit code from your employer:</p>
+            <p style={{ fontSize: 12, color: "rgba(255,255,255,0.6)", marginBottom: 4 }}>
+              {t3("Enter the 6-digit code from your employer:",
+                  "输入雇主的 6 位邀请码：",
+                  "Ilagay ang 6-digit code mula sa employer:")}
+            </p>
             <div className="flex gap-2">
               <input
                 value={codeInput}
@@ -231,11 +264,13 @@ export default function HelperHome() {
                 disabled={codeLoading || codeInput.length !== 6}
                 className="px-4 rounded-xl font-bold text-white active:scale-95 transition-all disabled:opacity-40"
                 style={{ background: "#25D366", fontSize: 13 }}>
-                {codeLoading ? "..." : "Join"}
+                {codeLoading ? "..." : t3("Join", "加入", "Sumali")}
               </button>
             </div>
             {codeError && <p style={{ fontSize: 11, color: "#ff6b6b" }}>{codeError}</p>}
-            <button onClick={() => setShowCodeInput(false)} style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", marginTop: 2 }}>Cancel</button>
+            <button onClick={() => setShowCodeInput(false)} style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", marginTop: 2 }}>
+              {t3("Cancel", "取消", "Kanselahin")}
+            </button>
           </div>
         ) : (
           <button
@@ -243,7 +278,9 @@ export default function HelperHome() {
             className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl active:scale-[0.98] transition-all"
             style={{ background: "rgba(255,255,255,0.04)", border: "1px dashed rgba(255,255,255,0.12)" }}>
             <span className="material-symbols-outlined text-white/30" style={{ fontSize: 18 }}>link</span>
-            <p style={{ fontSize: 13, color: "rgba(255,255,255,0.35)" }}>Enter employer invite code</p>
+            <p style={{ fontSize: 13, color: "rgba(255,255,255,0.35)" }}>
+              {t3("Enter employer invite code", "输入雇主邀请码", "Ilagay ang employer invite code")}
+            </p>
             <span className="ml-auto" style={{ fontSize: 11, color: "rgba(255,255,255,0.2)" }}>›</span>
           </button>
         )}
@@ -252,7 +289,7 @@ export default function HelperHome() {
       {/* Task cards */}
       <div className="relative z-10 px-5 flex flex-col gap-3 mb-6">
         <p style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", letterSpacing: "0.08em" }}>
-          TODAY'S TASKS
+          {t3("TODAY'S TASKS", "今日任务", "MGA GAWAIN NGAYON")}
         </p>
         {TASKS.map(task => (
           <button
@@ -284,14 +321,18 @@ export default function HelperHome() {
         >
           <span style={{ fontSize: 22 }}>📲</span>
           <div className="flex-1 text-left">
-            <p className="font-semibold text-white" style={{ fontSize: 13 }}>Invite helper friends</p>
+            <p className="font-semibold text-white" style={{ fontSize: 13 }}>
+              {t3("Invite helper friends", "邀请其他工人朋友", "Mag-imbita ng kaibigang helper")}
+            </p>
             <p style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>
-              Share via WhatsApp · Earn 50 pts per referral
+              {t3("Share via WhatsApp · Earn 50 pts per referral",
+                  "WhatsApp 分享 · 每位 50 分",
+                  "WhatsApp · 50 puntos kada imbita")}
             </p>
           </div>
           <div className="px-3 py-1.5 rounded-full font-bold text-white text-[12px]"
             style={{ background: "#25D366" }}>
-            Share
+            {t3("Share", "分享", "Ibahagi")}
           </div>
         </button>
       </div>
@@ -302,7 +343,7 @@ export default function HelperHome() {
           onClick={() => { localStorage.removeItem("nutri_role"); navigate("/signin"); }}
           style={{ fontSize: 12, color: "rgba(255,255,255,0.18)" }}
         >
-          Switch account
+          {t3("Switch account", "切换账号", "Lumipat ng account")}
         </button>
       </div>
     </div>

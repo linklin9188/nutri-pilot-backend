@@ -572,6 +572,21 @@ export default function Settings() {
           {/* ── Language picker ── */}
           <LanguageCard />
 
+          {/* ── My Favorites quick-link ── */}
+          <button
+            onClick={() => navigate('/favorites')}
+            className="w-full bg-white border border-black/5 rounded-[22px] p-4 shadow-[0_4px_20px_rgba(0,0,0,0.04)] flex items-center gap-3 active:scale-[0.98] transition-all"
+          >
+            <span className="text-[24px]">❤️</span>
+            <div className="flex-1 text-left">
+              <p className="font-bold text-[14px]">我的收藏</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">家宴 / 祛湿 / 学校营养 / 周菜单里的爱菜</p>
+            </div>
+            <span className="material-symbols-outlined" style={{ fontSize: 18, color: "rgba(0,0,0,0.30)" }}>
+              chevron_right
+            </span>
+          </button>
+
           {/* ── Membership ── */}
           <MembershipCard />
 
