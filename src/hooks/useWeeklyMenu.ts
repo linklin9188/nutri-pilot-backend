@@ -51,7 +51,9 @@ export interface WeeklyMenu {
 
 // ── Cache version — bump this whenever the algorithm changes significantly ─────
 // This ensures old cached menus are discarded after an algorithm update.
-const ALGO_VERSION = 'v22'; // pregnancy safety: ban raw seafood / high-mercury fish + prefer iron/folate
+// Exported so other pages (e.g. VerifyIngredients / shopping list) can read
+// from the matching cache key without drifting behind algo bumps.
+export const ALGO_VERSION = 'v22'; // pregnancy safety: ban raw seafood / high-mercury fish + prefer iron/folate
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

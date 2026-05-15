@@ -34,8 +34,8 @@ export default function Favorites() {
 
   function addToWeeklyMenu(dish: FavoriteDish) {
     // Append to generatedMenu — the local cache used by Home / Prep / Cook.
-    // Doesn't write to weekly_menu_v15 (which is algorithm-generated); this
-    // is a manual one-shot 'cook me this' for the next meal.
+    // Doesn't write to the algorithm-generated weekly_menu_<ALGO_VERSION>
+    // cache; this is a manual one-shot 'cook me this' for the next meal.
     const raw = localStorage.getItem("generatedMenu");
     let arr: any[] = [];
     try { arr = raw ? JSON.parse(raw) : []; } catch { arr = []; }

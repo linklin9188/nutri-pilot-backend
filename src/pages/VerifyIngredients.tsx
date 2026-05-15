@@ -5,9 +5,7 @@ import * as XLSX from "xlsx";
 import BottomTabBar from "../components/BottomTabBar";
 import { useLanguage } from "../contexts/LanguageContext";
 import { getHKAlias } from "../lib/hkNames";
-
-// Keep in sync with useWeeklyMenu ALGO_VERSION
-const WEEKLY_ALGO_VERSION = 'v16';
+import { ALGO_VERSION as WEEKLY_ALGO_VERSION } from "../hooks/useWeeklyMenu";
 
 // ── Category grouping ─────────────────────────────────────────────────────────
 const CATEGORY_GROUPS: { label: string; emoji: string; categories: string[] }[] = [
