@@ -49,9 +49,9 @@ const WEBHOOK_SECRET = Deno.env.get("STRIPE_WEBHOOK_SECRET") ?? "";
 // Maps Stripe Price IDs back to our internal plan strings. Keep in sync with
 // src/pages/Pricing.tsx STRIPE_PRICE_IDS.
 const PRICE_TO_PLAN: Record<string, "pro_monthly" | "pro_halfyear" | "pro_yearly"> = {
-  "price_1TWmfdLBQDUfsQf3bPrGpKkG": "pro_monthly",   // HK$66/月
-  "price_1TWmiQLBQDUfsQf3XELFQsp8": "pro_halfyear",  // HK$199/半年
-  "price_1TWmjFLBQDUfsQf3SErUBlHz": "pro_yearly",    // HK$365/年
+  "price_1TXD3dL2TBEx2Gg0TRBnWrE9": "pro_monthly",   // HK$66/月
+  "price_1TXDCwL2TBEx2Gg0n6pSJLsJ": "pro_halfyear",  // HK$199/半年
+  "price_1TXDDjL2TBEx2Gg05nADOkJb": "pro_yearly",    // HK$365/年
 };
 
 Deno.serve(async (req: Request) => {
