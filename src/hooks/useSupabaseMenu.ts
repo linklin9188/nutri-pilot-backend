@@ -696,45 +696,52 @@ async function fetchUserProfile(): Promise<UserProfile5D & { _prefs: ReturnType<
   };
 }
 
-// ── Swap options: same main_ingredient, different dishes ─────────────────
+// ── Swap options: same course_type FIRST, prefer same main_ingredient ────
 //
-// Given the dish currently shown, queries DB for other dishes with the same
-// main_ingredient (excluding the current dish itself). Falls back to
-// same-type dishes if the ingredient column is missing / 'other'.
+// 原则：换菜后必须是"功能等价"的菜 — 汤换汤、主食换主食、蔬菜换蔬菜。
+// 之前只过滤 main_ingredient 导致 "西班牙冷汤" (veggie/soup) 的替换池里
+// 出现 "炒青菜" 这种非汤的 veggie 菜，搭配整体失衡。
+//
+// 现在两层：
+//   1. 硬过滤：course_type 必须相同（如果有）
+//   2. 软偏好：同 main_ingredient 排前面，不同的洗牌排后面
 
 export async function fetchSwapOptions(
   currentDish: SupabaseDish,
   count = 3,
 ): Promise<SupabaseDish[]> {
   const ingredient = currentDish.main_ingredient;
+  const courseType = currentDish.course_type;
 
   let query = supabase
     .from('dishes')
     .select('*')
     .neq('id', currentDish.id)
-    .limit(count * 4); // fetch extra so we can filter out excluded dishes
+    .limit(count * 8); // fetch extra so we have room to prefer same-ingredient
 
-  // If ingredient is meaningful, filter by it; otherwise fall back to same
-  // flavor_tag type so the swap is still semantically related.
-  if (ingredient && ingredient !== 'other') {
+  // ── Hard: same course_type ──
+  // soup → soup, staple → staple, main_protein → main_protein,
+  // veggie_dish → veggie_dish, dessert → dessert. If course_type missing,
+  // fall back to ingredient filter so the swap is still meaningful.
+  if (courseType) {
+    query = query.eq('course_type', courseType);
+  } else if (ingredient && ingredient !== 'other') {
     query = query.eq('main_ingredient', ingredient);
-  } else {
-    // Fallback: same type (veggie / seafood / meat) via flavor_tags
-    const tags: string[] = currentDish.flavor_tags ?? [];
-    if (tags.includes('veggie')) {
-      query = query.contains('flavor_tags', ['veggie']);
-    } else if (tags.includes('seafood')) {
-      query = query.contains('flavor_tags', ['seafood']);
-    }
-    // else: just any non-matching dish
   }
 
   const { data, error } = await query;
-  if (error || !data) return [];
+  if (error || !data || data.length === 0) return [];
 
-  // Shuffle so we don't always show the top-N rows
-  const shuffled = [...data].sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, count).map(d => enrichDish(d, false));
+  // ── Soft: prefer same main_ingredient ──
+  // E.g. swapping 红烧肉 (pork) prefers 糖醋里脊 (pork) over 葱油鸡 (chicken),
+  // but both are valid main_protein swaps.
+  const sameIng  = data.filter(d => d.main_ingredient === ingredient);
+  const otherIng = data.filter(d => d.main_ingredient !== ingredient);
+  const ordered = [
+    ...sameIng.sort(() => Math.random() - 0.5),
+    ...otherIng.sort(() => Math.random() - 0.5),
+  ];
+  return ordered.slice(0, count).map(d => enrichDish(d, false));
 }
 
 // ── Hook ─────────────────────────────────────────────────────────────────

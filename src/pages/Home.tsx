@@ -119,28 +119,214 @@ function useDailyTip() {
 }
 
 // ── Health metrics ─────────────────────────────────────────────────────────────
+//
+// Six dimensions aligned with 《中国居民膳食指南》/ 膳食宝塔. Each scored 0-100.
+//
+//   1. 蛋白    — 每日是否有优质蛋白（肉/鱼/蛋/豆）
+//   2. 蔬果    — 蔬菜量是否充足
+//   3. 谷薯    — 粗细搭配 / 主食多样化
+//   4. 钙      — 高钙食材（豆腐/绿叶菜/小鱼干/奶）覆盖
+//   5. 多样    — 食材多样性（不同 main_ingredient 数 / 总菜数）
+//   6. 低油盐  — 清淡度（'light' tag 占比 - 'fried'/'spicy' 占比）
+//
+// The overall score is the average of the 6 axes — same metric a radar reader
+// would mentally compute.
+
+interface NutritionAxis {
+  key:   'protein' | 'veggie' | 'grain' | 'calcium' | 'variety' | 'light';
+  label: string;     // 2-char Chinese, shown on the radar vertex
+  value: number;     // 0–100
+  hint:  string;     // tooltip / detail text
+}
+
+const PROTEIN_INGS  = ['pork','beef','lamb','chicken','duck','turkey','fish','shrimp','crab','squid','scallop','clam','oyster','salmon','tuna','cod','seabass','hairtail','egg','tofu'];
+const PLANT_INGS    = ['veggie','vegetable','mushroom','bean'];
+const CALCIUM_KW    = /(豆腐|豆浆|芝士|奶酪|牛奶|沙丁鱼|小鱼干|芝麻|西兰花|菠菜|芥蓝|芥菜|油菜|上海青)/;
+const STAPLE_TYPES_KW = /(米饭|面|粉|粥|饼|包|饺|馒头|薯|燕麦|杂粮)/;
+
 function computeHealthMetrics(weeklyMenu: any) {
   if (!weeklyMenu?.days) return null;
   const days = weeklyMenu.days as any[];
   if (days.length === 0) return null;
 
-  const vegDays = days.filter(d => (d.dishes ?? []).some((dish: any) => dish.type === "VEGGIE")).length;
-  const soupDays = days.filter(d => (d.dishes ?? []).some((dish: any) => dish.type === "SOUP")).length;
-  const allDishes: any[] = days.flatMap(d => d.dishes ?? []);
-  const veganCount = allDishes.filter(d => d.is_vegan).length;
-  const total = Math.max(allDishes.length, 1);
+  const allDinner: any[] = days.flatMap(d => d.dishes ?? []);
+  const allLunch:  any[] = days.flatMap(d => d.lunchDishes ?? []);
+  const all       = [...allDinner, ...allLunch];
+  const totalDishes = Math.max(all.length, 1);
 
-  const score = Math.min(
-    Math.round(55 + (vegDays / 7) * 22 + (soupDays / 7) * 10 + (veganCount / total) * 13),
-    97,
-  );
+  // 1. 蛋白：每天 dinner 是否含至少一道优质蛋白
+  const proteinDays = days.filter(d =>
+    (d.dishes ?? []).some((x: any) => PROTEIN_INGS.includes((x.main_ingredient ?? '').toLowerCase()))
+  ).length;
+  const protein = Math.min(100, Math.round((proteinDays / 7) * 100));
 
-  return {
-    score,
-    lowSalt: vegDays + Math.floor(soupDays * 0.6),
-    lowSugar: Math.min(vegDays + 1, 7),
-    lowPurine: Math.max(vegDays - 1, 2),
+  // 2. 蔬果：每天 dinner+lunch 累计 ≥2 道 plant
+  const veggieDays = days.filter(d => {
+    const todayPlant = [...(d.dishes ?? []), ...(d.lunchDishes ?? [])]
+      .filter((x: any) => PLANT_INGS.some(p => (x.main_ingredient ?? '').includes(p)) || (x.course_type === 'veggie_dish'));
+    return todayPlant.length >= 2;
+  }).length;
+  const veggie = Math.min(100, Math.round((veggieDays / 7) * 100));
+
+  // 3. 谷薯：lunch 主食种类多样性（粥/面/饭/饼 不同类）
+  const stapleKinds = new Set<string>();
+  for (const dish of allLunch) {
+    if ((dish.course_type ?? '') !== 'staple') continue;
+    const m = (dish.title_zh ?? '').match(STAPLE_TYPES_KW);
+    if (m) stapleKinds.add(m[0]);
+  }
+  // 7 staples; want ≥4 different kinds for full marks
+  const grain = Math.min(100, Math.round((stapleKinds.size / 4) * 100));
+
+  // 4. 钙：含钙食材覆盖天数
+  const calciumDays = days.filter(d => {
+    const today = [...(d.dishes ?? []), ...(d.lunchDishes ?? [])];
+    return today.some((x: any) => CALCIUM_KW.test(x.title_zh ?? ''));
+  }).length;
+  const calcium = Math.min(100, Math.round((calciumDays / 7) * 100));
+
+  // 5. 多样：unique main_ingredient 数 / 总菜数（理想 60%+）
+  const uniqueIngs = new Set(all.map(d => (d.main_ingredient ?? 'other').toLowerCase()));
+  const variety = Math.min(100, Math.round((uniqueIngs.size / Math.max(totalDishes * 0.6, 1)) * 100));
+
+  // 6. 低油盐：'light' 比例 - 'fried'/'spicy' 比例
+  const lightCount = all.filter(d => (d.flavor_tags ?? []).includes('light')).length;
+  const heavyCount = all.filter(d => {
+    const tags = d.flavor_tags ?? [];
+    return tags.includes('fried') || tags.includes('spicy') || tags.includes('salty');
+  }).length;
+  const lightScore = Math.max(0, Math.min(100, Math.round(((lightCount - heavyCount) / totalDishes) * 100 + 60)));
+
+  const axes: NutritionAxis[] = [
+    { key: 'protein', label: '蛋白',   value: protein, hint: `${proteinDays}/7 天 有优质蛋白` },
+    { key: 'veggie',  label: '蔬果',   value: veggie,  hint: `${veggieDays}/7 天 蔬果充足` },
+    { key: 'grain',   label: '谷薯',   value: grain,   hint: `主食 ${stapleKinds.size} 种` },
+    { key: 'calcium', label: '钙',     value: calcium, hint: `${calciumDays}/7 天 含钙食材` },
+    { key: 'variety', label: '多样',   value: variety, hint: `${uniqueIngs.size} 种食材 / ${totalDishes} 道菜` },
+    { key: 'light',   label: '低油盐', value: lightScore, hint: `清淡 ${lightCount} · 油盐重 ${heavyCount}` },
+  ];
+
+  const score = Math.round(axes.reduce((s, a) => s + a.value, 0) / 6);
+  return { score, axes };
+}
+
+// ── Boost suggestion: per-axis hint to lift the score toward 90 ─────────────
+const BOOST_HINTS: Record<NutritionAxis['key'], string> = {
+  protein: '加一道蛋类菜或豆腐鱼蛋',
+  veggie:  '多加一道绿叶蔬菜',
+  grain:   '换成杂粮饭 / 多换主食种类',
+  calcium: '加豆腐 / 菠菜 / 紫菜',
+  variety: '换掉重复的主蛋白（如猪肉换鱼）',
+  light:   '少炒多蒸/煮，加一道清淡汤',
+};
+
+function buildBoostSuggestion(axes: NutritionAxis[], score: number): string | null {
+  if (score >= 90) return null;
+  // Find the 1-2 lowest-scoring axes; give one suggestion focused on the weakest
+  const sorted = [...axes].sort((a, b) => a.value - b.value).filter(a => a.value < 90);
+  if (sorted.length === 0) return null;
+  const weakest = sorted[0];
+  return `${weakest.label} 弱：${BOOST_HINTS[weakest.key]}`;
+}
+
+// ── NutritionHexagon — 6-axis radar SVG, inline (no chart lib) ──────────────
+function NutritionHexagon({ axes }: { axes: NutritionAxis[] }) {
+  if (axes.length !== 6) return null;
+
+  const size       = 220;   // overall SVG size
+  const cx         = size / 2;
+  const cy         = size / 2;
+  const radius     = 64;    // outer radius (max=100)
+  const labelOff   = 22;    // label distance beyond outer radius
+
+  // Vertex angles in radians — top first, clockwise
+  // index 0 = top, 1 = top-right, 2 = bottom-right, 3 = bottom, 4 = bottom-left, 5 = top-left
+  const angles = [-90, -30, 30, 90, 150, 210].map(a => (a * Math.PI) / 180);
+
+  const point = (val: number, i: number) => {
+    const r = radius * (val / 100);
+    return { x: cx + r * Math.cos(angles[i]), y: cy + r * Math.sin(angles[i]) };
   };
+  const labelPoint = (i: number) => {
+    const r = radius + labelOff;
+    return { x: cx + r * Math.cos(angles[i]), y: cy + r * Math.sin(angles[i]) };
+  };
+
+  const polyStr = (vals: number[]) => vals.map((v, i) => {
+    const p = point(v, i); return `${p.x},${p.y}`;
+  }).join(' ');
+
+  // Background ring polygons (25/50/75/100)
+  const rings = [25, 50, 75, 100].map(v => Array(6).fill(v));
+  // 90-reference polygon (dashed): the target users aim for
+  const targetVals  = Array(6).fill(90);
+  const currentVals = axes.map(a => a.value);
+
+  return (
+    <svg viewBox={`0 0 ${size} ${size}`} width="100%" style={{ maxWidth: 280, margin: '0 auto', display: 'block' }}>
+      {/* Background grid rings */}
+      {rings.map((vs, ringI) => (
+        <polygon key={ringI}
+          points={polyStr(vs)}
+          fill="none"
+          stroke="rgba(0,0,0,0.06)"
+          strokeWidth={1}
+        />
+      ))}
+      {/* Axis lines (center to outer vertex) */}
+      {angles.map((_, i) => {
+        const outer = point(100, i);
+        return <line key={i} x1={cx} y1={cy} x2={outer.x} y2={outer.y}
+          stroke="rgba(0,0,0,0.05)" strokeWidth={1} />;
+      })}
+      {/* 90-reference dashed polygon */}
+      <polygon
+        points={polyStr(targetVals)}
+        fill="none"
+        stroke="rgba(255,90,31,0.35)"
+        strokeWidth={1.2}
+        strokeDasharray="3 3"
+      />
+      {/* Current values filled polygon */}
+      <polygon
+        points={polyStr(currentVals)}
+        fill="rgba(16,185,129,0.18)"
+        stroke="#10b981"
+        strokeWidth={2}
+        strokeLinejoin="round"
+      />
+      {/* Vertex dots */}
+      {currentVals.map((v, i) => {
+        const p = point(v, i);
+        return <circle key={i} cx={p.x} cy={p.y} r={3} fill="#10b981" />;
+      })}
+      {/* Axis labels */}
+      {axes.map((a, i) => {
+        const lp = labelPoint(i);
+        const anchor = i === 0 ? 'middle' : i === 3 ? 'middle' : (i === 1 || i === 2) ? 'start' : 'end';
+        return (
+          <g key={a.key}>
+            <text
+              x={lp.x} y={lp.y}
+              textAnchor={anchor}
+              dominantBaseline="middle"
+              style={{ fontSize: 11, fontWeight: 700, fill: '#1a1a1a' }}
+            >
+              {a.label}
+            </text>
+            <text
+              x={lp.x} y={lp.y + 12}
+              textAnchor={anchor}
+              dominantBaseline="middle"
+              style={{ fontSize: 9, fill: 'rgba(0,0,0,0.45)' }}
+            >
+              {Math.round(a.value)}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
 }
 
 export default function Home() {
@@ -549,156 +735,114 @@ export default function Home() {
             )}
           </div>
 
-          {/* Action row — 备菜 / 烹饪. Always shown so the cook entry doesn't
-              vanish before the user generates a menu. When the menu is empty
-              we still navigate; the destination page shows its own empty state
-              ('请先生成本周菜单'). */}
-          <div className="flex border-t border-black/[0.05]">
-            {[
-              { label: "备菜", icon: "menu_book", color: "#6C5CE7", bg: "rgba(108,92,231,0.07)",
-                action: () => { localStorage.setItem("generatedMenu", JSON.stringify(displayMenu)); navigate("/prep"); } },
-              { label: "烹饪", icon: "skillet", color: "#0077B6", bg: "rgba(0,119,182,0.07)",
-                action: () => { localStorage.setItem("generatedMenu", JSON.stringify(displayMenu)); navigate("/cook"); } },
-            ].map((item, i, arr) => (
-              <button key={i} onClick={item.action}
-                className="flex-1 flex flex-col items-center gap-1 py-3 active:opacity-70 transition-opacity"
-                style={{ background: item.bg, borderRight: i < arr.length - 1 ? '1px solid rgba(0,0,0,0.04)' : 'none' }}>
-                <span className="material-symbols-outlined" style={{ fontSize: 20, color: item.color }}>{item.icon}</span>
-                <span className="font-semibold" style={{ fontSize: 11, color: item.color }}>{item.label}</span>
-              </button>
-            ))}
-          </div>
+        </div>
+
+        {/* Action row — 备菜 / 烹饪. Minimal: icon + single label, nothing else. */}
+        <div className="grid grid-cols-2 gap-2.5">
+          {[
+            {
+              label: "备菜", icon: "menu_book",
+              accent: "#6C5CE7", accentBg: "rgba(108,92,231,0.10)",
+              action: () => { localStorage.setItem("generatedMenu", JSON.stringify(displayMenu)); navigate("/prep"); },
+            },
+            {
+              label: "烹饪", icon: "skillet",
+              accent: "#FF5A1F", accentBg: "rgba(255,90,31,0.10)",
+              action: () => { localStorage.setItem("generatedMenu", JSON.stringify(displayMenu)); navigate("/cook"); },
+            },
+          ].map((item, i) => (
+            <button
+              key={i}
+              onClick={item.action}
+              className="rounded-2xl bg-white p-3.5 flex items-center justify-center gap-2.5 shadow-sm active:scale-[0.98] transition-transform"
+            >
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+                style={{ background: item.accentBg }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 22, color: item.accent, fontVariationSettings: "'FILL' 1" }}>
+                  {item.icon}
+                </span>
+              </div>
+              <p className="font-bold" style={{ fontSize: 15, color: "#1a1a1a" }}>
+                {item.label}
+              </p>
+            </button>
+          ))}
         </div>
 
         {/* Pro entry cards (家宴 / 祛湿 / 学校营养) moved out of Home into
             Settings → 会员 Pro · 工具箱 — keeps the homepage focused on the
-            day-to-day menu / cook / shop loop. */}
+            day-to-day menu / cook / shop loop. The 采购清单 shortcut card
+            was removed since it duplicated the bottom tab. */}
 
-        {/* ③ PROCUREMENT — Compact action card ───────────────── */}
-        <div className="rounded-2xl bg-white px-4 py-3.5 shadow-sm flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0"
-            style={{ background: "rgba(255,90,31,0.1)" }}>
-            <span className="material-symbols-outlined" style={{ fontSize: 20, color: "#FF5A1F", fontVariationSettings: "'FILL' 1" }}>
-              shopping_cart
-            </span>
-          </div>
-          <div className="flex-1 min-w-0">
-            {/* 'Procurement' shortcut card. Duplicates the 采购 bottom tab; kept
-                as a discoverability nudge while users learn the app. Slated
-                for removal once feature is established. */}
-            <p className="font-bold" style={{ fontSize: 14, color: "#1a1a1a" }}>采购清单</p>
-            <p style={{ fontSize: 11, color: "rgba(0,0,0,0.38)" }}>
-              {hasMenu ? "菜单已就绪，查看所需食材" : "先生成菜单"}
-            </p>
-          </div>
-          <button
-            onClick={() => {
-              if (hasMenu) {
-                localStorage.setItem("generatedMenu", JSON.stringify(displayMenu));
-                localStorage.setItem("effectivePeople", JSON.stringify(todayAdults + todayKids * 0.5));
-                navigate("/verify");
-              } else {
-                navigate("/weekly");
-              }
-            }}
-            className="px-4 py-2 rounded-xl font-bold text-white shrink-0 active:scale-95 transition-all"
-            style={{ fontSize: 13, background: hasMenu ? "#FF5A1F" : "rgba(0,0,0,0.15)" }}>
-            {hasMenu ? "查看" : "生成"}
-          </button>
-        </div>
-
-        {/* ③ HELPER STATUS — Single row ───────────────────────── */}
-        <div className="rounded-2xl bg-white px-4 py-3.5 shadow-sm flex items-center gap-3">
-          {helperName ? (
-            <>
-              <div className="w-10 h-10 rounded-full flex items-center justify-center font-black text-white shrink-0"
-                style={{ background: "linear-gradient(135deg, #25D366, #128C7E)", fontSize: 16 }}>
-                {helperName.charAt(0).toUpperCase()}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-bold truncate" style={{ fontSize: 14, color: "#1a1a1a" }}>{helperName}</p>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
-                  <p style={{ fontSize: 11, color: "rgba(0,0,0,0.38)" }}>已连接</p>
-                </div>
-              </div>
-              <button onClick={() => navigate("/community?view=employer")}
-                className="px-3 py-1.5 rounded-xl font-bold shrink-0 active:scale-95"
-                style={{ fontSize: 12, background: "rgba(255,90,31,0.08)", color: "#FF5A1F" }}>
-                点赞 👑
-              </button>
-            </>
-          ) : (
-            <>
-              <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center shrink-0 text-xl">👩</div>
-              <div className="flex-1 min-w-0">
-                <p className="font-bold" style={{ fontSize: 14, color: "#1a1a1a" }}>还未绑定工人</p>
-                {inviteCode ? (
-                  <p style={{ fontSize: 11, color: "rgba(0,0,0,0.38)" }}>邀请码：<span className="font-black tracking-widest text-emerald-600">{inviteCode}</span></p>
-                ) : (
-                  <p style={{ fontSize: 11, color: "rgba(0,0,0,0.38)" }}>工人输入邀请码加入</p>
-                )}
-              </div>
-              {inviteCode && (
-                <button onClick={() => {
-                  navigator.clipboard.writeText(inviteCode).then(() => {
-                    setInviteCopied(true);
-                    setTimeout(() => setInviteCopied(false), 2000);
-                  });
-                }}
-                  className="px-3 py-1.5 rounded-xl font-bold text-white shrink-0 active:scale-95 transition-all"
-                  style={{ fontSize: 12, background: inviteCopied ? "#25D366" : "#128C7E" }}>
-                  {inviteCopied ? "已复制 ✓" : "复制码"}
-                </button>
-              )}
-            </>
-          )}
-        </div>
-
-        {/* ④ NUTRITION SCORE — Compact bottom card ──────────── */}
-        {healthMetrics && (
-          <div className="rounded-2xl bg-white px-4 py-3.5 shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="flex items-baseline gap-1 shrink-0">
-                <span className="font-black" style={{ fontSize: 32, color: "#1a1a1a", lineHeight: 1 }}>
-                  {healthMetrics.score}
-                </span>
-                <span style={{ fontSize: 12, color: "rgba(0,0,0,0.3)" }}>/100</span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5 mb-1">
-                  <span className="font-semibold" style={{ fontSize: 12, color: "#1a1a1a" }}>本周营养评分</span>
-                  <span className="px-1.5 py-0.5 rounded-full font-bold text-[10px]"
-                    style={{
-                      background: healthMetrics.score >= 80 ? "rgba(52,211,153,0.15)" : "rgba(251,191,36,0.15)",
-                      color: healthMetrics.score >= 80 ? "#059669" : "#d97706",
-                    }}>
-                    {healthMetrics.score >= 80 ? "优秀" : healthMetrics.score >= 65 ? "良好" : "待改善"}
-                  </span>
-                </div>
-                <div className="w-full h-1.5 rounded-full" style={{ background: "rgba(0,0,0,0.06)" }}>
-                  <div className="h-full rounded-full" style={{
-                    width: `${healthMetrics.score}%`,
-                    background: "linear-gradient(90deg, #34d399, #10b981)",
-                    transition: "width 0.6s ease",
-                  }} />
-                </div>
-              </div>
-              <div className="flex gap-2 shrink-0">
-                {[
-                  { label: "低盐", days: healthMetrics.lowSalt },
-                  { label: "低糖", days: healthMetrics.lowSugar },
-                  { label: "低嘌呤", days: healthMetrics.lowPurine },
-                ].map(m => (
-                  <div key={m.label} className="flex flex-col items-center">
-                    <span className="font-black" style={{ fontSize: 13, color: m.days >= 5 ? "#059669" : "#d97706" }}>
-                      {m.days}<span style={{ fontSize: 9, fontWeight: 500, color: "rgba(0,0,0,0.3)" }}>天</span>
-                    </span>
-                    <span style={{ fontSize: 9, color: "rgba(0,0,0,0.35)" }}>{m.label}</span>
-                  </div>
-                ))}
+        {/* ③ HELPER STATUS — only rendered when bound. The invite-code flow
+              for binding lives in Settings → 菲佣设置 to keep Home minimal. */}
+        {helperName && (
+          <div className="rounded-2xl bg-white px-4 py-3.5 shadow-sm flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full flex items-center justify-center font-black text-white shrink-0"
+              style={{ background: "linear-gradient(135deg, #25D366, #128C7E)", fontSize: 16 }}>
+              {helperName.charAt(0).toUpperCase()}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-bold truncate" style={{ fontSize: 14, color: "#1a1a1a" }}>{helperName}</p>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                <p style={{ fontSize: 11, color: "rgba(0,0,0,0.38)" }}>已连接</p>
               </div>
             </div>
+            <button onClick={() => navigate("/community?view=employer")}
+              className="px-3 py-1.5 rounded-xl font-bold shrink-0 active:scale-95"
+              style={{ fontSize: 12, background: "rgba(255,90,31,0.08)", color: "#FF5A1F" }}>
+              点赞 👑
+            </button>
+          </div>
+        )}
+
+        {/* ④ NUTRITION HEXAGON — 6 dimensions from 中国居民膳食指南 ───── */}
+        {healthMetrics && (
+          <div className="rounded-2xl bg-white p-4 shadow-sm">
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-semibold" style={{ fontSize: 13, color: "#1a1a1a" }}>本周营养雷达</span>
+              <div className="flex items-baseline gap-1">
+                <span className="font-black" style={{ fontSize: 22, color: "#1a1a1a", lineHeight: 1 }}>
+                  {healthMetrics.score}
+                </span>
+                <span style={{ fontSize: 11, color: "rgba(0,0,0,0.3)" }}>/100</span>
+                <span className="ml-1 px-1.5 py-0.5 rounded-full font-bold"
+                  style={{
+                    fontSize: 10,
+                    background: healthMetrics.score >= 80 ? "rgba(52,211,153,0.15)" : healthMetrics.score >= 65 ? "rgba(251,191,36,0.15)" : "rgba(248,113,113,0.15)",
+                    color:      healthMetrics.score >= 80 ? "#059669" : healthMetrics.score >= 65 ? "#d97706" : "#dc2626",
+                  }}>
+                  {healthMetrics.score >= 80 ? "优秀" : healthMetrics.score >= 65 ? "良好" : "待改善"}
+                </span>
+              </div>
+            </div>
+            <NutritionHexagon axes={healthMetrics.axes} />
+            {/* Boost suggestion — show the single weakest axis with a one-line action.
+                Dashed orange polygon on the radar marks the 90-score target. */}
+            {(() => {
+              const boost = buildBoostSuggestion(healthMetrics.axes, healthMetrics.score);
+              return boost ? (
+                <div className="mt-2 rounded-xl px-3 py-2 flex items-center gap-2"
+                  style={{ background: "rgba(255,90,31,0.06)", border: "1px solid rgba(255,90,31,0.20)" }}>
+                  <span style={{ fontSize: 14 }}>💡</span>
+                  <p className="flex-1" style={{ fontSize: 11.5, color: "#7a3000", lineHeight: 1.4 }}>
+                    差 {90 - healthMetrics.score} 分到 90 · <span className="font-bold">{boost}</span>
+                  </p>
+                </div>
+              ) : (
+                <div className="mt-2 rounded-xl px-3 py-2 flex items-center gap-2"
+                  style={{ background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.20)" }}>
+                  <span style={{ fontSize: 14 }}>🎉</span>
+                  <p style={{ fontSize: 11.5, color: "#047857", lineHeight: 1.4 }}>
+                    本周营养已达 <span className="font-bold">优秀</span> 标准
+                  </p>
+                </div>
+              );
+            })()}
+            <p className="mt-2 text-center" style={{ fontSize: 10, color: "rgba(0,0,0,0.35)" }}>
+              ●&nbsp;本周 &nbsp;&nbsp; ┄ 90 分参考 &nbsp;&nbsp; · 依据《中国居民膳食指南》
+            </p>
           </div>
         )}
 
