@@ -17,6 +17,7 @@ import {
 } from "../lib/familyPrefs";
 import { useSubscription } from "../lib/subscription";
 import { elevateDayToMichelin, type MichelinDish } from "../lib/geminiMichelin";
+import { NutritionRadarCard } from "../components/NutritionRadar";
 import IntentRegenModal from "../components/IntentRegenModal";
 import { loadIntentBias, clearIntentBias, type IntentBias } from "../lib/intentBias";
 
@@ -444,12 +445,10 @@ export default function WeeklyMenu() {
   }
 
   function handleDayClick(i: number) {
-    if (isDayLocked(i)) {
-      // Scroll to lock card (it's already visible below), just let tap show it
-      setSelectedDay(i); // will show locked state
-    } else {
-      setSelectedDay(i);
-    }
+    setSelectedDay(i); // still updates state (used for locked-day overlay)
+    // Smooth-scroll to that day's section in the all-week list
+    const el = document.getElementById(`day-${i}`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   return (
@@ -469,55 +468,66 @@ export default function WeeklyMenu() {
         }} />
       </div>
 
-      {/* ── Header ──────────────────────────────────────────────── */}
-      <div className="relative z-10 flex items-center gap-4 px-5 pt-14 pb-4">
-        <button
-          onClick={() => navigate("/")}
-          className="w-9 h-9 rounded-2xl flex items-center justify-center transition-all active:scale-90"
-          style={{ background: "rgba(255,255,255,0.08)" }}
-        >
-          <span className="material-symbols-outlined text-white" style={{ fontSize: 20 }}>arrow_back</span>
-        </button>
-        <div className="flex-1">
-          <h1 className="font-serif font-black text-white" style={{ fontSize: 22, letterSpacing: "0.01em" }}>
-            本周菜单
-          </h1>
-          <p className="text-white/35" style={{ fontSize: 11, letterSpacing: "0.04em" }}>
+      {/* ── Header: title row + action row (2 lines, never cramped) ─── */}
+      <div className="relative z-10 px-5 pt-14 pb-2">
+        {/* Back button + tiny date kicker */}
+        <div className="flex items-center justify-between">
+          <button
+            onClick={() => navigate("/")}
+            className="w-9 h-9 rounded-2xl flex items-center justify-center transition-all active:scale-90"
+            style={{ background: "rgba(255,255,255,0.08)" }}
+          >
+            <span className="material-symbols-outlined text-white" style={{ fontSize: 20 }}>arrow_back</span>
+          </button>
+          <p className="text-white/40" style={{ fontSize: 10, letterSpacing: "0.18em", fontWeight: 600, textTransform: 'uppercase' }}>
             {weeklyMenu?.weekStart
-              ? `本周从 ${weeklyMenu.weekStart.slice(5).replace("-", "/")} 开始`
-              : "AI 智能规划 · 每周更新"}
+              ? `${weeklyMenu.weekStart.slice(5).replace("-", "/")} – ${(() => {
+                  const [y,m,d] = weeklyMenu.weekStart.split('-').map(Number);
+                  const end = new Date(y, m - 1, d + 6);
+                  return `${String(end.getMonth()+1).padStart(2,'0')}/${String(end.getDate()).padStart(2,'0')}`;
+                })()}`
+              : "Weekly Plan"}
           </p>
         </div>
-        {/* Intent re-generation — natural-language menu re-roll. */}
-        <button
-          onClick={() => setIntentOpen(true)}
-          className="flex items-center gap-1 px-2.5 py-1 rounded-full transition-all active:scale-95"
-          style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.10)" }}
-          title="说说你想要什么菜单，AI 重新生成"
-        >
-          <span style={{ fontSize: 12 }}>📝</span>
-          <span className="font-semibold" style={{ fontSize: 11, color: "rgba(255,255,255,0.75)" }}>
-            重新生成
-          </span>
-        </button>
 
-        {/* Mode toggle: AI 规划 ↔ 米其林 (Pro) */}
-        <button
-          onClick={() => {
-            if (!isPro) { navigate("/pricing"); return; }
-            setMichelinMode(m => !m);
-          }}
-          className="flex items-center gap-1 px-3 py-1 rounded-full transition-all active:scale-95"
-          style={michelinMode && isPro
-            ? { background: "linear-gradient(135deg, #FFD700, #FFA500)", border: "1px solid rgba(255,215,0,0.6)", boxShadow: "0 4px 14px rgba(255,165,0,0.30)" }
-            : { background: "linear-gradient(135deg, rgba(255,90,31,0.2), rgba(255,140,84,0.15))", border: "1px solid rgba(255,90,31,0.3)" }
-          }
-        >
-          <span style={{ fontSize: 12 }}>{michelinMode && isPro ? "⭐" : "✨"}</span>
-          <span className="font-semibold" style={{ fontSize: 11, color: michelinMode && isPro ? "#1a1a1a" : "rgba(255,255,255,0.80)" }}>
-            {michelinMode && isPro ? "米其林" : isPro ? "AI 规划" : "升级米其林"}
-          </span>
-        </button>
+        {/* Title — own line, full width */}
+        <h1 className="font-serif font-black text-white mt-2" style={{ fontSize: 32, letterSpacing: "-0.01em", lineHeight: 1.05 }}>
+          本周菜单
+        </h1>
+        <p className="text-white/45 mt-1" style={{ fontSize: 12 }}>
+          {weeklyMenu
+            ? `7 天 · ${weeklyMenu.days.reduce((n,d) => n + (d.dishes?.length ?? 0) + (d.lunchDishes?.length ?? 0), 0)} 道菜`
+            : "AI 智能规划 · 每周更新"}
+        </p>
+
+        {/* Action buttons row */}
+        <div className="flex gap-2 mt-3">
+          <button
+            onClick={() => setIntentOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all active:scale-95"
+            style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.10)" }}
+            title="说说你想要什么菜单，AI 重新生成"
+          >
+            <span style={{ fontSize: 13 }}>📝</span>
+            <span className="font-semibold" style={{ fontSize: 11, color: "rgba(255,255,255,0.80)" }}>重新生成</span>
+          </button>
+          <button
+            onClick={() => {
+              if (!isPro) { navigate("/pricing"); return; }
+              setMichelinMode(m => !m);
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all active:scale-95"
+            style={michelinMode && isPro
+              ? { background: "linear-gradient(135deg, #FFD700, #FFA500)", border: "1px solid rgba(255,215,0,0.6)", boxShadow: "0 4px 14px rgba(255,165,0,0.30)" }
+              : { background: "linear-gradient(135deg, rgba(255,90,31,0.2), rgba(255,140,84,0.15))", border: "1px solid rgba(255,90,31,0.3)" }
+            }
+          >
+            <span style={{ fontSize: 13 }}>{michelinMode && isPro ? "⭐" : "✨"}</span>
+            <span className="font-semibold" style={{ fontSize: 11, color: michelinMode && isPro ? "#1a1a1a" : "rgba(255,255,255,0.80)" }}>
+              {michelinMode && isPro ? "米其林" : isPro ? "AI 规划" : "升级米其林"}
+            </span>
+          </button>
+        </div>
       </div>
 
       {/* ── Day Tabs ────────────────────────────────────────────── */}
@@ -656,6 +666,13 @@ export default function WeeklyMenu() {
         </div>
       )}
 
+      {/* ── Nutrition radar (moved from Home — single source of truth) ──── */}
+      {weeklyMenu && !loading && (
+        <div className="relative z-10 mx-5 mb-4">
+          <NutritionRadarCard weeklyMenu={weeklyMenu} dark />
+        </div>
+      )}
+
       {/* ── Content area: show meals OR lock card ─────────────────── */}
       {isDayLocked(selectedDay) ? (
         <div className="relative z-10 flex-1">
@@ -663,26 +680,7 @@ export default function WeeklyMenu() {
         </div>
       ) : (
         <>
-          {/* ── Nutrition summary ────────────────────────────────── */}
-          {!loading && dinner.length > 0 && (
-            <div className="relative z-10 mx-5 mb-5 rounded-2xl p-4"
-              style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}>
-              <div className="flex items-center justify-between mb-3">
-                <span className="font-semibold text-white/80" style={{ fontSize: 13 }}>今日营养概览</span>
-                <span className="font-black text-white" style={{ fontSize: 18 }}>
-                  {nutrition.cal}
-                  <span className="text-white/40 font-normal" style={{ fontSize: 11 }}> kcal</span>
-                </span>
-              </div>
-              <div className="flex flex-col gap-2">
-                <NutritionBar label="蛋白" value={nutrition.pro} max={150} color="#FF5A1F" />
-                <NutritionBar label="碳水" value={nutrition.carb} max={300} color="#F39C12" />
-                <NutritionBar label="脂肪" value={nutrition.fat} max={80}  color="#6C5CE7" />
-              </div>
-            </div>
-          )}
-
-          {/* ── Meal sections ────────────────────────────────────── */}
+          {/* ── 7-day overview: every day's 3 meals at a glance ───── */}
           <div className="relative z-10 flex-1">
             <AnimatePresence mode="wait">
               {loading ? (
@@ -691,10 +689,8 @@ export default function WeeklyMenu() {
                   <SkeletonDay />
                 </motion.div>
               ) : (
-                <motion.div key={effectiveDay}
-                  initial={{ opacity: 0, x: 24 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -24 }}
+                <motion.div key="all-days"
+                  initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                   transition={{ duration: 0.22, ease: "easeOut" }}>
 
                   {dinner.length === 0 && lunch.length === 0 && breakfast.length === 0 ? (
@@ -704,52 +700,46 @@ export default function WeeklyMenu() {
                       <p className="text-white/30 mt-1" style={{ fontSize: 12 }}>请确保已设置您的口味偏好</p>
                     </div>
                   ) : (
-                    <>
-                      <MealSection mealIdx={0} dishes={breakfast} familyMembers={familyMembers} homeToday={homeToday} michelinByDishId={overlayForDay} />
-                      <MealSection mealIdx={1} dishes={lunch}     familyMembers={familyMembers} homeToday={homeToday} michelinByDishId={overlayForDay} />
-                      <MealSection mealIdx={2} dishes={dinner}    familyMembers={familyMembers} homeToday={homeToday} michelinByDishId={overlayForDay} />
-                    </>
-                  )}
-
-                  {/* ── Week overview mini strip ── */}
-                  {weeklyMenu && dinner.length > 0 && (
-                    <div className="mx-5 mt-2 mb-4 rounded-2xl p-4"
-                      style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)" }}>
-                      <p className="text-white/40 mb-3" style={{ fontSize: 11, letterSpacing: "0.06em" }}>全周一览</p>
-                      <div className="grid grid-cols-7 gap-1">
-                        {weeklyMenu.days.map((day, i) => {
-                          const firstDish = day.dishes[0];
-                          const isActive  = i === effectiveDay;
-                          const locked    = isDayLocked(i);
-                          return (
-                            <button key={i} onClick={() => handleDayClick(i)}
-                              className="flex flex-col items-center gap-1 rounded-xl p-1.5 transition-all active:scale-90 relative"
-                              style={isActive
-                                ? { background: "rgba(255,90,31,0.18)", border: "1px solid rgba(255,90,31,0.4)" }
-                                : { background: "transparent", opacity: locked ? 0.4 : 1 }
-                              }>
-                              <span className="text-white/40" style={{ fontSize: 9 }}>{DAYS[i].replace("周", "")}</span>
-                              <div className="w-8 h-8 rounded-xl overflow-hidden relative">
-                                {firstDish && !locked ? (
-                                  <img
-                                    src={firstDish.img || firstDish.image_url || "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?q=80&w=80&auto=format&fit=crop"}
-                                    alt=""
-                                    className="w-full h-full object-cover"
-                                    onError={e => { (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?q=80&w=80&auto=format&fit=crop"; }}
-                                  />
-                                ) : (
-                                  <div className="w-full h-full flex items-center justify-center"
-                                    style={{ background: "rgba(255,255,255,0.06)" }}>
-                                    {locked && <span className="material-symbols-outlined text-white/30" style={{ fontSize: 12 }}>lock</span>}
-                                  </div>
-                                )}
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
+                    <div className="flex flex-col">
+                      {weeklyMenu?.days.map((day, i) => {
+                        const dayBreakfast = pickBreakfast(breakfastPool, i);
+                        const dayLunch  = day.lunchDishes ?? [];
+                        const dayDinner = day.dishes ?? [];
+                        const locked = isDayLocked(i);
+                        if (locked) return null;
+                        return (
+                          <div key={i} id={`day-${i}`} className="mb-5">
+                            <div className="px-5 flex items-baseline justify-between mb-2">
+                              <p className="font-serif font-black text-white" style={{ fontSize: 22, letterSpacing: "-0.005em" }}>
+                                {DAYS[i]}
+                              </p>
+                              <p className="text-white/35" style={{ fontSize: 11, letterSpacing: "0.04em" }}>
+                                {(() => {
+                                  if (!weeklyMenu) return '';
+                                  const [y,m,d] = weeklyMenu.weekStart.split('-').map(Number);
+                                  const dt = new Date(y, m-1, d + i);
+                                  return `${dt.getMonth()+1}/${dt.getDate()}`;
+                                })()}
+                              </p>
+                            </div>
+                            <MealSection mealIdx={0} dishes={dayBreakfast} familyMembers={familyMembers} homeToday={homeToday} michelinByDishId={overlayForDay} />
+                            <MealSection mealIdx={1} dishes={dayLunch}     familyMembers={familyMembers} homeToday={homeToday} michelinByDishId={overlayForDay} />
+                            <MealSection mealIdx={2} dishes={dayDinner}    familyMembers={familyMembers} homeToday={homeToday} michelinByDishId={overlayForDay} />
+                          </div>
+                        );
+                      })}
+                      {/* Free-tier locked days hint */}
+                      {!isLoggedIn && (
+                        <div className="mx-5 mt-2">
+                          <LockedDayCard onUnlock={() => navigate('/signin')} />
+                        </div>
+                      )}
                     </div>
                   )}
+
+                  {/* Removed the bottom mini-strip: the whole week is already
+                      rendered above; mini strip was a leftover from the old
+                      single-day detail layout. */}
                 </motion.div>
               )}
             </AnimatePresence>

@@ -15,6 +15,7 @@ import {
 import { supabase } from "../lib/supabase";
 import BottomTabBar from "../components/BottomTabBar";
 import { useSubscription } from "../lib/subscription";
+import { recordBatchSwap, recordSwap } from "../lib/swapFeedback";
 
 // ── Solar term (节气) calculator ─────────────────────────────────────────────
 
@@ -119,216 +120,6 @@ function useDailyTip() {
   return { solarTerm, weather, tip };
 }
 
-// ── Health metrics ─────────────────────────────────────────────────────────────
-//
-// Six dimensions aligned with 《中国居民膳食指南》/ 膳食宝塔. Each scored 0-100.
-//
-//   1. 蛋白    — 每日是否有优质蛋白（肉/鱼/蛋/豆）
-//   2. 蔬果    — 蔬菜量是否充足
-//   3. 谷薯    — 粗细搭配 / 主食多样化
-//   4. 钙      — 高钙食材（豆腐/绿叶菜/小鱼干/奶）覆盖
-//   5. 多样    — 食材多样性（不同 main_ingredient 数 / 总菜数）
-//   6. 低油盐  — 清淡度（'light' tag 占比 - 'fried'/'spicy' 占比）
-//
-// The overall score is the average of the 6 axes — same metric a radar reader
-// would mentally compute.
-
-interface NutritionAxis {
-  key:   'protein' | 'veggie' | 'grain' | 'calcium' | 'variety' | 'light';
-  label: string;     // 2-char Chinese, shown on the radar vertex
-  value: number;     // 0–100
-  hint:  string;     // tooltip / detail text
-}
-
-const PROTEIN_INGS  = ['pork','beef','lamb','chicken','duck','turkey','fish','shrimp','crab','squid','scallop','clam','oyster','salmon','tuna','cod','seabass','hairtail','egg','tofu'];
-const PLANT_INGS    = ['veggie','vegetable','mushroom','bean'];
-const CALCIUM_KW    = /(豆腐|豆浆|芝士|奶酪|牛奶|沙丁鱼|小鱼干|芝麻|西兰花|菠菜|芥蓝|芥菜|油菜|上海青)/;
-const STAPLE_TYPES_KW = /(米饭|面|粉|粥|饼|包|饺|馒头|薯|燕麦|杂粮)/;
-
-function computeHealthMetrics(weeklyMenu: any) {
-  if (!weeklyMenu?.days) return null;
-  const days = weeklyMenu.days as any[];
-  if (days.length === 0) return null;
-
-  const allDinner: any[] = days.flatMap(d => d.dishes ?? []);
-  const allLunch:  any[] = days.flatMap(d => d.lunchDishes ?? []);
-  const all       = [...allDinner, ...allLunch];
-  const totalDishes = Math.max(all.length, 1);
-
-  // 1. 蛋白：每天 dinner 是否含至少一道优质蛋白
-  const proteinDays = days.filter(d =>
-    (d.dishes ?? []).some((x: any) => PROTEIN_INGS.includes((x.main_ingredient ?? '').toLowerCase()))
-  ).length;
-  const protein = Math.min(100, Math.round((proteinDays / 7) * 100));
-
-  // 2. 蔬果：每天 dinner+lunch 累计 ≥2 道 plant
-  const veggieDays = days.filter(d => {
-    const todayPlant = [...(d.dishes ?? []), ...(d.lunchDishes ?? [])]
-      .filter((x: any) => PLANT_INGS.some(p => (x.main_ingredient ?? '').includes(p)) || (x.course_type === 'veggie_dish'));
-    return todayPlant.length >= 2;
-  }).length;
-  const veggie = Math.min(100, Math.round((veggieDays / 7) * 100));
-
-  // 3. 谷薯：lunch 主食种类多样性（粥/面/饭/饼 不同类）
-  const stapleKinds = new Set<string>();
-  for (const dish of allLunch) {
-    if ((dish.course_type ?? '') !== 'staple') continue;
-    const m = (dish.title_zh ?? '').match(STAPLE_TYPES_KW);
-    if (m) stapleKinds.add(m[0]);
-  }
-  // 7 staples; want ≥4 different kinds for full marks
-  const grain = Math.min(100, Math.round((stapleKinds.size / 4) * 100));
-
-  // 4. 钙：含钙食材覆盖天数
-  const calciumDays = days.filter(d => {
-    const today = [...(d.dishes ?? []), ...(d.lunchDishes ?? [])];
-    return today.some((x: any) => CALCIUM_KW.test(x.title_zh ?? ''));
-  }).length;
-  const calcium = Math.min(100, Math.round((calciumDays / 7) * 100));
-
-  // 5. 多样：unique main_ingredient 数 / 总菜数（理想 60%+）
-  const uniqueIngs = new Set(all.map(d => (d.main_ingredient ?? 'other').toLowerCase()));
-  const variety = Math.min(100, Math.round((uniqueIngs.size / Math.max(totalDishes * 0.6, 1)) * 100));
-
-  // 6. 低油盐：'light' 比例 - 'fried'/'spicy' 比例
-  const lightCount = all.filter(d => (d.flavor_tags ?? []).includes('light')).length;
-  const heavyCount = all.filter(d => {
-    const tags = d.flavor_tags ?? [];
-    return tags.includes('fried') || tags.includes('spicy') || tags.includes('salty');
-  }).length;
-  const lightScore = Math.max(0, Math.min(100, Math.round(((lightCount - heavyCount) / totalDishes) * 100 + 60)));
-
-  const axes: NutritionAxis[] = [
-    { key: 'protein', label: '蛋白',   value: protein, hint: `${proteinDays}/7 天 有优质蛋白` },
-    { key: 'veggie',  label: '蔬果',   value: veggie,  hint: `${veggieDays}/7 天 蔬果充足` },
-    { key: 'grain',   label: '谷薯',   value: grain,   hint: `主食 ${stapleKinds.size} 种` },
-    { key: 'calcium', label: '钙',     value: calcium, hint: `${calciumDays}/7 天 含钙食材` },
-    { key: 'variety', label: '多样',   value: variety, hint: `${uniqueIngs.size} 种食材 / ${totalDishes} 道菜` },
-    { key: 'light',   label: '低油盐', value: lightScore, hint: `清淡 ${lightCount} · 油盐重 ${heavyCount}` },
-  ];
-
-  const score = Math.round(axes.reduce((s, a) => s + a.value, 0) / 6);
-  return { score, axes };
-}
-
-// ── Boost suggestion: per-axis hint to lift the score toward 90 ─────────────
-const BOOST_HINTS: Record<NutritionAxis['key'], string> = {
-  protein: '加一道蛋类菜或豆腐鱼蛋',
-  veggie:  '多加一道绿叶蔬菜',
-  grain:   '换成杂粮饭 / 多换主食种类',
-  calcium: '加豆腐 / 菠菜 / 紫菜',
-  variety: '换掉重复的主蛋白（如猪肉换鱼）',
-  light:   '少炒多蒸/煮，加一道清淡汤',
-};
-
-function buildBoostSuggestion(axes: NutritionAxis[], score: number): string | null {
-  if (score >= 90) return null;
-  // Find the 1-2 lowest-scoring axes; give one suggestion focused on the weakest
-  const sorted = [...axes].sort((a, b) => a.value - b.value).filter(a => a.value < 90);
-  if (sorted.length === 0) return null;
-  const weakest = sorted[0];
-  return `${weakest.label} 弱：${BOOST_HINTS[weakest.key]}`;
-}
-
-// ── NutritionHexagon — 6-axis radar SVG, inline (no chart lib) ──────────────
-function NutritionHexagon({ axes }: { axes: NutritionAxis[] }) {
-  if (axes.length !== 6) return null;
-
-  const size       = 220;   // overall SVG size
-  const cx         = size / 2;
-  const cy         = size / 2;
-  const radius     = 64;    // outer radius (max=100)
-  const labelOff   = 22;    // label distance beyond outer radius
-
-  // Vertex angles in radians — top first, clockwise
-  // index 0 = top, 1 = top-right, 2 = bottom-right, 3 = bottom, 4 = bottom-left, 5 = top-left
-  const angles = [-90, -30, 30, 90, 150, 210].map(a => (a * Math.PI) / 180);
-
-  const point = (val: number, i: number) => {
-    const r = radius * (val / 100);
-    return { x: cx + r * Math.cos(angles[i]), y: cy + r * Math.sin(angles[i]) };
-  };
-  const labelPoint = (i: number) => {
-    const r = radius + labelOff;
-    return { x: cx + r * Math.cos(angles[i]), y: cy + r * Math.sin(angles[i]) };
-  };
-
-  const polyStr = (vals: number[]) => vals.map((v, i) => {
-    const p = point(v, i); return `${p.x},${p.y}`;
-  }).join(' ');
-
-  // Background ring polygons (25/50/75/100)
-  const rings = [25, 50, 75, 100].map(v => Array(6).fill(v));
-  // 90-reference polygon (dashed): the target users aim for
-  const targetVals  = Array(6).fill(90);
-  const currentVals = axes.map(a => a.value);
-
-  return (
-    <svg viewBox={`0 0 ${size} ${size}`} width="100%" style={{ maxWidth: 280, margin: '0 auto', display: 'block' }}>
-      {/* Background grid rings */}
-      {rings.map((vs, ringI) => (
-        <polygon key={ringI}
-          points={polyStr(vs)}
-          fill="none"
-          stroke="rgba(0,0,0,0.06)"
-          strokeWidth={1}
-        />
-      ))}
-      {/* Axis lines (center to outer vertex) */}
-      {angles.map((_, i) => {
-        const outer = point(100, i);
-        return <line key={i} x1={cx} y1={cy} x2={outer.x} y2={outer.y}
-          stroke="rgba(0,0,0,0.05)" strokeWidth={1} />;
-      })}
-      {/* 90-reference dashed polygon */}
-      <polygon
-        points={polyStr(targetVals)}
-        fill="none"
-        stroke="rgba(255,90,31,0.35)"
-        strokeWidth={1.2}
-        strokeDasharray="3 3"
-      />
-      {/* Current values filled polygon */}
-      <polygon
-        points={polyStr(currentVals)}
-        fill="rgba(16,185,129,0.18)"
-        stroke="#10b981"
-        strokeWidth={2}
-        strokeLinejoin="round"
-      />
-      {/* Vertex dots */}
-      {currentVals.map((v, i) => {
-        const p = point(v, i);
-        return <circle key={i} cx={p.x} cy={p.y} r={3} fill="#10b981" />;
-      })}
-      {/* Axis labels */}
-      {axes.map((a, i) => {
-        const lp = labelPoint(i);
-        const anchor = i === 0 ? 'middle' : i === 3 ? 'middle' : (i === 1 || i === 2) ? 'start' : 'end';
-        return (
-          <g key={a.key}>
-            <text
-              x={lp.x} y={lp.y}
-              textAnchor={anchor}
-              dominantBaseline="middle"
-              style={{ fontSize: 11, fontWeight: 700, fill: '#1a1a1a' }}
-            >
-              {a.label}
-            </text>
-            <text
-              x={lp.x} y={lp.y + 12}
-              textAnchor={anchor}
-              dominantBaseline="middle"
-              style={{ fontSize: 9, fill: 'rgba(0,0,0,0.45)' }}
-            >
-              {Math.round(a.value)}
-            </text>
-          </g>
-        );
-      })}
-    </svg>
-  );
-}
 
 export default function Home() {
   const navigate = useNavigate();
@@ -371,6 +162,14 @@ export default function Home() {
     const next = swapCount + 1;
     setSwapCount(next);
     localStorage.setItem(swapQuotaKey, String(next));
+
+    // Snapshot what's about to be replaced — strongest negative-preference
+    // signal we get. Fire-and-forget, the radar doesn't wait on it.
+    const rejected = displayMenu.slice();
+    if (rejected.length > 0) {
+      recordBatchSwap(rejected, [], mealTime).catch(() => {/* non-critical */});
+    }
+
     refreshRecommended();
   }
 
@@ -534,7 +333,6 @@ export default function Home() {
     .sort((a, b) => courseRank(a) - courseRank(b));
   const hasMenu = (weeklyMenu?.days[todayIdx]?.dishes.length ?? storedMenuRaw.length) > 0;
 
-  const healthMetrics = computeHealthMetrics(weeklyMenu);
   const { solarTerm, weather, tip } = useDailyTip();
 
   const now = new Date();
@@ -575,14 +373,21 @@ export default function Home() {
       const opt = swapOptions.find(o => o.id === selectedSwap);
       if (opt) {
         setMenuSwaps(prev => ({ ...prev, [swappingDishIndex]: opt }));
-        // Track: employer swapped this dish → times_employer_swapped +1
         const swappedDish = displayMenu[swappingDishIndex];
         if (swappedDish?.id) {
+          // Aggregate counter on the dishes table (legacy)
           supabase
             .from("dishes")
             .update({ times_employer_swapped: (swappedDish.times_employer_swapped ?? 0) + 1 })
             .eq("id", swappedDish.id)
             .then(() => {});
+          // Per-user preference signal — strong "not this one + yes this one"
+          recordSwap({
+            rejected:    swappedDish,
+            replacement: opt,
+            mealType:    mealTime,
+            source:      'home_per_dish',
+          }).catch(() => {/* non-critical */});
         }
       }
     }
@@ -883,68 +688,11 @@ export default function Home() {
           </div>
         )}
 
-        {/* ④ NUTRITION HEXAGON — 6 dimensions from 中国居民膳食指南 ───── */}
-        {healthMetrics && (
-          <div className="rounded-3xl p-5"
-            style={{
-              background: "white",
-              boxShadow: "0 8px 28px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.04)",
-            }}>
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <p style={{ fontSize: 10, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(0,0,0,0.42)", fontWeight: 600 }}>
-                  Nutrition · 本周
-                </p>
-                <p className="font-serif font-black mt-0.5" style={{ fontSize: 19, color: "#1a1a1a", letterSpacing: "-0.005em" }}>
-                  营养雷达
-                </p>
-              </div>
-              <div className="flex items-baseline gap-1">
-                <span className="font-serif font-black" style={{ fontSize: 30, color: "#1a1a1a", lineHeight: 1 }}>
-                  {healthMetrics.score}
-                </span>
-                <span style={{ fontSize: 12, color: "rgba(0,0,0,0.3)" }}>/100</span>
-                <span className="ml-1.5 px-2 py-0.5 rounded-full font-bold"
-                  style={{
-                    fontSize: 10,
-                    background: healthMetrics.score >= 80 ? "rgba(52,211,153,0.15)" : healthMetrics.score >= 65 ? "rgba(251,191,36,0.15)" : "rgba(248,113,113,0.15)",
-                    color:      healthMetrics.score >= 80 ? "#059669" : healthMetrics.score >= 65 ? "#d97706" : "#dc2626",
-                  }}>
-                  {healthMetrics.score >= 80 ? "优秀" : healthMetrics.score >= 65 ? "良好" : "待改善"}
-                </span>
-              </div>
-            </div>
-            <NutritionHexagon axes={healthMetrics.axes} />
-            {/* Boost suggestion — show the single weakest axis with a one-line action.
-                Dashed orange polygon on the radar marks the 90-score target. */}
-            {(() => {
-              const boost = buildBoostSuggestion(healthMetrics.axes, healthMetrics.score);
-              return boost ? (
-                <div className="mt-2 rounded-xl px-3 py-2 flex items-center gap-2"
-                  style={{ background: "rgba(255,90,31,0.06)", border: "1px solid rgba(255,90,31,0.20)" }}>
-                  <span style={{ fontSize: 14 }}>💡</span>
-                  <p className="flex-1" style={{ fontSize: 11.5, color: "#7a3000", lineHeight: 1.4 }}>
-                    差 {90 - healthMetrics.score} 分到 90 · <span className="font-bold">{boost}</span>
-                  </p>
-                </div>
-              ) : (
-                <div className="mt-2 rounded-xl px-3 py-2 flex items-center gap-2"
-                  style={{ background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.20)" }}>
-                  <span style={{ fontSize: 14 }}>🎉</span>
-                  <p style={{ fontSize: 11.5, color: "#047857", lineHeight: 1.4 }}>
-                    本周营养已达 <span className="font-bold">优秀</span> 标准
-                  </p>
-                </div>
-              );
-            })()}
-            <p className="mt-2 text-center" style={{ fontSize: 10, color: "rgba(0,0,0,0.35)" }}>
-              ●&nbsp;本周 &nbsp;&nbsp; ┄ 90 分参考 &nbsp;&nbsp; · 依据《中国居民膳食指南》
-            </p>
-          </div>
-        )}
+        {/* ④ 营养雷达 — moved to WeeklyMenu page to consolidate nutrition view.
+            Home stays focused on today's loop (menu / 换菜 / 烹饪). */}
 
-        {/* Day 1 CTA — only when no menu and no metrics */}
-        {!healthMetrics && !hasMenu && (
+        {/* Day 1 CTA — only when no menu yet */}
+        {!hasMenu && (
           <div className="rounded-2xl p-5" style={{ background: "linear-gradient(135deg, #FF5A1F, #FF8C54)" }}>
             <h2 className="font-black text-white mb-1" style={{ fontSize: 20 }}>每天不再烦恼"吃什么"</h2>
             <p style={{ fontSize: 13, color: "rgba(255,255,255,0.8)", lineHeight: 1.5, marginBottom: 14 }}>
