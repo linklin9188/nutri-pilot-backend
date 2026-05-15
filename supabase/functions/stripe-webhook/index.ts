@@ -152,6 +152,7 @@ async function onSubscriptionDeleted(subscription: Stripe.Subscription) {
       is_pro: false,
       subscription_plan: null,
       subscription_end_at: new Date(subscription.ended_at! * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
     })
     .eq("id", userId);
 }
@@ -180,6 +181,7 @@ async function syncSubscriptionRow(
         subscription_end_at:     new Date(subscription.current_period_end * 1000).toISOString(),
         stripe_customer_id:      customerId,
         stripe_subscription_id:  subscription.id,
+        updated_at:              new Date().toISOString(),
       },
       { onConflict: "id" },
     )
