@@ -14,6 +14,7 @@ import {
 } from "../lib/geminiVision";
 import { supabase } from "../lib/supabase";
 import BottomTabBar from "../components/BottomTabBar";
+import { useSubscription } from "../lib/subscription";
 
 // ── Solar term (节气) calculator ─────────────────────────────────────────────
 
@@ -342,10 +343,36 @@ export default function Home() {
   const [todayKids, setTodayKids] = useState(2);
   const [veganOnly, setVeganOnly] = useState(false);
 
-  const { recommendedDishes, loading: dishesLoading } = useRecommendDishes(
+  const { recommendedDishes, loading: dishesLoading, refresh: refreshRecommended } = useRecommendDishes(
     mealTime, veganOnly, todayAdults, todayKids,
   );
   const { weeklyMenu } = useWeeklyMenu();
+
+  // ── 换菜 quota: 1/day free, 5/day Pro (= 5 套菜单/天) ───────────────
+  const { isPro } = useSubscription();
+  const swapQuotaKey = (() => {
+    const d = new Date();
+    return `home_swap_count_${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  })();
+  const [swapCount, setSwapCount] = useState<number>(() => {
+    return parseInt(localStorage.getItem(swapQuotaKey) ?? '0', 10);
+  });
+  const FREE_SWAP_PER_DAY = 1;
+  const PRO_SWAP_PER_DAY  = 5;
+  const dailyLimit = isPro ? PRO_SWAP_PER_DAY : FREE_SWAP_PER_DAY;
+  const swapsLeft  = Math.max(0, dailyLimit - swapCount);
+
+  function handleSwapAll() {
+    if (swapsLeft <= 0) {
+      // Free user out of swaps → upsell; Pro out → just block silently
+      if (!isPro) navigate('/pricing');
+      return;
+    }
+    const next = swapCount + 1;
+    setSwapCount(next);
+    localStorage.setItem(swapQuotaKey, String(next));
+    refreshRecommended();
+  }
 
   // ── Who's eating today ───────────────────────────────────────────────────────
   const [allMembers] = useState<{ id: string; name: string; lifeStage: string }[]>(() => {
@@ -586,187 +613,246 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen max-w-md mx-auto relative" style={{ background: "#f5f5f7", paddingBottom: 100 }}>
+    <div className="min-h-screen max-w-md mx-auto relative"
+      style={{
+        background: "linear-gradient(180deg, #FAF6F0 0%, #F4EEE3 100%)",
+        paddingBottom: 100,
+      }}>
 
-      {/* ── Header ──────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-xl border-b border-black/5"
-        style={{ paddingTop: "env(safe-area-inset-top, 44px)" }}>
-        <div className="flex items-center justify-between px-5 py-3">
-          <div className="flex-1 min-w-0 pr-2">
-            <p style={{ fontSize: 11, color: "rgba(0,0,0,0.35)" }}>{greeting} · {dateLabel}</p>
-            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold"
-                style={{ background: 'rgba(255,90,31,0.10)', color: '#FF5A1F' }}>
-                {solarTerm.icon} {solarTerm.name}
-              </span>
+      {/* ── Editorial header — warm paper, serif greeting ─────────── */}
+      <header style={{ paddingTop: "env(safe-area-inset-top, 44px)" }}>
+        <div className="flex items-start justify-between px-5 pt-3 pb-1">
+          <div className="flex-1 min-w-0 pr-3">
+            {/* Date in tiny caps over the greeting — editorial feel */}
+            <p style={{
+              fontSize: 10, letterSpacing: "0.16em", textTransform: "uppercase",
+              color: "rgba(0,0,0,0.42)", fontWeight: 600,
+            }}>
+              {dateLabel}
+            </p>
+            <h1 className="font-serif font-black mt-1" style={{
+              fontSize: 30, color: "#1a1a1a", letterSpacing: "-0.01em", lineHeight: 1.05,
+            }}>
+              {greeting}，<span style={{ color: "#FF5A1F" }}>开饭啦</span>
+            </h1>
+            {/* Solar term + weather as a single inline row, no chip clutter */}
+            <p className="mt-2 flex items-center gap-2 flex-wrap" style={{ fontSize: 11.5, color: "rgba(0,0,0,0.55)" }}>
+              <span className="font-bold" style={{ color: "#FF5A1F" }}>{solarTerm.icon} {solarTerm.name}</span>
               {weather && (
-                <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.4)', fontWeight: 500 }}>
-                  {weather.temp}°C · {weather.label}
-                </span>
+                <>
+                  <span style={{ color: "rgba(0,0,0,0.18)" }}>·</span>
+                  <span>{weather.temp}°C {weather.label}</span>
+                </>
               )}
-            </div>
-            <p className="mt-0.5 font-semibold leading-tight" style={{ fontSize: 12, color: '#555' }}>{tip}</p>
+            </p>
+            {tip && (
+              <p className="mt-1" style={{ fontSize: 11.5, color: "rgba(0,0,0,0.42)", lineHeight: 1.55, fontStyle: "italic" }}>
+                {tip}
+              </p>
+            )}
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {/* Single 扫一扫 entry — duplicates removed (action row + avatar to settings).
-                Settings now lives only in the bottom tab bar. */}
-            <button onClick={() => setIsFridgeScanOpen(true)}
-              className="w-10 h-10 rounded-2xl flex items-center justify-center active:scale-90 transition-transform"
-              style={{ background: "linear-gradient(135deg, #FF5A1F, #FF9054)" }}>
-              <span className="material-symbols-outlined text-white" style={{ fontSize: 20, fontVariationSettings: "'FILL' 1" }}>
-                qr_code_scanner
-              </span>
-            </button>
-          </div>
+
+          {/* QR — round, paper-card, subtle */}
+          <button onClick={() => setIsFridgeScanOpen(true)}
+            className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 active:scale-90 transition-transform"
+            style={{ background: "white", boxShadow: "0 4px 14px rgba(0,0,0,0.06)" }}
+            title="扫食材">
+            <span className="material-symbols-outlined" style={{ fontSize: 22, color: "#FF5A1F" }}>
+              qr_code_scanner
+            </span>
+          </button>
         </div>
       </header>
 
-      <main className="flex flex-col gap-3 pt-3 pb-4 px-4">
+      <main className="flex flex-col gap-4 pt-2 pb-4 px-4">
 
-        {/* ① TODAY'S MENU — Hero ──────────────────────────────── */}
-        <div className="rounded-3xl bg-white overflow-hidden shadow-sm">
-
-          {/* Meal tab bar */}
-          <div className="flex items-center justify-between px-4 pt-4 pb-2">
-            <div className="flex gap-1.5">
+        {/* ① TODAY'S MENU — Editorial hero ────────────────────────
+            Inspired by food magazine layouts: large dish photography on
+            the left, generous typography on the right. No internal padding
+            on the photo edge so dishes feel like the page itself. */}
+        <section>
+          {/* Meal selector + week-menu link — sits ON the cream bg */}
+          <div className="flex items-center justify-between mb-3 px-1">
+            <div className="inline-flex p-1 rounded-2xl gap-0.5"
+              style={{ background: "rgba(0,0,0,0.05)" }}>
               {(["早餐", "午餐", "晚餐"] as const).map(m => (
                 <button key={m} onClick={() => setMealTime(m)}
-                  className="px-3 py-1.5 rounded-xl font-bold transition-all active:scale-95 text-[13px]"
+                  className="px-3.5 py-1.5 rounded-xl font-bold transition-all active:scale-95"
                   style={{
-                    background: mealTime === m ? "#FF5A1F" : "rgba(0,0,0,0.05)",
-                    color: mealTime === m ? "white" : "rgba(0,0,0,0.4)",
+                    fontSize: 13,
+                    background: mealTime === m ? "white" : "transparent",
+                    color: mealTime === m ? "#1a1a1a" : "rgba(0,0,0,0.42)",
+                    boxShadow: mealTime === m ? "0 2px 8px rgba(0,0,0,0.08)" : "none",
                   }}>
                   {m}
                 </button>
               ))}
             </div>
             <button onClick={() => navigate("/weekly")}
-              style={{ fontSize: 12, color: "#FF5A1F", fontWeight: 700 }}>
-              本周菜单 →
+              className="inline-flex items-center gap-1 active:scale-95"
+              style={{ fontSize: 12, color: "rgba(0,0,0,0.55)", fontWeight: 600 }}>
+              本周菜单
+              <span className="material-symbols-outlined" style={{ fontSize: 16 }}>arrow_forward</span>
             </button>
           </div>
 
-          {/* Who's eating today — always visible */}
-          <div className="px-4 pb-3 flex items-center gap-2 overflow-x-auto no-scrollbar">
-            <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.35)', fontWeight: 600, whiteSpace: 'nowrap' }}>今天谁在家</span>
-            {allMembers.map((m, idx) => {
-              const sel = eatingIds.includes(m.id);
-              return (
-                <button
-                  key={m.id}
-                  onClick={() => toggleEatingMember(m.id)}
-                  title={m.name}
-                  className={`p-0.5 rounded-full border-2 transition-all active:scale-95 shrink-0 ${
-                    sel ? 'border-[#FF5A1F]' : 'border-transparent opacity-50'
-                  }`}
-                >
-                  <span className={`w-7 h-7 rounded-full flex items-center justify-center text-white font-black ${MEMBER_COLORS[idx % MEMBER_COLORS.length]}`}
-                    style={{ fontSize: 12 }}>
-                    {(m.name || '?')[0]}
-                  </span>
-                </button>
-              );
-            })}
-            <button
-              onClick={() => navigate('/settings')}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[12px] font-bold border-2 border-dashed border-black/10 shrink-0 active:scale-95 transition-all"
-              style={{ color: 'rgba(0,0,0,0.28)' }}
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: 13 }}>add</span>
-              {allMembers.length <= 1 ? '添加家人' : '管理'}
-            </button>
+          {/* Editorial menu card — paper background, generous padding */}
+          <div className="rounded-3xl overflow-hidden"
+            style={{
+              background: "white",
+              boxShadow: "0 8px 28px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.04)",
+            }}>
+
+            {/* Header strip: "在家用餐" + member dots, refined */}
+            <div className="flex items-center gap-2 px-5 pt-4 pb-2.5 overflow-x-auto no-scrollbar">
+              <span className="font-serif" style={{ fontSize: 12, color: "rgba(0,0,0,0.42)", fontStyle: "italic", whiteSpace: 'nowrap' }}>
+                今日餐桌
+              </span>
+              <span style={{ color: "rgba(0,0,0,0.10)" }}>·</span>
+              {allMembers.map((m, idx) => {
+                const sel = eatingIds.includes(m.id);
+                return (
+                  <button
+                    key={m.id}
+                    onClick={() => toggleEatingMember(m.id)}
+                    title={m.name}
+                    className={`rounded-full transition-all active:scale-95 shrink-0 ${sel ? '' : 'opacity-35'}`}
+                  >
+                    <span className={`w-7 h-7 rounded-full flex items-center justify-center text-white font-black ${MEMBER_COLORS[idx % MEMBER_COLORS.length]}`}
+                      style={{
+                        fontSize: 12,
+                        boxShadow: sel ? "0 0 0 2px white, 0 0 0 4px #FF5A1F" : "none",
+                      }}>
+                      {(m.name || '?')[0]}
+                    </span>
+                  </button>
+                );
+              })}
+              <button
+                onClick={() => navigate('/settings')}
+                className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 active:scale-95"
+                style={{ background: "rgba(0,0,0,0.04)", color: "rgba(0,0,0,0.35)" }}
+                title="管理家庭成员"
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: 16 }}>add</span>
+              </button>
+            </div>
+
+            {/* Thin divider — subtle, paper-like */}
+            <div className="h-px mx-5" style={{ background: "rgba(0,0,0,0.05)" }} />
+
+            {/* Dish list — bigger photos, editorial typography */}
+            <div className="px-5 pt-2 pb-1">
+              {dishesLoading ? (
+                <div className="flex flex-col gap-4 py-3">
+                  {[1, 2, 3].map(i => (
+                    <div key={i} className="flex items-center gap-4 animate-pulse">
+                      <div className="w-[78px] h-[78px] rounded-2xl shrink-0" style={{ background: "rgba(0,0,0,0.05)" }} />
+                      <div className="flex-1 space-y-2">
+                        <div className="h-4 rounded-full w-2/3" style={{ background: "rgba(0,0,0,0.05)" }} />
+                        <div className="h-3 rounded-full w-1/3" style={{ background: "rgba(0,0,0,0.04)" }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : displayMenu.length > 0 ? (
+                <div className="flex flex-col">
+                  {displayMenu.slice(0, 5).map((dish: any, idx: number) => (
+                    <div key={idx} className="flex items-center gap-4 py-3.5"
+                      style={{ borderTop: idx === 0 ? 'none' : '1px solid rgba(0,0,0,0.04)' }}>
+                      <div className="relative w-[78px] h-[78px] rounded-2xl overflow-hidden shrink-0"
+                        style={{
+                          background: "rgba(0,0,0,0.04)",
+                          boxShadow: "0 4px 12px rgba(0,0,0,0.06)",
+                        }}>
+                        <img
+                          src={dish.img || dish.image_url || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=240&h=240&fit=crop"}
+                          alt={dish.title_zh || dish.title}
+                          className="w-full h-full object-cover"
+                          onError={e => { (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=240&h=240&fit=crop"; }}
+                        />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        {/* Tiny editorial label number */}
+                        <p style={{ fontSize: 9, letterSpacing: "0.18em", color: "rgba(0,0,0,0.30)", fontWeight: 700 }}>
+                          NO. {String(idx + 1).padStart(2, '0')}
+                        </p>
+                        <p className="font-serif font-black truncate mt-0.5" style={{ fontSize: 18, color: "#1a1a1a", letterSpacing: "-0.005em" }}>
+                          {dish.title_zh || dish.title}
+                        </p>
+                        <p className="truncate mt-0.5" style={{ fontSize: 11.5, color: "rgba(0,0,0,0.42)" }}>
+                          {dish.origin_cuisine ? dish.origin_cuisine.replace('_',' ') : (dish.desc || dish.type || '家常菜')}
+                        </p>
+                      </div>
+                      <button onClick={() => openSwapDrawer(idx)}
+                        className="w-9 h-9 rounded-full flex items-center justify-center active:scale-90 shrink-0 transition-transform"
+                        style={{ background: "rgba(0,0,0,0.04)" }}
+                        title="换一道">
+                        <span className="material-symbols-outlined" style={{ fontSize: 18, color: "rgba(0,0,0,0.40)" }}>sync_alt</span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="py-12 flex flex-col items-center gap-4">
+                  <span className="material-symbols-outlined" style={{ fontSize: 48, color: "rgba(0,0,0,0.10)" }}>restaurant_menu</span>
+                  <p className="font-serif italic" style={{ fontSize: 14, color: "rgba(0,0,0,0.40)", textAlign: 'center', lineHeight: 1.6 }}>
+                    {mealTime}还没菜单
+                  </p>
+                  <button onClick={() => navigate("/weekly")}
+                    className="px-6 py-2.5 rounded-full font-bold text-white active:scale-95"
+                    style={{ fontSize: 13, background: "#FF5A1F", boxShadow: "0 6px 18px rgba(255,90,31,0.30)" }}>
+                    生成本周菜单
+                  </button>
+                </div>
+              )}
+            </div>
+
           </div>
+        </section>
 
-          {/* Dish list */}
-          <div className="px-4 pb-2">
-            {dishesLoading ? (
-              <div className="flex flex-col gap-3 py-2">
-                {[1, 2, 3].map(i => (
-                  <div key={i} className="flex items-center gap-3 animate-pulse">
-                    <div className="w-16 h-16 rounded-2xl shrink-0" style={{ background: "rgba(0,0,0,0.05)" }} />
-                    <div className="flex-1 space-y-2">
-                      <div className="h-4 rounded-full w-2/3" style={{ background: "rgba(0,0,0,0.05)" }} />
-                      <div className="h-3 rounded-full w-1/3" style={{ background: "rgba(0,0,0,0.05)" }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : displayMenu.length > 0 ? (
-              <div className="flex flex-col divide-y divide-black/[0.04]">
-                {displayMenu.slice(0, 5).map((dish: any, idx: number) => (
-                  <div key={idx} className="flex items-center gap-3 py-3">
-                    <div className="w-16 h-16 rounded-2xl overflow-hidden shrink-0"
-                      style={{ background: "rgba(0,0,0,0.05)" }}>
-                      <img
-                        src={dish.img || dish.image_url || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=160&h=160&fit=crop"}
-                        alt={dish.title_zh || dish.title}
-                        className="w-full h-full object-cover"
-                        onError={e => { (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=160&h=160&fit=crop"; }}
-                      />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-bold truncate" style={{ fontSize: 16, color: "#1a1a1a" }}>
-                        {dish.title_zh || dish.title}
-                      </p>
-                      <p className="truncate mt-0.5" style={{ fontSize: 12, color: "rgba(0,0,0,0.35)" }}>
-                        {dish.origin_cuisine ? dish.origin_cuisine.replace('_',' ') : (dish.desc || dish.type || '家常菜')}
-                      </p>
-                    </div>
-                    <button onClick={() => openSwapDrawer(idx)}
-                      className="w-8 h-8 rounded-full flex items-center justify-center active:scale-90 shrink-0"
-                      style={{ background: "rgba(0,0,0,0.05)" }}>
-                      <span className="material-symbols-outlined" style={{ fontSize: 17, color: "rgba(0,0,0,0.35)" }}>sync_alt</span>
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="py-10 flex flex-col items-center gap-3">
-                <span className="material-symbols-outlined" style={{ fontSize: 40, color: "rgba(0,0,0,0.1)" }}>restaurant</span>
-                <p style={{ fontSize: 13, color: "rgba(0,0,0,0.35)", textAlign: 'center', lineHeight: 1.6 }}>
-                  暂无{mealTime}菜单<br />先生成本周菜单
-                </p>
-                <button onClick={() => navigate("/weekly")}
-                  className="px-5 py-2 rounded-full font-bold text-white active:scale-95"
-                  style={{ fontSize: 13, background: "#FF5A1F" }}>
-                  生成菜单
-                </button>
-              </div>
-            )}
-          </div>
+        {/* 换菜 / 烹饪 — primary actions of the day. Just icon + label, no
+            subtitle. Free = 1 swap/day, Pro = 5 swaps/day (= 5 套菜单).
+            烹饪 routes to /prep (the prep page itself flows to /cook),
+            so we save the separate 备菜 button. */}
+        <div className="grid grid-cols-2 gap-3">
+          {/* 换菜 */}
+          <button
+            onClick={handleSwapAll}
+            disabled={dishesLoading}
+            className="rounded-2xl bg-white px-4 py-3.5 flex items-center justify-center gap-3 active:scale-[0.98] transition-transform disabled:opacity-60"
+            style={{ boxShadow: "0 6px 20px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.04)" }}
+          >
+            <div className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0"
+              style={{ background: "rgba(108,92,231,0.10)" }}>
+              <span className="material-symbols-outlined" style={{ fontSize: 22, color: "#6C5CE7", fontVariationSettings: "'FILL' 1" }}>
+                refresh
+              </span>
+            </div>
+            <p className="font-serif font-black" style={{ fontSize: 17, color: "#1a1a1a", letterSpacing: "-0.005em" }}>
+              换菜
+            </p>
+          </button>
 
-        </div>
-
-        {/* Action row — 备菜 / 烹饪. Minimal: icon + single label, nothing else. */}
-        <div className="grid grid-cols-2 gap-2.5">
-          {[
-            {
-              label: "备菜", icon: "menu_book",
-              accent: "#6C5CE7", accentBg: "rgba(108,92,231,0.10)",
-              action: () => { localStorage.setItem("generatedMenu", JSON.stringify(displayMenu)); navigate("/prep"); },
-            },
-            {
-              label: "烹饪", icon: "skillet",
-              accent: "#FF5A1F", accentBg: "rgba(255,90,31,0.10)",
-              action: () => { localStorage.setItem("generatedMenu", JSON.stringify(displayMenu)); navigate("/cook"); },
-            },
-          ].map((item, i) => (
-            <button
-              key={i}
-              onClick={item.action}
-              className="rounded-2xl bg-white p-3.5 flex items-center justify-center gap-2.5 shadow-sm active:scale-[0.98] transition-transform"
-            >
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-                style={{ background: item.accentBg }}>
-                <span className="material-symbols-outlined" style={{ fontSize: 22, color: item.accent, fontVariationSettings: "'FILL' 1" }}>
-                  {item.icon}
-                </span>
-              </div>
-              <p className="font-bold" style={{ fontSize: 15, color: "#1a1a1a" }}>
-                {item.label}
-              </p>
-            </button>
-          ))}
+          {/* 烹饪 — goes to /prep (which flows to /cook) */}
+          <button
+            onClick={() => { localStorage.setItem("generatedMenu", JSON.stringify(displayMenu)); navigate("/prep"); }}
+            className="rounded-2xl px-4 py-3.5 flex items-center justify-center gap-3 active:scale-[0.98] transition-transform"
+            style={{
+              background: "linear-gradient(135deg, #FF5A1F 0%, #FF8C54 100%)",
+              boxShadow: "0 8px 22px rgba(255,90,31,0.28)",
+            }}
+          >
+            <div className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0"
+              style={{ background: "rgba(255,255,255,0.22)" }}>
+              <span className="material-symbols-outlined text-white" style={{ fontSize: 22, fontVariationSettings: "'FILL' 1" }}>
+                skillet
+              </span>
+            </div>
+            <p className="font-serif font-black text-white" style={{ fontSize: 17, letterSpacing: "-0.005em" }}>
+              烹饪
+            </p>
+          </button>
         </div>
 
         {/* Pro entry cards (家宴 / 祛湿 / 学校营养) moved out of Home into
@@ -799,15 +885,26 @@ export default function Home() {
 
         {/* ④ NUTRITION HEXAGON — 6 dimensions from 中国居民膳食指南 ───── */}
         {healthMetrics && (
-          <div className="rounded-2xl bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <span className="font-semibold" style={{ fontSize: 13, color: "#1a1a1a" }}>本周营养雷达</span>
+          <div className="rounded-3xl p-5"
+            style={{
+              background: "white",
+              boxShadow: "0 8px 28px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.04)",
+            }}>
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <p style={{ fontSize: 10, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(0,0,0,0.42)", fontWeight: 600 }}>
+                  Nutrition · 本周
+                </p>
+                <p className="font-serif font-black mt-0.5" style={{ fontSize: 19, color: "#1a1a1a", letterSpacing: "-0.005em" }}>
+                  营养雷达
+                </p>
+              </div>
               <div className="flex items-baseline gap-1">
-                <span className="font-black" style={{ fontSize: 22, color: "#1a1a1a", lineHeight: 1 }}>
+                <span className="font-serif font-black" style={{ fontSize: 30, color: "#1a1a1a", lineHeight: 1 }}>
                   {healthMetrics.score}
                 </span>
-                <span style={{ fontSize: 11, color: "rgba(0,0,0,0.3)" }}>/100</span>
-                <span className="ml-1 px-1.5 py-0.5 rounded-full font-bold"
+                <span style={{ fontSize: 12, color: "rgba(0,0,0,0.3)" }}>/100</span>
+                <span className="ml-1.5 px-2 py-0.5 rounded-full font-bold"
                   style={{
                     fontSize: 10,
                     background: healthMetrics.score >= 80 ? "rgba(52,211,153,0.15)" : healthMetrics.score >= 65 ? "rgba(251,191,36,0.15)" : "rgba(248,113,113,0.15)",
