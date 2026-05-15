@@ -17,6 +17,8 @@ import BottomTabBar from "../components/BottomTabBar";
 import { useSubscription } from "../lib/subscription";
 import { recordBatchSwap, recordSwap } from "../lib/swapFeedback";
 import { useLanguage, LANGUAGE_LABEL, type Language } from "../contexts/LanguageContext";
+import IntentRegenModal from "../components/IntentRegenModal";
+import { loadIntentBias } from "../lib/intentBias";
 
 // ── Solar term (节气) calculator ─────────────────────────────────────────────
 
@@ -134,6 +136,7 @@ export default function Home() {
   const [todayAdults, setTodayAdults] = useState(3);
   const [todayKids, setTodayKids] = useState(2);
   const [veganOnly, setVeganOnly] = useState(false);
+  const [intentModalOpen, setIntentModalOpen] = useState(false);
 
   const { recommendedDishes, loading: dishesLoading, refresh: refreshRecommended } = useRecommendDishes(
     mealTime, veganOnly, todayAdults, todayKids,
@@ -199,6 +202,18 @@ export default function Home() {
     return all.map((m: any) => m.id);
   });
 
+  // Keep todayAdults / todayKids in sync with the eatingIds toggle. Without
+  // this, the recommend hook gets stale headcount and 5-people dinners can
+  // collapse to 1-2 dishes (or vice versa).
+  useEffect(() => {
+    const selected = allMembers.filter(m => eatingIds.includes(m.id));
+    if (selected.length === 0) return;
+    const kids   = selected.filter(m => m.lifeStage === '儿童').length;
+    const adults = selected.length - kids;
+    setTodayAdults(adults);
+    setTodayKids(kids);
+  }, [eatingIds, allMembers]);
+
   function toggleEatingMember(id: string) {
     setEatingIds(prev => {
       const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
@@ -229,7 +244,6 @@ export default function Home() {
   const [scanLocale, setScanLocale] = useState<ScanLocale>('zh');         // 简体 / 繁體 输出
   const [fridgePreview, setFridgePreview] = useState<string | null>(null);
 
-  const [breakfastPool, setBreakfastPool] = useState<any[]>([]);
   const [displayName, setDisplayName] = useState("");
   const [helperName, setHelperName] = useState("");
   const [householdId, setHouseholdId] = useState("");
@@ -276,17 +290,6 @@ export default function Home() {
         });
     }
 
-    // Fetch breakfast dishes pool — use '*' to avoid silent failure when columns change.
-    // Previously selected 'type' which doesn't exist in the dishes table (column is
-    // 'course_type'); the bad query returned an error and left breakfastPool empty,
-    // causing Home's breakfast tab to permanently show "暂无早餐菜单".
-    supabase
-      .from('dishes')
-      .select('*')
-      .eq('meal_type', 'breakfast')
-      .limit(20)
-      .then(({ data }) => { if (data && data.length > 0) setBreakfastPool(data); });
-
     // Fallback: helper name from localStorage (settings page)
     const savedHelper = localStorage.getItem("helperName");
     if (savedHelper) setHelperName(prev => prev || savedHelper);
@@ -308,10 +311,10 @@ export default function Home() {
 
   const baseMenu: any[] = (() => {
     if (mealTime === "早餐") {
-      if (breakfastPool.length === 0) return [];
-      // Rotate breakfast by day of week for variety
-      const start = (todayIdx * 2) % breakfastPool.length;
-      return [breakfastPool[start], breakfastPool[(start + 1) % breakfastPool.length]].filter(Boolean);
+      // Breakfast now goes through the same scoring pipeline as 午/晚餐, so
+      // it respects headcount (calcDishCount), user profile, learned prefs,
+      // and intent bias — the four algorithm dimensions.
+      return recommendedDishes.length > 0 ? recommendedDishes : [];
     }
     if (mealTime === "午餐") {
       const lunch = weeklyMenu?.days[todayIdx]?.lunchDishes ?? [];
@@ -669,6 +672,46 @@ export default function Home() {
           </div>
         </section>
 
+        {/* Intent input — taps into IntentRegenModal. Shows the current
+            saved intent (if any) so the user knows the algo is biased. */}
+        {(() => {
+          const bias = loadIntentBias();
+          const hasBias = bias && (bias.userText?.trim() || (bias.chips?.length ?? 0) > 0);
+          return (
+            <button
+              onClick={() => setIntentModalOpen(true)}
+              className="w-full bg-white rounded-2xl px-4 py-3 flex items-center gap-3 active:scale-[0.99] transition-transform text-left"
+              style={{ boxShadow: "0 6px 20px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.04)" }}
+            >
+              <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+                style={{ background: "rgba(255,90,31,0.10)" }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 18, color: "#FF5A1F" }}>
+                  auto_awesome
+                </span>
+              </div>
+              <div className="flex-1 min-w-0">
+                {hasBias ? (
+                  <>
+                    <p className="font-serif font-black truncate" style={{ fontSize: 14, color: "#1a1a1a" }}>
+                      {bias!.userText || bias!.chips.join(' · ')}
+                    </p>
+                    <p className="truncate mt-0.5" style={{ fontSize: 11, color: "rgba(0,0,0,0.42)" }}>
+                      点击修改 · 算法已根据此偏好调整
+                    </p>
+                  </>
+                ) : (
+                  <p className="font-serif italic" style={{ fontSize: 14, color: "rgba(0,0,0,0.45)" }}>
+                    今天还想吃……
+                  </p>
+                )}
+              </div>
+              <span className="material-symbols-outlined shrink-0" style={{ fontSize: 18, color: "rgba(0,0,0,0.30)" }}>
+                chevron_right
+              </span>
+            </button>
+          );
+        })()}
+
         {/* 换菜 / 烹饪 — primary actions of the day. Just icon + label, no
             subtitle. Free = 1 swap/day, Pro = 5 swaps/day (= 5 套菜单).
             烹饪 routes to /prep (the prep page itself flows to /cook),
@@ -774,6 +817,15 @@ export default function Home() {
         )}
 
       </main>
+
+      <IntentRegenModal
+        open={intentModalOpen}
+        onClose={() => {
+          setIntentModalOpen(false);
+          // Refresh today's recommendations so newly saved intent takes effect
+          refreshRecommended();
+        }}
+      />
 
       <BottomTabBar />
 

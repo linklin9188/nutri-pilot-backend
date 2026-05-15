@@ -632,6 +632,36 @@ function scoreDish(
     score += spiceBoost;
   }
 
+  // ⑦ Learned-preference signal — folds in user_preference_scores (positive
+  // for tags the user has historically accepted, negative for rejected).
+  // Values from the table are roughly in [-1, 1]; we sum matches across
+  // flavor_tags + health_benefit_tags + origin_cuisine + seafood detector,
+  // then dampen by LEARNED_WEIGHT so it nudges ranking without overriding
+  // the explicit profile signal.
+  const LEARNED_WEIGHT = 0.35;
+  let learnedSum = 0;
+  let learnedHits = 0;
+  const SEAFOOD_INGS = new Set([
+    'seafood','fish','shrimp','crab','shellfish','squid','scallop',
+    'clam','lobster','salmon','tuna','cod','hairtail','seabass','oyster',
+  ]);
+  const add = (key: string) => {
+    const v = prefScores[`pref_${key}`];
+    if (typeof v === 'number' && v !== 0) {
+      learnedSum += v;
+      learnedHits += 1;
+    }
+  };
+  flavorTags.forEach(t => add(t));
+  healthTags.forEach(t => add(t));
+  if (origin) add(origin);
+  if (SEAFOOD_INGS.has((dish.main_ingredient ?? '').toLowerCase())) add('seafood');
+  if (flavorTags.includes('veggie')) add('veggie');
+  // Average across matching tags so a 10-tag dish doesn't dominate a 2-tag one
+  if (learnedHits > 0) {
+    score += (learnedSum / learnedHits) * LEARNED_WEIGHT;
+  }
+
   return score;
 }
 
