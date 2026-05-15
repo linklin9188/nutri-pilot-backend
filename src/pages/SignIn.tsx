@@ -8,6 +8,7 @@ import { useState } from "react";
 import { motion } from "motion/react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import { useLanguage, type Language } from "../contexts/LanguageContext";
 
 type Role = "employer" | "helper";
 
@@ -54,6 +55,7 @@ export default function SignIn() {
   const [searchParams] = useSearchParams();
   const urlRole = searchParams.get("role") === "helper" ? "helper" : "employer";
   const inviteEmployerId = searchParams.get("employer") ?? null;
+  const { language, setLanguage } = useLanguage();
 
   const [role, setRole] = useState<Role>(urlRole);
   const [error, setError] = useState("");
@@ -107,13 +109,38 @@ export default function SignIn() {
       <div className="absolute inset-0 pointer-events-none z-0"
         style={{ background: "radial-gradient(ellipse at 50% 0%, rgba(255,90,31,0.14) 0%, transparent 60%)" }} />
 
-      <button
-        onClick={() => navigate(-1)}
-        className="relative z-10 mt-14 ml-5 w-9 h-9 flex items-center justify-center rounded-2xl transition-all active:scale-90"
-        style={{ background: "rgba(255,255,255,0.08)" }}
-      >
-        <span className="material-symbols-outlined text-white" style={{ fontSize: 20 }}>arrow_back</span>
-      </button>
+      {/* Top bar: back button + 4-language switcher. The helper sign-in flow
+          relies on this — Filipino / Indonesian helpers pick their language
+          before tapping any button. */}
+      <div className="relative z-10 mt-14 mx-5 flex items-center justify-between">
+        <button
+          onClick={() => navigate(-1)}
+          className="w-9 h-9 flex items-center justify-center rounded-2xl transition-all active:scale-90"
+          style={{ background: "rgba(255,255,255,0.08)" }}
+        >
+          <span className="material-symbols-outlined text-white" style={{ fontSize: 20 }}>arrow_back</span>
+        </button>
+        <div className="inline-flex p-1 rounded-2xl gap-0.5"
+          style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.10)" }}>
+          {([
+            { key: 'zh' as Language, label: '中文' },
+            { key: 'en' as Language, label: 'EN' },
+            { key: 'tl' as Language, label: 'Tagalog' },
+            { key: 'id' as Language, label: 'Bahasa' },
+          ]).map(({ key, label }) => (
+            <button key={key}
+              onClick={() => setLanguage(key)}
+              className="px-2.5 py-1 rounded-xl font-bold transition-all active:scale-95"
+              style={{
+                fontSize: 11,
+                background: language === key ? '#FF5A1F' : 'transparent',
+                color:      language === key ? 'white'   : 'rgba(255,255,255,0.55)',
+              }}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       <motion.div
         initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}

@@ -16,6 +16,7 @@ import { supabase } from "../lib/supabase";
 import BottomTabBar from "../components/BottomTabBar";
 import { useSubscription } from "../lib/subscription";
 import { recordBatchSwap, recordSwap } from "../lib/swapFeedback";
+import { useLanguage, LANGUAGE_LABEL, type Language } from "../contexts/LanguageContext";
 
 // ── Solar term (节气) calculator ─────────────────────────────────────────────
 
@@ -138,6 +139,18 @@ export default function Home() {
     mealTime, veganOnly, todayAdults, todayKids,
   );
   const { weeklyMenu } = useWeeklyMenu();
+
+  // ── Language + cuisine prefs ─────────────────────────────────────
+  const { language, cycleLanguage } = useLanguage();
+
+  // Cuisine filter: 中餐 (non-western asian) / 西餐 (western) / all.
+  // Default '中' so users who type 中餐 mentally don't get pasta in their list.
+  type CuisineMode = 'chinese' | 'western' | 'all';
+  const [cuisineMode, setCuisineMode] = useState<CuisineMode>(() => {
+    const saved = localStorage.getItem('home_cuisine_mode') as CuisineMode | null;
+    return saved === 'chinese' || saved === 'western' || saved === 'all' ? saved : 'chinese';
+  });
+  useEffect(() => { localStorage.setItem('home_cuisine_mode', cuisineMode); }, [cuisineMode]);
 
   // ── 换菜 quota: 1/day free, 5/day Pro (= 5 套菜单/天) ───────────────
   const { isPro } = useSubscription();
@@ -327,10 +340,18 @@ export default function Home() {
     if (ct === 'dessert')      return 5;     // 甜品
     return 6;                                // unknown last
   };
-  const displayMenu: any[] = baseMenu
+  const fullDisplayMenu: any[] = baseMenu
     .map((dish, idx) => menuSwaps[idx] || dish)
     .slice()
     .sort((a, b) => courseRank(a) - courseRank(b));
+  // Apply cuisine filter — 中餐 = non-western (cantonese / 北方 / 江南 / 川 /
+  // 日韩 / 东南亚), 西餐 = western only, 全部 = bypass.
+  const displayMenu = fullDisplayMenu.filter(d => {
+    const c = (d.origin_cuisine ?? '').toLowerCase();
+    if (cuisineMode === 'all')     return true;
+    if (cuisineMode === 'western') return c === 'western';
+    return c !== 'western';        // chinese-mode: everything except western
+  });
   const hasMenu = (weeklyMenu?.days[todayIdx]?.dishes.length ?? storedMenuRaw.length) > 0;
 
   const { solarTerm, weather, tip } = useDailyTip();
@@ -457,15 +478,25 @@ export default function Home() {
             )}
           </div>
 
-          {/* QR — round, paper-card, subtle */}
-          <button onClick={() => setIsFridgeScanOpen(true)}
-            className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 active:scale-90 transition-transform"
-            style={{ background: "white", boxShadow: "0 4px 14px rgba(0,0,0,0.06)" }}
-            title="扫食材">
-            <span className="material-symbols-outlined" style={{ fontSize: 22, color: "#FF5A1F" }}>
-              qr_code_scanner
-            </span>
-          </button>
+          {/* Header action stack: language toggle on top, QR scan below */}
+          <div className="flex flex-col items-end gap-2 shrink-0">
+            {/* Language cycler — short label, cycles zh → 繁 → EN → tl → id */}
+            <button onClick={cycleLanguage}
+              className="px-3 h-8 rounded-full flex items-center justify-center font-bold active:scale-95 transition-transform"
+              style={{ background: "white", boxShadow: "0 4px 14px rgba(0,0,0,0.06)", fontSize: 11, color: "#1a1a1a", minWidth: 56 }}
+              title="切换语言 / Switch language">
+              {LANGUAGE_LABEL[language]}
+            </button>
+            {/* QR — round, paper-card, subtle */}
+            <button onClick={() => setIsFridgeScanOpen(true)}
+              className="w-11 h-11 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+              style={{ background: "white", boxShadow: "0 4px 14px rgba(0,0,0,0.06)" }}
+              title="扫食材">
+              <span className="material-symbols-outlined" style={{ fontSize: 22, color: "#FF5A1F" }}>
+                qr_code_scanner
+              </span>
+            </button>
+          </div>
         </div>
       </header>
 
@@ -499,6 +530,28 @@ export default function Home() {
               本周菜单
               <span className="material-symbols-outlined" style={{ fontSize: 16 }}>arrow_forward</span>
             </button>
+          </div>
+
+          {/* Cuisine filter — 中餐 / 西餐 / 全部. Default 中餐 so users who
+              want Chinese food don't see pasta in their list. */}
+          <div className="inline-flex p-1 rounded-2xl gap-0.5 mb-3"
+            style={{ background: "rgba(0,0,0,0.05)" }}>
+            {([
+              { key: 'chinese', label: '中餐' },
+              { key: 'western', label: '西餐' },
+              { key: 'all',     label: '全部' },
+            ] as const).map(({ key, label }) => (
+              <button key={key} onClick={() => setCuisineMode(key)}
+                className="px-3 py-1 rounded-xl font-bold transition-all active:scale-95"
+                style={{
+                  fontSize: 12,
+                  background: cuisineMode === key ? "white" : "transparent",
+                  color: cuisineMode === key ? "#1a1a1a" : "rgba(0,0,0,0.42)",
+                  boxShadow: cuisineMode === key ? "0 2px 8px rgba(0,0,0,0.08)" : "none",
+                }}>
+                {label}
+              </button>
+            ))}
           </div>
 
           {/* Editorial menu card — paper background, generous padding */}

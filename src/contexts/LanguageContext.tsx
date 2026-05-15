@@ -9,8 +9,9 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
  *   zh-Hant — 繁體中文  (HK / TW / older mainland users mixing with HK family)
  *   en     — English  (international users / fallback)
  *   tl     — Tagalog  (Filipino helper view default)
+ *   id     — Bahasa Indonesia (Indonesian helper view default)
  */
-export type Language = 'zh' | 'zh-Hant' | 'en' | 'tl';
+export type Language = 'zh' | 'zh-Hant' | 'en' | 'tl' | 'id';
 
 interface LanguageContextType {
   language: Language;
@@ -38,6 +39,7 @@ const FALLBACK: Record<Language, Language> = {
   'zh-Hant': 'zh',     // 繁體 falls back to 简体 (close enough)
   en:        'en',
   tl:        'en',     // Tagalog falls back to English (interfaces only)
+  id:        'en',     // Bahasa Indonesia falls back to English
 };
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
@@ -53,11 +55,11 @@ function defaultForRole(): Language {
 export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [hasExplicitPref, setHasExplicitPref] = useState<boolean>(() => {
     const saved = localStorage.getItem('appLanguage') as Language | null;
-    return saved === 'zh' || saved === 'zh-Hant' || saved === 'en' || saved === 'tl';
+    return saved === 'zh' || saved === 'zh-Hant' || saved === 'en' || saved === 'tl' || saved === 'id';
   });
   const [language, setLanguage] = useState<Language>(() => {
     const saved = localStorage.getItem('appLanguage') as Language | null;
-    if (saved === 'zh' || saved === 'zh-Hant' || saved === 'en' || saved === 'tl') return saved;
+    if (saved === 'zh' || saved === 'zh-Hant' || saved === 'en' || saved === 'tl' || saved === 'id') return saved;
     return defaultForRole();
   });
 
@@ -90,7 +92,7 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const cycleLanguage = () => {
     setHasExplicitPref(true);
     setLanguage(prev => {
-      const order: Language[] = ['zh', 'zh-Hant', 'en', 'tl'];
+      const order: Language[] = ['zh', 'zh-Hant', 'en', 'tl', 'id'];
       return order[(order.indexOf(prev) + 1) % order.length];
     });
   };
@@ -152,4 +154,5 @@ export const LANGUAGE_LABEL: Record<Language, string> = {
   'zh-Hant': '繁體',
   en:        'EN',
   tl:        'Tagalog',
+  id:        'Indonesia',
 };
