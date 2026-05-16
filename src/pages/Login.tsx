@@ -5,6 +5,47 @@ import { useLanguage } from "../contexts/LanguageContext";
 import { supabase } from "../lib/supabase";
 import { getUserId, setUserId } from "../lib/userId";
 
+// Direct OAuth launchers. Returns false if the provider isn't configured yet
+// (so caller can show a "coming soon" hint instead of a stack trace).
+async function launchOAuth(provider: 'facebook' | 'google' | 'apple'): Promise<boolean> {
+  try {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: {
+        redirectTo: `${window.location.origin}/`,
+      },
+    });
+    if (error) {
+      console.error(`${provider} OAuth error:`, error.message);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error(`${provider} OAuth threw:`, e);
+    return false;
+  }
+}
+
+// WeChat isn't supported by Supabase Auth natively. We'll point at our own
+// edge function once it's wired up; for now it just builds the WeChat
+// authorize URL and the redirect target (back to nothinkeats.com/auth/wechat).
+function launchWeChat() {
+  const appid = import.meta.env.VITE_WECHAT_APPID;
+  if (!appid) {
+    alert("微信登录即将上线，请稍后再试。");
+    return;
+  }
+  const redirect = encodeURIComponent(`${window.location.origin}/auth/wechat/callback`);
+  const state = crypto.randomUUID();
+  sessionStorage.setItem('wechat_oauth_state', state);
+  // Desktop uses qrconnect, mobile in-WeChat-browser uses oauth2/authorize.
+  const isWeChatBrowser = /MicroMessenger/i.test(navigator.userAgent);
+  const url = isWeChatBrowser
+    ? `https://open.weixin.qq.com/connect/oauth2/authorize?appid=${appid}&redirect_uri=${redirect}&response_type=code&scope=snsapi_userinfo&state=${state}#wechat_redirect`
+    : `https://open.weixin.qq.com/connect/qrconnect?appid=${appid}&redirect_uri=${redirect}&response_type=code&scope=snsapi_login&state=${state}`;
+  window.location.href = url;
+}
+
 type Step = "login" | "phone" | "otp" | "preferences";
 
 const COUNTRY_CODES = [
@@ -366,10 +407,12 @@ export default function Login() {
               </div>
 
               {/* Secondary login row: WeChat + Instagram + Facebook
-                  All three lead into /signin where the actual OAuth runs. */}
+                  Each button now launches its OAuth flow directly — no
+                  longer detours through /signin. Instagram piggy-backs on
+                  Facebook OAuth (same Meta auth domain). */}
               <div className="flex items-center gap-3 w-full justify-center">
                 {/* WeChat */}
-                <button onClick={() => navigate("/signin")}
+                <button onClick={launchWeChat}
                   className="flex-1 h-11 rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95"
                   style={{ background: "rgba(7,193,96,0.18)", border: "1px solid rgba(7,193,96,0.35)", fontSize: 13, color: "rgba(255,255,255,0.85)" }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="#07C160">
@@ -378,8 +421,11 @@ export default function Login() {
                   微信
                 </button>
 
-                {/* Instagram */}
-                <button onClick={() => navigate("/signin")}
+                {/* Instagram — uses Facebook OAuth under the hood (Meta SSO) */}
+                <button onClick={async () => {
+                  const ok = await launchOAuth('facebook');
+                  if (!ok) alert('Instagram 登录暂未配置，请稍后再试。');
+                }}
                   className="flex-1 h-11 rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95"
                   style={{
                     background: "linear-gradient(135deg, rgba(131,58,180,0.25), rgba(225,48,108,0.25))",
@@ -393,7 +439,10 @@ export default function Login() {
                 </button>
 
                 {/* Facebook */}
-                <button onClick={() => navigate("/signin")}
+                <button onClick={async () => {
+                  const ok = await launchOAuth('facebook');
+                  if (!ok) alert('Facebook 登录暂未配置，请稍后再试。');
+                }}
                   className="flex-1 h-11 rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95"
                   style={{ background: "rgba(24,119,242,0.18)", border: "1px solid rgba(24,119,242,0.40)", fontSize: 13, color: "rgba(255,255,255,0.85)" }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="#4A8DF1">
