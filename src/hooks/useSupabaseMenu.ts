@@ -745,11 +745,18 @@ export async function fetchSwapOptions(
   const ingredient = currentDish.main_ingredient;
   const courseType = currentDish.course_type;
 
+  // Pull current user prefs so the swap drawer respects the SAME
+  // allergen/spice gates the main recommend hook applies. Without this
+  // step the drawer would happily offer 麻辣豆腐 to a 不吃辣 user, or
+  // 芝士焗虾 to a dairy-allergic user — exactly the trust break the
+  // recommendation pipeline was designed to prevent.
+  const localPrefs = getUserPrefs();
+
   let query = supabase
     .from('dishes')
     .select('*')
     .neq('id', currentDish.id)
-    .limit(count * 8); // fetch extra so we have room to prefer same-ingredient
+    .limit(count * 12); // fetch extra so hardFilter has room to survive
 
   // ── Hard: same course_type ──
   // soup → soup, staple → staple, main_protein → main_protein,
@@ -764,11 +771,22 @@ export async function fetchSwapOptions(
   const { data, error } = await query;
   if (error || !data || data.length === 0) return [];
 
+  // ── Apply same hard filters the recommend hook uses ──
+  // avoid_tags  → flavor_tags / health_benefit_tags exclude (spicy, dairy, …)
+  // avoidIngredients → main_ingredient exclude (peanut, beef, …)
+  const filtered = hardFilter(
+    data,
+    prefs.avoid_tags,
+    localPrefs.avoidIngredients,
+    false,  // swap drawer shouldn't force vegan even if veganOnly is set elsewhere
+  );
+  const pool = filtered.length > 0 ? filtered : data;  // fall back to unfiltered if pool emptied
+
   // ── Soft: prefer same main_ingredient ──
   // E.g. swapping 红烧肉 (pork) prefers 糖醋里脊 (pork) over 葱油鸡 (chicken),
   // but both are valid main_protein swaps.
-  const sameIng  = data.filter(d => d.main_ingredient === ingredient);
-  const otherIng = data.filter(d => d.main_ingredient !== ingredient);
+  const sameIng  = pool.filter(d => d.main_ingredient === ingredient);
+  const otherIng = pool.filter(d => d.main_ingredient !== ingredient);
   const ordered = [
     ...sameIng.sort(() => Math.random() - 0.5),
     ...otherIng.sort(() => Math.random() - 0.5),
@@ -781,19 +799,94 @@ export async function fetchSwapOptions(
 /**
  * Calculate how many dishes to recommend based on meal type + headcount.
  *
- * 早餐: simpler, always 2-3 dishes regardless of people count
- * 午餐/晚餐: scales with effective headcount (kids count as 0.5)
- *   effective → dishes: 1-2→3, 3-4→4, 5-6→5, 7+→6
+ * 早餐: fixed 3-piece template (dry staple + wet drink + side) for any
+ *      household > 0. 1 person gets 2.
+ * 午餐: scales with effective headcount, slightly smaller than dinner
+ *      (HK lunch convention).
+ * 晚餐: scales with effective headcount, +1 over lunch for the same family
+ *      (Chinese dinner is the bigger meal).
+ *
+ * kids count as 0.5 effective person.
+ *
+ * Bucketed so 3a+2k (eff 4.0) gets 5 lunch / 6 dinner, fixing the
+ * "数量少了" complaint where the old linear formula returned 4.
  */
 export function calcDishCount(
   mealTime: '早餐' | '午餐' | '晚餐',
   adults: number,
   kids: number,
 ): number {
-  if (mealTime === '早餐') return Math.min(3, Math.max(2, adults > 3 ? 3 : 2));
-  const effective = adults + kids * 0.5;
-  const count = Math.round(effective * 0.85) + 1;
-  return Math.min(6, Math.max(3, count));
+  const eff = adults + kids * 0.5;
+  if (mealTime === '早餐') return eff <= 1 ? 2 : 3;
+  const base =
+    eff <= 1.5 ? 2 :
+    eff <= 2.5 ? 3 :
+    eff <= 3.5 ? 4 :
+    eff <= 4.5 ? 5 :
+    eff <= 5.5 ? 5 :
+    eff <= 7.5 ? 6 :
+    Math.min(8, Math.round(eff));
+  // Dinner is bigger than lunch for the same family — HK convention.
+  return mealTime === '晚餐' ? Math.max(3, base + 1) : Math.max(3, base);
+}
+
+// ── Breakfast template: dry staple + wet drink + side ─────────────────────
+//
+// Without this, the top-N scoring can land 2 liquids (粥 + 豆浆) which
+// doesn't match Chinese breakfast habits. We enforce structure: at least
+// one solid carb (包子/馒头/油条/灌饼/煎饼/饺子/卷/吐司/三明治…) and at most
+// one wet item (粥/豆浆/牛奶/米浆/糊/汤). Picks the highest-scored candidate
+// from each bucket so the user still gets their preferred dishes.
+
+const WET_BREAKFAST_KEYWORDS = ['粥', '豆浆', '豆漿', '牛奶', '羊奶', '酸奶', '米浆', '米漿', '糊', '汤', '湯', '奶昔', 'soup', 'milk', 'porridge', 'congee'];
+const DRY_BREAKFAST_KEYWORDS = ['包', '馒头', '饅頭', '油条', '油條', '烧饼', '燒餅', '煎饼', '煎餅', '灌饼', '灌餅', '饺', '餃', '卷', '炒面', '炒麵', '炒饭', '炒飯', '吐司', '三明治', '汉堡', '漢堡', '司康', '可颂', '可頌', '果子', '糕', '蛋饼', '蛋餅', 'toast', 'sandwich', 'bagel', 'scone', 'burger', 'croissant', 'pancake', 'waffle', 'wrap', 'bun'];
+
+function isWetBreakfast(d: any): boolean {
+  const t = (d.title_zh ?? d.title ?? '').toLowerCase();
+  return WET_BREAKFAST_KEYWORDS.some(k => t.includes(k.toLowerCase()));
+}
+function isDryBreakfast(d: any): boolean {
+  const t = (d.title_zh ?? d.title ?? '').toLowerCase();
+  return DRY_BREAKFAST_KEYWORDS.some(k => t.includes(k.toLowerCase()));
+}
+
+/**
+ * Enforce the dry-staple + wet-drink + side template for breakfast.
+ *
+ * - 1st slot: best-scored DRY staple
+ * - 2nd slot: best-scored WET drink (if target ≥ 2)
+ * - 3rd slot: best-scored side that isn't already picked (if target ≥ 3),
+ *             preferring egg / 蛋 / veggie_dish / non-staple
+ *
+ * Falls back to the original balanced list when a bucket is empty so we
+ * don't accidentally show fewer dishes than requested.
+ */
+function applyBreakfastTemplate(sorted: any[], target: number): any[] {
+  if (target <= 0 || sorted.length === 0) return [];
+  const dryCandidates = sorted.filter(isDryBreakfast);
+  const wetCandidates = sorted.filter(isWetBreakfast);
+  const used = new Set<string>();
+  const result: any[] = [];
+  const take = (d: any | undefined) => {
+    if (d && !used.has(d.id)) { used.add(d.id); result.push(d); }
+  };
+
+  // Slot 1 — dry staple
+  if (target >= 1) take(dryCandidates[0]);
+  // Slot 2 — wet drink
+  if (target >= 2) take(wetCandidates.find(d => !used.has(d.id)));
+  // Slot 3 — side (egg/veggie/dessert/other)
+  if (target >= 3) {
+    const side = sorted.find(d => !used.has(d.id) && !isWetBreakfast(d) && !isDryBreakfast(d));
+    take(side);
+  }
+  // Pad with whatever scored highest if any slot was empty
+  let i = 0;
+  while (result.length < target && i < sorted.length) {
+    take(sorted[i]);
+    i++;
+  }
+  return result;
 }
 
 export function useRecommendDishes(
@@ -891,7 +984,11 @@ export function useRecommendDishes(
           .sort((a, b) => b.score - a.score)
           .map(s => s.dish);
 
-        const balanced = balanceMenu(sorted, dishCount);
+        // Breakfast skips balanceMenu (meat/veggie 70/30 is meaningless for
+        // congee + buns) and uses a structural template instead.
+        const balanced = mealTime === '早餐'
+          ? applyBreakfastTemplate(sorted, dishCount)
+          : balanceMenu(sorted, dishCount);
 
         if (cancelled) return;
 

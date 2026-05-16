@@ -19,7 +19,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { type SupabaseDish } from './useSupabaseMenu';
+import { type SupabaseDish, calcDishCount } from './useSupabaseMenu';
 import { FLAVOR_COL, HEALTH_COL, CUISINE_COL } from './preferenceColMap';
 import { getUserPrefs } from '../lib/userPrefs';
 import { getFamilyMenuPrefs, familyGoalScore, dishTriggersAllergy } from '../lib/familyPrefs';
@@ -83,7 +83,7 @@ function getEatingMembers(): EatingMember[] {
  * Returns total dishes per day + how many slots are reserved for kid-friendly dishes.
  * Kid slots: 1 if any kid in today's group, 2 if 2+ kids.
  */
-function calcDishesForToday(): { dishesPerDay: number; kidSlots: number } {
+function calcDishesForToday(): { dishesPerDay: number; kidSlots: number; adults: number; kids: number } {
   const members = getEatingMembers();
   let kids = 0, adults = 0;
   if (members.length > 0) {
@@ -93,15 +93,12 @@ function calcDishesForToday(): { dishesPerDay: number; kidSlots: number } {
     adults = parseInt(localStorage.getItem('nutri_adults') ?? '3', 10);
     kids   = parseInt(localStorage.getItem('nutri_kids')   ?? '0', 10);
   }
-  const eff = adults + kids * 0.5;
-  const total =
-    eff <= 1.5 ? 3 :
-    eff <= 3.5 ? 4 :
-    eff <= 5.5 ? 5 :
-    eff <= 7.5 ? 6 :
-    Math.min(20, Math.round(eff));
+  // Delegate to the canonical calcDishCount so dinner / lunch / breakfast
+  // all bucket consistently. Previously this function and calcDishCount
+  // disagreed for 3a+2k: this returned 5 dinner, calcDishCount returned 4.
+  const total = calcDishCount('晚餐', adults, kids);
   const kidSlots = kids > 0 ? Math.min(kids, 2) : 0;
-  return { dishesPerDay: total, kidSlots };
+  return { dishesPerDay: total, kidSlots, adults, kids };
 }
 
 // Legacy alias (used by swapDish / regenerate where kidSlots doesn't matter)
@@ -578,6 +575,8 @@ function generateWeekPlan(
   healthPrefs?: { preferLowSodium: boolean; preferLowSugar: boolean; avoidHighPurine: boolean },
   familyPrefs?: ReturnType<typeof getFamilyMenuPrefs>,
   helperMode = false,
+  adults = 2,
+  kids = 0,
 ): WeeklyMenu {
   const weekStart = getMondayISO();
   const days: WeeklyDayMenu[] = [];
@@ -831,15 +830,28 @@ function generateWeekPlan(
     // Track for next day's scoring
     dayIngredients.forEach(ing => pickedIngredients.push(ing));
 
-    // ── Generate lunch as a 3-dish 套餐 ─────────────────────────────────
-    // Lunch is intentionally a fixed-shape "set meal" regardless of family
-    // size — portions scale outside this algo, not the dish count:
-    //   • slot 0: 主食 / 盖饭 / 意面 / 拌面 / 炒饭 (one-bowl, includes carbs + some protein)
-    //   • slot 1: 1 份配菜（蔬菜/凉菜/小炒）
-    //   • slot 2: 1 份汤
-    // This matches the HK family lunch pattern (think 茶餐厅 set lunch) and
-    // is much faster to prep than the previous "scattered 4 dishes" lunch.
+    // ── Generate lunch — scales with headcount ─────────────────────────
+    // Template by total target N (from calcDishCount('午餐')):
+    //   N=2: 主食 + 汤
+    //   N=3: 主食 + 配菜 + 汤
+    //   N=4: 主食 + 配菜 + 主菜(肉) + 汤
+    //   N=5: 主食 + 配菜×2 + 主菜 + 汤
+    //   N=6: 主食 + 配菜×2 + 主菜×2 + 汤
+    // Larger N follow the same N-2 split between veggie and meat.
     const dinnerIds = new Set(dayDishes.map(d => d.id));
+    const lunchTarget = calcDishCount('午餐', adults, kids);
+    const lunchPlan = (() => {
+      if (lunchTarget <= 1) return { staple: 1, veggie: 0, meat: 0, soup: 0 };
+      if (lunchTarget === 2) return { staple: 1, veggie: 0, meat: 0, soup: 1 };
+      if (lunchTarget === 3) return { staple: 1, veggie: 1, meat: 0, soup: 1 };
+      if (lunchTarget === 4) return { staple: 1, veggie: 1, meat: 1, soup: 1 };
+      // N >= 5: 1 staple + 1 soup; split the remaining (N-2) between veggie and meat,
+      // favoring veggie by 1 when odd.
+      const rest = lunchTarget - 2;
+      const veggie = Math.ceil(rest / 2);
+      const meat   = rest - veggie;
+      return { staple: 1, veggie, meat, soup: 1 };
+    })();
 
     const scoreLunch = (d: any) => {
       let score = scoreForWeek({
@@ -878,7 +890,20 @@ function generateWeekPlan(
       .sort((a, b) => b.score - a.score)
       .slice(0, 15);
 
-    // 3. soup pool — same as dinner soup pool
+    // 3. meat / protein pool — main_protein course, non-seafood-only fine
+    const meatPool = pool
+      .filter(d => !usedIds.has(d.id) && !lunchUsedIds.has(d.id))
+      .filter(d => {
+        const ct = d.course_type ?? '';
+        const cat = ingCategory(d.main_ingredient ?? 'other');
+        if (ct === 'staple' || ct === 'soup' || ct === 'dessert' || ct === 'veggie_dish') return false;
+        return cat === 'protein' || cat === 'seafood' || ct === 'main_protein';
+      })
+      .map(scoreLunch)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 15);
+
+    // 4. soup pool — same as dinner soup pool
     const soupPool = pool
       .filter(d => !usedIds.has(d.id) && !lunchUsedIds.has(d.id))
       .filter(d => (d.course_type ?? '') === 'soup')
@@ -886,14 +911,15 @@ function generateWeekPlan(
       .sort((a, b) => b.score - a.score)
       .slice(0, 10);
 
-    const stapleLunch = weightedRandom(staplePool, 1).map(c => enrichRaw(c.dish));
-    const veggieLunch = weightedRandom(veggiePool, 1).map(c => enrichRaw(c.dish));
-    const soupLunch   = weightedRandom(soupPool,   1).map(c => enrichRaw(c.dish));
+    const stapleLunch = weightedRandom(staplePool, lunchPlan.staple).map(c => enrichRaw(c.dish));
+    const veggieLunch = weightedRandom(veggiePool, lunchPlan.veggie).map(c => enrichRaw(c.dish));
+    const meatLunch   = weightedRandom(meatPool,   lunchPlan.meat  ).map(c => enrichRaw(c.dish));
+    const soupLunch   = weightedRandom(soupPool,   lunchPlan.soup  ).map(c => enrichRaw(c.dish));
 
     // Track lunch picks across days so they can't repeat — also feed title
     // keywords into the weekly dedup tracker, and add IDs to usedIds so a
     // future day's dinner won't re-pick a lunch dish either.
-    const allLunchPicks = [...stapleLunch, ...veggieLunch, ...soupLunch];
+    const allLunchPicks = [...stapleLunch, ...veggieLunch, ...meatLunch, ...soupLunch];
     allLunchPicks.forEach(d => {
       lunchUsedIds.add(d.id);
       usedIds.add(d.id);
@@ -1060,7 +1086,7 @@ export function useWeeklyMenu() {
       }
 
       // 2. Try localStorage cache — key includes headcount + eating selection
-      const { dishesPerDay, kidSlots } = calcDishesForToday();
+      const { dishesPerDay, kidSlots, adults: hcAdults, kids: hcKids } = calcDishesForToday();
       const lsKey = getCacheKey(weekStart);
       const lsRaw = localStorage.getItem(lsKey);
       if (lsRaw) {
@@ -1203,6 +1229,7 @@ export function useWeeklyMenu() {
         const menu = generateWeekPlan(
           pool, profile, prefScores, recentIds, dishesPerDay, kidSlots,
           spiceBoost, profile.age_group, healthPrefs, familyPrefs, helperMode,
+          hcAdults, hcKids,
         );
 
         if (cancelled) return;
