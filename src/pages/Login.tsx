@@ -421,10 +421,9 @@ export default function Login() {
               </div>
 
               {/* Secondary login row: Instagram + Facebook
-                  (WeChat button hidden — no usable 公众号 in this account
-                  and 网站应用 备案 not yet filed. The launchWeChat() helper
-                  + wechat-mp-callback edge function are kept ready for the
-                  day either path opens up.) */}
+                  (WeChat hidden — 公众号 exists but 未认证, so 网页授权
+                  is hard-blocked by WeChat. Re-enable after 微信认证
+                  goes through.) */}
               <div className="flex items-center gap-3 w-full justify-center">
                 {/* Instagram — uses Facebook OAuth under the hood (Meta SSO) */}
                 <button onClick={async () => {
