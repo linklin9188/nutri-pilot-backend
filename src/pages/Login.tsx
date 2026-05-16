@@ -420,21 +420,12 @@ export default function Login() {
                 <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.12)" }} />
               </div>
 
-              {/* Secondary login row: WeChat + Instagram + Facebook
-                  Each button now launches its OAuth flow directly — no
-                  longer detours through /signin. Instagram piggy-backs on
-                  Facebook OAuth (same Meta auth domain). */}
+              {/* Secondary login row: Instagram + Facebook
+                  (WeChat button hidden — no usable 公众号 in this account
+                  and 网站应用 备案 not yet filed. The launchWeChat() helper
+                  + wechat-mp-callback edge function are kept ready for the
+                  day either path opens up.) */}
               <div className="flex items-center gap-3 w-full justify-center">
-                {/* WeChat */}
-                <button onClick={launchWeChat}
-                  className="flex-1 h-11 rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95"
-                  style={{ background: "rgba(7,193,96,0.18)", border: "1px solid rgba(7,193,96,0.35)", fontSize: 13, color: "rgba(255,255,255,0.85)" }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="#07C160">
-                    <path d="M8.69 4C4.55 4 1.2 6.75 1.2 10.14c0 1.96 1.13 3.7 2.88 4.83l-.72 2.16 2.52-1.26c.9.18 1.8.36 2.74.36.27 0 .54 0 .81-.04A6.13 6.13 0 0 1 9 14.91c0-3.13 2.98-5.68 6.66-5.68.18 0 .36 0 .54.04C15.61 5.85 12.46 4 8.69 4z"/>
-                  </svg>
-                  微信
-                </button>
-
                 {/* Instagram — uses Facebook OAuth under the hood (Meta SSO) */}
                 <button onClick={async () => {
                   const ok = await launchOAuth('facebook');
