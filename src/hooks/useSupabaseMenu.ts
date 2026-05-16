@@ -613,6 +613,21 @@ function applyFeedbackScore(
   return score + Math.max(-0.40, Math.min(0.40, feedback));
 }
 
+// Light-bias regex: dishes whose flavor profile reads as 重口 — these get
+// a per-tag −0.10 dinner penalty so a 中国营养主厨 wouldn't put them on
+// the family dinner table. Lunch / breakfast are untouched.
+const DINNER_HEAVY_TAGS = new Set(['salty', 'very_salty', 'oily', 'fried', 'rich']);
+
+// 杂粮 lunch boost — Chinese dietary guideline says 午餐主食可加入杂粮
+// 以补充 B 族维生素. Matches title keywords AND main_ingredient='grain'/'staple'
+// so a 杂粮饭 ranks above plain white rice.
+const WHOLEGRAIN_KEYWORDS = ['杂粮', '燕麦', '糙米', '玉米', '紫米', '黑米', '小米', '八宝', '藜麦', 'oat', 'quinoa', 'brown rice', 'multigrain', 'whole grain'];
+
+function isWholegrain(d: any): boolean {
+  const title = (d.title_zh ?? d.title ?? '').toLowerCase();
+  return WHOLEGRAIN_KEYWORDS.some(k => title.includes(k.toLowerCase()));
+}
+
 function scoreDish(
   dish: any,
   profile: UserProfile5D,
@@ -621,6 +636,7 @@ function scoreDish(
   prefScores: Record<string, number>,
   spiceBoost = 0,
   hasXiaomei = false,
+  mealTime: '早餐' | '午餐' | '晚餐' = '晚餐',
 ): number {
   const flavorTags: string[] = dish.flavor_tags ?? [];
   const healthTags: string[] = dish.health_benefit_tags ?? [];
@@ -677,6 +693,21 @@ function scoreDish(
   // just nudges robot-doable ones up by half a flavor-tag's worth.
   if (hasXiaomei && dish.xiaomei_compatible) {
     score += 0.15;
+  }
+
+  // ⑦ Meal-specific tone (中国营养主厨 rules)
+  // 晚餐应该比午餐清淡 — penalize heavy flavors on the dinner plate. -0.10
+  // per heavy tag lets a 红烧肉 still appear if everything else aligns,
+  // but it loses to a 清蒸鱼 of equal hometown / goal / taste fit.
+  if (mealTime === '晚餐') {
+    for (const t of flavorTags) {
+      if (DINNER_HEAVY_TAGS.has(t)) score -= 0.10;
+    }
+  }
+  // 午餐主食可加入杂粮 — boost wholegrain staples (杂粮饭 / 燕麦 / 糙米 / 玉米 / 紫米 / 八宝粥 …)
+  // by +0.10 at lunch only, so a staple slot prefers them over plain rice.
+  if (mealTime === '午餐' && (dish.course_type === 'staple' || dish.main_ingredient === 'grain') && isWholegrain(dish)) {
+    score += 0.10;
   }
 
   // ⑦ Learned-preference signal — folds in user_preference_scores (positive
@@ -954,6 +985,82 @@ function applyBreakfastTemplate(sorted: any[], target: number): any[] {
   return result;
 }
 
+// 绿叶蔬菜 detector — for the "晚餐 1 绿叶素菜" requirement. Detects via
+// title keywords because flavor_tags 'veggie' is too broad (root veg also
+// gets it). Matches 菜心 / 油麦菜 / 菠菜 / 芥兰 / 通菜 / 西兰花 / 油菜 / 生菜 / 苋菜.
+const LEAFY_KEYWORDS = ['菜心', '油麦', '菠菜', '芥兰', '芥蓝', '通菜', '空心菜', '西兰花', '青菜', '生菜', '苋菜', '油菜', '小白菜', '上海青', '芦笋', '芹菜叶', 'spinach', 'kale', 'bok choy', 'cabbage'];
+function isLeafyVeggie(d: any): boolean {
+  const title = (d.title_zh ?? d.title ?? '').toLowerCase();
+  const flavor: string[] = d.flavor_tags ?? [];
+  if (!flavor.includes('veggie')) return false;
+  return LEAFY_KEYWORDS.some(k => title.includes(k.toLowerCase()));
+}
+
+/**
+ * 午餐模板（中国营养主厨规则）：
+ *   1 主食 (course_type=staple) — 杂粮已在 scoreDish 里 +0.10 优先
+ *   1 优质蛋白 (course_type=main_protein)
+ *   1 蔬菜 (course_type=veggie_dish)
+ *   余下槽位 → 按总分填补（汤 / 凉菜 / 配菜）
+ *
+ * 午餐能量占 40%，可以保留 main_protein / heavier 菜的偏好。
+ */
+function applyLunchTemplate(sorted: any[], target: number): any[] {
+  if (target <= 0 || sorted.length === 0) return [];
+  const used = new Set<string>();
+  const result: any[] = [];
+  const take = (d: any | undefined) => {
+    if (d && !used.has(d.id)) { used.add(d.id); result.push(d); }
+  };
+  const pickBy = (pred: (d: any) => boolean) =>
+    sorted.find(d => !used.has(d.id) && pred(d));
+
+  if (target >= 1) take(pickBy(d => d.course_type === 'staple'));
+  if (target >= 2) take(pickBy(d => d.course_type === 'main_protein'));
+  if (target >= 3) take(pickBy(d => d.course_type === 'veggie_dish'));
+  // Pad remaining slots
+  let i = 0;
+  while (result.length < target && i < sorted.length) { take(sorted[i]); i++; }
+  return result;
+}
+
+/**
+ * 晚餐模板（中国营养主厨规则）：
+ *   1 主食 (course_type=staple) — 晚餐主食可以是米饭，杂粮 boost 不强制
+ *   1 主菜 (course_type=main_protein) — 一道荤
+ *   1 绿叶蔬菜 (isLeafyVeggie)        — 绿叶蒜蓉清炒为主
+ *   必带 1 汤 (course_type=soup)       — 冬瓜汤 / 萝卜汤 / 紫菜汤 …
+ *   余下槽位 → 按总分填补
+ *
+ * 汤强制：如果池子里 soup 一道都没有，就只能 fallback，但记 console 警示，
+ * 让上层知道该补 soup 数据。
+ */
+function applyDinnerTemplate(sorted: any[], target: number): any[] {
+  if (target <= 0 || sorted.length === 0) return [];
+  const used = new Set<string>();
+  const result: any[] = [];
+  const take = (d: any | undefined) => {
+    if (d && !used.has(d.id)) { used.add(d.id); result.push(d); }
+  };
+  const pickBy = (pred: (d: any) => boolean) =>
+    sorted.find(d => !used.has(d.id) && pred(d));
+
+  if (target >= 1) take(pickBy(d => d.course_type === 'staple'));
+  if (target >= 2) take(pickBy(d => d.course_type === 'main_protein'));
+  if (target >= 3) take(pickBy(isLeafyVeggie) ?? pickBy(d => d.course_type === 'veggie_dish'));
+  if (target >= 4) {
+    const soup = pickBy(d => d.course_type === 'soup');
+    if (soup) take(soup);
+    else if (process.env.NODE_ENV !== 'production') {
+      // eslint-disable-next-line no-console
+      console.warn('[dinnerTemplate] no soup in pool — dinner without 汤 violates the 营养主厨 rule');
+    }
+  }
+  let i = 0;
+  while (result.length < target && i < sorted.length) { take(sorted[i]); i++; }
+  return result;
+}
+
 export function useRecommendDishes(
   mealTime: '早餐' | '午餐' | '晚餐' = '晚餐',
   veganOnly = false,
@@ -1049,16 +1156,18 @@ export function useRecommendDishes(
         const sorted = filtered
           .map(dish => ({
             dish,
-            score: scoreDish(dish, profile, humidity, solarTerm, scores, localPrefs.spiceBoost, hasXiaomei),
+            score: scoreDish(dish, profile, humidity, solarTerm, scores, localPrefs.spiceBoost, hasXiaomei, mealTime),
           }))
           .sort((a, b) => b.score - a.score)
           .map(s => s.dish);
 
-        // Breakfast skips balanceMenu (meat/veggie 70/30 is meaningless for
-        // congee + buns) and uses a structural template instead.
-        const balanced = mealTime === '早餐'
-          ? applyBreakfastTemplate(sorted, dishCount)
-          : balanceMenu(sorted, dishCount);
+        // Each meal type now has its own structural template — straight
+        // 70/30 meat/veggie balanceMenu was 营养主厨-blind (没汤、没绿叶、
+        // 没主食保证). Templates enforce: 早餐 dry+wet+side, 午餐
+        // staple+protein+veggie, 晚餐 staple+protein+leafy+soup.
+        const balanced = mealTime === '早餐' ? applyBreakfastTemplate(sorted, dishCount)
+                       : mealTime === '午餐' ? applyLunchTemplate(sorted, dishCount)
+                       :                       applyDinnerTemplate(sorted, dishCount);
 
         if (cancelled) return;
 
