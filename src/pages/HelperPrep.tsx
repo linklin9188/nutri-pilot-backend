@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { useLanguage } from "../contexts/LanguageContext";
+import { useLanguage, LANGUAGE_LABEL } from "../contexts/LanguageContext";
 import { supabase } from "../lib/supabase";
 import { type PrepStep } from "../hooks/useSupabaseMenu";
 import { useFeedbackEngine } from "../hooks/useFeedbackEngine";
@@ -29,7 +29,7 @@ interface DishWithPrep {
 export default function HelperPrep() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { t, t3, toggleLanguage, isChinese } = useLanguage();
+  const { t, t3, cycleLanguage, language, isChinese } = useLanguage();
   // Treat 繁體 the same as 简体 for content selection; treat 'tl' (Tagalog,
   // helper only) the same as English until Tagalog strings exist.
   const useChineseContent = isChinese;
@@ -136,17 +136,15 @@ export default function HelperPrep() {
             )}
           </div>
         </div>
-        {/* Language toggle pill */}
+        {/* Language pill — cycles zh → 繁 → en → tl → id so Tagalog /
+            Indonesian helpers can land on their own language. The old 2-way
+            中/EN toggle hid 3 of the 5 supported languages. */}
         <button
-          onClick={toggleLanguage}
-          className="flex items-center rounded-full bg-black/5 p-1 gap-0.5 active:scale-95 transition-transform"
+          onClick={cycleLanguage}
+          className="px-3 py-1.5 rounded-full bg-black/5 text-[12px] font-bold text-gray-900 active:scale-95 transition-transform"
+          title="切换语言 / Switch language"
         >
-          <span className={`px-2.5 py-1 rounded-full text-[12px] font-bold transition-all ${useChineseContent ? 'bg-white shadow-sm text-gray-900' : 'text-gray-400'}`}>
-            中
-          </span>
-          <span className={`px-2.5 py-1 rounded-full text-[12px] font-bold transition-all ${!useChineseContent ? 'bg-white shadow-sm text-gray-900' : 'text-gray-400'}`}>
-            EN
-          </span>
+          {LANGUAGE_LABEL[language]}
         </button>
       </header>
 
@@ -328,7 +326,11 @@ export default function HelperPrep() {
                                     const ingName = !useChineseContent
                                       ? (step.ingredient_en || step.ingredient_zh)
                                       : step.ingredient_zh;
-                                    const ingAlt = !useChineseContent ? step.ingredient_zh : step.ingredient_en;
+                                    // Single-language per i18n cleanup — was
+                                    // showing the other-language name stacked
+                                    // underneath as a helper-shopping aid;
+                                    // user prefers one language at a time so
+                                    // they can toggle if they need the other.
                                     // Slot label like "A1" / "A2" — the physical tray slot a helper
                                     // can match against the labeled tray in the kitchen.
                                     const slotLabel = `${tray}${slotI + 1}`;
@@ -372,11 +374,6 @@ export default function HelperPrep() {
                                               </span>
                                             )}
                                           </div>
-                                          {ingAlt && (
-                                            <p className={`text-[15px] font-semibold mt-0.5 ${isDone ? 'text-gray-300' : 'text-gray-400'}`}>
-                                              {ingAlt}
-                                            </p>
-                                          )}
                                           {action && (
                                             <p className={`text-[14px] mt-1 leading-snug ${isDone ? 'line-through text-gray-300' : 'text-gray-500'}`}>
                                               {action}

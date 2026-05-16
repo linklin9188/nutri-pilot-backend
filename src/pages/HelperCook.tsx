@@ -360,13 +360,12 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
             </span>
           </div>
           <p className="text-white leading-relaxed" style={{ fontSize: 17, fontWeight: 500, lineHeight: 1.6 }}>
-            {step.action_en || step.action_zh}
+            {/* Single-language per i18n cleanup. zh / 繁 → action_zh;
+                en / tl / id → action_en (fallback to action_zh when EN
+                hasn't been translated). The old code rendered EN on top
+                and stacked the Chinese underneath for every step. */}
+            {isChinese ? (step.action_zh || step.action_en) : (step.action_en || step.action_zh)}
           </p>
-          {step.action_en && step.action_zh && (
-            <p className="mt-3" style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', lineHeight: 1.5 }}>
-              {step.action_zh}
-            </p>
-          )}
         </div>
 
         {/* Timer */}

@@ -271,6 +271,34 @@ export default function Home() {
   const [selectedSwap, setSelectedSwap] = useState("");
   const [isSwapLoading, setIsSwapLoading] = useState(false);
 
+  // Manually-deleted dishes from today's menu. Keyed by (date + mealTime) so
+  // tomorrow's regenerated menu starts fresh. Stored as id set.
+  const hiddenKey = (() => {
+    const d = new Date();
+    return `home_hidden_${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}_${mealTime}`;
+  })();
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(hiddenKey) || '[]');
+      return new Set(Array.isArray(raw) ? raw : []);
+    } catch { return new Set(); }
+  });
+  // Re-read hidden ids when mealTime changes (key changes).
+  useEffect(() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(hiddenKey) || '[]');
+      setHiddenIds(new Set(Array.isArray(raw) ? raw : []));
+    } catch { setHiddenIds(new Set()); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mealTime]);
+  function hideDish(id: string) {
+    setHiddenIds(prev => {
+      const next = new Set(prev); next.add(id);
+      localStorage.setItem(hiddenKey, JSON.stringify(Array.from(next)));
+      return next;
+    });
+  }
+
   // Fridge scan
   const fridgeInputRef = useRef<HTMLInputElement>(null);
   const [isFridgeScanOpen, setIsFridgeScanOpen] = useState(false);
@@ -386,6 +414,7 @@ export default function Home() {
   // post-filter here that would otherwise collapse 3 candidates down to 1.
   const displayMenu: any[] = baseMenu
     .map((dish, idx) => menuSwaps[idx] || dish)
+    .filter(d => d && !hiddenIds.has(d.id))
     .slice()
     .sort((a, b) => courseRank(a) - courseRank(b));
   const hasMenu = (weeklyMenu?.days[todayIdx]?.dishes.length ?? storedMenuRaw.length) > 0;
@@ -678,12 +707,20 @@ export default function Home() {
                           {cuisineLabel(dish)}
                         </p>
                       </div>
-                      <button onClick={() => openSwapDrawer(idx)}
-                        className="w-9 h-9 rounded-full flex items-center justify-center active:scale-90 shrink-0 transition-transform"
-                        style={{ background: "rgba(0,0,0,0.04)" }}
-                        title="换一道">
-                        <span className="material-symbols-outlined" style={{ fontSize: 18, color: "rgba(0,0,0,0.40)" }}>sync_alt</span>
-                      </button>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button onClick={() => openSwapDrawer(idx)}
+                          className="w-9 h-9 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+                          style={{ background: "rgba(0,0,0,0.04)" }}
+                          title="换一道">
+                          <span className="material-symbols-outlined" style={{ fontSize: 18, color: "rgba(0,0,0,0.40)" }}>sync_alt</span>
+                        </button>
+                        <button onClick={() => hideDish(dish.id)}
+                          className="w-9 h-9 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+                          style={{ background: "rgba(0,0,0,0.04)" }}
+                          title="删除这道菜">
+                          <span className="material-symbols-outlined" style={{ fontSize: 18, color: "rgba(0,0,0,0.40)" }}>close</span>
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
