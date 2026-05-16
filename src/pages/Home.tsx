@@ -144,7 +144,13 @@ export default function Home() {
   // Default '中' so users who type 中餐 mentally don't get pasta in their list.
   // Declared before useRecommendDishes so the hook receives the right mode.
   const [cuisineMode, setCuisineMode] = useState<CuisineMode>(() => loadCuisineMode());
-  useEffect(() => { localStorage.setItem('home_cuisine_mode', cuisineMode); }, [cuisineMode]);
+  useEffect(() => {
+    localStorage.setItem('home_cuisine_mode', cuisineMode);
+    // Tell useWeeklyMenu to re-run with the new cuisine. The cache key
+    // already changes, but the hook listens to this event to actually
+    // re-read the cache and regenerate when needed.
+    window.dispatchEvent(new Event('nutri-prefs-changed'));
+  }, [cuisineMode]);
 
   const { recommendedDishes, loading: dishesLoading, refresh: refreshRecommended } = useRecommendDishes(
     mealTime, veganOnly, todayAdults, todayKids, cuisineMode,
@@ -352,18 +358,13 @@ export default function Home() {
     if (ct === 'dessert')      return 5;     // 甜品
     return 6;                                // unknown last
   };
-  const fullDisplayMenu: any[] = baseMenu
+  // Cuisine filter is now enforced at the DB query level (useRecommendDishes
+  // + useWeeklyMenu both call applyCuisineFilter), so we no longer need a
+  // post-filter here that would otherwise collapse 3 candidates down to 1.
+  const displayMenu: any[] = baseMenu
     .map((dish, idx) => menuSwaps[idx] || dish)
     .slice()
     .sort((a, b) => courseRank(a) - courseRank(b));
-  // Apply cuisine filter — 中餐 = non-western (cantonese / 北方 / 江南 / 川 /
-  // 日韩 / 东南亚), 西餐 = western only, 全部 = bypass.
-  const displayMenu = fullDisplayMenu.filter(d => {
-    const c = (d.origin_cuisine ?? '').toLowerCase();
-    if (cuisineMode === 'all')     return true;
-    if (cuisineMode === 'western') return c === 'western';
-    return c !== 'western';        // chinese-mode: everything except western
-  });
   const hasMenu = (weeklyMenu?.days[todayIdx]?.dishes.length ?? storedMenuRaw.length) > 0;
 
   const { solarTerm, weather, tip } = useDailyTip();
