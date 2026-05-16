@@ -26,6 +26,7 @@ import { getFamilyMenuPrefs, familyGoalScore, dishTriggersAllergy } from '../lib
 import { loadIntentBias, applyIntentBias, getIntentHash } from '../lib/intentBias';
 import { applyPregnancyAdjustments } from '../lib/pregnancy';
 import { getUserId } from '../lib/userId';
+import { applyCuisineFilter, loadCuisineMode } from '../lib/cuisineFilter';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -108,7 +109,7 @@ function calcDishesPerDay(): number {
   return calcDishesForToday().dishesPerDay;
 }
 
-/** Stable localStorage cache key — includes algo version, headcount, and eating selection. */
+/** Stable localStorage cache key — includes algo version, headcount, cuisine mode, eating selection, intent. */
 function getCacheKey(weekStart: string): string {
   const { dishesPerDay } = calcDishesForToday();
   const eatingRaw = localStorage.getItem('nutri_eating_today');
@@ -117,7 +118,8 @@ function getCacheKey(weekStart: string): string {
     if (eatingRaw) eatingKey = (JSON.parse(eatingRaw) as string[]).slice().sort().join('-');
   } catch {}
   const intentKey = getIntentHash();
-  return `weekly_menu_${ALGO_VERSION}_${weekStart}_p${dishesPerDay}_e${eatingKey}_i${intentKey}`;
+  const cuisineKey = loadCuisineMode().charAt(0); // c / w / a
+  return `weekly_menu_${ALGO_VERSION}_${weekStart}_p${dishesPerDay}_c${cuisineKey}_e${eatingKey}_i${intentKey}`;
 }
 
 // Always use the local-time date to avoid UTC offset shifting the value to the
@@ -1113,6 +1115,11 @@ export function useWeeklyMenu() {
         if (localPrefs.vegetarianOnly) {
           poolQuery = poolQuery.eq('is_vegan', true);
         }
+
+        // Cuisine pre-filter — same idea as useRecommendDishes. Without it
+        // the weekly menu's lunch slots could pick 2 western + 1 chinese,
+        // then Home's chinese-mode display would strip 2 → user sees 1 dish.
+        poolQuery = applyCuisineFilter(poolQuery, loadCuisineMode());
 
         const { data: rawPool } = await poolQuery;
 

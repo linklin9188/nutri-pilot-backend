@@ -178,6 +178,11 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
   onBack: () => void;
   onNextDish: (dish: DishWithCook) => void;
 }) {
+  const { isChinese } = useLanguage();
+  // Same single-language picker as DishListScreen — used in header, completion
+  // banner, and the "next dish" CTA so the toggle reaches every label.
+  const dishTitle = (d: DishWithCook) =>
+    isChinese ? (d.title_zh || d.title_en || '') : (d.title_en || d.title_zh || '');
   const steps = dish.cook_steps_json ?? [];
   const [currentIdx, setCurrentIdx] = useState(0);
   const [completed, setCompleted] = useState<Set<number>>(new Set());
@@ -293,7 +298,7 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
           </button>
           <div className="flex-1 min-w-0">
             <h1 className="text-white font-black leading-tight" style={{ fontSize: 17 }}>
-              {dish.title_en || dish.title_zh}
+              {dishTitle(dish)}
             </h1>
             <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>
               Step {currentIdx + 1} of {steps.length} · {completedCount} done
@@ -407,28 +412,32 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
           <div className="rounded-3xl p-5 text-center"
             style={{ background: 'rgba(37,211,102,0.12)', border: '1.5px solid rgba(37,211,102,0.3)' }}>
             <p className="text-3xl mb-2">🎉</p>
-            <p className="font-black text-white" style={{ fontSize: 18 }}>{dish.title_zh} 完成！</p>
+            <p className="font-black text-white" style={{ fontSize: 18 }}>
+              {dishTitle(dish)} {isChinese ? '完成！' : 'done!'}
+            </p>
             <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', marginTop: 4 }}>
-              {dishIndex + 1} / {dishes.length} 道菜
+              {dishIndex + 1} / {dishes.length} {isChinese ? '道菜' : 'dishes'}
             </p>
           </div>
           {nextDish ? (
             <button onClick={() => onNextDish(nextDish)}
               className="w-full h-14 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform font-bold text-white"
               style={{ background: 'linear-gradient(135deg, #FF5A1F, #FF9054)', fontSize: 15, boxShadow: '0 8px 24px rgba(255,90,31,0.35)' }}>
-              开始下一道：{nextDish.title_zh}
+              {isChinese ? '开始下一道：' : 'Next dish: '}{dishTitle(nextDish)}
               <span className="material-symbols-outlined text-white" style={{ fontSize: 20 }}>arrow_forward_ios</span>
             </button>
           ) : (
             <div className="rounded-2xl p-4 text-center"
               style={{ background: 'rgba(37,211,102,0.08)', border: '1px solid rgba(37,211,102,0.2)' }}>
-              <p className="font-black text-white" style={{ fontSize: 16 }}>全部完成！今日菜肴上桌 🍽️</p>
+              <p className="font-black text-white" style={{ fontSize: 16 }}>
+                {isChinese ? '全部完成！今日菜肴上桌 🍽️' : 'All done! Today’s menu is ready 🍽️'}
+              </p>
             </div>
           )}
           <button onClick={onBack}
             className="w-full h-12 rounded-2xl flex items-center justify-center font-semibold"
             style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.5)', fontSize: 14 }}>
-            返回菜单列表
+            {isChinese ? '返回菜单列表' : 'Back to menu'}
           </button>
         </div>
       ) : (

@@ -4,6 +4,7 @@ import { FLAVOR_COL, HEALTH_COL, CUISINE_COL } from './preferenceColMap';
 import { getFallbackImage } from '../lib/dishImageFallback';
 import { getUserPrefs } from '../lib/userPrefs';
 import { getUserId } from '../lib/userId';
+import { applyCuisineFilter, type CuisineMode } from '../lib/cuisineFilter';
 
 // ── Public types ──────────────────────────────────────────────────────────
 
@@ -800,6 +801,7 @@ export function useRecommendDishes(
   veganOnly = false,
   adults = 2,
   kids = 0,
+  cuisineMode: CuisineMode = 'chinese',
 ) {
   const [recommendedDishes, setRecommendedDishes] = useState<SupabaseDish[]>([]);
   const [currentSolarTerm, setCurrentSolarTerm]   = useState<SolarTerm | null>(null);
@@ -865,6 +867,11 @@ export function useRecommendDishes(
           dishQuery = dishQuery.eq('is_vegan', true);
         }
 
+        // Cuisine pre-filter — push the 中餐/西餐 toggle down to the DB so
+        // top-N scoring picks from the right bucket instead of the UI
+        // stripping survivors after the fact.
+        dishQuery = applyCuisineFilter(dishQuery, cuisineMode);
+
         const { data: allDishes, error: fetchErr } = await dishQuery;
         if (fetchErr) throw fetchErr;
 
@@ -901,7 +908,7 @@ export function useRecommendDishes(
     run();
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshKey, mealTime, veganOnly, adults, kids]);
+  }, [refreshKey, mealTime, veganOnly, adults, kids, cuisineMode]);
 
   return { recommendedDishes, currentSolarTerm, prefScores, loading, error, refresh };
 }

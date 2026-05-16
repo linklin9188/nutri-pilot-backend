@@ -1,3 +1,9 @@
 node_modules
 dist
 .env
+
+# Local Supabase CLI scratch (auto-generated when running `supabase` commands)
+supabase/.temp/
+
+# Local Claude Code session locks
+.claude/scheduled_tasks.lock

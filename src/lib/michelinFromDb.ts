@@ -42,6 +42,10 @@ export interface MichelinDish {
 export interface MichelinDayInput {
   date:    string;
   dayLabel: string;
+  /** Ingredient names (e.g. ['花生','虾']) the family must avoid — used to
+   *  filter out michelin candidates whose name / blurb references any of them.
+   *  Optional; empty/missing = no avoidance filter. */
+  avoidIngredients?: string[];
   dishes: { id: string; title_zh: string; main_ingredient?: string; course_type?: string }[];
 }
 
@@ -99,6 +103,20 @@ export async function elevateDayToMichelin(input: MichelinDayInput): Promise<Mic
   const pool = await loadPool();
   if (pool.length === 0) return { date: input.date, dishes: [] };
 
+  // Pre-filter the pool by allergen / avoid list. We do a coarse substring
+  // check across name_zh / name_en / blurb_zh / signature_technique so dishes
+  // like "椒盐花生鲜虾" get filtered when the family avoids 花生 or 虾. If the
+  // filter empties the pool, fall back to the unfiltered pool — better to
+  // show *something* than to leave the user staring at no overlays.
+  const avoidList = (input.avoidIngredients ?? []).map(s => s.trim()).filter(Boolean);
+  const matchesAvoid = (m: any) => {
+    if (avoidList.length === 0) return false;
+    const haystack = `${m.name_zh ?? ''} ${m.name_en ?? ''} ${m.blurb_zh ?? ''} ${m.signature_technique ?? ''}`.toLowerCase();
+    return avoidList.some(a => haystack.includes(a.toLowerCase()));
+  };
+  let workingPool = pool.filter(m => !matchesAvoid(m));
+  if (workingPool.length === 0) workingPool = pool;
+
   const usedInThisDay = new Set<string>();
   const out: MichelinDish[] = [];
 
@@ -107,14 +125,14 @@ export async function elevateDayToMichelin(input: MichelinDayInput): Promise<Mic
     const ct  = src.course_type ?? '';
 
     // Strategy 1: same main_ingredient
-    let candidates = pool.filter(m => (m.main_ingredient ?? '').toLowerCase() === ing && !usedInThisDay.has(m.id));
+    let candidates = workingPool.filter(m => (m.main_ingredient ?? '').toLowerCase() === ing && !usedInThisDay.has(m.id));
     // Strategy 2: same course_type (fallback)
     if (candidates.length === 0 && ct) {
-      candidates = pool.filter(m => m.course_type === ct && !usedInThisDay.has(m.id));
+      candidates = workingPool.filter(m => m.course_type === ct && !usedInThisDay.has(m.id));
     }
     // Strategy 3: anything not already used in this day
     if (candidates.length === 0) {
-      candidates = pool.filter(m => !usedInThisDay.has(m.id));
+      candidates = workingPool.filter(m => !usedInThisDay.has(m.id));
     }
     if (candidates.length === 0) continue;  // pool exhausted within day
 

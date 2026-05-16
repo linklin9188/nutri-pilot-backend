@@ -20,6 +20,7 @@ import { useLanguage, LANGUAGE_LABEL, type Language } from "../contexts/Language
 import IntentRegenModal from "../components/IntentRegenModal";
 import { loadIntentBias } from "../lib/intentBias";
 import { getUserId } from "../lib/userId";
+import { loadCuisineMode, type CuisineMode } from "../lib/cuisineFilter";
 
 // ── Solar term (节气) calculator ─────────────────────────────────────────────
 
@@ -139,8 +140,14 @@ export default function Home() {
   const [veganOnly, setVeganOnly] = useState(false);
   const [intentModalOpen, setIntentModalOpen] = useState(false);
 
+  // Cuisine filter: 中餐 (non-western asian) / 西餐 (western) / all.
+  // Default '中' so users who type 中餐 mentally don't get pasta in their list.
+  // Declared before useRecommendDishes so the hook receives the right mode.
+  const [cuisineMode, setCuisineMode] = useState<CuisineMode>(() => loadCuisineMode());
+  useEffect(() => { localStorage.setItem('home_cuisine_mode', cuisineMode); }, [cuisineMode]);
+
   const { recommendedDishes, loading: dishesLoading, refresh: refreshRecommended } = useRecommendDishes(
-    mealTime, veganOnly, todayAdults, todayKids,
+    mealTime, veganOnly, todayAdults, todayKids, cuisineMode,
   );
   const { weeklyMenu } = useWeeklyMenu();
 
@@ -156,15 +163,6 @@ export default function Home() {
     isChinese
       ? (d.title_zh || d.title_en || d.title || '')
       : (d.title_en || d.title_zh || d.title || '');
-
-  // Cuisine filter: 中餐 (non-western asian) / 西餐 (western) / all.
-  // Default '中' so users who type 中餐 mentally don't get pasta in their list.
-  type CuisineMode = 'chinese' | 'western' | 'all';
-  const [cuisineMode, setCuisineMode] = useState<CuisineMode>(() => {
-    const saved = localStorage.getItem('home_cuisine_mode') as CuisineMode | null;
-    return saved === 'chinese' || saved === 'western' || saved === 'all' ? saved : 'chinese';
-  });
-  useEffect(() => { localStorage.setItem('home_cuisine_mode', cuisineMode); }, [cuisineMode]);
 
   // ── 换菜 quota: 1/day free, 5/day Pro (= 5 套菜单/天) ───────────────
   const { isPro } = useSubscription();
