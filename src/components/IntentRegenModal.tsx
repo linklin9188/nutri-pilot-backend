@@ -10,6 +10,7 @@
 
 import { useState } from 'react';
 import { parseIntent, saveIntentBias } from '../lib/intentBias';
+import { extractClientOverrides, applyHeadcountOverride } from '../lib/intentClientOverrides';
 
 interface Props {
   open:     boolean;
@@ -37,6 +38,17 @@ export default function IntentRegenModal({ open, onClose }: Props) {
     if (!text.trim()) { setError('请输入你想要的菜单偏好'); return; }
     setLoading(true);
     try {
+      // Step 1: client-side regex catches structural overrides Gemini's
+      // schema can't express — "一个人 / 两个人" → today's headcount,
+      // "中午 / 晚上 / 早上" → meal scope. These take effect before
+      // the soft bias even runs, so dish counts adapt immediately.
+      const overrides = extractClientOverrides(text);
+      if (overrides.headcount && overrides.headcount > 0) {
+        applyHeadcountOverride(overrides.headcount);
+      }
+
+      // Step 2: still ask Gemini for the soft preference bias
+      // (more X / less Y / 清淡 / 重口) — these layer on top.
       const bias = await parseIntent(text);
       saveIntentBias(bias);
       // Clear the local weekly_menu cache; useWeeklyMenu listens to
