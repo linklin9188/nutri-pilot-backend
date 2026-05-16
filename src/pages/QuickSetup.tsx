@@ -15,10 +15,12 @@ const QUESTIONS = [
     question: "你现在最想要的是？",
     sub: "我们会根据这个定制你的每日菜单",
     options: [
-      { id: "fatloss",  label: "减脂瘦身", desc: "低卡、高饱腹感", icon: "🔥" },
-      { id: "muscle",   label: "增肌健体", desc: "高蛋白、促恢复", icon: "💪" },
-      { id: "balanced", label: "营养均衡", desc: "荤素搭配、全面补充", icon: "🥗" },
-      { id: "nourish",  label: "养生调理", desc: "温和滋补、顾脾胃", icon: "🍵" },
+      { id: "fatloss",   label: "减脂瘦身",   desc: "低卡、高饱腹感",         icon: "🔥" },
+      { id: "muscle",    label: "增肌健体",   desc: "高蛋白、促恢复",         icon: "💪" },
+      { id: "balanced",  label: "营养均衡",   desc: "荤素搭配、全面补充",     icon: "🥗" },
+      { id: "nourish",   label: "养生调理",   desc: "温和滋补、顾脾胃",       icon: "🍵" },
+      { id: "pregnancy", label: "怀孕备孕",   desc: "叶酸 · 铁 · 钙，避刺激",  icon: "🤰" },
+      { id: "growth",    label: "长高变壮",   desc: "钙 · 蛋白 · DHA，骨骼发育", icon: "🌱" },
     ],
   },
   {

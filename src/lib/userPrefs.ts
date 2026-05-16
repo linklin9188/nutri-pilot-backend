@@ -23,8 +23,9 @@ export interface UserPrefs {
   // Soft signals for scoring
   spiceLevel:       'none' | 'mild' | 'medium' | 'hot';
   spiceBoost:       number;         // +/- applied to spicy dishes during scoring
-  dietaryGoal:      string | null;  // 'fatloss' | 'muscle' | 'balanced' | 'nourish'
+  dietaryGoal:      string | null;  // 'fatloss' | 'muscle' | 'balanced' | 'nourish' | 'pregnancy' | 'growth'
   tastePref:        string | null;  // 'light' | 'default' | 'veggie' | ...
+  hometownCuisine:  string | null;  // matches dishes.origin_cuisine — cantonese / sichuan / jiangnan / …
 
   // Display helpers
   avoidLabels:      string[];       // human-readable labels for UI chips
@@ -82,12 +83,29 @@ export function resolveHealthFilters(conditions: string[]): {
   return { avoidTags, avoidIngredients, preferLowSodium, preferLowSugar, avoidHighPurine };
 }
 
-// QuickSetup goal → dietary_goal tag used in health_benefit_tags scoring
+// QuickSetup goal → dietary_goal tag used in health_benefit_tags scoring.
+// The values on the right must match values that actually appear in
+// dishes.health_benefit_tags — otherwise goalScore stays at 0 for every
+// dish and the user's selection has no effect (see the earlier 'default'
+// taste bug that motivated readUserTaste()).
 const GOAL_MAP: Record<string, string> = {
-  fatloss:  'lose_weight',  // DB uses 'lose_weight', not 'fat_loss'
-  muscle:   'muscle_gain',
-  balanced: 'maintain',
-  nourish:  'nourish',
+  fatloss:   'lose_weight',     // DB uses 'lose_weight', not 'fat_loss'
+  muscle:    'muscle_gain',
+  balanced:  'maintain',
+  nourish:   'nourish',
+  // pregnancy + growth: DB doesn't have dedicated 'pregnancy' / 'growth'
+  // health_benefit_tags yet — would need a Gemini backfill pass. Until
+  // then we map to the closest existing tag with enough coverage so the
+  // user's selection isn't a no-op:
+  //   pregnancy → 'high_protein' (83 dishes — protein-rich is the
+  //     biggest single nutritional ask in pregnancy; iron + folate +
+  //     calcium need a separate tag set)
+  //   growth → 'muscle_gain' (49 dishes — overlap with kids/teens
+  //     building bone + muscle mass)
+  // TODO: tag dishes with 'pregnancy' and 'growth' (Gemini batch) so
+  // these can be precise instead of approximate.
+  pregnancy: 'high_protein',
+  growth:    'muscle_gain',
 };
 
 // QuickSetup spice level → score modifier applied to spicy-tagged dishes
@@ -116,6 +134,31 @@ const SPICE_BOOST: Record<string, number> = {
  * spiceLevel; otherwise picking 'spicy' as a taste implies spiceLevel='hot'
  * (i.e. unlock the +0.25 spicy bonus too).
  */
+/**
+ * Read `userHometown` (set by Login.tsx) and return the first valid cuisine.
+ * Used as a fallback when the Supabase user_profiles row doesn't have a
+ * hometown_cuisine — which is the common case for anonymous QuickSetup
+ * users and Login users on a fresh device (the upsert is fire-and-forget,
+ * and the recommend hook runs before that promise resolves).
+ *
+ * Without this helper, the +30% hometown axis in scoreDish stays at 0 for
+ * the entire onboarding window — exactly the kind of "I picked Cantonese
+ * but I see equal numbers of all cuisines" complaint that motivated the
+ * spice-tag readUserTaste() fix.
+ */
+const HOMETOWN_VALID = new Set([
+  'sichuan', 'cantonese', 'jiangnan', 'northern',
+  'huaiyang', 'shandong', 'anhui', 'fujian', 'zhejiang', 'hunan',
+  'shanxi', 'yunnan_guizhou', 'chaoshan', 'shunde', 'taiwanese',
+  'japanese_korean', 'southeast_asian', 'western',
+]);
+function readHometownCuisine(): string | null {
+  const raw = (localStorage.getItem('userHometown') ?? '').toLowerCase();
+  const first = raw.split(',').map(s => s.trim()).find(Boolean);
+  if (first && HOMETOWN_VALID.has(first)) return first;
+  return null;
+}
+
 function readUserTaste(): { tastePref: UserPrefs['tastePref']; impliedSpice: UserPrefs['spiceLevel'] | null } {
   const raw = (localStorage.getItem('userTaste') ?? '').toLowerCase();
   const tastes = raw.split(',').map(s => s.trim()).filter(Boolean);
@@ -188,6 +231,7 @@ export function getUserPrefs(): UserPrefs {
         // — better to leave it as null when we genuinely have nothing.
         tastePref:    userTasteData.tastePref
                       ?? (prefs.goal === 'fatloss' || prefs.goal === 'nourish' ? 'light' : 'default'),
+        hometownCuisine: readHometownCuisine(),
         avoidLabels,
       };
     } catch { /* fall through */ }
@@ -235,6 +279,7 @@ export function getUserPrefs(): UserPrefs {
     dietaryGoal:  GOAL_MAP[legacyDiet ?? 'balanced'] ?? 'maintain',
     tastePref:    userTasteData.tastePref
                   ?? (legacyDiet === 'fatloss' ? 'light' : 'default'),
+    hometownCuisine: readHometownCuisine(),
     avoidLabels,
   };
 }

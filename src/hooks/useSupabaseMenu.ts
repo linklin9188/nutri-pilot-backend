@@ -703,9 +703,13 @@ async function fetchUserProfile(): Promise<UserProfile5D & { _prefs: ReturnType<
         .eq('id', userId)
         .single();
       if (!error && data) {
-        // Merge DB profile with local quickPrefs (local takes precedence for avoid/spice)
+        // Merge DB profile with local quickPrefs (local takes precedence for avoid/spice).
+        // hometown_cuisine: prefer DB → local quickPrefs → null. Without the
+        // local fallback, a user who set their hometown in Login but whose
+        // upsert hasn't flushed yet (or whose DB row predates the column)
+        // gets a 0 hometownScore and the menu ignores their cuisine choice.
         return {
-          hometown_cuisine: data.hometown_cuisine ?? null,
+          hometown_cuisine: data.hometown_cuisine ?? prefs.hometownCuisine ?? null,
           dietary_goal:     data.dietary_goal ?? prefs.dietaryGoal,
           taste_pref:       data.taste_pref ?? prefs.tastePref,
           age_group:        data.age_group ?? null,
@@ -717,9 +721,11 @@ async function fetchUserProfile(): Promise<UserProfile5D & { _prefs: ReturnType<
     } catch { /* table not yet migrated — fall through */ }
   }
 
-  // Anonymous path: use quickPrefs entirely
+  // Anonymous path: use quickPrefs entirely. hometownCuisine comes from
+  // localStorage.userHometown so the +30% hometown axis kicks in even
+  // before the user has a real DB profile.
   return {
-    hometown_cuisine: null,
+    hometown_cuisine: prefs.hometownCuisine ?? null,
     dietary_goal:     prefs.dietaryGoal,
     taste_pref:       prefs.tastePref,
     age_group:        null,

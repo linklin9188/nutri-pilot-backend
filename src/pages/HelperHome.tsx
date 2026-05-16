@@ -111,18 +111,97 @@ export default function HelperHome() {
   });
 
   useEffect(() => {
+    // Fast path: any locally-cached menu (employer-saved from a previous bind
+    // session OR a self-test). We replace this with the real employer pull
+    // below once binding is confirmed.
     const raw = localStorage.getItem("generatedMenu");
     if (raw) {
       try { setDishes(JSON.parse(raw)); } catch { /* ignore */ }
     }
+
     const userId = getUserId();
-    if (userId) {
-      supabase.from("user_profiles").select("display_name").eq("id", userId).maybeSingle()
-        .then(({ data }) => { if ((data as any)?.display_name) setHelperName((data as any).display_name); });
-      // Check if already linked to a household
-      supabase.from("household_members").select("id").eq("helper_id", userId).eq("status", "active").maybeSingle()
-        .then(({ data }) => { if (data) setIsLinked(true); });
-    }
+    if (!userId) return;
+
+    supabase.from("user_profiles").select("display_name").eq("id", userId).maybeSingle()
+      .then(({ data }) => { if ((data as any)?.display_name) setHelperName((data as any).display_name); });
+
+    // Bind status + pull the employer's menu. Three-step query because
+    // helper has no direct foreign key to households.user_weekly_menus:
+    //   1. helper.user_id → household_members.helper_id → household_id
+    //   2. household_id → households.employer_id
+    //   3. employer_id → user_weekly_menus today's dinner dish_ids
+    //   4. dish_ids → dishes (title, image, course_type, prep/cook steps)
+    (async () => {
+      // 1. Find the helper's active household membership
+      const { data: member } = await supabase
+        .from("household_members")
+        .select("household_id")
+        .eq("helper_id", userId)
+        .eq("status", "active")
+        .order("joined_at", { ascending: false })
+        .limit(1);
+      const householdId = (member?.[0] as any)?.household_id;
+      if (!householdId) return;
+      setIsLinked(true);
+
+      // 2. Resolve household → employer
+      const { data: hh } = await supabase
+        .from("households")
+        .select("employer_id")
+        .eq("id", householdId)
+        .maybeSingle();
+      const employerId = (hh as any)?.employer_id;
+      if (!employerId) return;
+
+      // 3. Today's saved menu for the employer. user_weekly_menus is keyed by
+      // (user_id, week_start, day_index, meal_type). Monday-start week + JS
+      // Date getDay() (Sun=0 → 6, Mon=1 → 0, etc.).
+      const today = new Date();
+      const dow = (today.getDay() + 6) % 7; // 0 = Mon
+      const monday = new Date(today);
+      monday.setDate(today.getDate() - dow);
+      const weekStart = monday.toISOString().slice(0, 10);
+
+      const { data: menuRows } = await supabase
+        .from("user_weekly_menus")
+        .select("meal_type, dish_ids, swapped_dish_ids")
+        .eq("user_id", employerId)
+        .eq("week_start", weekStart)
+        .eq("day_index", dow);
+
+      if (!menuRows || menuRows.length === 0) return;
+
+      // Prefer dinner > lunch > breakfast — that's the most "task-relevant"
+      // meal for a domestic helper to be staring at when they open the app.
+      const order = { dinner: 0, lunch: 1, breakfast: 2 } as const;
+      const sortedMeals = [...menuRows].sort((a: any, b: any) =>
+        (order[a.meal_type as keyof typeof order] ?? 99) - (order[b.meal_type as keyof typeof order] ?? 99)
+      );
+
+      // Merge all meals' dish_ids (helper sees the whole day's work),
+      // preferring swapped_dish_ids when the employer swapped a dish.
+      const allIds = sortedMeals.flatMap((m: any) =>
+        (m.swapped_dish_ids?.length ? m.swapped_dish_ids : m.dish_ids) ?? []
+      );
+      if (allIds.length === 0) return;
+
+      // 4. Fetch dish detail
+      const { data: dishRows } = await supabase
+        .from("dishes")
+        .select("id, title_zh, title_en, image_url, course_type, meal_type")
+        .in("id", allIds);
+
+      const idMap = new Map((dishRows ?? []).map((d: any) => [d.id, d]));
+      const ordered = allIds
+        .map((id: string) => idMap.get(id))
+        .filter(Boolean) as any[];
+      if (ordered.length === 0) return;
+
+      setDishes(ordered as any);
+      // Mirror to localStorage so HelperPrep / HelperCook (which still read
+      // from generatedMenu) light up too.
+      localStorage.setItem("generatedMenu", JSON.stringify(ordered));
+    })();
   }, []);
 
   async function handleJoinHousehold() {

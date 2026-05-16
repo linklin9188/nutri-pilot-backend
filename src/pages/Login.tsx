@@ -92,7 +92,6 @@ export default function Login() {
   const [spiceLevel, setSpiceLevel] = useState<'none' | 'mild' | 'medium' | 'hot'>('medium');
   const [diet, setDiet] = useState<string[]>([]);
   const [avoid, setAvoid] = useState<string[]>([]);
-  const [age, setAge] = useState("");
   const [hometown, setHometown] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -194,7 +193,6 @@ export default function Login() {
       await supabase.from("user_profiles").upsert({
         id:                 userId,
         display_name:       "Aieats User",
-        age_group:          age,
         hometown_cuisine:   hometown[0] ?? null,
         taste_preferences:  taste,
         dietary_goal:       diet[0] ?? null,
@@ -204,7 +202,6 @@ export default function Login() {
       localStorage.setItem("userTaste", taste.join(","));
       localStorage.setItem("userDiet", diet.join(","));
       localStorage.setItem("userAvoid", avoid.join(","));
-      localStorage.setItem("userAge", age);
       localStorage.setItem("userHometown", hometown.join(","));
       // Spice tolerance is captured by the dedicated 4-level slider, not
       // by the taste checkboxes. Persist the explicit value so the algo
@@ -714,7 +711,14 @@ export default function Login() {
                 },
                 {
                   icon: "monitor_weight", q: { en: "Dietary Goal?", zh: "目前的饮食目标？" },
-                  opts: [{ id: "balanced", en: "Balanced", zh: "营养均衡" }, { id: "fatloss", en: "Fat-loss", zh: "减脂瘦身" }, { id: "muscle", en: "Build Muscle", zh: "增肌高蛋白" }, { id: "nourish", en: "Nourishing", zh: "养生滋补" }],
+                  opts: [
+                    { id: "balanced",  en: "Balanced",        zh: "营养均衡" },
+                    { id: "fatloss",   en: "Fat-loss",        zh: "减脂瘦身" },
+                    { id: "muscle",    en: "Build Muscle",    zh: "增肌高蛋白" },
+                    { id: "nourish",   en: "Nourishing",      zh: "养生滋补" },
+                    { id: "pregnancy", en: "Pregnancy / TTC", zh: "怀孕备孕" },
+                    { id: "growth",    en: "Grow Stronger",   zh: "长高变壮" },
+                  ],
                   value: diet, toggle: (id: string) => setDiet(p => p.includes(id) ? p.filter(i => i !== id) : [...p, id]),
                 },
                 {
@@ -724,11 +728,6 @@ export default function Login() {
                     if (id === "none") { setAvoid(["none"]); return; }
                     setAvoid(p => p.includes("none") ? [id] : p.includes(id) ? p.filter(i => i !== id) : [...p, id]);
                   },
-                },
-                {
-                  icon: "cake", q: { en: "Age Group?", zh: "您的年龄段？" },
-                  opts: [{ id: "genz", en: "Gen Z", zh: "00后" }, { id: "millennial", en: "Millennial", zh: "90后" }, { id: "genx", en: "Gen X", zh: "80后" }, { id: "boomer", en: "Boomer+", zh: "70后及之前" }],
-                  value: age ? [age] : [], toggle: (id: string) => setAge(id),
                 },
                 {
                   icon: "location_on", q: { en: "Hometown Cuisine?", zh: "偏好哪个家乡菜系？" },
