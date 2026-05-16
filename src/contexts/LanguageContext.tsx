@@ -93,12 +93,16 @@ function detectFromBrowser(): Language | null {
 
 function defaultForRole(): Language {
   const role = localStorage.getItem('nutri_role');
-  // Helpers default to English; the helper view will switch to Tagalog
-  // once we expose a Tagalog button. We don't auto-pick Tagalog because
-  // English is a safe assumption when we don't know the helper's origin.
-  if (role === 'helper') return detectFromBrowser() === 'tl' ? 'tl' : 'en';
-  // Employer side: prefer browser-detected Chinese variant, else 简体.
-  return detectFromBrowser() ?? 'zh';
+  // Helpers: keep browser detection for Tagalog/Indonesian users, else English.
+  if (role === 'helper') {
+    const tl = detectFromBrowser();
+    return tl === 'tl' || tl === 'id' ? tl : 'en';
+  }
+  // Employer side: English-first by product decision (HK + international
+  // market, where most users read English faster). The chip in Login/header
+  // still cycles 简 / 繁 / EN so users who prefer Chinese can flip. When we
+  // push into mainland China, flip this default to detectFromBrowser() ?? 'zh'.
+  return 'en';
 }
 
 export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
