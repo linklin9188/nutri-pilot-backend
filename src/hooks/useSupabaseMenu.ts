@@ -513,6 +513,22 @@ function enrichDish(dish: any, highlight: boolean): SupabaseDish {
 
 // ── Step 1: Hard filter ───────────────────────────────────────────────────
 
+// Tag → set of main_ingredient values that should also trigger exclusion.
+// Without this, a seafood-allergic user could see 鱼腐浸时蔬 because the dish
+// is tagged main_ingredient='fish' but flavor_tags doesn't include 'seafood'.
+// Allergen safety can't be probabilistic — we explicitly map each allergy
+// keyword to all the underlying main_ingredient values that contain it.
+const ALLERGEN_TO_INGREDIENTS: Record<string, Set<string>> = {
+  seafood: new Set([
+    'seafood','fish','shrimp','crab','shellfish','squid','scallop',
+    'clam','lobster','salmon','tuna','cod','hairtail','seabass','oyster',
+  ]),
+  dairy:   new Set(['milk','cheese','butter','cream','yogurt']),
+  peanut:  new Set(['peanut']),
+  beef:    new Set(['beef']),
+  egg:     new Set(['egg']),
+};
+
 function hardFilter(
   pool: any[],
   avoidTags: string[],
@@ -524,6 +540,15 @@ function hardFilter(
     if (avoidTags.length > 0) {
       const allTags = [...(dish.flavor_tags ?? []), ...(dish.health_benefit_tags ?? [])];
       if (allTags.some(tag => avoidTags.includes(tag))) return false;
+      // Allergen-safety extension: when avoidTags includes a known allergen
+      // keyword (seafood/dairy/peanut/...), ALSO block any dish whose
+      // main_ingredient falls under it. flavor_tags alone leaks 鱼腐浸时蔬,
+      // 蜂蜜照烧三文鱼 etc. that aren't tagged 'seafood' explicitly.
+      const ing = (dish.main_ingredient ?? '').toLowerCase();
+      for (const allergen of avoidTags) {
+        const ingSet = ALLERGEN_TO_INGREDIENTS[allergen];
+        if (ingSet && ingSet.has(ing)) return false;
+      }
     }
     // Ingredient-based exclusion (main_ingredient column)
     if (avoidIngredients.length > 0 && dish.main_ingredient) {
@@ -662,6 +687,20 @@ function scoreDish(
   // Average across matching tags so a 10-tag dish doesn't dominate a 2-tag one
   if (learnedHits > 0) {
     score += (learnedSum / learnedHits) * LEARNED_WEIGHT;
+  }
+
+  // ⑧ Weekday speed bonus — Mon–Fri working evening prefer dishes under 20
+  // min. Weekend evening (Fri-night / Sat / Sun) allows elaborate. cook_time
+  // field is optional; skip the bonus when missing.
+  const cookTime = (dish as any).cook_time_min;
+  if (typeof cookTime === 'number' && cookTime > 0) {
+    const dow = new Date().getDay();   // 0 Sun … 6 Sat
+    const isWeekday = dow >= 1 && dow <= 4;  // Mon–Thu (Fri carries weekend vibe)
+    if (isWeekday) {
+      if (cookTime <= 15)      score += 0.15;
+      else if (cookTime <= 30) score += 0.05;
+      else if (cookTime > 60)  score -= 0.20;
+    }
   }
 
   return score;

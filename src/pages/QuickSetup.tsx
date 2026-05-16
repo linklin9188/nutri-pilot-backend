@@ -21,6 +21,7 @@ const QUESTIONS = [
       { id: "nourish",   label: "养生调理",   desc: "温和滋补、顾脾胃",       icon: "🍵" },
       { id: "pregnancy", label: "怀孕备孕",   desc: "叶酸 · 铁 · 钙，避刺激",  icon: "🤰" },
       { id: "growth",    label: "长高变壮",   desc: "钙 · 蛋白 · DHA，骨骼发育", icon: "🌱" },
+      { id: "low_carb",  label: "低碳生酮",   desc: "去主食 · 重蛋白 · 控糖",   icon: "🥑" },
     ],
   },
   {
@@ -111,10 +112,19 @@ const QUESTIONS = [
 // to match the actual tags present in dishes (health_benefit_tags +
 // flavor_tags) so scoreDish can hit them.
 const GOAL_TO_DIETARY_GOAL: Record<string, string> = {
-  fatloss:  'lose_weight',
-  muscle:   'muscle_gain',
-  balanced: 'maintain',
-  nourish:  'detox',
+  fatloss:   'lose_weight',
+  muscle:    'muscle_gain',
+  balanced:  'maintain',
+  nourish:   'detox',
+  // 'pregnancy' / 'growth' didn't map before, so selecting either wrote
+  // dietary_goal=null and the 40% goal score collapsed to 0. Map to the
+  // closest existing health_benefit_tag so scoring isn't blind. Pregnancy
+  // safety details (raw-seafood ban, high-mercury fish penalty, iron+folate
+  // boost) are handled separately in applyPregnancyAdjustments via the
+  // household member's hasPregnant flag.
+  pregnancy: 'maintain',
+  growth:    'muscle_gain',
+  low_carb:  'lose_weight',
 };
 const SPICE_TO_TASTE_PREF: Record<string, string | null> = {
   none:   'light',
@@ -144,6 +154,9 @@ const AGE_TO_GROUP: Record<string, string | null> = {
 };
 
 async function persistProfileToDb(prefs: Record<string, unknown>): Promise<void> {
+  // Persist low-carb flag for the lunch / breakfast templates and hardFilter
+  // to read at score time. Skip the staple slot when this is on.
+  localStorage.setItem('nutri_low_carb', (prefs.goal as string) === 'low_carb' ? '1' : '0');
   const userId = getUserId();
   if (!userId) return;
 

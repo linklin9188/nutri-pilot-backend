@@ -587,6 +587,8 @@ function generateWeekPlan(
   const lunchUsedIds = new Set<string>();
   const pickedIngredients: string[] = [];
   const pickedTitleKeywords: string[] = [];   // weekly keyword tracker
+  // Low-carb / keto: drops the staple slot in dinner AND lunch.
+  const lowCarb = localStorage.getItem('nutri_low_carb') === '1';
 
   // Small-family template is only for the smallest tables (≤3 dishes total),
   // where physical slot count can't fit the 4 macros (肉/海鲜/蔬菜/汤).
@@ -661,10 +663,14 @@ function generateWeekPlan(
           const cap = MAX_PER_CATEGORY[cat] ?? 7;
           if ((weeklyCatCounts[cat] ?? 0) >= cap) return false;
 
-          // Staple dishes ONLY allowed in slot 4 (standard template)
+          // Staple dishes ONLY allowed in slot 4 (standard template).
+          // EXCEPT when lowCarb is on: ban staples entirely, and let slot 4
+          // accept main_protein / veggie instead (relax the "slot 4 must
+          // be staple" rule). User on keto would otherwise lose 1 dish.
           if (!useSmallTemplate) {
-            if (isStaple && CARB_BLOCKED_SLOTS.has(slot)) return false;
-            if (slot === 4 && !isStaple) return false;
+            if (lowCarb && isStaple) return false;
+            if (!lowCarb && isStaple && CARB_BLOCKED_SLOTS.has(slot)) return false;
+            if (!lowCarb && slot === 4 && !isStaple) return false;
           } else {
             // Small template: no staple slot — block staple entirely
             if (isStaple) return false;
@@ -685,12 +691,22 @@ function generateWeekPlan(
           // Helper mode hard cap: skip level-3 dish if already have one today
           if (helperMode && level3CountToday >= 1 && (d.execution_level ?? 2) === 3) return null;
 
+          // Mixed-spice arrangement: when the family has both a spicy-loving
+          // adult (profile.taste_pref) AND a kid, the global kid taste
+          // penalty would zero out every spicy candidate. Instead, allow
+          // spicy on the adult-facing main_protein slots (0/1) while
+          // keeping veggie/soup/staple slots mild.
+          const mixedSpice = kids > 0 && profile.taste_pref === 'spicy';
+          const slotSpiceBoost = mixedSpice
+            ? (slot <= 1 ? 0.4 : -0.2)
+            : spiceBoost;
+
           let score = scoreForWeek({
             dish: d, profile, prefScores, recentIds,
             pickedIngredients: [...pickedIngredients, ...dayIngredients],
             pickedTitleKeywords,
             dayIndex,
-            spiceBoost,
+            spiceBoost: slotSpiceBoost,
             ageGroup,
             healthPrefs,
             helperMode,
@@ -856,9 +872,21 @@ function generateWeekPlan(
     //   N=5: 主食 + 配菜×2 + 主菜 + 汤
     //   N=6: 主食 + 配菜×2 + 主菜×2 + 汤
     // Larger N follow the same N-2 split between veggie and meat.
+    // Low-carb already pulled in at function scope (line above).
     const dinnerIds = new Set(dayDishes.map(d => d.id));
     const lunchTarget = calcDishCount('午餐', adults, kids);
     const lunchPlan = (() => {
+      // Low-carb / keto: drop the staple slot, push the budget into protein.
+      if (lowCarb) {
+        if (lunchTarget <= 1) return { staple: 0, veggie: 0, meat: 1, soup: 0 };
+        if (lunchTarget === 2) return { staple: 0, veggie: 0, meat: 1, soup: 1 };
+        if (lunchTarget === 3) return { staple: 0, veggie: 1, meat: 1, soup: 1 };
+        if (lunchTarget === 4) return { staple: 0, veggie: 1, meat: 2, soup: 1 };
+        const rest = lunchTarget - 1; // 1 soup + (rest) split veggie/meat, meat-heavy
+        const meat = Math.ceil(rest / 2);
+        const veggie = rest - meat;
+        return { staple: 0, veggie, meat, soup: 1 };
+      }
       if (lunchTarget <= 1) return { staple: 1, veggie: 0, meat: 0, soup: 0 };
       if (lunchTarget === 2) return { staple: 1, veggie: 0, meat: 0, soup: 1 };
       if (lunchTarget === 3) return { staple: 1, veggie: 1, meat: 0, soup: 1 };
