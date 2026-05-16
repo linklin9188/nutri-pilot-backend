@@ -7,7 +7,7 @@
  *   3. We return the AI recipe + external order links + ingredient supplier links
  */
 
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${import.meta.env.VITE_GEMINI_API_KEY}`;
+import { callGemini } from './geminiProxy';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -150,17 +150,11 @@ Rules:
 - Total calories should be realistic for the dish
 - image_search_query should be specific enough to find the right dish on Unsplash`;
 
-  const res = await fetch(GEMINI_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: 'application/json', temperature: 0.4 },
-    }),
+  const json = await callGemini({
+    endpoint: 'recipe',
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: { responseMimeType: 'application/json', temperature: 0.4 },
   });
-
-  if (!res.ok) throw new Error(`Gemini API error: ${res.status}`);
-  const json = await res.json();
   const text = json.candidates?.[0]?.content?.parts?.[0]?.text ?? '{}';
   return JSON.parse(text) as AIDish;
 }

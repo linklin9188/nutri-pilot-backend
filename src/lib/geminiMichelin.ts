@@ -11,7 +11,7 @@
  * whole week on a single long Gemini call.
  */
 
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${import.meta.env.VITE_GEMINI_API_KEY}`;
+import { callGemini } from './geminiProxy';
 
 export interface MichelinDish {
   // The original dish id, so we can map back to the row in weekly_menu.
@@ -74,20 +74,11 @@ Source dishes (preserve source_id):
 ${JSON.stringify(input.dishes, null, 0)}`;
 
 export async function elevateDayToMichelin(input: MichelinDayInput): Promise<MichelinDayOutput> {
-  if (!import.meta.env.VITE_GEMINI_API_KEY) {
-    throw new Error('Gemini API key not configured');
-  }
-  const res = await fetch(GEMINI_URL, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text: PROMPT(input) }] }],
-      generationConfig: { responseMimeType: 'application/json' },
-    }),
+  const json = await callGemini({
+    endpoint: 'michelin',
+    contents: [{ role: 'user', parts: [{ text: PROMPT(input) }] }],
+    generationConfig: { responseMimeType: 'application/json' },
   });
-  const json = await res.json() as any;
-  if (!res.ok) throw new Error(json.error?.message ?? 'Gemini API error');
-
   const text: string = json.candidates?.[0]?.content?.parts?.[0]?.text ?? '{}';
   try {
     const parsed = JSON.parse(text.replace(/```json\n?/g, '').replace(/```/g, '').trim());

@@ -1,14 +1,18 @@
 /**
- * Gemini multimodal — fridge / supermarket-shelf scan → dish suggestions.
+ * Gemini multimodal — fridge / supermarket-shelf scan.
  *
- * The user can shoot one of two scenes; we use the same Gemini call but feed
- * a different prompt depending on whether the photo is the inside of their
- * fridge (cook with what you have) or a supermarket aisle (decide what to
- * cook before buying). For both we return 3 中式 + 3 西式 picks so the
- * mainlander-in-HK use case ("I want options from both worlds") is covered.
+ * OPTIMIZED (2026-05-17): Gemini ONLY identifies ingredients. The dish
+ * suggestion step has moved to src/lib/scanMatch.ts which queries the
+ * dishes DB. Benefits:
+ *   - Output payload ↓ ~70% (just a list of strings, not 6 JSON dish cards)
+ *     → ~50% less Gemini token cost per scan
+ *   - Suggestions are REAL DB rows with prep_steps / image / nutrition →
+ *     user can tap "+ 今日菜单" / "看做法" / sync to 采购清单
+ *   - Respects profile (hometown / goal / spice / avoid / xiaomei) that
+ *     the old AI-invents-name approach completely ignored
  */
 
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${import.meta.env.VITE_GEMINI_API_KEY}`;
+import { callGemini } from './geminiProxy';
 
 export type ScanScene = 'fridge' | 'market';
 export type ScanLocale = 'zh' | 'zh-Hant';   // Mandarin Simplified vs HK Traditional
@@ -25,8 +29,10 @@ export interface ScannedDish {
 }
 
 export interface ScanResult {
+  /** Normalized Chinese ingredient names (e.g. ['番茄','鸡蛋','西兰花',
+   *  '猪肉','三文鱼']). Feed to scanMatch.normalizeIngredients() then
+   *  suggestDishesFromScan() to get real DB dish recommendations. */
   detected_ingredients: string[];
-  dishes: ScannedDish[];            // 6 total — 3 chinese + 3 western
 }
 
 /** Legacy alias kept so existing Home.tsx code stays happy until it migrates. */
@@ -94,23 +100,17 @@ Rules:
 - Prefer quick dishes (<30 min). Mark anything 45 min+ as 稍复杂.
 - Do not output any text outside the JSON.`;
 
-  const res = await fetch(GEMINI_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{
-        role: 'user',
-        parts: [
-          { inline_data: { mime_type: mimeType, data: base64Image } },
-          { text: prompt },
-        ],
-      }],
-      generationConfig: { responseMimeType: 'application/json' },
-    }),
+  const json = await callGemini({
+    endpoint: 'vision',
+    contents: [{
+      role:  'user',
+      parts: [
+        { inline_data: { mime_type: mimeType, data: base64Image } },
+        { text: prompt },
+      ],
+    }],
+    generationConfig: { responseMimeType: 'application/json' },
   });
-
-  const json = await res.json() as any;
-  if (!res.ok) throw new Error(json.error?.message ?? 'Gemini API error');
 
   const text: string = json.candidates?.[0]?.content?.parts?.[0]?.text ?? '{}';
   try {

@@ -14,7 +14,7 @@
 import { supabase } from './supabase';
 import { getUserId } from './userId';
 
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${import.meta.env.VITE_GEMINI_API_KEY}`;
+import { callGemini } from './geminiProxy';
 
 export type Nutrient = 'protein' | 'veggie' | 'carb' | 'calcium' | 'iron' | 'omega3';
 
@@ -92,23 +92,13 @@ export async function analyzeSchoolLunch(
   lunchText: string,
   ageBracket: '幼儿园' | '小学低年级' | '小学高年级' | '初中' = '小学低年级',
 ): Promise<BalanceAnalysis> {
-  if (!import.meta.env.VITE_GEMINI_API_KEY) {
-    throw new Error('Gemini API key not configured');
-  }
-
   const prompt = PROMPT_TEMPLATE(lunchText.trim() || '(空)', ageBracket);
 
-  const res = await fetch(GEMINI_URL, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: 'application/json' },
-    }),
+  const json = await callGemini({
+    endpoint: 'school_balance',
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: { responseMimeType: 'application/json' },
   });
-
-  const json = await res.json() as any;
-  if (!res.ok) throw new Error(json.error?.message ?? 'Gemini API error');
 
   const text: string = json.candidates?.[0]?.content?.parts?.[0]?.text ?? '{}';
   let analysis: BalanceAnalysis;
