@@ -987,6 +987,32 @@ function isDryBreakfast(d: any): boolean {
  */
 function applyBreakfastTemplate(sorted: any[], target: number): any[] {
   if (target <= 0 || sorted.length === 0) return [];
+
+  // Try combo-first: culturally-paired set (豆浆+油条+蛋) rather than
+  // bucket-random (粥+豆浆+海带). The combo picker reads localStorage
+  // hometown to filter to the right regional set. See
+  // .claude/skills/chinese-breakfast/SKILL.md for the cultural ruleset.
+  try {
+    // Lazy import — avoid pulling combo data into hot scoring path until
+    // the breakfast branch fires.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { pickBreakfastCombo } = require('../lib/breakfastCombos');
+    const hometown = (typeof localStorage !== 'undefined' && localStorage.getItem('userHometown'))
+                      ? localStorage.getItem('userHometown')!.split(',')[0] : null;
+    const today = new Date();
+    const dayIndex = (today.getDay() + 6) % 7;  // 0=Mon
+    const combo = pickBreakfastCombo({
+      pool: sorted as any,
+      dayIndex,
+      hometown,
+      avoidIngredients: [],
+      avoidTags: [],
+    });
+    if (combo.dishes.length === target) return combo.dishes as any[];
+    // If combo couldn't fill every slot (DB gap), fall through to the
+    // legacy bucket template so the user still sees `target` dishes.
+  } catch { /* fall through to legacy */ }
+
   const dryCandidates = sorted.filter(isDryBreakfast);
   const wetCandidates = sorted.filter(isWetBreakfast);
   const used = new Set<string>();
@@ -999,10 +1025,16 @@ function applyBreakfastTemplate(sorted: any[], target: number): any[] {
   if (target >= 1) take(dryCandidates[0]);
   // Slot 2 — wet drink
   if (target >= 2) take(wetCandidates.find(d => !used.has(d.id)));
-  // Slot 3 — side (egg/veggie/dessert/other)
+  // Slot 3 — side, prefer egg first, then 凉菜 / 豆制品 / other
   if (target >= 3) {
-    const side = sorted.find(d => !used.has(d.id) && !isWetBreakfast(d) && !isDryBreakfast(d));
-    take(side);
+    const EGG_KW = ['蛋', 'egg'];
+    const SIDE_KW = ['凉拌', '腌', '腐乳', '豆干', '千张', '豆腐皮', '酱牛肉', '肉松', '肉丝'];
+    const titleOf = (d: any) => ((d.title_zh ?? '') as string).toLowerCase();
+    const egg = sorted.find(d => !used.has(d.id) && EGG_KW.some(k => titleOf(d).includes(k.toLowerCase())));
+    const sidePick = egg
+                  ?? sorted.find(d => !used.has(d.id) && SIDE_KW.some(k => titleOf(d).includes(k.toLowerCase())))
+                  ?? sorted.find(d => !used.has(d.id) && !isWetBreakfast(d) && !isDryBreakfast(d));
+    take(sidePick);
   }
   // Pad with whatever scored highest if any slot was empty
   let i = 0;

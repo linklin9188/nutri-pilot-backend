@@ -58,54 +58,31 @@ function getDayNutrition(dishes: SupabaseDish[]) {
   );
 }
 
-// Chinese-breakfast 3-槽 template (中国营养主厨 rule):
-//   主食 (干): 包/馒头/油条/煎饼/烧饼/卷/饺/吐司 …
-//   喝的 (湿): 粥/豆浆/牛奶/酸奶/米浆/汤 …
-//   鸡蛋/小菜: 蛋 优先，否则任意第三道
+// Pick a breakfast COMBO (culturally-paired set, not 3 random bucket picks).
+// See .claude/skills/chinese-breakfast/SKILL.md for the cultural ruleset
+// and src/lib/breakfastCombos.ts for the canonical combo definitions.
 //
-// 之前硬编码 const count=1 → 用户每天早餐只看到 1 道菜，违反"中国人
-// 早餐 = 主食 + 喝的 + 鸡蛋"的常识。现在按日 deterministic rotation
-// 选 1 干 + 1 湿 + 1 蛋，保证 3 道一桌。
-const BK_WET = ['粥','豆浆','豆漿','牛奶','羊奶','酸奶','米浆','米漿','糊','汤','湯','奶昔','soup','milk','porridge','congee'];
-const BK_DRY = ['包','馒头','饅頭','油条','油條','烧饼','燒餅','煎饼','煎餅','灌饼','灌餅','饺','餃','卷','炒面','炒麵','炒饭','炒飯','吐司','三明治','汉堡','漢堡','司康','可颂','可頌','果子','糕','蛋饼','蛋餅','toast','sandwich','bagel','scone','burger','croissant','pancake','waffle','wrap','bun'];
-const BK_EGG = ['蛋','egg'];
-const titleHas = (d: SupabaseDish, kws: string[]) => {
-  const t = ((d as any).title_zh ?? (d as any).title ?? '').toLowerCase();
-  return kws.some(k => t.includes(k.toLowerCase()));
-};
-function pickBreakfast(pool: SupabaseDish[], dayIndex: number): SupabaseDish[] {
+// Why combo > slots: 豆浆+油条+茶叶蛋 is a coherent set; 豆浆+菠萝包+
+// 凉拌海带 is 3 different regions thrown together. Slot picker would
+// happily produce the second.
+import { pickBreakfastCombo } from "../lib/breakfastCombos";
+
+function pickBreakfast(pool: SupabaseDish[], dayIndex: number, hometown?: string | null): SupabaseDish[] {
   if (pool.length === 0) return [];
-  const dry = pool.filter(d => titleHas(d, BK_DRY));
-  const wet = pool.filter(d => titleHas(d, BK_WET));
-  const egg = pool.filter(d => titleHas(d, BK_EGG));
-  const used = new Set<string>();
-  const result: SupabaseDish[] = [];
-  const takeFrom = (group: SupabaseDish[]) => {
-    if (group.length === 0) return;
-    // deterministic rotation by day, so 周一 早餐 != 周三 早餐
-    for (let i = 0; i < group.length; i++) {
-      const pick = group[(dayIndex + i) % group.length];
-      if (!used.has((pick as any).id)) {
-        used.add((pick as any).id);
-        result.push(pick);
-        return;
-      }
-    }
-  };
-  takeFrom(dry);
-  takeFrom(wet);
-  takeFrom(egg);
-  // Pad to 3 with anything left if one of the buckets was empty
-  let i = 0;
-  while (result.length < 3 && i < pool.length) {
-    const candidate = pool[(dayIndex + i) % pool.length];
-    if (!used.has((candidate as any).id)) {
-      used.add((candidate as any).id);
-      result.push(candidate);
-    }
-    i++;
+  const result = pickBreakfastCombo({
+    pool: pool as any,
+    dayIndex,
+    hometown,
+    avoidIngredients: [],
+    avoidTags: [],
+  });
+  if (result.missingSlots.length > 0 && process.env.NODE_ENV !== 'production') {
+    // eslint-disable-next-line no-console
+    console.warn(`[pickBreakfast] combo "${result.combo.name}" missing slot(s):`,
+      result.missingSlots, '— need DB backfill of:',
+      result.slots.filter(s => !s.dish).map(s => `${s.slot}=[${s.candidates.join('/')}]`));
   }
-  return result;
+  return result.dishes as SupabaseDish[];
 }
 
 // ── DishCard ──────────────────────────────────────────────────────────────────
@@ -467,7 +444,11 @@ export default function WeeklyMenu() {
   const dayMenu  = weeklyMenu?.days[effectiveDay];
   const dinner   = dayMenu?.dishes ?? [];
   const lunch    = dayMenu?.lunchDishes ?? [];
-  const breakfast = pickBreakfast(breakfastPool, effectiveDay);
+  // Hometown drives which combo set the breakfast picker filters to
+  // (粤式 / 北方 / 江南 / 川式 / 港式茶餐厅 …). Multi-value localStorage
+  // is comma-separated; take the first as the primary preference.
+  const userHometown = (localStorage.getItem('userHometown') ?? '').split(',')[0] || null;
+  const breakfast = pickBreakfast(breakfastPool, effectiveDay, userHometown);
   const nutrition = getDayNutrition([...lunch, ...dinner]);
 
   // Avoid-ingredients union for the household (only members at home today).
@@ -880,7 +861,7 @@ export default function WeeklyMenu() {
                   ) : (
                     <div className="flex flex-col">
                       {weeklyMenu?.days.map((day, i) => {
-                        const dayBreakfast = pickBreakfast(breakfastPool, i);
+                        const dayBreakfast = pickBreakfast(breakfastPool, i, userHometown);
                         const dayLunch  = day.lunchDishes ?? [];
                         const dayDinner = day.dishes ?? [];
                         const locked = isDayLocked(i);
