@@ -9,8 +9,9 @@
  * default, taps to expand for the per-dish offender list (e.g.
  * "高盐: 京酱肉丝 · 三杯鸡").
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { summarizeDay, capStatus, splitStatus, DAILY, type DayMeals } from '../lib/dailyNutrition';
+import { getEatenToday } from '../lib/eatingDiary';
 
 const tint = (s: 'good' | 'warn' | 'over' | 'off') =>
   s === 'good' ? '#16A34A'
@@ -37,7 +38,35 @@ interface Props {
 
 export default function DailyNutritionStrip({ meals, kcalTarget }: Props) {
   const [expanded, setExpanded] = useState(false);
-  const snap = summarizeDay(meals, { kcalTarget });
+
+  // Listen for both swap (nutri-prefs-changed) and eaten (nutri-eaten-changed)
+  // so the strip re-renders the instant the user ticks a dish or 换菜.
+  // Bumping `tick` invalidates getEatenToday / summarizeDay via the
+  // dependency-free read below.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const bump = () => setTick(n => n + 1);
+    window.addEventListener('nutri-eaten-changed', bump);
+    window.addEventListener('nutri-prefs-changed', bump);
+    return () => {
+      window.removeEventListener('nutri-eaten-changed', bump);
+      window.removeEventListener('nutri-prefs-changed', bump);
+    };
+  }, []);
+
+  // Filter mode: if the user has ticked ANY dish today, switch to
+  // "actual diary" mode and summarize only what they actually ate.
+  // Otherwise stay in "planned forecast" mode showing the menu.
+  const eaten = getEatenToday();
+  const hasAnyEaten = eaten.size > 0;
+  const filterMeals = (arr: any[]) =>
+    hasAnyEaten ? arr.filter(d => d.id && eaten.has(d.id)) : arr;
+  const mealsForSnap: DayMeals = {
+    早餐: filterMeals(meals.早餐 ?? []),
+    午餐: filterMeals(meals.午餐 ?? []),
+    晚餐: filterMeals(meals.晚餐 ?? []),
+  };
+  const snap = summarizeDay(mealsForSnap, { kcalTarget });
 
   const oilStat   = capStatus(snap.oilGramsEstimate,   DAILY.oil_g_cap);
   const saltStat  = capStatus(snap.saltGramsEstimate,  DAILY.salt_g_cap);
@@ -49,8 +78,9 @@ export default function DailyNutritionStrip({ meals, kcalTarget }: Props) {
     dinner:    splitStatus(snap.kcal.splitPct.dinner,    30),
   };
 
-  // Nothing to show if no meals exist yet
-  if (snap.kcal.total === 0) return null;
+  // Nothing to show if no meals exist yet AND nothing has been eaten —
+  // we'd be a card displaying all zeros, which is noise.
+  if (snap.kcal.total === 0 && !hasAnyEaten) return null;
 
   return (
     <div
@@ -63,8 +93,15 @@ export default function DailyNutritionStrip({ meals, kcalTarget }: Props) {
       >
         {/* ── Row 1 · 三餐能量条 ───────────────────────── */}
         <div className="flex items-center justify-between mb-1.5">
-          <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.45)', fontWeight: 700, letterSpacing: '0.08em' }}>
+          <span className="inline-flex items-center gap-1.5" style={{ fontSize: 11, color: 'rgba(0,0,0,0.45)', fontWeight: 700, letterSpacing: '0.08em' }}>
             今日营养
+            <span className="rounded-full px-1.5 py-0.5 font-bold" style={{
+              fontSize: 9, letterSpacing: '0.02em',
+              background: hasAnyEaten ? 'rgba(22,163,74,0.10)' : 'rgba(0,0,0,0.05)',
+              color:      hasAnyEaten ? '#16A34A' : 'rgba(0,0,0,0.45)',
+            }}>
+              {hasAnyEaten ? `✅ 实际 ${eaten.size}` : '📊 计划'}
+            </span>
           </span>
           <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.55)', fontWeight: 600 }}>
             {snap.kcal.total} / {snap.kcal.target} kcal

@@ -23,6 +23,7 @@ import { getUserId } from "../lib/userId";
 import { loadCuisineMode, type CuisineMode } from "../lib/cuisineFilter";
 import { HeartButton } from "../components/HeartButton";
 import DailyNutritionStrip from "../components/DailyNutritionStrip";
+import { toggleEaten, getEatenToday } from "../lib/eatingDiary";
 
 // ── Solar term (节气) calculator ─────────────────────────────────────────────
 
@@ -299,6 +300,20 @@ export default function Home() {
       localStorage.setItem(hiddenKey, JSON.stringify(Array.from(next)));
       return next;
     });
+  }
+
+  // "已吃" diary — refreshed via window event so toggling a dish's
+  // ✓ button in any row re-renders this list AND the daily strip in
+  // the same tick.
+  const [eatenSet, setEatenSet] = useState<Set<string>>(() => getEatenToday());
+  useEffect(() => {
+    const handler = () => setEatenSet(getEatenToday());
+    window.addEventListener('nutri-eaten-changed', handler);
+    return () => window.removeEventListener('nutri-eaten-changed', handler);
+  }, []);
+  function handleToggleEaten(dishId: string) {
+    toggleEaten(dishId);
+    // toggleEaten dispatches the event; state catches up next render
   }
 
   // Fridge scan
@@ -744,6 +759,22 @@ export default function Home() {
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
                         <HeartButton dish={dish} sourceTag={mealTime} size={18} />
+                        {/* ✓ 已吃 — toggle persists to localStorage via
+                            eatingDiary; DailyNutritionStrip flips from
+                            "计划" to "实际" mode the moment any dish is
+                            ticked. */}
+                        <button onClick={() => handleToggleEaten(dish.id)}
+                          className="w-9 h-9 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+                          style={{
+                            background: eatenSet.has(dish.id) ? 'rgba(22,163,74,0.15)' : 'rgba(0,0,0,0.04)',
+                          }}
+                          title={eatenSet.has(dish.id) ? '已吃 · 点击取消' : '标记为已吃'}>
+                          <span className="material-symbols-outlined" style={{
+                            fontSize: 18,
+                            color: eatenSet.has(dish.id) ? '#16A34A' : 'rgba(0,0,0,0.40)',
+                            fontVariationSettings: eatenSet.has(dish.id) ? "'FILL' 1" : "'FILL' 0",
+                          }}>{eatenSet.has(dish.id) ? 'check_circle' : 'radio_button_unchecked'}</span>
+                        </button>
                         <button onClick={() => openSwapDrawer(idx)}
                           className="w-9 h-9 rounded-full flex items-center justify-center active:scale-90 transition-transform"
                           style={{ background: "rgba(0,0,0,0.04)" }}
