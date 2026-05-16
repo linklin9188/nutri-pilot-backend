@@ -26,23 +26,28 @@ async function launchOAuth(provider: 'facebook' | 'google' | 'apple'): Promise<b
   }
 }
 
-// WeChat isn't supported by Supabase Auth natively. We'll point at our own
-// edge function once it's wired up; for now it just builds the WeChat
-// authorize URL and the redirect target (back to nothinkeats.com/auth/wechat).
+// WeChat login via 公众号网页授权 (snsapi_userinfo). Only works when the
+// user opens the page INSIDE the WeChat in-app browser — there is no 网站
+// 应用 yet so qrconnect from Chrome/Safari is not available. The OAuth
+// redirect_uri points at the Supabase edge function which exchanges the
+// code, looks up / creates user_profiles, then 302s back to
+// /auth/wechat/done with the userId in the URL hash.
 function launchWeChat() {
   const appid = import.meta.env.VITE_WECHAT_APPID;
+  const isWeChatBrowser = /MicroMessenger/i.test(navigator.userAgent);
+  if (!isWeChatBrowser) {
+    alert("请在微信里打开 nothinkeats.com，然后再点「微信登录」。\n（等网站应用备案完成后将支持桌面浏览器扫码）");
+    return;
+  }
   if (!appid) {
     alert("微信登录即将上线，请稍后再试。");
     return;
   }
-  const redirect = encodeURIComponent(`${window.location.origin}/auth/wechat/callback`);
+  const supaUrl = import.meta.env.VITE_SUPABASE_URL ?? "";
+  const redirect = encodeURIComponent(`${supaUrl}/functions/v1/wechat-mp-callback`);
   const state = crypto.randomUUID();
   sessionStorage.setItem('wechat_oauth_state', state);
-  // Desktop uses qrconnect, mobile in-WeChat-browser uses oauth2/authorize.
-  const isWeChatBrowser = /MicroMessenger/i.test(navigator.userAgent);
-  const url = isWeChatBrowser
-    ? `https://open.weixin.qq.com/connect/oauth2/authorize?appid=${appid}&redirect_uri=${redirect}&response_type=code&scope=snsapi_userinfo&state=${state}#wechat_redirect`
-    : `https://open.weixin.qq.com/connect/qrconnect?appid=${appid}&redirect_uri=${redirect}&response_type=code&scope=snsapi_login&state=${state}`;
+  const url = `https://open.weixin.qq.com/connect/oauth2/authorize?appid=${appid}&redirect_uri=${redirect}&response_type=code&scope=snsapi_userinfo&state=${state}#wechat_redirect`;
   window.location.href = url;
 }
 

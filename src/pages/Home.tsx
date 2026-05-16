@@ -328,13 +328,19 @@ export default function Home() {
           if ((data as any)?.display_name) setDisplayName((data as any).display_name);
         });
 
-      // Load or create household for this employer
+      // Load or create household for this employer. We use `order + limit(1)`
+      // instead of `maybeSingle()` because employer_id has no UNIQUE
+      // constraint — historical data has duplicates per employer, and
+      // maybeSingle() throws PostgREST 400 when there's more than one row.
+      // The newest household is the canonical one.
       supabase
         .from("households")
         .select("id, invite_code, household_members(helper_id, user_profiles(display_name))")
         .eq("employer_id", userId)
-        .maybeSingle()
-        .then(async ({ data }) => {
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .then(async ({ data: rows }) => {
+          const data = rows?.[0];
           if (data) {
             setHouseholdId(data.id);
             setInviteCode(data.invite_code ?? "");
