@@ -100,6 +100,34 @@ const SPICE_BOOST: Record<string, number> = {
 
 // ── Core reader ──────────────────────────────────────────────────────────────
 
+/**
+ * Read the legacy `userTaste` localStorage value (set by Login.tsx — a
+ * checkbox grid of light / spicy / savory / sweet). Returns the first
+ * preference we can map to a dish flavor_tag. Used by both code paths
+ * below so Login users get the same taste signal QuickSetup users get.
+ *
+ * Why this exists: until today, `tastePref` was derived purely from `goal`
+ * (fatloss/nourish → 'light', else 'default'). The 'default' value matches
+ * NO flavor_tag, so a Login user who selected 'Spicy / 无辣不欢' got
+ * `tasteScore = 0` on every dish — exactly the "I picked spicy but see no
+ * spicy" bug. Reading `userTaste` here repairs that signal end-to-end.
+ *
+ * If the user also explicitly selected a `userSpice` level, that wins for
+ * spiceLevel; otherwise picking 'spicy' as a taste implies spiceLevel='hot'
+ * (i.e. unlock the +0.25 spicy bonus too).
+ */
+function readUserTaste(): { tastePref: UserPrefs['tastePref']; impliedSpice: UserPrefs['spiceLevel'] | null } {
+  const raw = (localStorage.getItem('userTaste') ?? '').toLowerCase();
+  const tastes = raw.split(',').map(s => s.trim()).filter(Boolean);
+  // Priority: spicy beats everything (strongest preference); then sweet /
+  // savory / light. 'default' is only chosen when nothing matches.
+  if (tastes.includes('spicy'))  return { tastePref: 'spicy',  impliedSpice: 'hot'  };
+  if (tastes.includes('sweet'))  return { tastePref: 'sweet',  impliedSpice: null   };
+  if (tastes.includes('savory')) return { tastePref: 'savory', impliedSpice: null   };
+  if (tastes.includes('light'))  return { tastePref: 'light',  impliedSpice: null   };
+  return { tastePref: null, impliedSpice: null };
+}
+
 export function getUserPrefs(): UserPrefs {
   // ── Read quickPrefs (QuickSetup anonymous flow) ───────────────────────────
   const raw = localStorage.getItem('quickPrefs');
@@ -112,7 +140,12 @@ export function getUserPrefs(): UserPrefs {
         health?: string[];   // health conditions from step 4
       };
 
-      const spiceLevel = (prefs.spice ?? 'medium') as UserPrefs['spiceLevel'];
+      // QuickSetup explicitly asks the spice question, so quickPrefs.spice
+      // is authoritative when present. Otherwise (rare — quickPrefs without
+      // spice, e.g. partially-completed flow), fall back to userTaste:
+      // selecting 'spicy' as a taste implies spiceLevel='hot'.
+      const userTasteData = readUserTaste();
+      const spiceLevel = (prefs.spice ?? userTasteData.impliedSpice ?? 'medium') as UserPrefs['spiceLevel'];
       const avoidList  = prefs.avoid ?? ['none'];
 
       const avoidTags:        string[] = [];
@@ -149,17 +182,28 @@ export function getUserPrefs(): UserPrefs {
         spiceLevel,
         spiceBoost:   SPICE_BOOST[spiceLevel] ?? 0,
         dietaryGoal:  GOAL_MAP[prefs.goal ?? 'balanced'] ?? 'maintain',
-        tastePref:    prefs.goal === 'fatloss' ? 'light' : prefs.goal === 'nourish' ? 'light' : 'default',
+        // tastePref priority: explicit userTaste (e.g. 'spicy' / 'sweet') >
+        // goal-derived hint (fatloss / nourish → 'light') > 'default'.
+        // 'default' matches no flavor_tag and so contributes 0 to tasteScore
+        // — better to leave it as null when we genuinely have nothing.
+        tastePref:    userTasteData.tastePref
+                      ?? (prefs.goal === 'fatloss' || prefs.goal === 'nourish' ? 'light' : 'default'),
         avoidLabels,
       };
     } catch { /* fall through */ }
   }
 
   // ── Legacy nutri_prefs fallback ───────────────────────────────────────────
+  // This branch fires for users who came through Login.tsx (which sets
+  // userTaste / userDiet but never writes quickPrefs).
   const legacySpice  = localStorage.getItem('userSpice') as UserPrefs['spiceLevel'] | null;
   const legacyAvoid  = (localStorage.getItem('userAvoid') ?? '').split(',').filter(Boolean);
   const legacyDiet   = localStorage.getItem('userDiet');
-  const spiceLevel   = legacySpice ?? 'medium';
+  const userTasteData = readUserTaste();
+  // Spice: explicit userSpice > implied-from-userTaste > 'medium'.
+  // So a Login user who only picked "Spicy / 无辣不欢" still gets the
+  // +0.25 spicy boost even though there's no slider for spice level.
+  const spiceLevel   = legacySpice ?? userTasteData.impliedSpice ?? 'medium';
 
   const avoidTags:        string[] = [];
   const avoidIngredients: string[] = [];
@@ -189,7 +233,8 @@ export function getUserPrefs(): UserPrefs {
     spiceLevel,
     spiceBoost:   SPICE_BOOST[spiceLevel] ?? 0,
     dietaryGoal:  GOAL_MAP[legacyDiet ?? 'balanced'] ?? 'maintain',
-    tastePref:    legacyDiet === 'fatloss' ? 'light' : 'default',
+    tastePref:    userTasteData.tastePref
+                  ?? (legacyDiet === 'fatloss' ? 'light' : 'default'),
     avoidLabels,
   };
 }
