@@ -690,6 +690,21 @@ function generateWeekPlan(
     // already been picked today.
     const dayTitleKeywords: string[] = [];
 
+    // ── Per-member main-slot allocation (一人一菜) ───────────────────
+    // When 2+ members are home with distinct goals (e.g. wife 备孕 +
+    // husband 增肌), score each main protein slot for ONE member only
+    // so the dishes pair to people. Soup / veggie / staple slots stay
+    // shared. Round-robin: slot 0 → member 0, slot 1 → member 1.
+    const dayHomeMembers = familyPrefs?.homeMembers ?? [];
+    const memberMainSlots: Record<number, typeof dayHomeMembers[number] | null> = {};
+    if (dayHomeMembers.length >= 2 && !dayUseSmallTemplate) {
+      memberMainSlots[0] = dayHomeMembers[0];
+      memberMainSlots[1] = dayHomeMembers[1] ?? dayHomeMembers[0];
+      // Extra members (3+) cycle back to slot 0/1 if there are protein slots
+      // for them; otherwise their goals only flow through the shared
+      // combined goalWeights below.
+    }
+
     // Track allergen dishes per day (soft-cap at 25% of daily slots)
     let allergenDishCountToday = 0;
     const maxAllergenToday = familyPrefs?.maxAllergenDishesPerDay ?? 1;
@@ -786,9 +801,23 @@ function generateWeekPlan(
           });
 
           // ── Family multi-goal scoring ───────────────────────────────────
+          // Two regimes:
+          //   (a) Main protein slots (slot 0/1) when a member is assigned:
+          //       score by THAT member's goals only, amplified by 1.5x so
+          //       the "this slot belongs to wife" signal beats the shared
+          //       balanced score. Yields one-dish-per-person pairings.
+          //   (b) Other slots: average across all members like before.
           if (familyPrefs && Object.keys(familyPrefs.goalWeights).length > 0) {
-            const totalWeight = Object.values(familyPrefs.goalWeights).reduce((a, b) => a + b, 0);
-            score += familyGoalScore(d, familyPrefs.goalWeights, totalWeight);
+            const assignedMember = memberMainSlots[slot];
+            if (assignedMember && assignedMember.goals.length > 0) {
+              const memberWeights = Object.fromEntries(
+                assignedMember.goals.map(g => [g, 1.0])
+              ) as typeof familyPrefs.goalWeights;
+              score += familyGoalScore(d, memberWeights, assignedMember.goals.length) * 1.5;
+            } else {
+              const totalWeight = Object.values(familyPrefs.goalWeights).reduce((a, b) => a + b, 0);
+              score += familyGoalScore(d, familyPrefs.goalWeights, totalWeight);
+            }
           }
 
           // ── Allergen soft-cap (main_ingredient / title only — not condiments) ──
@@ -1050,7 +1079,48 @@ function generateWeekPlan(
 
     const stapleLunch = pickFromPool(staplePool, lunchPlan.staple);
     const veggieLunch = pickFromPool(veggiePool, lunchPlan.veggie);
-    const meatLunch   = pickFromPool(meatPool,   lunchPlan.meat);
+    // Per-member meat allocation — when ≥ 2 meat slots and ≥ 2 home
+    // members each with goals, re-score the meat pool once per member
+    // and take that member's top pick. Mirrors the dinner main-slot
+    // allocation above. Falls back to combined scoring when conditions
+    // aren't met (1 member, 1 meat slot, no goals).
+    const meatLunch = (() => {
+      if (lunchPlan.meat === 0) return [];
+      const homeM = familyPrefs?.homeMembers ?? [];
+      if (homeM.length < 2 || lunchPlan.meat < 2) {
+        return pickFromPool(meatPool, lunchPlan.meat);
+      }
+      const picks: any[] = [];
+      const taken = new Set<string>();
+      for (let mi = 0; mi < lunchPlan.meat; mi++) {
+        const member = homeM[mi % homeM.length];
+        if (!member?.goals || member.goals.length === 0) {
+          const fallback = pickFromPool(meatPool.filter(c => !taken.has(c.dish.id) && !lunchKwsSeen.includes(extractTitleKeyword(c.dish.title_zh ?? '') ?? '')), 1);
+          if (fallback[0]) { picks.push(fallback[0]); taken.add(fallback[0].id); }
+          continue;
+        }
+        const memberWeights = Object.fromEntries(member.goals.map(g => [g, 1.0])) as Record<string, number>;
+        const rescored = meatPool
+          .filter(c => !taken.has(c.dish.id))
+          .filter(c => {
+            const kw = extractTitleKeyword(c.dish.title_zh ?? '');
+            return !(kw && lunchKwsSeen.includes(kw));
+          })
+          .map(c => ({
+            ...c,
+            score: c.score + familyGoalScore(c.dish, memberWeights as any, member.goals.length) * 1.5,
+          }))
+          .sort((a, b) => b.score - a.score);
+        const top = weightedRandom(rescored.slice(0, 8), 1).map(c => enrichRaw(c.dish));
+        if (top[0]) {
+          picks.push(top[0]);
+          taken.add(top[0].id);
+          const kw = extractTitleKeyword(top[0].title_zh ?? top[0].title ?? '');
+          if (kw) lunchKwsSeen.push(kw);
+        }
+      }
+      return picks;
+    })();
     const soupLunch   = pickFromPool(soupPool,   lunchPlan.soup);
 
     // Track lunch picks across days so they can't repeat — also feed title

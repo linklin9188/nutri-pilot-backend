@@ -25,6 +25,7 @@ import ProWellness from './pages/ProWellness';
 import ProSchoolBalance from './pages/ProSchoolBalance';
 import Favorites from './pages/Favorites';
 import WeChatCallback from './pages/WeChatCallback';
+import RequireAuth from './components/RequireAuth';
 import { syncFavoritesFromCloud } from './lib/favorites';
 import { LanguageProvider } from './contexts/LanguageContext';
 import { supabase } from './lib/supabase';
@@ -84,26 +85,37 @@ function AppShell() {
   return (
     <>
     <Routes>
+      {/* ── Public — no login needed ──────────────────────────────
+          / 是匿名访客唯一能看到的页面（只读，无 AI 成本）。Auth 入口
+          (/login /signin /setup /onboarding) 当然也必须公开。WeChat
+          OAuth callback 公开是因为这正是把用户从匿名升到 authed 的
+          关键 step。 */}
       <Route path="/" element={<RootRedirect />} />
       <Route path="/setup" element={<QuickSetup />} />
       <Route path="/login" element={<Login />} />
-      <Route path="/onboarding" element={<Onboarding />} />
-      <Route path="/verify" element={<VerifyIngredients />} />
-      <Route path="/delivery" element={<DeliveryTracking />} />
-      <Route path="/prep" element={<HelperPrep />} />
-      <Route path="/cook" element={<HelperCook />} />
-      <Route path="/ai-pilot" element={<AIPilot />} />
-      <Route path="/settings" element={<Settings />} />
-      <Route path="/weekly" element={<WeeklyMenu />} />
       <Route path="/signin" element={<SignIn />} />
-      <Route path="/helper" element={<HelperHome />} />
-      <Route path="/community" element={<Community />} />
-      <Route path="/pricing" element={<Pricing />} />
-      <Route path="/banquet" element={<Banquet />} />
-      <Route path="/pro/wellness" element={<ProWellness />} />
-      <Route path="/pro/school-balance" element={<ProSchoolBalance />} />
-      <Route path="/favorites" element={<Favorites />} />
+      <Route path="/onboarding" element={<Onboarding />} />
       <Route path="/auth/wechat/done" element={<WeChatCallback />} />
+      <Route path="/pricing" element={<Pricing />} />
+
+      {/* ── Auth-gated — 所有消耗 AI token 或修改状态的功能 ──────
+          匿名用户访问会被弹回 /login (helper 路径弹回 /signin?role=helper)。
+          这是防恶意 token 消耗的核心闸门 — Gemini Vision (扫冰箱) /
+          Claude (周菜单 / 米其林 / 学校营养) / 任何 mutation 都在这一层
+          之后。 */}
+      <Route path="/verify"   element={<RequireAuth><VerifyIngredients /></RequireAuth>} />
+      <Route path="/delivery" element={<RequireAuth><DeliveryTracking /></RequireAuth>} />
+      <Route path="/prep"     element={<RequireAuth helperRole><HelperPrep /></RequireAuth>} />
+      <Route path="/cook"     element={<RequireAuth helperRole><HelperCook /></RequireAuth>} />
+      <Route path="/ai-pilot" element={<RequireAuth><AIPilot /></RequireAuth>} />
+      <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
+      <Route path="/weekly"   element={<RequireAuth><WeeklyMenu /></RequireAuth>} />
+      <Route path="/helper"   element={<RequireAuth helperRole><HelperHome /></RequireAuth>} />
+      <Route path="/community" element={<RequireAuth><Community /></RequireAuth>} />
+      <Route path="/banquet"  element={<RequireAuth><Banquet /></RequireAuth>} />
+      <Route path="/pro/wellness"       element={<RequireAuth><ProWellness /></RequireAuth>} />
+      <Route path="/pro/school-balance" element={<RequireAuth><ProSchoolBalance /></RequireAuth>} />
+      <Route path="/favorites" element={<RequireAuth><Favorites /></RequireAuth>} />
     </Routes>
     </>
   );
