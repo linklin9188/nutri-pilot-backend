@@ -25,6 +25,7 @@ import ProWellness from './pages/ProWellness';
 import ProSchoolBalance from './pages/ProSchoolBalance';
 import Favorites from './pages/Favorites';
 import WeChatCallback from './pages/WeChatCallback';
+import { syncFavoritesFromCloud } from './lib/favorites';
 import { LanguageProvider } from './contexts/LanguageContext';
 import { supabase } from './lib/supabase';
 
@@ -56,6 +57,11 @@ function AppShell() {
         localStorage.setItem('nutri_user_id', session.user.id);
       }
     });
+
+    // Pull cloud-saved favorites into the local cache on boot. Anonymous
+    // users (no userId yet) get a no-op; once they finish QuickSetup the
+    // anon userId triggers a sync on the next event tick.
+    syncFavoritesFromCloud().catch(() => {/* offline-tolerant */});
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (session?.user) {

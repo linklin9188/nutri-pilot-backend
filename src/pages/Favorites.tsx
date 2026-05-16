@@ -33,23 +33,29 @@ export default function Favorites() {
   const grouped = groupFavoritesByTag();
 
   function addToWeeklyMenu(dish: FavoriteDish) {
-    // Append to generatedMenu — the local cache used by Home / Prep / Cook.
-    // Doesn't write to the algorithm-generated weekly_menu_<ALGO_VERSION>
-    // cache; this is a manual one-shot 'cook me this' for the next meal.
-    const raw = localStorage.getItem("generatedMenu");
+    // Append to `home_manual_additions_<YYYY-MM-DD>_<meal>` — Home reads
+    // this and prepends to today's displayMenu so the dish shows up at
+    // the top of the menu card. Defaults to dinner since that's the
+    // most common "I want this tonight" case.
+    const d = new Date();
+    const dateKey = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const meal = d.getHours() < 10 ? '早餐' : d.getHours() < 15 ? '午餐' : '晚餐';
+    const key  = `home_manual_additions_${dateKey}_${meal}`;
+    const raw = localStorage.getItem(key);
     let arr: any[] = [];
     try { arr = raw ? JSON.parse(raw) : []; } catch { arr = []; }
-    if (!arr.some(d => d.id === dish.id)) {
+    if (!arr.some(x => x.id === dish.id)) {
       arr.push({
-        id:       dish.id,
-        title_zh: dish.title_zh,
-        title_en: dish.title_en,
-        image_url:dish.image_url,
-        course_type:     dish.course_type,
-        main_ingredient: dish.main_ingredient,
-        origin_cuisine:  dish.origin_cuisine,
+        id:               dish.id,
+        title_zh:         dish.title_zh,
+        title_en:         dish.title_en,
+        image_url:        dish.image_url,
+        course_type:      dish.course_type,
+        main_ingredient:  dish.main_ingredient,
+        origin_cuisine:   dish.origin_cuisine,
+        img:              dish.image_url,
       });
-      localStorage.setItem("generatedMenu", JSON.stringify(arr));
+      localStorage.setItem(key, JSON.stringify(arr));
       window.dispatchEvent(new Event("nutri-prefs-changed"));
     }
     navigate("/");

@@ -1,10 +1,11 @@
 /**
  * favorites.ts — User's saved dishes (a.k.a. 收藏菜单)
  *
- * Lightweight persistence in localStorage for the test phase. The shape is
- * defined so the same payload could later be mirrored to Supabase (e.g. a
- * 'favorite_dishes' table keyed by user_id + dish_id) without the call sites
- * having to change.
+ * Storage model: localStorage is the live cache (instant UI, works offline);
+ * Supabase `user_favorite_dishes` is the source of truth for cross-device
+ * sync. Writes are fire-and-forget — local persists immediately, Supabase
+ * upserts in the background. Reads on app boot pull the remote list and
+ * merge into local (remote wins on conflict).
  *
  * UI integration points (so we don't drift later):
  *   • Home              — heart icon next to each recommended dish
@@ -13,6 +14,9 @@
  *   • ProWellness / SchoolBalance — heart on suggested dishes
  *   • Favorites page    — the index, with one-tap add-to-weekly-menu
  */
+
+import { supabase } from './supabase';
+import { getUserId } from './userId';
 
 const LS_KEY = 'nutri_favorites';
 
@@ -58,8 +62,11 @@ export function isFavorited(dishId: string): boolean {
 export function addFavorite(dish: Omit<FavoriteDish, 'saved_at'>): FavoriteDish[] {
   const list = loadFavorites();
   if (list.some(f => f.id === dish.id)) return list;
-  const next = [{ ...dish, saved_at: Date.now() }, ...list];
+  const full: FavoriteDish = { ...dish, saved_at: Date.now() };
+  const next = [full, ...list];
   persist(next);
+  // Fire-and-forget cloud sync; failures are non-fatal (we still have local).
+  syncAddToCloud(full).catch(() => {/* offline / RLS / etc. */});
   return next;
 }
 
@@ -67,6 +74,7 @@ export function addFavorite(dish: Omit<FavoriteDish, 'saved_at'>): FavoriteDish[
 export function removeFavorite(dishId: string): FavoriteDish[] {
   const next = loadFavorites().filter(f => f.id !== dishId);
   persist(next);
+  syncRemoveFromCloud(dishId).catch(() => {/* non-fatal */});
   return next;
 }
 
@@ -90,4 +98,53 @@ export function groupFavoritesByTag(): { tag: string; items: FavoriteDish[] }[] 
     groups.get(tag)!.push(f);
   }
   return [...groups.entries()].map(([tag, items]) => ({ tag, items }));
+}
+
+// ── Cloud sync (user_favorite_dishes table) ──────────────────────────────
+
+async function syncAddToCloud(dish: FavoriteDish): Promise<void> {
+  const userId = getUserId();
+  if (!userId) return;  // anonymous users — local only
+  await supabase.from('user_favorite_dishes').upsert({
+    user_id:       userId,
+    dish_id:       dish.id,
+    source_tag:    dish.source_tag ?? null,
+    dish_snapshot: dish,
+    created_at:    new Date(dish.saved_at).toISOString(),
+  }, { onConflict: 'user_id,dish_id' });
+}
+
+async function syncRemoveFromCloud(dishId: string): Promise<void> {
+  const userId = getUserId();
+  if (!userId) return;
+  await supabase.from('user_favorite_dishes')
+    .delete()
+    .eq('user_id', userId)
+    .eq('dish_id', dishId);
+}
+
+/**
+ * Pull remote favorites into local cache. Call once on app boot (App.tsx)
+ * and on userId change. Remote wins on conflict — if user removed something
+ * on another device, the deletion is reflected here.
+ */
+export async function syncFavoritesFromCloud(): Promise<void> {
+  const userId = getUserId();
+  if (!userId) return;
+  const { data, error } = await supabase
+    .from('user_favorite_dishes')
+    .select('dish_snapshot, source_tag, created_at')
+    .eq('user_id', userId);
+  if (error || !data) return;
+  const remote: FavoriteDish[] = data.map((row: any) => {
+    const snap = row.dish_snapshot as FavoriteDish;
+    return {
+      ...snap,
+      source_tag: row.source_tag ?? snap.source_tag,
+      saved_at:   snap.saved_at ?? new Date(row.created_at).getTime(),
+    };
+  });
+  // Remote is the source of truth. Replace local cache.
+  localStorage.setItem(LS_KEY, JSON.stringify(remote));
+  window.dispatchEvent(new Event('nutri-favorites-changed'));
 }

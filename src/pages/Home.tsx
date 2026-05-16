@@ -415,6 +415,24 @@ export default function Home() {
     return dinner.length > 0 ? dinner : storedMenuRaw;
   })();
 
+  // Manual additions from /favorites "+ 菜单" — keyed by date + mealTime so
+  // tomorrow / next meal-tab starts clean. Prepended so the user sees their
+  // pick first.
+  const manualKey = (() => {
+    const d = new Date();
+    return `home_manual_additions_${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}_${mealTime}`;
+  })();
+  const manualAdditions: any[] = (() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(manualKey) || '[]');
+      return Array.isArray(raw) ? raw : [];
+    } catch { return []; }
+  })();
+  const baseMenuWithManual = [
+    ...manualAdditions,
+    ...baseMenu.filter(d => !manualAdditions.some((m: any) => m.id === d?.id)),
+  ];
+
   // Display order: 肉 → 海鲜 → 蔬菜 → 主食 → 汤 → 甜品.
   // Drives "what to cook first" reading flow on the home card.
   const SEAFOOD_INGREDIENTS = new Set([
@@ -435,7 +453,7 @@ export default function Home() {
   // Cuisine filter is now enforced at the DB query level (useRecommendDishes
   // + useWeeklyMenu both call applyCuisineFilter), so we no longer need a
   // post-filter here that would otherwise collapse 3 candidates down to 1.
-  const displayMenu: any[] = baseMenu
+  const displayMenu: any[] = baseMenuWithManual
     .map((dish, idx) => menuSwaps[idx] || dish)
     .filter(d => d && !hiddenIds.has(d.id))
     .slice()
