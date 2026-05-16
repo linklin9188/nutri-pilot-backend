@@ -1,0 +1,6 @@
+/* App-wide background — matches the React app's dark hero so there's
+   no flash between the WeChat status bar and the loaded web-view. */
+page {
+  height: 100%;
+  background: #0a0a0a;
+}

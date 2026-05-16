@@ -1,0 +1,4 @@
+<!-- WeChat MP can host one external URL per page via <web-view>.
+     The full Aieats UX lives at nothinkeats.com, so we just point at
+     it and let React handle navigation inside the iframe-like view. -->
+<web-view src="{{webUrl}}" bindmessage="onWebMessage" bindload="onWebLoad" binderror="onWebError"></web-view>
