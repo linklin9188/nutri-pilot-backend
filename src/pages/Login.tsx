@@ -79,6 +79,12 @@ export default function Login() {
 
   // ── preferences state ──────────────────────────────────────────────
   const [taste, setTaste] = useState<string[]>([]);
+  // Spice tolerance is its own scalar slider — separate from `taste`
+  // (which is a flavor-style checkbox). Defaults to 'medium' so a user
+  // who skips the question gets a neutral menu. The new 4-level slider
+  // exists because the old binary "Spicy ✓" left no room to say "I can
+  // handle a bit but not 麻辣".
+  const [spiceLevel, setSpiceLevel] = useState<'none' | 'mild' | 'medium' | 'hot'>('medium');
   const [diet, setDiet] = useState<string[]>([]);
   const [avoid, setAvoid] = useState<string[]>([]);
   const [age, setAge] = useState("");
@@ -195,18 +201,12 @@ export default function Login() {
       localStorage.setItem("userAvoid", avoid.join(","));
       localStorage.setItem("userAge", age);
       localStorage.setItem("userHometown", hometown.join(","));
-      // Login's taste checkboxes are binary (Spicy ✓/✗) — there's no
-      // intensity slider like QuickSetup has. Derive userSpice here so
-      // any code path that reads localStorage.userSpice directly (not
-      // via getUserPrefs) still sees the right intent. userPrefs.ts has
-      // a parallel fallback, but writing it explicitly belt-and-suspenders.
-      if (taste.includes("spicy")) {
-        localStorage.setItem("userSpice", "hot");
-      } else {
-        // Removing 'spicy' from the taste list also clears spice intent —
-        // so re-running Login without Spicy un-spices the menu next time.
-        localStorage.removeItem("userSpice");
-      }
+      // Spice tolerance is captured by the dedicated 4-level slider, not
+      // by the taste checkboxes. Persist the explicit value so the algo
+      // gets the right SPICE_BOOST (-0.80 for 'none' to +0.25 for 'hot').
+      // If the user also ticked 'Spicy' in taste but slider is 'medium',
+      // the slider wins (explicit > implied).
+      localStorage.setItem("userSpice", spiceLevel);
     } catch (err) {
       console.error(err);
     } finally {
@@ -692,6 +692,20 @@ export default function Login() {
                   icon: "restaurant", q: { en: "Favorite Taste?", zh: "最喜欢的口味是？" },
                   opts: [{ id: "light", en: "Light & Fresh", zh: "清淡鲜香" }, { id: "spicy", en: "Spicy", zh: "无辣不欢" }, { id: "savory", en: "Rich & Savory", zh: "浓油赤酱" }, { id: "sweet", en: "Sweet", zh: "偏甜口" }],
                   value: taste, toggle: (id: string) => setTaste(p => p.includes(id) ? p.filter(i => i !== id) : [...p, id]),
+                },
+                {
+                  // Spice intensity slider — single-select, separate from
+                  // taste so a user can say "I like spicy but not 麻辣"
+                  // or "I never touch spicy food".
+                  icon: "local_fire_department", q: { en: "Spice level?", zh: "能吃多辣？" },
+                  opts: [
+                    { id: "none",   en: "No Spice",    zh: "完全不辣" },
+                    { id: "mild",   en: "Mild",        zh: "微微辣" },
+                    { id: "medium", en: "Medium",      zh: "中辣" },
+                    { id: "hot",    en: "Bring Heat",  zh: "越辣越好" },
+                  ],
+                  value: [spiceLevel],
+                  toggle: (id: string) => setSpiceLevel(id as typeof spiceLevel),
                 },
                 {
                   icon: "monitor_weight", q: { en: "Dietary Goal?", zh: "目前的饮食目标？" },
