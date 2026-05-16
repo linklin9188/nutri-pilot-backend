@@ -195,6 +195,18 @@ export default function Login() {
       localStorage.setItem("userAvoid", avoid.join(","));
       localStorage.setItem("userAge", age);
       localStorage.setItem("userHometown", hometown.join(","));
+      // Login's taste checkboxes are binary (Spicy ✓/✗) — there's no
+      // intensity slider like QuickSetup has. Derive userSpice here so
+      // any code path that reads localStorage.userSpice directly (not
+      // via getUserPrefs) still sees the right intent. userPrefs.ts has
+      // a parallel fallback, but writing it explicitly belt-and-suspenders.
+      if (taste.includes("spicy")) {
+        localStorage.setItem("userSpice", "hot");
+      } else {
+        // Removing 'spicy' from the taste list also clears spice intent —
+        // so re-running Login without Spicy un-spices the menu next time.
+        localStorage.removeItem("userSpice");
+      }
     } catch (err) {
       console.error(err);
     } finally {
