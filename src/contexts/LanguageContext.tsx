@@ -143,19 +143,23 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // Role-aware cycle. Read role at click time, not at hook setup, so a user
   // who switches role (e.g. via "switch to helper view") gets the right
   // cycle without remounting.
+  //
+  // We compute `next` from the closure `language` value rather than from
+  // the setState updater (`prev`). React 18 StrictMode invokes updater
+  // functions twice in dev to surface side-effect bugs — and our updater
+  // advances state, which is exactly the kind of non-idempotent function
+  // that breaks under double-invocation (the click would skip 2 steps in
+  // dev). Reading from closure is idempotent: setLanguage('tl') called
+  // twice still lands on 'tl'.
   const cycleLanguageForRole = () => {
     setHasExplicitPref(true);
     const role = localStorage.getItem('nutri_role');
     const order: Language[] = role === 'helper'
       ? ['en', 'tl', 'id']                          // helper: 3 langs, no zh
       : ['zh', 'zh-Hant', 'en', 'tl', 'id'];        // employer: full matrix
-    setLanguage(prev => {
-      const idx = order.indexOf(prev);
-      // If the current language isn't in this role's order (e.g. helper
-      // landed on zh from a previous employer session), jump to slot 0.
-      if (idx === -1) return order[0];
-      return order[(idx + 1) % order.length];
-    });
+    const idx = order.indexOf(language);
+    const next = idx === -1 ? order[0] : order[(idx + 1) % order.length];
+    setLanguage(next);
   };
 
   // t(en, zh) — kept binary-compatible with all existing call sites.
