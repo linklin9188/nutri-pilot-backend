@@ -18,12 +18,18 @@ interface LanguageContextType {
   setLanguage: (lang: Language) => void;
   toggleLanguage: () => void;        // legacy 2-way toggle (zh ↔ en)
   cycleLanguage: () => void;         // walks the full matrix (zh/繁/en/tl/id)
-  /** Role-aware cycle. Helper-facing screens (HelperHome, HelperPrep/Cook
-   *  reached through /helper) should NEVER offer 中文 — domestic helpers
-   *  read in en / tl / id. Employer-facing screens (Home, the same Prep
-   *  /Cook reached from Home's 烹饪 button) include zh + zh-Hant so the
-   *  employer can flick to Chinese to read along with the helper. We
-   *  disambiguate by localStorage.nutri_role at click time. */
+  /** Role-aware cycle. Two disjoint 3-language sets — Tagalog / Indonesian
+   *  never appear in the employer's chrome (HK Chinese family that doesn't
+   *  read either), and 中文 never appears in the helper's chrome (Filipino
+   *  /Indonesian worker that doesn't read Chinese). Disambiguate by
+   *  localStorage.nutri_role at click time.
+   *
+   *    role=employer  →  zh → 繁 → en        (HK family)
+   *    role=helper    →  en → tl → id        (domestic helper)
+   *
+   *  Prep/Cook pages live in BOTH role contexts depending on which entry
+   *  point you arrive from, so they pick the right cycle per click.
+   */
   cycleLanguageForRole: () => void;
   t: (en: string, zh: string) => string;
   /** 3-language helper for content authored with Tagalog — used in helper-
@@ -155,8 +161,8 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setHasExplicitPref(true);
     const role = localStorage.getItem('nutri_role');
     const order: Language[] = role === 'helper'
-      ? ['en', 'tl', 'id']                          // helper: 3 langs, no zh
-      : ['zh', 'zh-Hant', 'en', 'tl', 'id'];        // employer: full matrix
+      ? ['en', 'tl', 'id']            // helper: 3 langs, no Chinese
+      : ['zh', 'zh-Hant', 'en'];      // employer: 3 langs, no tl/id (HK family)
     const idx = order.indexOf(language);
     const next = idx === -1 ? order[0] : order[(idx + 1) % order.length];
     setLanguage(next);
