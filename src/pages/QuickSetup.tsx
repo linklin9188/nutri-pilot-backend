@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { useNavigate } from "react-router-dom";
+import { supabase } from "../lib/supabase";
+import { getUserId } from "../lib/userId";
 
 // Quick 4-question onboarding — no login required
 // Saves to localStorage as "quickPrefs"
@@ -68,6 +70,47 @@ const QUESTIONS = [
   },
 ] as const;
 
+// Map QuickSetup answers → valid user_profiles columns. Values are chosen
+// to match the actual tags present in dishes (health_benefit_tags +
+// flavor_tags) so scoreDish can hit them.
+const GOAL_TO_DIETARY_GOAL: Record<string, string> = {
+  fatloss:  'lose_weight',
+  muscle:   'muscle_gain',
+  balanced: 'maintain',
+  nourish:  'detox',
+};
+const SPICE_TO_TASTE_PREF: Record<string, string | null> = {
+  none:   'light',
+  mild:   'light',
+  medium: null,
+  hot:    'spicy',
+};
+
+async function persistProfileToDb(prefs: Record<string, unknown>): Promise<void> {
+  const userId = getUserId();
+  if (!userId) return;
+
+  const dietary_goal = GOAL_TO_DIETARY_GOAL[(prefs.goal as string) ?? ''] ?? null;
+  const taste_pref   = SPICE_TO_TASTE_PREF[(prefs.spice as string) ?? ''] ?? null;
+  // Pass through avoid + health as taste/avoid hints. Only 'seafood' from
+  // the avoid list maps cleanly to a flavor_tag; ingredient-level avoids
+  // (cilantro/onion/beef/peanut/dairy) keep flowing through the
+  // localStorage path consumed by getUserPrefs().
+  const avoid_tags = ((prefs.avoid as string[]) ?? [])
+    .filter(a => a !== 'none' && a !== 'veggie');
+
+  await supabase.from('user_profiles').upsert(
+    {
+      id:            userId,
+      dietary_goal,
+      taste_pref,
+      avoid_tags,
+      updated_at:    new Date().toISOString(),
+    },
+    { onConflict: 'id' },
+  );
+}
+
 export default function QuickSetup() {
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
@@ -132,6 +175,13 @@ export default function QuickSetup() {
       localStorage.setItem("isLoggedIn", "true");
       localStorage.setItem("userId", crypto.randomUUID());
     }
+
+    // Persist to user_profiles so the scoring algorithm's profile-side
+    // signals (dietary_goal 40%, taste_pref 30%) actually have data. Before
+    // this, only localStorage was written, leaving DB profile all NULL and
+    // making 70% of the score collapse to 0.
+    persistProfileToDb(prefs).catch(() => {/* non-blocking */});
+
     // Notify hooks that preferences changed
     window.dispatchEvent(new Event("nutri-prefs-changed"));
     navigate("/");

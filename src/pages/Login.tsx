@@ -127,15 +127,22 @@ export default function Login() {
     setIsLoading(true);
     const userId = getUserId() ?? "";
     try {
+      // Column names match the actual user_profiles schema. The legacy
+      // names (hometown / tastes / diet_goals / avoid_ingredients) didn't
+      // exist and caused PostgREST to silently reject the whole upsert.
+      // hometown_cuisine + dietary_goal are scalar text, so we take the
+      // first selection from the array UI; taste_preferences + avoid_tags
+      // are arrays.
       await supabase.from("user_profiles").upsert({
-        id: userId,
-        display_name: "Aieats User",
-        age_group: age,
-        hometown,
-        tastes: taste,
-        diet_goals: diet,
-        avoid_ingredients: avoid,
-      });
+        id:                 userId,
+        display_name:       "Aieats User",
+        age_group:          age,
+        hometown_cuisine:   hometown[0] ?? null,
+        taste_preferences:  taste,
+        dietary_goal:       diet[0] ?? null,
+        avoid_tags:         avoid,
+        updated_at:         new Date().toISOString(),
+      }, { onConflict: "id" });
       localStorage.setItem("userTaste", taste.join(","));
       localStorage.setItem("userDiet", diet.join(","));
       localStorage.setItem("userAvoid", avoid.join(","));
