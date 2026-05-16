@@ -13,7 +13,14 @@ interface DayDish {
   title_zh?: string;
   img?: string;
   image_url?: string;
+  meal_type?: string;  // 'lunch' | 'dinner' | 'breakfast' — for grouping
 }
+
+type DishesByMeal = {
+  breakfast: DayDish[];
+  lunch:     DayDish[];
+  dinner:    DayDish[];
+};
 
 // Task list — labels resolved at render time so we can pick zh / en / tl.
 // `tl` strings are the Tagalog wording a Filipino domestic helper would
@@ -88,6 +95,9 @@ export default function HelperHome() {
                  : language === 'id' ? 'ID'
                  : 'EN';
   const [dishes, setDishes] = useState<DayDish[]>([]);
+  const [dishesByMeal, setDishesByMeal] = useState<DishesByMeal>({
+    breakfast: [], lunch: [], dinner: [],
+  });
   const [helperName, setHelperName] = useState("");
   const [isLinked, setIsLinked] = useState(false);
   const [showCodeInput, setShowCodeInput] = useState(false);
@@ -171,36 +181,44 @@ export default function HelperHome() {
 
       if (!menuRows || menuRows.length === 0) return;
 
-      // Prefer dinner > lunch > breakfast — that's the most "task-relevant"
-      // meal for a domestic helper to be staring at when they open the app.
-      const order = { dinner: 0, lunch: 1, breakfast: 2 } as const;
-      const sortedMeals = [...menuRows].sort((a: any, b: any) =>
-        (order[a.meal_type as keyof typeof order] ?? 99) - (order[b.meal_type as keyof typeof order] ?? 99)
-      );
-
-      // Merge all meals' dish_ids (helper sees the whole day's work),
-      // preferring swapped_dish_ids when the employer swapped a dish.
-      const allIds = sortedMeals.flatMap((m: any) =>
-        (m.swapped_dish_ids?.length ? m.swapped_dish_ids : m.dish_ids) ?? []
-      );
+      // Collect dish_ids per meal type — preferring swapped_dish_ids when
+      // the employer swapped a dish. We keep the meal-type grouping so the
+      // helper sees "午餐 5 道 + 晚餐 6 道" instead of a flat list of 11.
+      const byMeal: Record<string, string[]> = { breakfast: [], lunch: [], dinner: [] };
+      for (const m of menuRows as any[]) {
+        const ids: string[] = (m.swapped_dish_ids?.length ? m.swapped_dish_ids : m.dish_ids) ?? [];
+        if (byMeal[m.meal_type]) byMeal[m.meal_type].push(...ids);
+      }
+      const allIds = [...byMeal.breakfast, ...byMeal.lunch, ...byMeal.dinner];
       if (allIds.length === 0) return;
 
-      // 4. Fetch dish detail
+      // 4. Fetch dish detail (one round trip for all meals)
       const { data: dishRows } = await supabase
         .from("dishes")
         .select("id, title_zh, title_en, image_url, course_type, meal_type")
         .in("id", allIds);
 
       const idMap = new Map((dishRows ?? []).map((d: any) => [d.id, d]));
-      const ordered = allIds
-        .map((id: string) => idMap.get(id))
-        .filter(Boolean) as any[];
-      if (ordered.length === 0) return;
+      const resolve = (ids: string[]) => ids.map(id => idMap.get(id)).filter(Boolean) as DayDish[];
 
-      setDishes(ordered as any);
+      const byMealResolved: DishesByMeal = {
+        breakfast: resolve(byMeal.breakfast).map(d => ({ ...d, meal_type: 'breakfast' })),
+        lunch:     resolve(byMeal.lunch).map(d => ({ ...d, meal_type: 'lunch' })),
+        dinner:    resolve(byMeal.dinner).map(d => ({ ...d, meal_type: 'dinner' })),
+      };
+      const flatOrdered = [
+        ...byMealResolved.breakfast,
+        ...byMealResolved.lunch,
+        ...byMealResolved.dinner,
+      ];
+      if (flatOrdered.length === 0) return;
+
+      setDishesByMeal(byMealResolved);
+      setDishes(flatOrdered);  // keep flat list for legacy dish-count display
       // Mirror to localStorage so HelperPrep / HelperCook (which still read
-      // from generatedMenu) light up too.
-      localStorage.setItem("generatedMenu", JSON.stringify(ordered));
+      // from generatedMenu) light up too. Includes meal_type so those pages
+      // can group too once they're updated.
+      localStorage.setItem("generatedMenu", JSON.stringify(flatOrdered));
     })();
   }, []);
 
@@ -295,31 +313,50 @@ export default function HelperHome() {
         </div>
       </div>
 
-      {/* Today's dish strip */}
+      {/* Today's dishes — grouped by meal (breakfast / 午餐 / 晚餐).
+          Each section scrolls horizontally and shows the dish count next
+          to the label, so the helper knows e.g. "5 道午餐 / 6 道晚餐". */}
       {dishes.length > 0 && (
-        <div className="relative z-10 px-5 mb-5">
-          <p className="mb-2" style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", letterSpacing: "0.08em" }}>
-            {t3("TODAY'S MENU", "今日菜单", "MENU NGAYON").toUpperCase()}
-          </p>
-          <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
-            {dishes.map((dish, i) => (
-              <div key={i} className="flex-shrink-0 rounded-xl overflow-hidden relative"
-                style={{ width: 72, height: 72 }}>
-                <img
-                  src={dish.img || dish.image_url || "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?q=80&w=80&auto=format&fit=crop"}
-                  alt={dish.title || dish.title_zh}
-                  className="w-full h-full object-cover"
-                  onError={e => { (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?q=80&w=80&auto=format&fit=crop"; }}
-                />
-                <div className="absolute inset-0"
-                  style={{ background: "linear-gradient(to top, rgba(0,0,0,0.65) 0%, transparent 60%)" }} />
-                <p className="absolute bottom-1 left-1 right-1 text-white font-semibold leading-tight"
-                  style={{ fontSize: 9 }}>
-                  {dish.title || dish.title_zh}
-                </p>
+        <div className="relative z-10 px-5 mb-5 space-y-3">
+          {([
+            { key: 'breakfast', label: t3('BREAKFAST', '早餐', 'AGAHAN') },
+            { key: 'lunch',     label: t3('LUNCH',     '午餐', 'TANGHALIAN') },
+            { key: 'dinner',    label: t3('DINNER',    '晚餐', 'HAPUNAN') },
+          ] as const).map(({ key, label }) => {
+            const list = dishesByMeal[key];
+            if (!list || list.length === 0) return null;
+            return (
+              <div key={key}>
+                <div className="flex items-baseline gap-2 mb-2">
+                  <p style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", letterSpacing: "0.10em", fontWeight: 700 }}>
+                    {label}
+                  </p>
+                  <span style={{ fontSize: 10, color: "rgba(255,255,255,0.30)" }}>
+                    {list.length} {t3(list.length > 1 ? 'dishes' : 'dish', '道', 'ulam')}
+                  </span>
+                </div>
+                <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+                  {list.map((dish, i) => (
+                    <div key={`${key}-${i}`} className="flex-shrink-0 rounded-xl overflow-hidden relative"
+                      style={{ width: 80, height: 80 }}>
+                      <img
+                        src={dish.img || dish.image_url || "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?q=80&w=80&auto=format&fit=crop"}
+                        alt={dish.title || dish.title_zh}
+                        className="w-full h-full object-cover"
+                        onError={e => { (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?q=80&w=80&auto=format&fit=crop"; }}
+                      />
+                      <div className="absolute inset-0"
+                        style={{ background: "linear-gradient(to top, rgba(0,0,0,0.72) 0%, transparent 55%)" }} />
+                      <p className="absolute bottom-1 left-1.5 right-1.5 text-white font-semibold leading-tight"
+                        style={{ fontSize: 10 }}>
+                        {dish.title || dish.title_zh}
+                      </p>
+                    </div>
+                  ))}
+                </div>
               </div>
-            ))}
-          </div>
+            );
+          })}
         </div>
       )}
 
