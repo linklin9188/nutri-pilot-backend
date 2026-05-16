@@ -29,8 +29,13 @@ export type IntentCategory =
 
 export type IntentTag =
   | 'spicy' | 'light' | 'sweet' | 'savory'  // flavor
-  | 'low_sodium' | 'low_sugar'              // health
-  | 'detox' | 'energy' | 'immunity';
+  | 'low_sodium' | 'low_sugar' | 'low_purine'  // health constraints
+  | 'detox' | 'energy' | 'immunity'         // general well-being
+  // TCM / 中医 调理 axes — match health_benefit_tags filled by migration 011.
+  | 'blood_tonic'   // 补气血 (red dates, longan, pig liver, lamb, …)
+  | 'sleep_aid'     // 助眠 (lotus seed, lily bulb, milk, oat, sour jujube)
+  | 'yin_nourish'   // 滋阴 (white fungus, pear, honey, duck, yam)
+  | 'qi_tonic';     // 益气 (yam, astragalus, ginseng, chicken, …)
 
 export interface IntentBias {
   /** The original user request, kept verbatim for display. */
@@ -55,8 +60,14 @@ Convert it into a structured bias object. Use ONLY these axes — don't invent n
 
 - categoryBoosts: { seafood?, pork?, beef?, poultry?, plant?, carb? }
   Each value in [-2, +2]. Positive = more of this, negative = less.
-- tagBoosts: { spicy?, light?, sweet?, savory?, low_sodium?, low_sugar?, detox?, energy?, immunity? }
+- tagBoosts: { spicy?, light?, sweet?, savory?, low_sodium?, low_sugar?, low_purine?, detox?, energy?, immunity?, blood_tonic?, sleep_aid?, yin_nourish?, qi_tonic? }
   Each value in [-2, +2]. Same semantics.
+  TCM mapping reference (use when the user phrases in Chinese medicine terms):
+    • 补气血 / 气血两虚 → blood_tonic
+    • 失眠 / 睡眠不好 / 助眠 / 安神 → sleep_aid
+    • 滋阴 / 阴虚火旺 / 干燥 / 上火 → yin_nourish
+    • 益气 / 健脾 / 提气 / 体虚 → qi_tonic
+    • 三高 (高血压) → low_sodium ; 糖尿病 → low_sugar ; 痛风 → low_purine
 - chips: array of 1-5 short Chinese chips (4-6 chars each) describing the bias
   in user-friendly terms, e.g. ["多海鲜 ↑", "少辣 ↓", "孩子友好"].
 
