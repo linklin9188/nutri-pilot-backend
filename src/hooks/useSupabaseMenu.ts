@@ -56,6 +56,15 @@ export interface SupabaseDish {
   xiaomei_compatible?: boolean;
   xiaomei_incompat_reason?: string | null;
 
+  // ── P1 nutrition fields (营养主厨 / 中国居民膳食指南 2022) ─────────────
+  // Filled by scripts/backfill-dish-nutrition.ts using Claude haiku.
+  nutrition_kcal_per_serving?: number;
+  oil_level?:    'low' | 'mid' | 'high';
+  salt_level?:   'low' | 'mid' | 'high';
+  sugar_level?:  'low' | 'mid' | 'high';
+  protein_source?: Array<'fish' | 'meat' | 'poultry' | 'egg' | 'dairy' | 'soy' | 'shellfish' | 'tofu' | 'none'>;
+  cook_method?:  'stir_fry' | 'steam' | 'boil' | 'stew' | 'pan_fry' | 'deep_fry' | 'grill' | 'roast' | 'bake' | 'mix_cold' | 'raw' | 'blanch' | 'braise';
+
   // ── UI adapter fields (set by enrichDish, consumed by Home.tsx) ──────────
   title: string;        // i18n: title_zh | title_en
   desc: string;         // i18n: description_zh | description_en | derived
@@ -517,6 +526,13 @@ function enrichDish(dish: any, highlight: boolean): SupabaseDish {
     // 小美 robot flags
     xiaomei_compatible:       dish.xiaomei_compatible ?? false,
     xiaomei_incompat_reason:  dish.xiaomei_incompat_reason ?? null,
+    // P1 nutrition
+    nutrition_kcal_per_serving: dish.nutrition_kcal_per_serving ?? undefined,
+    oil_level:    dish.oil_level    ?? undefined,
+    salt_level:   dish.salt_level   ?? undefined,
+    sugar_level:  dish.sugar_level  ?? undefined,
+    protein_source: dish.protein_source ?? undefined,
+    cook_method:  dish.cook_method  ?? undefined,
     // Raw record for debugging
     _raw: dish,
   };
@@ -696,12 +712,24 @@ function scoreDish(
   }
 
   // ⑦ Meal-specific tone (中国营养主厨 rules)
-  // 晚餐应该比午餐清淡 — penalize heavy flavors on the dinner plate. -0.10
-  // per heavy tag lets a 红烧肉 still appear if everything else aligns,
-  // but it loses to a 清蒸鱼 of equal hometown / goal / taste fit.
+  //
+  // 晚餐应该比午餐清淡 — prefer the P1 nutrition fields (oil_level /
+  // salt_level / sugar_level) over the flavor_tag heuristic when they're
+  // available. The new fields are LLM-evaluated per-dish so they're
+  // closer to truth than 'salty' tag (which everything has).
+  // Penalties tuned so a high-oil heavy main loses ≈ half a flavor-tag
+  // (0.15) total, but a perfectly-aligned heavy dish can still appear.
   if (mealTime === '晚餐') {
-    for (const t of flavorTags) {
-      if (DINNER_HEAVY_TAGS.has(t)) score -= 0.10;
+    if (dish.oil_level   === 'high') score -= 0.08;
+    if (dish.salt_level  === 'high') score -= 0.06;
+    if (dish.sugar_level === 'high') score -= 0.04;
+    // Falls back to the legacy flavor-tag check ONLY for dishes that
+    // don't have the P1 fields yet (e.g. brand-new AI-suggested rows
+    // before backfill catches up).
+    if (!dish.oil_level && !dish.salt_level) {
+      for (const t of flavorTags) {
+        if (DINNER_HEAVY_TAGS.has(t)) score -= 0.10;
+      }
     }
   }
   // 午餐主食可加入杂粮 — boost wholegrain staples (杂粮饭 / 燕麦 / 糙米 / 玉米 / 紫米 / 八宝粥 …)
@@ -1005,22 +1033,45 @@ function isLeafyVeggie(d: any): boolean {
  *
  * 午餐能量占 40%，可以保留 main_protein / heavier 菜的偏好。
  */
+// Pick the next item satisfying `pred`, prefer one whose cook_method
+// hasn't been used yet. Falls back to any matching item if all methods
+// are exhausted. Implements the "烹饪方式不重复（4 道炒太单调）" rule.
+function pickWithMethodVariety(
+  sorted: any[],
+  pred: (d: any) => boolean,
+  used: Set<string>,
+  usedMethods: Set<string>,
+): any | undefined {
+  // First pass: same predicate AND new method
+  const fresh = sorted.find(d => !used.has(d.id) && pred(d) && d.cook_method && !usedMethods.has(d.cook_method));
+  if (fresh) return fresh;
+  // Fallback: same predicate, allow method repeat
+  return sorted.find(d => !used.has(d.id) && pred(d));
+}
+
 function applyLunchTemplate(sorted: any[], target: number): any[] {
   if (target <= 0 || sorted.length === 0) return [];
   const used = new Set<string>();
+  const usedMethods = new Set<string>();
   const result: any[] = [];
   const take = (d: any | undefined) => {
-    if (d && !used.has(d.id)) { used.add(d.id); result.push(d); }
+    if (d && !used.has(d.id)) {
+      used.add(d.id);
+      if (d.cook_method) usedMethods.add(d.cook_method);
+      result.push(d);
+    }
   };
-  const pickBy = (pred: (d: any) => boolean) =>
-    sorted.find(d => !used.has(d.id) && pred(d));
 
-  if (target >= 1) take(pickBy(d => d.course_type === 'staple'));
-  if (target >= 2) take(pickBy(d => d.course_type === 'main_protein'));
-  if (target >= 3) take(pickBy(d => d.course_type === 'veggie_dish'));
-  // Pad remaining slots
-  let i = 0;
-  while (result.length < target && i < sorted.length) { take(sorted[i]); i++; }
+  if (target >= 1) take(pickWithMethodVariety(sorted, d => d.course_type === 'staple',       used, usedMethods));
+  if (target >= 2) take(pickWithMethodVariety(sorted, d => d.course_type === 'main_protein', used, usedMethods));
+  if (target >= 3) take(pickWithMethodVariety(sorted, d => d.course_type === 'veggie_dish',  used, usedMethods));
+  // Pad remaining slots — also prefer new cook methods
+  while (result.length < target) {
+    const next = sorted.find(d => !used.has(d.id) && d.cook_method && !usedMethods.has(d.cook_method))
+                ?? sorted.find(d => !used.has(d.id));
+    if (!next) break;
+    take(next);
+  }
   return result;
 }
 
@@ -1038,26 +1089,38 @@ function applyLunchTemplate(sorted: any[], target: number): any[] {
 function applyDinnerTemplate(sorted: any[], target: number): any[] {
   if (target <= 0 || sorted.length === 0) return [];
   const used = new Set<string>();
+  const usedMethods = new Set<string>();
   const result: any[] = [];
   const take = (d: any | undefined) => {
-    if (d && !used.has(d.id)) { used.add(d.id); result.push(d); }
+    if (d && !used.has(d.id)) {
+      used.add(d.id);
+      if (d.cook_method) usedMethods.add(d.cook_method);
+      result.push(d);
+    }
   };
-  const pickBy = (pred: (d: any) => boolean) =>
-    sorted.find(d => !used.has(d.id) && pred(d));
 
-  if (target >= 1) take(pickBy(d => d.course_type === 'staple'));
-  if (target >= 2) take(pickBy(d => d.course_type === 'main_protein'));
-  if (target >= 3) take(pickBy(isLeafyVeggie) ?? pickBy(d => d.course_type === 'veggie_dish'));
+  if (target >= 1) take(pickWithMethodVariety(sorted, d => d.course_type === 'staple',       used, usedMethods));
+  if (target >= 2) take(pickWithMethodVariety(sorted, d => d.course_type === 'main_protein', used, usedMethods));
+  if (target >= 3) {
+    const leafy = pickWithMethodVariety(sorted, isLeafyVeggie, used, usedMethods);
+    if (leafy) take(leafy);
+    else take(pickWithMethodVariety(sorted, d => d.course_type === 'veggie_dish', used, usedMethods));
+  }
   if (target >= 4) {
-    const soup = pickBy(d => d.course_type === 'soup');
+    const soup = pickWithMethodVariety(sorted, d => d.course_type === 'soup', used, usedMethods);
     if (soup) take(soup);
     else if (process.env.NODE_ENV !== 'production') {
       // eslint-disable-next-line no-console
       console.warn('[dinnerTemplate] no soup in pool — dinner without 汤 violates the 营养主厨 rule');
     }
   }
-  let i = 0;
-  while (result.length < target && i < sorted.length) { take(sorted[i]); i++; }
+  // Pad remaining slots, preferring new cook methods
+  while (result.length < target) {
+    const next = sorted.find(d => !used.has(d.id) && d.cook_method && !usedMethods.has(d.cook_method))
+                ?? sorted.find(d => !used.has(d.id));
+    if (!next) break;
+    take(next);
+  }
   return result;
 }
 
