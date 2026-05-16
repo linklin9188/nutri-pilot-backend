@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import Home from './pages/Home';
 import Login from './pages/Login';
@@ -29,46 +29,16 @@ import { LanguageProvider } from './contexts/LanguageContext';
 import { supabase } from './lib/supabase';
 
 
-// Smart entry point for "/".
-// Verifies a real Supabase session before treating the visitor as logged in,
-// so stale `localStorage.isLoggedIn` from old test-phase / anon flows can't
-// keep an unauthenticated visitor stuck on Home.
+// Smart entry point for "/". Anonymous-first: visitors don't need to log in
+// to use the app. QuickSetup creates a local anonymous userId on completion
+// (test-phase pattern preserved). /login is still routable for users who
+// choose to attach a real account once social providers come online.
 //
 // Flow:
-//  • Loading session   → render nothing (brief flash)
-//  • No session        → clear stale flags, redirect to /login
-//  • Authed + helper   → /helper
-//  • Authed, no prefs  → /setup
-//  • Authed + prefs    → Home
+//  • Helper role (set via /signin?role=helper) → /helper
+//  • No quickPrefs yet                         → /setup (anonymous onboarding)
+//  • Has quickPrefs                            → Home
 function RootRedirect() {
-  const [authState, setAuthState] = useState<'loading' | 'authed' | 'unauthed'>(
-    // Optimistic: if localStorage says logged-in, render Home immediately
-    // while we double-check Supabase in the background. If the check fails,
-    // we'll redirect on the next render.
-    localStorage.getItem("isLoggedIn") === "true" ? 'authed' : 'loading'
-  );
-
-  useEffect(() => {
-    let cancelled = false;
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (cancelled) return;
-      if (session?.user) {
-        setAuthState('authed');
-      } else {
-        // No real session — wipe stale flags and bounce to /login.
-        localStorage.removeItem('isLoggedIn');
-        localStorage.removeItem('userId');
-        localStorage.removeItem('nutri_user_id');
-        setAuthState('unauthed');
-      }
-    });
-    return () => { cancelled = true; };
-  }, []);
-
-  if (authState === 'loading') return null;
-  if (authState === 'unauthed') return <Navigate to="/login" replace />;
-
-  // Authed below
   const role = localStorage.getItem("nutri_role");
   if (role === "helper") return <Navigate to="/helper" replace />;
   const hasPrefs = !!localStorage.getItem("quickPrefs");
