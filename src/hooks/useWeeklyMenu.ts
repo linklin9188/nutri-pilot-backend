@@ -25,6 +25,7 @@ import { getUserPrefs } from '../lib/userPrefs';
 import { getFamilyMenuPrefs, familyGoalScore, dishTriggersAllergy } from '../lib/familyPrefs';
 import { loadIntentBias, applyIntentBias, getIntentHash } from '../lib/intentBias';
 import { applyPregnancyAdjustments } from '../lib/pregnancy';
+import { getUserId } from '../lib/userId';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1039,7 +1040,7 @@ export function useWeeklyMenu() {
       setLoading(true);
 
       const weekStart = getMondayISO();
-      const userId    = localStorage.getItem('nutri_user_id') ?? 'anonymous';
+      const userId    = getUserId() ?? 'anonymous';
 
       // 1. Try DB cache first — but SKIP if algo version has changed since last save.
       // The key "weekly_menu_algo_ver" tracks which version generated the DB rows.
@@ -1240,7 +1241,7 @@ export function useWeeklyMenu() {
     const lsKey = getCacheKey(weeklyMenu.weekStart);
     localStorage.setItem(lsKey, JSON.stringify(updated));
 
-    const userId = localStorage.getItem('nutri_user_id') ?? 'anonymous';
+    const userId = getUserId() ?? 'anonymous';
     const day = updated.days[dayIndex];
     await supabase.from('user_weekly_menus').upsert({
       user_id:          userId,

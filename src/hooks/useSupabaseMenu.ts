@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { FLAVOR_COL, HEALTH_COL, CUISINE_COL } from './preferenceColMap';
 import { getFallbackImage } from '../lib/dishImageFallback';
 import { getUserPrefs } from '../lib/userPrefs';
+import { getUserId } from '../lib/userId';
 
 // ── Public types ──────────────────────────────────────────────────────────
 
@@ -692,7 +693,7 @@ async function fetchUserProfile(): Promise<UserProfile5D & { _prefs: ReturnType<
   // Always read the local prefs (quickPrefs is the primary anonymous source)
   const prefs = getUserPrefs();
 
-  const userId = localStorage.getItem('nutri_user_id');
+  const userId = getUserId();
   if (userId) {
     try {
       const { data, error } = await supabase
@@ -841,7 +842,7 @@ export function useRecommendDishes(
 
         // Load feedback-learned preference scores (best effort)
         let scores: Record<string, number> = {};
-        const userId = localStorage.getItem('nutri_user_id');
+        const userId = getUserId();
         if (userId) {
           const { data: scoreRow } = await supabase
             .from('user_preference_scores')

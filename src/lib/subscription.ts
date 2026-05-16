@@ -18,6 +18,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "./supabase";
 import { effectiveProReason, type ProReason } from "./promo";
+import { getUserId } from "./userId";
 
 const LS_IS_PRO    = "nutri_is_pro";
 const LS_SUB_END   = "nutri_sub_end_at";
@@ -66,7 +67,7 @@ function writeLocal(s: { isPaidPro: boolean; plan: SubscriptionPlan; endsAt: Dat
 
 /** Reads the Supabase row and mirrors it locally. Safe to call repeatedly. */
 export async function refreshSubscriptionFromSupabase(): Promise<SubscriptionState> {
-  const userId = localStorage.getItem("userId");
+  const userId = getUserId();
   if (!userId) return readLocal();
 
   // Fields are nullable to allow incremental rollout — be defensive.

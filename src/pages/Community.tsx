@@ -8,6 +8,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
 import { supabase } from "../lib/supabase";
+import { getUserId } from "../lib/userId";
 import exifr from "exifr";
 import BottomTabBar from "../components/BottomTabBar";
 
@@ -896,7 +897,7 @@ export default function Community() {
   const [searchParams] = useSearchParams();
   const myRole = (searchParams.get("view") === "employer" ? "employer"
     : localStorage.getItem("nutri_role") ?? "helper") as "employer" | "helper";
-  const myUserId = localStorage.getItem("userId") ?? "";
+  const myUserId = getUserId() ?? "";
 
   const [tab, setTab] = useState<Tab>("feed");
   const [posts, setPosts] = useState<Post[]>(MOCK_POSTS);

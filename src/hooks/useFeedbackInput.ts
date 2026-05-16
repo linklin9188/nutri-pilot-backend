@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { getUserId } from '../lib/userId';
 import { FLAVOR_COL, HEALTH_COL, CUISINE_COL } from './preferenceColMap';
 
 // ── Text → structured signals ─────────────────────────────────────────────
@@ -158,7 +159,7 @@ export function useFeedbackInput(options: {
 
     setState(s => ({ ...s, submitting: true }));
 
-    const userId = localStorage.getItem('nutri_user_id') ?? 'guest';
+    const userId = getUserId() ?? 'guest';
     const signals = parseTextToSignals(trimmed);
 
     // 1. Save raw feedback

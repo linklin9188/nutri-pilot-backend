@@ -158,26 +158,28 @@ export default function SignIn() {
           <div className="mt-2 rounded-full" style={{ width: 28, height: 2, background: "#FF5A1F" }} />
         </div>
 
-        {/* Role toggle */}
+        {/* Role toggle — single language per active locale */}
         <div className="mb-8 p-1 rounded-2xl flex gap-1" style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.09)" }}>
           {([
-            { key: "employer", zh: "我是雇主", en: "Employer", icon: "home" },
-            { key: "helper",   zh: "我是工人", en: "Helper",   icon: "support_agent" },
-          ] as { key: Role; zh: string; en: string; icon: string }[]).map(r => (
-            <button
-              key={r.key}
-              onClick={() => setRole(r.key)}
-              className="flex-1 py-3 rounded-xl flex flex-col items-center gap-0.5 transition-all"
-              style={role === r.key
-                ? { background: r.key === "helper" ? "#25D366" : "#FF5A1F", boxShadow: "0 4px 14px rgba(0,0,0,0.25)" }
-                : { background: "transparent" }
-              }
-            >
-              <span className="material-symbols-outlined text-white" style={{ fontSize: 18, fontVariationSettings: "'FILL' 1" }}>{r.icon}</span>
-              <span className="font-bold text-white" style={{ fontSize: 13 }}>{r.zh}</span>
-              <span style={{ fontSize: 10, color: role === r.key ? "rgba(255,255,255,0.75)" : "rgba(255,255,255,0.3)" }}>{r.en}</span>
-            </button>
-          ))}
+            { key: "employer", labels: { zh: '我是雇主', en: 'Employer', tl: 'Ako ay employer',  id: 'Saya majikan' }, icon: "home" },
+            { key: "helper",   labels: { zh: '我是工人', en: 'Helper',   tl: 'Ako ay katulong',   id: 'Saya pekerja' }, icon: "support_agent" },
+          ] as { key: Role; labels: Record<string, string>; icon: string }[]).map(r => {
+            const label = r.labels[language] ?? r.labels.en;
+            return (
+              <button
+                key={r.key}
+                onClick={() => setRole(r.key)}
+                className="flex-1 py-3 rounded-xl flex flex-col items-center gap-1 transition-all"
+                style={role === r.key
+                  ? { background: r.key === "helper" ? "#25D366" : "#FF5A1F", boxShadow: "0 4px 14px rgba(0,0,0,0.25)" }
+                  : { background: "transparent" }
+                }
+              >
+                <span className="material-symbols-outlined text-white" style={{ fontSize: 20, fontVariationSettings: "'FILL' 1" }}>{r.icon}</span>
+                <span className="font-bold text-white" style={{ fontSize: 14 }}>{label}</span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Invite hint for helpers */}

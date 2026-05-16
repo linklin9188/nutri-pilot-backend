@@ -64,7 +64,12 @@ function DishListScreen({ dishes, loading, onSelect }: {
   onSelect: (dish: DishWithCook) => void;
 }) {
   const navigate = useNavigate();
-  const { t3 } = useLanguage();
+  const { t3, isChinese } = useLanguage();
+  // Single-language dish title — was `dish.title_zh` only, which ignored the
+  // language toggle. Now switches to the English/Tagalog/Indo fallback when
+  // the user isn't on a Chinese variant.
+  const dishTitle = (d: DishWithCook) =>
+    isChinese ? (d.title_zh || d.title_en || '') : (d.title_en || d.title_zh || '');
   return (
     <div className="min-h-screen flex flex-col max-w-md mx-auto" style={{ background: '#0a0a0a' }}>
       {/* Header */}
@@ -114,7 +119,7 @@ function DishListScreen({ dishes, loading, onSelect }: {
                 {/* Dish image */}
                 <div className="relative w-full" style={{ height: 140 }}>
                   {dish.image_url ? (
-                    <img src={dish.image_url} alt={dish.title_zh}
+                    <img src={dish.image_url} alt={dishTitle(dish)}
                       className="w-full h-full object-cover"
                       onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                   ) : (
@@ -124,7 +129,7 @@ function DishListScreen({ dishes, loading, onSelect }: {
                   )}
                   <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.7) 0%, transparent 60%)' }} />
                   <div className="absolute bottom-3 left-4 right-4 flex items-end justify-between">
-                    <h2 className="text-white font-bold" style={{ fontSize: 18 }}>{dish.title_zh}</h2>
+                    <h2 className="text-white font-bold" style={{ fontSize: 18 }}>{dishTitle(dish)}</h2>
                     <div className="flex items-center gap-1 px-2.5 py-1 rounded-full"
                       style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)' }}>
                       <span className="material-symbols-outlined text-white/70" style={{ fontSize: 12 }}>schedule</span>

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import { getUserId, setUserId } from "../lib/userId";
 
 export default function Onboarding() {
   const [step, setStep] = useState(1);
@@ -51,10 +52,10 @@ export default function Onboarding() {
   const handleComplete = async () => {
     localStorage.setItem("nutri_prefs", JSON.stringify({ selectedCards, dinerCount, language }));
     localStorage.setItem("curationTags", JSON.stringify(selectedTags));
-    let userId = localStorage.getItem("nutri_user_id");
+    let userId = getUserId();
     if (!userId) {
       userId = crypto.randomUUID();
-      localStorage.setItem("nutri_user_id", userId);
+      setUserId(userId);
     }
     try {
       if (supabase) {

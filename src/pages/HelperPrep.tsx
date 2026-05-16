@@ -205,7 +205,9 @@ export default function HelperPrep() {
         {dishes.map((dish, dishIndex) => {
           const steps = dish.prep_steps_json ?? [];
           const title = useChineseContent ? dish.title_zh : (dish.title_en ?? dish.title_zh);
-          const subtitle = useChineseContent ? (dish.title_en ?? '') : dish.title_zh;
+          // Subtitle was the OTHER language — removed per i18n cleanup; we
+          // now show a single language at a time based on the toggle.
+          const subtitle = '';
           const done = isDishDone(dish);
           const doneCount = dishDoneCount(dish);
           const isOpen = expandedDish === dish.id;

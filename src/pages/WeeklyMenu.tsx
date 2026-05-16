@@ -16,7 +16,8 @@ import {
   type FamilyMember,
 } from "../lib/familyPrefs";
 import { useSubscription } from "../lib/subscription";
-import { elevateDayToMichelin, type MichelinDish } from "../lib/geminiMichelin";
+import { elevateDayToMichelin, type MichelinDish } from "../lib/michelinFromDb";
+import ChefBookingModal from "../components/ChefBookingModal";
 import { NutritionRadarCard } from "../components/NutritionRadar";
 import IntentRegenModal from "../components/IntentRegenModal";
 import { loadIntentBias, clearIntentBias, type IntentBias } from "../lib/intentBias";
@@ -127,15 +128,15 @@ function DishCard({ dish, small = false, familyMembers = [], homeToday = [], mic
         style={{ background: tc, fontSize: 10, letterSpacing: "0.04em" }}>
         {tl}
       </div>
-      {/* Michelin star badge */}
+      {/* Michelin star / award badge — '⭐ 3 / Lung King Heen' style */}
       {michelin && (
-        <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded-full font-bold"
+        <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-0.5"
           style={{
             background: "linear-gradient(135deg, #FFD700, #FFA500)",
             color: "#1a1a1a", fontSize: 9, letterSpacing: "0.04em",
             boxShadow: "0 2px 6px rgba(255,165,0,0.4)",
           }}>
-          ⭐ {michelin.prep_minutes}分
+          {michelin.award_type === 'michelin' ? '⭐' : '♦'} {michelin.award_level}
         </div>
       )}
       {/* Title */}
@@ -144,9 +145,14 @@ function DishCard({ dish, small = false, familyMembers = [], homeToday = [], mic
           {michelin?.name_zh || dish.title || dish.title_zh}
         </p>
         {michelin ? (
-          <p className="mt-0.5 leading-tight" style={{ fontSize: 9, color: "#FFD700" }}>
-            ⭐ {michelin.technique}
-          </p>
+          <>
+            <p className="mt-0.5 leading-tight" style={{ fontSize: 9, color: "#FFD700" }}>
+              ⭐ {michelin.signature_technique}
+            </p>
+            <p className="mt-0.5 leading-tight truncate" style={{ fontSize: 9, color: "rgba(255,255,255,0.55)" }}>
+              {michelin.restaurant_name_zh}
+            </p>
+          </>
         ) : !small && dish.description_en && (
           <p className="text-white/50 mt-0.5" style={{ fontSize: 10 }}>
             {dish.description_en}
@@ -324,6 +330,10 @@ export default function WeeklyMenu() {
   // can actually activate it; free users tapping it land on /pricing.
   const { isPro } = useSubscription();
   const [michelinMode, setMichelinMode] = useState(false);
+  // Chef-at-home booking modal — opens when user taps "📞 预约大厨" while
+  // michelin mode is on. We seed it with whichever dish the user clicked.
+  const [chefBookingOpen, setChefBookingOpen] = useState(false);
+  const [chefBookingDish, setChefBookingDish] = useState<MichelinDish | null>(null);
 
   // Intent re-generation modal + active bias chips
   const [intentOpen, setIntentOpen] = useState(false);
@@ -527,6 +537,24 @@ export default function WeeklyMenu() {
               {michelinMode && isPro ? "米其林" : isPro ? "AI 规划" : "升级米其林"}
             </span>
           </button>
+
+          {/* 📞 预约大厨 — only appears when michelin mode is active. Opens a
+              lead-capture modal; service is "敬请期待". */}
+          {michelinMode && isPro && (
+            <button
+              onClick={() => {
+                // Seed with the first michelin overlay we have today, if any
+                const seed = Object.values(overlayForDay)[0] ?? null;
+                setChefBookingDish(seed);
+                setChefBookingOpen(true);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all active:scale-95"
+              style={{ background: "linear-gradient(135deg, #1a1a1a, #404040)", border: "1px solid rgba(255,255,255,0.12)" }}
+            >
+              <span style={{ fontSize: 13 }}>📞</span>
+              <span className="font-semibold text-white" style={{ fontSize: 11 }}>预约大厨</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -774,6 +802,13 @@ export default function WeeklyMenu() {
 
       {/* Intent re-generation modal — natural-language menu re-roll */}
       <IntentRegenModal open={intentOpen} onClose={() => setIntentOpen(false)} />
+
+      {/* Chef-at-home interest form (placeholder, no real booking yet) */}
+      <ChefBookingModal
+        open={chefBookingOpen}
+        onClose={() => setChefBookingOpen(false)}
+        dish={chefBookingDish}
+      />
     </div>
   );
 }

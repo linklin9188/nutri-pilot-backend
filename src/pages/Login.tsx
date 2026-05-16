@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { useNavigate } from "react-router-dom";
 import { useLanguage } from "../contexts/LanguageContext";
 import { supabase } from "../lib/supabase";
+import { getUserId, setUserId } from "../lib/userId";
 
 type Step = "login" | "phone" | "otp" | "preferences";
 
@@ -96,7 +97,7 @@ export default function Login() {
       if (!userId) throw new Error("No user returned");
 
       localStorage.setItem("isLoggedIn", "true");
-      localStorage.setItem("userId", userId);
+      setUserId(userId);
 
       // Check if profile already exists
       const { data: profile } = await supabase
@@ -124,7 +125,7 @@ export default function Login() {
   // ── save preferences ───────────────────────────────────────────────
   const handleFinishSetup = async () => {
     setIsLoading(true);
-    const userId = localStorage.getItem("userId") ?? "";
+    const userId = getUserId() ?? "";
     try {
       await supabase.from("user_profiles").upsert({
         id: userId,

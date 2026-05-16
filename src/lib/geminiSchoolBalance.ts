@@ -11,6 +11,9 @@
  * keeps the local heuristic as a backup.
  */
 
+import { supabase } from './supabase';
+import { getUserId } from './userId';
+
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${import.meta.env.VITE_GEMINI_API_KEY}`;
 
 export type Nutrient = 'protein' | 'veggie' | 'carb' | 'calcium' | 'iron' | 'omega3';
@@ -22,6 +25,9 @@ export interface BalanceRecipe {
   covers:   Nutrient[];
   time_min: number;
   blurb:    string;
+  /** Set after persistSchoolSuggestions runs — links the suggestion to a
+   *  real `dishes` table row so the user can add it to today's menu. */
+  dish_id?: string;
 }
 
 export interface BalanceAnalysis {
@@ -105,10 +111,10 @@ export async function analyzeSchoolLunch(
   if (!res.ok) throw new Error(json.error?.message ?? 'Gemini API error');
 
   const text: string = json.candidates?.[0]?.content?.parts?.[0]?.text ?? '{}';
+  let analysis: BalanceAnalysis;
   try {
     const parsed = JSON.parse(text.replace(/```json\n?/g, '').replace(/```/g, '').trim());
-    // Defensive normalisation so a malformed AI reply doesn't crash the UI.
-    return {
+    analysis = {
       covered:     (parsed.covered ?? []) as Nutrient[],
       missing:     (parsed.missing ?? []) as Nutrient[],
       reasoning:   parsed.reasoning ?? '',
@@ -117,4 +123,104 @@ export async function analyzeSchoolLunch(
   } catch {
     throw new Error('Failed to parse Gemini response');
   }
+
+  // Persist suggestions to `dishes` so the parent can add them to today's
+  // menu, AND log the lunch entry to `user_lunch_log` for future tracking.
+  // Errors are non-critical — analysis still shows to user.
+  try {
+    analysis = await persistSchoolSuggestions(analysis, lunchText.trim(), ageBracket);
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn('[school-balance] DB persistence failed (non-critical):', e);
+  }
+  return analysis;
+}
+
+// ── DB persistence ─────────────────────────────────────────────────────────
+//
+// Each Gemini suggestion becomes a row in `dishes` (deduped by title_zh).
+// We don't backfill image / prep_steps inline — that's a separate batch job
+// the founder can run later via gen-dish-images + gen-dish-steps-claude.
+// So suggestions appear as "dish exists in DB but no image / steps yet";
+// the UI shows them with a placeholder image and "做法生成中" badge.
+
+const NUTRIENT_TO_HEALTH_TAG: Record<Nutrient, string> = {
+  protein: 'high_protein',
+  veggie:  'detox',
+  carb:    'maintain',
+  calcium: 'maintain',
+  iron:    'maintain',
+  omega3:  'boost_immunity',
+};
+
+async function persistSchoolSuggestions(
+  analysis: BalanceAnalysis,
+  lunchText: string,
+  ageBracket: string,
+): Promise<BalanceAnalysis> {
+  const userId = getUserId();
+  const enrichedSuggestions: BalanceRecipe[] = [];
+  const dishIds: string[] = [];
+
+  for (const s of analysis.suggestions) {
+    // Dedup by exact title_zh first
+    const { data: existing } = await supabase
+      .from('dishes')
+      .select('id')
+      .eq('title_zh', s.name_zh)
+      .maybeSingle();
+
+    let dishId: string | undefined = (existing as any)?.id;
+
+    if (!dishId) {
+      // Insert minimal row. Image + prep_steps are NULL — backfill later.
+      const healthTags = s.covers
+        .map(c => NUTRIENT_TO_HEALTH_TAG[c])
+        .filter(Boolean);
+      const { data: inserted, error: insertErr } = await supabase
+        .from('dishes')
+        .insert({
+          title_zh:           s.name_zh,
+          title_en:           s.name_en,
+          description_zh:     s.blurb,
+          description_en:     '',
+          meal_type:          'dinner',
+          origin_cuisine:     'cantonese',     // HK default; refine later
+          main_ingredient:    'other',
+          course_type:        'main_protein',
+          flavor_tags:        [],
+          health_benefit_tags: healthTags,
+          seasonal_tag:       'All-Season/Balanced',
+          is_vegan:           false,
+          execution_level:    1,
+        })
+        .select('id')
+        .single();
+      if (insertErr) {
+        // eslint-disable-next-line no-console
+        console.warn(`[school-balance] insert failed for ${s.name_zh}:`, insertErr.message);
+      } else {
+        dishId = (inserted as any)?.id;
+      }
+    }
+
+    if (dishId) dishIds.push(dishId);
+    enrichedSuggestions.push({ ...s, dish_id: dishId });
+  }
+
+  // Log the lunch entry (independent of suggestion success)
+  if (userId) {
+    await supabase.from('user_lunch_log').insert({
+      user_id:           userId,
+      lunch_date:        new Date().toISOString().slice(0, 10),
+      lunch_text:        lunchText,
+      age_bracket:       ageBracket,
+      covered_nutrients: analysis.covered,
+      missing_nutrients: analysis.missing,
+      ai_reasoning_zh:   analysis.reasoning,
+      suggested_dish_ids: dishIds,
+    }).then(() => {}, () => {/* non-critical */});
+  }
+
+  return { ...analysis, suggestions: enrichedSuggestions };
 }

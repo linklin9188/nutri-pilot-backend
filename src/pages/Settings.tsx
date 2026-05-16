@@ -5,6 +5,7 @@ import BottomTabBar from "../components/BottomTabBar";
 import { useSubscription } from "../lib/subscription";
 import { promoDaysLeft } from "../lib/promo";
 import { useLanguage, LANGUAGE_LABEL, type Language } from "../contexts/LanguageContext";
+import { getUserId } from "../lib/userId";
 
 // 4-language picker (简 / 繁 / EN / Tagalog).
 function LanguageCard() {
@@ -319,7 +320,7 @@ export default function Settings() {
   async function saveHelper() {
     localStorage.setItem("helperName", helperName);
     localStorage.setItem("helperLang", helperLang);
-    const userId = localStorage.getItem("userId");
+    const userId = getUserId();
     if (userId) await supabase.from("user_profiles").upsert({ id: userId, display_name: helperName }, { onConflict: "id" });
     setHelperSaved(true);
     setTimeout(() => { setHelperSaved(false); setHelperOpen(false); }, 1200);
@@ -573,7 +574,7 @@ export default function Settings() {
                     </button>
                     <button
                       onClick={() => {
-                        const userId = localStorage.getItem("userId") ?? "";
+                        const userId = getUserId() ?? "";
                         const link = `${window.location.origin}/signin?role=helper&employer=${userId}`;
                         const text = encodeURIComponent(`Hi ${helperName}! 我用爱吃Aieats管理家里的菜单，你可以直接在上面查看今天的采购和备菜任务。点击加入：${link}`);
                         window.open(`https://wa.me/?text=${text}`, "_blank");

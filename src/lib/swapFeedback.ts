@@ -25,6 +25,7 @@
  */
 
 import { supabase } from './supabase';
+import { getUserId } from './userId';
 import { FLAVOR_COL, HEALTH_COL, CUISINE_COL } from '../hooks/preferenceColMap';
 
 const POSITIVE_STEP = 0.10;
@@ -113,7 +114,7 @@ async function applyEMA(userId: string, dish: SwapDish, delta: number) {
 
 /** Record a single swap event end-to-end. */
 export async function recordSwap(evt: SwapEvent): Promise<void> {
-  const userId = localStorage.getItem('userId') ?? 'anonymous';
+  const userId = getUserId() ?? 'anonymous';
 
   // 1. Keyword counter (works for anonymous too)
   bumpLocalKeyword(evt.rejected.title_zh, -1);

@@ -5,6 +5,7 @@
 import { useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { getUserId } from "../lib/userId";
 import { useLanguage } from "../contexts/LanguageContext";
 
 interface DayDish {
@@ -98,7 +99,7 @@ export default function HelperHome() {
     if (raw) {
       try { setDishes(JSON.parse(raw)); } catch { /* ignore */ }
     }
-    const userId = localStorage.getItem("userId");
+    const userId = getUserId();
     if (userId) {
       supabase.from("user_profiles").select("display_name").eq("id", userId).maybeSingle()
         .then(({ data }) => { if ((data as any)?.display_name) setHelperName((data as any).display_name); });
@@ -111,7 +112,7 @@ export default function HelperHome() {
   async function handleJoinHousehold() {
     const code = codeInput.trim();
     if (code.length !== 6) { setCodeError("Please enter a 6-digit code"); return; }
-    const userId = localStorage.getItem("userId");
+    const userId = getUserId();
     if (!userId) { setCodeError("Please sign in first"); return; }
 
     setCodeLoading(true);

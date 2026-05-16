@@ -26,6 +26,7 @@ import {
   type SubscriptionPlan,
 } from "../lib/subscription";
 import { promoDaysLeft, promoEndDate } from "../lib/promo";
+import { getUserId } from "../lib/userId";
 import BottomTabBar from "../components/BottomTabBar";
 
 // Stripe Payment Link / Price IDs are filled in once the Stripe products are
@@ -123,7 +124,7 @@ export default function Pricing() {
     try {
       // Calls a Supabase Edge Function that creates a Stripe Checkout Session
       // server-side (Stripe Secret Key never touches the browser).
-      const userId = localStorage.getItem("userId") ?? "";
+      const userId = getUserId() ?? "";
       const resp = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL ?? ""}/functions/v1/create-checkout-session`,
         {
@@ -220,7 +221,7 @@ export default function Pricing() {
               onClick={async () => {
                 setLoading(true); setMessage(null);
                 try {
-                  const userId = localStorage.getItem("userId") ?? "";
+                  const userId = getUserId() ?? "";
                   const resp = await fetch(
                     `${import.meta.env.VITE_SUPABASE_URL ?? ""}/functions/v1/create-portal-session`,
                     {

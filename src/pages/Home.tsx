@@ -19,6 +19,7 @@ import { recordBatchSwap, recordSwap } from "../lib/swapFeedback";
 import { useLanguage, LANGUAGE_LABEL, type Language } from "../contexts/LanguageContext";
 import IntentRegenModal from "../components/IntentRegenModal";
 import { loadIntentBias } from "../lib/intentBias";
+import { getUserId } from "../lib/userId";
 
 // ── Solar term (节气) calculator ─────────────────────────────────────────────
 
@@ -144,7 +145,17 @@ export default function Home() {
   const { weeklyMenu } = useWeeklyMenu();
 
   // ── Language + cuisine prefs ─────────────────────────────────────
-  const { language, cycleLanguage } = useLanguage();
+  const { language, cycleLanguage, isChinese } = useLanguage();
+
+  // Single-language display: pick the right title field for a dish based on
+  // the user's active language. zh / zh-Hant → title_zh; everything else
+  // (en / tl / id) → title_en with title_zh as a safety fallback when the
+  // English title wasn't seeded (legacy rows, AI-generated school suggestions
+  // before backfill, etc.).
+  const dishTitle = (d: { title_zh?: string; title_en?: string; title?: string }) =>
+    isChinese
+      ? (d.title_zh || d.title_en || d.title || '')
+      : (d.title_en || d.title_zh || d.title || '');
 
   // Cuisine filter: 中餐 (non-western asian) / 西餐 (western) / all.
   // Default '中' so users who type 中餐 mentally don't get pasta in their list.
@@ -251,7 +262,7 @@ export default function Home() {
   const [inviteCopied, setInviteCopied] = useState(false);
 
   useEffect(() => {
-    const userId = localStorage.getItem("userId");
+    const userId = getUserId();
     if (userId) {
       supabase
         .from("user_profiles")
@@ -628,7 +639,7 @@ export default function Home() {
                         }}>
                         <img
                           src={dish.img || dish.image_url || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=240&h=240&fit=crop"}
-                          alt={dish.title_zh || dish.title}
+                          alt={dishTitle(dish)}
                           className="w-full h-full object-cover"
                           onError={e => { (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=240&h=240&fit=crop"; }}
                         />
@@ -639,7 +650,7 @@ export default function Home() {
                           NO. {String(idx + 1).padStart(2, '0')}
                         </p>
                         <p className="font-serif font-black truncate mt-0.5" style={{ fontSize: 18, color: "#1a1a1a", letterSpacing: "-0.005em" }}>
-                          {dish.title_zh || dish.title}
+                          {dishTitle(dish)}
                         </p>
                         <p className="truncate mt-0.5" style={{ fontSize: 11.5, color: "rgba(0,0,0,0.42)" }}>
                           {dish.origin_cuisine ? dish.origin_cuisine.replace('_',' ') : (dish.desc || dish.type || '家常菜')}
@@ -883,7 +894,7 @@ export default function Home() {
                       }} />
                   </div>
                   <div className="flex-1">
-                    <p className="font-semibold" style={{ fontSize: 15 }}>{opt.title_zh || opt.title}</p>
+                    <p className="font-semibold" style={{ fontSize: 15 }}>{dishTitle(opt)}</p>
                     <span className="inline-block mt-1 px-2 py-0.5 rounded-md font-bold"
                       style={{ fontSize: 10, background: "rgba(0,0,0,0.06)", color: "rgba(0,0,0,0.4)" }}>
                       {opt.type}
@@ -1019,8 +1030,12 @@ export default function Home() {
                             style={{ borderColor: "rgba(0,0,0,0.06)" }}>
                             <div className="flex items-start justify-between gap-2">
                               <div className="flex-1">
-                                <p className="font-bold" style={{ fontSize: 15 }}>{dish.name_zh}</p>
-                                <p style={{ fontSize: 11, color: "rgba(0,0,0,0.38)" }}>{dish.name_en}</p>
+                                {/* Single-language display per i18n cleanup —
+                                    show whichever name matches the active
+                                    language, not both at once. */}
+                                <p className="font-bold" style={{ fontSize: 15 }}>
+                                  {isChinese ? (dish.name_zh || dish.name_en) : (dish.name_en || dish.name_zh)}
+                                </p>
                               </div>
                               <div className="flex flex-col items-end gap-1">
                                 <span className="px-2 py-0.5 rounded-md font-semibold"

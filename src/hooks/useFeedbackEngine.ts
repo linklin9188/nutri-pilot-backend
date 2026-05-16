@@ -12,6 +12,7 @@
 
 import { useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { getUserId } from '../lib/userId';
 import { FLAVOR_COL, HEALTH_COL, CUISINE_COL } from './preferenceColMap';
 
 // Title keywords to track (same list as in useWeeklyMenu.ts)
@@ -81,7 +82,7 @@ export function useFeedbackEngine() {
     health_benefit_tags?: string[];
     origin_cuisine?: string;
   }) => {
-    const userId = localStorage.getItem('nutri_user_id') ?? localStorage.getItem('userId') ?? 'anonymous';
+    const userId = getUserId() ?? 'anonymous';
 
     // 1. Record keyword preference (works for all users including anonymous)
     const keyword = extractKeyword(dish.title_zh ?? '');
