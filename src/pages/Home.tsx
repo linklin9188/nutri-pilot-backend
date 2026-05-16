@@ -170,6 +170,29 @@ export default function Home() {
       ? (d.title_zh || d.title_en || d.title || '')
       : (d.title_en || d.title_zh || d.title || '');
 
+  // Localize the raw origin_cuisine DB value (e.g. 'cantonese' / 'northern' /
+  // 'japanese_korean') for the dish subtitle. Without this, Chinese users
+  // see raw English slugs like "japanese korean" under the title — sloppy.
+  const CUISINE_LABEL_ZH: Record<string, string> = {
+    cantonese: '粤菜', sichuan: '川菜', hunan: '湘菜', huaiyang: '淮扬菜',
+    northern: '北方菜', shandong: '鲁菜', anhui: '徽菜', fujian: '闽菜',
+    zhejiang: '浙菜', shanxi: '陕西菜', yunnan_guizhou: '云贵菜',
+    chaoshan: '潮汕菜', shunde: '顺德菜', taiwanese: '台菜',
+    japanese_korean: '日韩菜', southeast_asian: '东南亚', western: '西餐',
+  };
+  const CUISINE_LABEL_EN: Record<string, string> = {
+    cantonese: 'Cantonese', sichuan: 'Sichuan', hunan: 'Hunan', huaiyang: 'Huaiyang',
+    northern: 'Northern', shandong: 'Shandong', anhui: 'Anhui', fujian: 'Fujian',
+    zhejiang: 'Zhejiang', shanxi: 'Shaanxi', yunnan_guizhou: 'Yunnan/Guizhou',
+    chaoshan: 'Chaoshan', shunde: 'Shunde', taiwanese: 'Taiwanese',
+    japanese_korean: 'Japanese/Korean', southeast_asian: 'SE Asian', western: 'Western',
+  };
+  const cuisineLabel = (d: { origin_cuisine?: string; desc?: string; type?: string }) => {
+    const c = d.origin_cuisine;
+    if (!c) return d.desc || d.type || (isChinese ? '家常菜' : 'Home cooking');
+    return (isChinese ? CUISINE_LABEL_ZH[c] : CUISINE_LABEL_EN[c]) ?? c.replace('_', ' ');
+  };
+
   // ── 换菜 quota: 1/day free, 5/day Pro (= 5 套菜单/天) ───────────────
   const { isPro } = useSubscription();
   const swapQuotaKey = (() => {
@@ -652,7 +675,7 @@ export default function Home() {
                           {dishTitle(dish)}
                         </p>
                         <p className="truncate mt-0.5" style={{ fontSize: 11.5, color: "rgba(0,0,0,0.42)" }}>
-                          {dish.origin_cuisine ? dish.origin_cuisine.replace('_',' ') : (dish.desc || dish.type || '家常菜')}
+                          {cuisineLabel(dish)}
                         </p>
                       </div>
                       <button onClick={() => openSwapDrawer(idx)}

@@ -12,7 +12,7 @@ import { supabase } from "../lib/supabase";
 import BottomTabBar from "../components/BottomTabBar";
 import {
   loadFamilyMembers, loadHomeToday, saveHomeToday, dishAllergyFor,
-  ALLERGY_INGREDIENTS,
+  ALLERGY_INGREDIENTS, ALLERGY_TITLE_KEYWORDS,
   type FamilyMember,
 } from "../lib/familyPrefs";
 import { useSubscription } from "../lib/subscription";
@@ -21,6 +21,7 @@ import ChefBookingModal from "../components/ChefBookingModal";
 import { NutritionRadarCard } from "../components/NutritionRadar";
 import IntentRegenModal from "../components/IntentRegenModal";
 import { loadIntentBias, clearIntentBias, type IntentBias } from "../lib/intentBias";
+import { useLanguage } from "../contexts/LanguageContext";
 
 // ── Day tabs ──────────────────────────────────────────────────────────────────
 
@@ -77,8 +78,18 @@ function DishCard({ dish, small = false, familyMembers = [], homeToday = [], mic
   homeToday?: string[];
   michelin?: MichelinDish;
 }) {
+  const { isChinese } = useLanguage();
   const activeMembers = familyMembers.filter(m => homeToday.includes(m.id));
   const cannotEat = activeMembers.length > 0 ? dishAllergyFor(dish as any, activeMembers) : [];
+  // Single-language title / description: zh → title_zh + description_zh;
+  // anything else (en / tl / id) → title_en + description_en with the
+  // Chinese fields as a fallback for legacy rows that lack EN translations.
+  const dishName = isChinese
+    ? ((dish as any).title_zh || (dish as any).title || (dish as any).title_en || '')
+    : ((dish as any).title_en || (dish as any).title || (dish as any).title_zh || '');
+  const dishDesc = isChinese
+    ? ((dish as any).description_zh || (dish as any).description_en || '')
+    : ((dish as any).description_en || (dish as any).description_zh || '');
   const typeColor: Record<string, string> = {
     MEAT:    "#FF5A1F",
     SEAFOOD: "#00B4D8",
@@ -142,7 +153,9 @@ function DishCard({ dish, small = false, familyMembers = [], homeToday = [], mic
       {/* Title */}
       <div className="absolute bottom-0 left-0 right-0 p-2">
         <p className="text-white font-semibold leading-tight" style={{ fontSize: small ? 11 : 12 }}>
-          {michelin?.name_zh || dish.title || dish.title_zh}
+          {michelin
+            ? (isChinese ? michelin.name_zh : (michelin.name_en || michelin.name_zh))
+            : dishName}
         </p>
         {michelin ? (
           <>
@@ -150,12 +163,12 @@ function DishCard({ dish, small = false, familyMembers = [], homeToday = [], mic
               ⭐ {michelin.signature_technique}
             </p>
             <p className="mt-0.5 leading-tight truncate" style={{ fontSize: 9, color: "rgba(255,255,255,0.55)" }}>
-              {michelin.restaurant_name_zh}
+              {isChinese ? michelin.restaurant_name_zh : (michelin.restaurant_name_en || michelin.restaurant_name_zh)}
             </p>
           </>
-        ) : !small && dish.description_en && (
+        ) : !small && dishDesc && (
           <p className="text-white/50 mt-0.5" style={{ fontSize: 10 }}>
-            {dish.description_en}
+            {dishDesc}
           </p>
         )}
         {/* Member badge: show who can't eat this dish */}
@@ -380,12 +393,17 @@ export default function WeeklyMenu() {
   const nutrition = getDayNutrition([...lunch, ...dinner]);
 
   // Avoid-ingredients union for the household (only members at home today).
+  // We feed BOTH the English DB-ingredient list (for main_ingredient column
+  // matches in the regular pool) AND the Chinese title-keyword list (because
+  // the michelin pool's strings are all Chinese — 黄油 / 芝士 / 牛奶 / 奶油 etc
+  // — so English 'dairy'/'butter' would never substring-match).
   const avoidIngredients = useMemo(() => {
     const active = familyMembers.filter(m => homeToday.includes(m.id));
     const set = new Set<string>();
     for (const m of active) {
       for (const a of m.allergies) {
         for (const ing of ALLERGY_INGREDIENTS[a] ?? []) set.add(ing);
+        for (const kw  of ALLERGY_TITLE_KEYWORDS[a] ?? []) set.add(kw);
       }
     }
     return Array.from(set);

@@ -772,11 +772,11 @@ export async function fetchSwapOptions(
   if (error || !data || data.length === 0) return [];
 
   // ── Apply same hard filters the recommend hook uses ──
-  // avoid_tags  → flavor_tags / health_benefit_tags exclude (spicy, dairy, …)
+  // avoidTags        → flavor_tags / health_benefit_tags exclude (spicy, dairy, …)
   // avoidIngredients → main_ingredient exclude (peanut, beef, …)
   const filtered = hardFilter(
     data,
-    prefs.avoid_tags,
+    localPrefs.avoidTags,
     localPrefs.avoidIngredients,
     false,  // swap drawer shouldn't force vegan even if veganOnly is set elsewhere
   );
