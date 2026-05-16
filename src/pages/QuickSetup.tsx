@@ -68,6 +68,41 @@ const QUESTIONS = [
       { id: "anemia",        label: "贫血/补气血",  icon: "🩷" },
     ],
   },
+  {
+    // Hometown cuisine — contributes 30% to scoreDish; without it the
+    // hometown axis is a no-op for every dish.
+    id: "hometown",
+    step: 5,
+    emoji: "🏠",
+    question: "你最熟悉/最爱吃哪种菜系？",
+    sub: "AI 会优先推荐你家乡口味的菜",
+    options: [
+      { id: "cantonese",        label: "粤菜 · 港式",  desc: "广式、港式、靓汤", icon: "🦞" },
+      { id: "northern",         label: "北方菜",       desc: "鲁/京/东北/西北",  icon: "🥟" },
+      { id: "jiangnan",         label: "江南菜",       desc: "苏沪杭、本帮、淮扬", icon: "🍤" },
+      { id: "sichuan",          label: "川菜",         desc: "麻辣、香辣、家常",   icon: "🌶️" },
+      { id: "japanese_korean",  label: "日韩料理",     desc: "和食、韩餐",         icon: "🍣" },
+      { id: "southeast_asian",  label: "东南亚",       desc: "泰越、马新印",       icon: "🍛" },
+      { id: "western",          label: "西餐",         desc: "意法、美式",         icon: "🍝" },
+      { id: "no_preference",    label: "都行 / 没偏好", desc: "什么都吃", icon: "🤷" },
+    ],
+  },
+  {
+    // Age group — drives resolveAgeModifiers (boost/penalty by life stage).
+    // Maps to user_profiles.age_group.
+    id: "age",
+    step: 6,
+    emoji: "🎂",
+    question: "主要做饭对象的年龄段？",
+    sub: "孩子要清淡、老人要养生，AI 会按这个微调",
+    options: [
+      { id: "child",   label: "儿童 (0–12)",   desc: "口味温和、易咀嚼",     icon: "🧒" },
+      { id: "teen",    label: "青少年 (13–18)", desc: "高蛋白、长身体",       icon: "🧑‍🎓" },
+      { id: "youth",   label: "青年 (19–35)",  desc: "多元营养、看口味",     icon: "🧑" },
+      { id: "middle",  label: "中年 (36–55)",  desc: "控油控盐、护心血管",   icon: "👨‍💼" },
+      { id: "senior",  label: "老年 (56+)",    desc: "易消化、低嘌呤",       icon: "👴" },
+    ],
+  },
 ] as const;
 
 // Map QuickSetup answers → valid user_profiles columns. Values are chosen
@@ -86,12 +121,34 @@ const SPICE_TO_TASTE_PREF: Record<string, string | null> = {
   hot:    'spicy',
 };
 
+// hometown id → user_profiles.hometown_cuisine value matches dish.origin_cuisine.
+const HOMETOWN_TO_CUISINE: Record<string, string | null> = {
+  cantonese:       'cantonese',
+  northern:        'northern',
+  jiangnan:        'jiangnan',
+  sichuan:         'sichuan',
+  japanese_korean: 'japanese_korean',
+  southeast_asian: 'southeast_asian',
+  western:         'western',
+  no_preference:   null,
+};
+// age id → user_profiles.age_group. resolveAgeModifiers reads this.
+const AGE_TO_GROUP: Record<string, string | null> = {
+  child:  'child',
+  teen:   'teen',
+  youth:  'youth',
+  middle: 'middle',
+  senior: 'senior',
+};
+
 async function persistProfileToDb(prefs: Record<string, unknown>): Promise<void> {
   const userId = getUserId();
   if (!userId) return;
 
-  const dietary_goal = GOAL_TO_DIETARY_GOAL[(prefs.goal as string) ?? ''] ?? null;
-  const taste_pref   = SPICE_TO_TASTE_PREF[(prefs.spice as string) ?? ''] ?? null;
+  const dietary_goal    = GOAL_TO_DIETARY_GOAL[(prefs.goal as string) ?? '']   ?? null;
+  const taste_pref      = SPICE_TO_TASTE_PREF[(prefs.spice as string) ?? '']   ?? null;
+  const hometown_cuisine = HOMETOWN_TO_CUISINE[(prefs.hometown as string) ?? ''] ?? null;
+  const age_group       = AGE_TO_GROUP[(prefs.age as string) ?? '']            ?? null;
   // Pass through avoid + health as taste/avoid hints. Only 'seafood' from
   // the avoid list maps cleanly to a flavor_tag; ingredient-level avoids
   // (cilantro/onion/beef/peanut/dairy) keep flowing through the
@@ -101,11 +158,13 @@ async function persistProfileToDb(prefs: Record<string, unknown>): Promise<void>
 
   await supabase.from('user_profiles').upsert(
     {
-      id:            userId,
+      id:               userId,
       dietary_goal,
       taste_pref,
+      hometown_cuisine,
+      age_group,
       avoid_tags,
-      updated_at:    new Date().toISOString(),
+      updated_at:       new Date().toISOString(),
     },
     { onConflict: 'id' },
   );

@@ -17,7 +17,14 @@ interface LanguageContextType {
   language: Language;
   setLanguage: (lang: Language) => void;
   toggleLanguage: () => void;        // legacy 2-way toggle (zh ↔ en)
-  cycleLanguage: () => void;         // walks the full matrix
+  cycleLanguage: () => void;         // walks the full matrix (zh/繁/en/tl/id)
+  /** Role-aware cycle. Helper-facing screens (HelperHome, HelperPrep/Cook
+   *  reached through /helper) should NEVER offer 中文 — domestic helpers
+   *  read in en / tl / id. Employer-facing screens (Home, the same Prep
+   *  /Cook reached from Home's 烹饪 button) include zh + zh-Hant so the
+   *  employer can flick to Chinese to read along with the helper. We
+   *  disambiguate by localStorage.nutri_role at click time. */
+  cycleLanguageForRole: () => void;
   t: (en: string, zh: string) => string;
   /** 3-language helper for content authored with Tagalog — used in helper-
    *  facing views (HelperHome / HelperPrep / HelperCook). Falls back to
@@ -133,6 +140,24 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     });
   };
 
+  // Role-aware cycle. Read role at click time, not at hook setup, so a user
+  // who switches role (e.g. via "switch to helper view") gets the right
+  // cycle without remounting.
+  const cycleLanguageForRole = () => {
+    setHasExplicitPref(true);
+    const role = localStorage.getItem('nutri_role');
+    const order: Language[] = role === 'helper'
+      ? ['en', 'tl', 'id']                          // helper: 3 langs, no zh
+      : ['zh', 'zh-Hant', 'en', 'tl', 'id'];        // employer: full matrix
+    setLanguage(prev => {
+      const idx = order.indexOf(prev);
+      // If the current language isn't in this role's order (e.g. helper
+      // landed on zh from a previous employer session), jump to slot 0.
+      if (idx === -1) return order[0];
+      return order[(idx + 1) % order.length];
+    });
+  };
+
   // t(en, zh) — kept binary-compatible with all existing call sites.
   // - For 'zh-Hant' we serve the same string as 'zh' (good enough for now;
   //   replace with a real S2T table later if you want Hong Kong character forms).
@@ -173,6 +198,7 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setLanguage: explicitSetLanguage,
         toggleLanguage,
         cycleLanguage,
+        cycleLanguageForRole,
         t,
         t3,
         t4,

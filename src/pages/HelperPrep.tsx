@@ -31,7 +31,7 @@ interface DishWithPrep {
 export default function HelperPrep() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { t, t3, t4, cycleLanguage, language, isChinese } = useLanguage();
+  const { t, t3, t4, cycleLanguageForRole, language, isChinese } = useLanguage();
   // Treat 繁體 the same as 简体 for content selection; treat 'tl' (Tagalog,
   // helper only) the same as English until Tagalog strings exist.
   const useChineseContent = isChinese;
@@ -138,13 +138,15 @@ export default function HelperPrep() {
             )}
           </div>
         </div>
-        {/* Language pill — cycles zh → 繁 → en → tl → id so Tagalog /
-            Indonesian helpers can land on their own language. The old 2-way
-            中/EN toggle hid 3 of the 5 supported languages. */}
+        {/* Language pill — role-aware cycle:
+              employer enters from /home  → zh → 繁 → en → tl → id
+              helper enters from /helper  → en → tl → id (no Chinese)
+            so the Filipino / Indonesian worker doesn't have to swipe past
+            zh / 繁 to get back to their language. */}
         <button
-          onClick={cycleLanguage}
+          onClick={cycleLanguageForRole}
           className="px-3 py-1.5 rounded-full bg-black/5 text-[12px] font-bold text-gray-900 active:scale-95 transition-transform"
-          title="切换语言 / Switch language"
+          title="Switch language"
         >
           {LANGUAGE_LABEL[language]}
         </button>

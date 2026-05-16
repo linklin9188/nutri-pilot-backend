@@ -69,8 +69,24 @@ function buildTasks(t3: (en: string, zh: string, tl: string) => string) {
 
 export default function HelperHome() {
   const navigate = useNavigate();
-  const { t3, isTagalog, isChinese } = useLanguage();
+  const { t3, isTagalog, isChinese, language, setLanguage, cycleLanguageForRole } = useLanguage();
   const TASKS = buildTasks(t3);
+
+  // Helper view never uses Chinese — if a stale appLanguage from a prior
+  // employer session leaked in, snap to English on mount. Saves the worker
+  // from having to click the cycle pill to escape Chinese.
+  useEffect(() => {
+    if (language === 'zh' || language === 'zh-Hant') {
+      setLanguage('en');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Short chip label for the top-right language toggle. Helper sees only
+  // EN / Tagalog / Indo, never 中文.
+  const langChip = language === 'tl' ? 'TL'
+                 : language === 'id' ? 'ID'
+                 : 'EN';
   const [dishes, setDishes] = useState<DayDish[]>([]);
   const [helperName, setHelperName] = useState("");
   const [isLinked, setIsLinked] = useState(false);
@@ -173,11 +189,18 @@ export default function HelperHome() {
               {helperName || t3("My Tasks", "我的任务", "Mga Gawain Ko")}
             </h1>
           </div>
-          <div className="w-12 h-12 rounded-2xl flex items-center justify-center"
-            style={{ background: "rgba(37,211,102,0.15)", border: "1.5px solid rgba(37,211,102,0.3)" }}>
-            <span className="material-symbols-outlined text-[#25D366]"
-              style={{ fontSize: 24, fontVariationSettings: "'FILL' 1" }}>support_agent</span>
-          </div>
+          {/* Language toggle — helper cycle is EN → Tagalog → Indonesian.
+              Replaces the old non-interactive support_agent icon. */}
+          <button
+            onClick={cycleLanguageForRole}
+            className="w-12 h-12 rounded-2xl flex items-center justify-center active:scale-95 transition-transform"
+            style={{ background: "rgba(37,211,102,0.15)", border: "1.5px solid rgba(37,211,102,0.3)" }}
+            title="EN / Tagalog / Indonesian"
+            aria-label="Switch language">
+            <span className="font-black text-[#25D366]" style={{ fontSize: 14, letterSpacing: '0.04em' }}>
+              {langChip}
+            </span>
+          </button>
         </div>
 
         {/* Date + dish count */}

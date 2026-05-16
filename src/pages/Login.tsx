@@ -288,7 +288,7 @@ export default function Login() {
               <div className="mt-4 mb-5 rounded-full"
                 style={{ width: 36, height: 2, background: "#FF5A1F", boxShadow: "0 0 12px rgba(255,90,31,0.6)" }} />
 
-              <p className="text-white/65 font-light" style={{ fontSize: 15, letterSpacing: "0.08em" }}>
+              <p className="text-white/85 font-light" style={{ fontSize: 18, letterSpacing: "0.06em", lineHeight: 1.5 }}>
                 {t("No more thinking about what to eat", "吃啥不用想，AI 替你想～")}
               </p>
             </motion.div>
@@ -352,17 +352,17 @@ export default function Login() {
                 {t("Build my menu →", "生成我的专属菜单 →")}
               </motion.button>
 
-              <p className="text-white/35" style={{ fontSize: 11, letterSpacing: "0.04em" }}>
+              <p className="text-white/60" style={{ fontSize: 13, letterSpacing: "0.04em" }}>
                 {t("No account needed · 30 seconds", "无需注册 · 30秒完成口味设置")}
               </p>
 
               {/* Divider */}
               <div className="flex items-center gap-3 w-full mt-1">
-                <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.09)" }} />
-                <span style={{ fontSize: 11, color: "rgba(255,255,255,0.28)", letterSpacing: "0.06em" }}>
+                <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.12)" }} />
+                <span style={{ fontSize: 13, color: "rgba(255,255,255,0.50)", letterSpacing: "0.06em" }}>
                   {t("Already have an account?", "已有账号")}
                 </span>
-                <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.09)" }} />
+                <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.12)" }} />
               </div>
 
               {/* Secondary login row: WeChat + Instagram + Facebook
@@ -404,7 +404,7 @@ export default function Login() {
               </div>
             </motion.div>
 
-            <p className="mt-5 text-center text-white/20" style={{ fontSize: 11, letterSpacing: "0.06em" }}>
+            <p className="mt-5 text-center text-white/45" style={{ fontSize: 12, letterSpacing: "0.04em", lineHeight: 1.5 }}>
               {t("By continuing you agree to our Terms & Privacy Policy", "继续即同意服务条款与隐私政策")}
             </p>
           </motion.div>
@@ -418,8 +418,8 @@ export default function Login() {
             className="flex-1 flex flex-col justify-end px-7 pb-12 z-10 relative">
 
             <button onClick={() => setStep("login")}
-              className="absolute top-0 left-7 flex items-center gap-1 text-white/50 hover:text-white transition-colors"
-              style={{ fontSize: 13 }}>
+              className="absolute top-0 left-7 flex items-center gap-1 text-white/70 hover:text-white transition-colors"
+              style={{ fontSize: 15 }}>
               <span className="material-symbols-outlined text-[18px]">arrow_back_ios</span>
               返回
             </button>
@@ -428,7 +428,7 @@ export default function Login() {
               <h2 className="font-serif font-black text-white mb-2" style={{ fontSize: 32 }}>
                 手机号登录
               </h2>
-              <p className="text-white/40" style={{ fontSize: 14, letterSpacing: "0.04em" }}>
+              <p className="text-white/65" style={{ fontSize: 16, letterSpacing: "0.04em", lineHeight: 1.5 }}>
                 我们将发送 6 位验证码到您的手机
               </p>
             </div>
@@ -476,7 +476,7 @@ export default function Login() {
                 }}
               />
             </div>
-            <p className="mb-4 pl-1" style={{ fontSize: 11, color: "rgba(255,255,255,0.30)" }}>
+            <p className="mb-4 pl-1" style={{ fontSize: 13, color: "rgba(255,255,255,0.55)" }}>
               {COUNTRY_CODES.find(c => c.code === countryCode)?.label} · 点击区号可切换
             </p>
 
@@ -509,8 +509,8 @@ export default function Login() {
             className="flex-1 flex flex-col justify-end px-7 pb-12 z-10 relative">
 
             <button onClick={() => { setStep("phone"); setOtp(["","","","","",""]); setOtpError(""); }}
-              className="absolute top-0 left-7 flex items-center gap-1 text-white/50 hover:text-white transition-colors"
-              style={{ fontSize: 13 }}>
+              className="absolute top-0 left-7 flex items-center gap-1 text-white/70 hover:text-white transition-colors"
+              style={{ fontSize: 15 }}>
               <span className="material-symbols-outlined text-[18px]">arrow_back_ios</span>
               返回
             </button>
@@ -519,7 +519,7 @@ export default function Login() {
               <h2 className="font-serif font-black text-white mb-2" style={{ fontSize: 32 }}>
                 输入验证码
               </h2>
-              <p className="text-white/40" style={{ fontSize: 14 }}>
+              <p className="text-white/65" style={{ fontSize: 16, lineHeight: 1.5 }}>
                 已发送至 {countryCode} {phone}
               </p>
             </div>
