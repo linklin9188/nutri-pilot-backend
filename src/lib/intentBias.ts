@@ -35,7 +35,16 @@ export type IntentTag =
   | 'blood_tonic'   // 补气血 (red dates, longan, pig liver, lamb, …)
   | 'sleep_aid'     // 助眠 (lotus seed, lily bulb, milk, oat, sour jujube)
   | 'yin_nourish'   // 滋阴 (white fungus, pear, honey, duck, yam)
-  | 'qi_tonic';     // 益气 (yam, astragalus, ginseng, chicken, …)
+  | 'qi_tonic'      // 益气 (yam, astragalus, ginseng, chicken, …)
+  // Extended wellness axes — match tags filled by migration 013.
+  | 'mood_boost'        // 提神/抗压 (chocolate, banana, salmon, oat, nuts)
+  | 'anti_aging'        // 抗衰 (blueberry, nuts, purple sweet potato, broccoli, …)
+  | 'beauty'            // 美容养颜 (white fungus, peach gum, papaya, avocado, …)
+  | 'damp_clear'        // 祛湿 (job's tears, red bean, winter melon, bitter melon)
+  | 'anti_inflammation' // 抗炎 (salmon, turmeric, ginger, olive oil, blueberry)
+  | 'eye_care'          // 护眼 (goji, carrot, spinach, blueberry, cassia)
+  | 'lose_weight'       // 减脂
+  | 'muscle_gain';      // 增肌
 
 export interface IntentBias {
   /** The original user request, kept verbatim for display. */
@@ -60,13 +69,21 @@ Convert it into a structured bias object. Use ONLY these axes — don't invent n
 
 - categoryBoosts: { seafood?, pork?, beef?, poultry?, plant?, carb? }
   Each value in [-2, +2]. Positive = more of this, negative = less.
-- tagBoosts: { spicy?, light?, sweet?, savory?, low_sodium?, low_sugar?, low_purine?, detox?, energy?, immunity?, blood_tonic?, sleep_aid?, yin_nourish?, qi_tonic? }
+- tagBoosts: { spicy?, light?, sweet?, savory?, low_sodium?, low_sugar?, low_purine?, detox?, energy?, immunity?, blood_tonic?, sleep_aid?, yin_nourish?, qi_tonic?, mood_boost?, anti_aging?, beauty?, damp_clear?, anti_inflammation?, eye_care?, lose_weight?, muscle_gain? }
   Each value in [-2, +2]. Same semantics.
-  TCM mapping reference (use when the user phrases in Chinese medicine terms):
-    • 补气血 / 气血两虚 → blood_tonic
+  Mapping reference:
+    • 补气血 / 气血两虚 / 月经后调理 → blood_tonic
     • 失眠 / 睡眠不好 / 助眠 / 安神 → sleep_aid
     • 滋阴 / 阴虚火旺 / 干燥 / 上火 → yin_nourish
     • 益气 / 健脾 / 提气 / 体虚 → qi_tonic
+    • 提神 / 抗压 / 心情不好 / 压力大 → mood_boost
+    • 抗衰 / 年纪大 / 想年轻 → anti_aging
+    • 美容 / 养颜 / 皮肤好 / 长痘 → beauty
+    • 湿气重 / 祛湿 / 水肿 / 梅雨 → damp_clear
+    • 关节痛 / 抗炎 / 痘 / 慢炎症 → anti_inflammation
+    • 护眼 / 看屏幕多 / 眼睛干 / 老花 → eye_care
+    • 减肥 / 减脂 / 瘦身 / 控制体重 → lose_weight
+    • 增肌 / 健身 / 长肌肉 / 长身体 → muscle_gain
     • 三高 (高血压) → low_sodium ; 糖尿病 → low_sugar ; 痛风 → low_purine
 - chips: array of 1-5 short Chinese chips (4-6 chars each) describing the bias
   in user-friendly terms, e.g. ["多海鲜 ↑", "少辣 ↓", "孩子友好"].
