@@ -295,8 +295,12 @@ export default function ProSchoolBalance() {
           </section>
         )}
 
-        {/* Step 3: missing summary (fallback heuristic) */}
-        {!aiResult && missing.length > 0 && (
+        {/* Step 3: missing summary (fallback heuristic) — only show after
+            the user has provided some signal. Without this gate, the empty
+            initial state listed ALL 6 nutrients as "missing", which was
+            both meaningless and alarming. We require either lunch text or
+            a manual tick before the gap-finder runs. */}
+        {!aiResult && missing.length > 0 && (lunchText.trim() || manualCovered.size > 0) && (
           <section className="rounded-2xl p-4 bg-white shadow-sm">
             <p className="text-[13px] font-bold text-gray-700">⚠️ 晚餐建议补 {missing.length} 类营养</p>
             <div className="flex flex-wrap gap-1.5 mt-2">
@@ -310,11 +314,26 @@ export default function ProSchoolBalance() {
           </section>
         )}
 
+        {/* Empty-state hint — only when nothing has been entered yet.
+            Prevents the "已有 = 0 / 建议补 = 6" first-load confusion. */}
+        {!aiResult && !lunchText.trim() && manualCovered.size === 0 && (
+          <section className="rounded-2xl p-4 bg-white shadow-sm text-center">
+            <p className="text-[24px] mb-1">📝</p>
+            <p className="text-[13px] font-bold text-gray-700">先填午餐再看缺口</p>
+            <p className="text-[11px] text-gray-400 mt-1">
+              填上面的输入框或点「已有营养」里的图标，我们再计算晚餐建议。
+            </p>
+          </section>
+        )}
+
         {/* Step 4: suggested dishes — prefer AI suggestions when available,
-            fall back to the local heuristic-picked list. */}
+            fall back to the local heuristic-picked list. Gated on user
+            having actually entered something so first-load doesn't dump
+            3 random recipes onto an empty screen. */}
         {(() => {
           const list = aiResult?.suggestions?.length ? aiResult.suggestions : suggestions;
           if (list.length === 0) return null;
+          if (!aiResult && !lunchText.trim() && manualCovered.size === 0) return null;
           return (
             <section className="space-y-2">
               <p className="text-[13px] font-bold text-gray-700 px-1">

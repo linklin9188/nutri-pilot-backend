@@ -108,8 +108,29 @@ function DishCard({ dish, small = false, familyMembers = [], homeToday = [], mic
     MAIN:    "主食",
     DRINK:   "饮品",
   };
-  const tc = typeColor[dish.type ?? "MAIN"] ?? "#FF5A1F";
-  const tl = typeLabel[dish.type ?? "MAIN"] ?? dish.type;
+  // When a michelin overlay is active, the badge must reflect the OVERLAY,
+  // not the original dish. Otherwise a base 素 (veggie_dish) overlaid with
+  // 当红炸子鸡 (chicken, main_protein) keeps showing "素", confusing the
+  // family about what they'll actually be eating.
+  const SEAFOOD_INGS = new Set([
+    'fish', 'shrimp', 'crab', 'scallop', 'clam', 'lobster', 'oyster',
+    'squid', 'salmon', 'tuna', 'cod', 'hairtail', 'seabass', 'shellfish',
+  ]);
+  function typeFromMichelin(m: NonNullable<typeof michelin>): string {
+    const ct  = m.course_type ?? '';
+    const ing = (m.main_ingredient ?? '').toLowerCase();
+    if (ct === 'soup')        return 'SOUP';
+    if (ct === 'veggie_dish') return 'VEGGIE';
+    if (ct === 'staple')      return 'MAIN';
+    if (ct === 'dessert')     return 'DIMSUM';
+    if (ct === 'main_protein') {
+      return SEAFOOD_INGS.has(ing) ? 'SEAFOOD' : 'MEAT';
+    }
+    return SEAFOOD_INGS.has(ing) ? 'SEAFOOD' : 'MEAT';
+  }
+  const effectiveType = michelin ? typeFromMichelin(michelin) : (dish.type ?? 'MAIN');
+  const tc = typeColor[effectiveType] ?? "#FF5A1F";
+  const tl = typeLabel[effectiveType] ?? effectiveType;
 
   const imgSrc = dish.img || dish.image_url
     ? (dish.img || dish.image_url)

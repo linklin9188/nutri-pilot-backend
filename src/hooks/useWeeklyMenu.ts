@@ -1110,8 +1110,14 @@ export function useWeeklyMenu() {
       // 1. Try DB cache first — but SKIP if algo version has changed since last save.
       // The key "weekly_menu_algo_ver" tracks which version generated the DB rows.
       // If it differs from ALGO_VERSION, the stored rows are stale and must be regenerated.
+      // Also SKIP if the local cache key has changed since last DB save — this
+      // catches cuisine/headcount/eating/intent toggles that the DB schema
+      // (keyed only by user_id + week_start + meal_type) can't distinguish.
       const savedAlgoVer = localStorage.getItem('weekly_menu_algo_ver');
-      const dbCacheValid = savedAlgoVer === ALGO_VERSION;
+      const savedDbCacheKey = localStorage.getItem('weekly_menu_db_cache_key');
+      const { dishesPerDay, kidSlots, adults: hcAdults, kids: hcKids } = calcDishesForToday();
+      const lsKey = getCacheKey(weekStart);
+      const dbCacheValid = savedAlgoVer === ALGO_VERSION && savedDbCacheKey === lsKey;
 
       if (dbCacheValid) {
         const cached = await loadFromDB(userId, weekStart);
@@ -1123,8 +1129,6 @@ export function useWeeklyMenu() {
       }
 
       // 2. Try localStorage cache — key includes headcount + eating selection
-      const { dishesPerDay, kidSlots, adults: hcAdults, kids: hcKids } = calcDishesForToday();
-      const lsKey = getCacheKey(weekStart);
       const lsRaw = localStorage.getItem(lsKey);
       if (lsRaw) {
         try {
@@ -1275,6 +1279,7 @@ export function useWeeklyMenu() {
         // can be invalidated on next algo upgrade (see weekly_menu_algo_ver check above)
         localStorage.setItem(lsKey, JSON.stringify(menu));
         localStorage.setItem('weekly_menu_algo_ver', ALGO_VERSION); // tracks version for DB cache validity
+        localStorage.setItem('weekly_menu_db_cache_key', lsKey);   // cache key the DB rows were generated for
         saveToDB(userId, menu).catch(() => {});
         saveToHistory(userId, menu).catch(() => {});
 

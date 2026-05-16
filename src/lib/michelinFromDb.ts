@@ -34,6 +34,12 @@ export interface MichelinDish {
   image_url:           string | null;
   prep_minutes:        number;      // home_time_min
   difficulty:          '简单' | '中等' | '稍复杂';
+  // course_type + main_ingredient are forwarded so the WeeklyMenu badge
+  // can pick the right type (荤 / 海鲜 / 素 / 汤 / 主食 / 点心) for the
+  // OVERLAY, not the base dish — otherwise a 素 base overlaid with a
+  // chicken michelin dish still shows the 素 badge.
+  course_type:         string;
+  main_ingredient:     string;
   // chef-version metadata for the booking CTA
   michelin_dish_id:    string;
   chef_book_price_hkd: number | null;
@@ -94,6 +100,8 @@ function toOverlay(source_id: string, m: any): MichelinDish {
     image_url:           m.image_url ?? null,
     prep_minutes:        m.home_time_min ?? 45,
     difficulty:          (m.home_difficulty ?? '中等') as '简单' | '中等' | '稍复杂',
+    course_type:         m.course_type ?? 'main_protein',
+    main_ingredient:     m.main_ingredient ?? 'other',
     michelin_dish_id:    m.id,
     chef_book_price_hkd: m.chef_book_price_hkd ?? null,
   };
