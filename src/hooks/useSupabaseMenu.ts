@@ -48,6 +48,14 @@ export interface SupabaseDish {
   prep_steps_json?: PrepStep[] | null;  // tray-based prep for helper
   cook_steps_json?: CookStep[] | null;  // precise steps for cooking robot
 
+  // ── 小美 / Thermomix-class robot compatibility ──────────────────────────
+  // True when the dish can be made end-to-end by a cooking robot (no oven,
+  // no deep fryer, no manual dim-sum folding). Backfilled by
+  // scripts/backfill-xiaomei-compat.ts. Users with "我有小美" toggled on
+  // see a 🤖 badge on these dishes and get a +0.15 score boost.
+  xiaomei_compatible?: boolean;
+  xiaomei_incompat_reason?: string | null;
+
   // ── UI adapter fields (set by enrichDish, consumed by Home.tsx) ──────────
   title: string;        // i18n: title_zh | title_en
   desc: string;         // i18n: description_zh | description_en | derived
@@ -506,6 +514,9 @@ function enrichDish(dish: any, highlight: boolean): SupabaseDish {
     // Steps — mapped from DB JSONB fields (available once gen-dish-steps runs)
     prep_steps_json: dish.prep_steps_json ?? null,
     cook_steps_json: dish.cook_steps_json ?? null,
+    // 小美 robot flags
+    xiaomei_compatible:       dish.xiaomei_compatible ?? false,
+    xiaomei_incompat_reason:  dish.xiaomei_incompat_reason ?? null,
     // Raw record for debugging
     _raw: dish,
   };
@@ -609,6 +620,7 @@ function scoreDish(
   solarTerm: SolarTerm,
   prefScores: Record<string, number>,
   spiceBoost = 0,
+  hasXiaomei = false,
 ): number {
   const flavorTags: string[] = dish.flavor_tags ?? [];
   const healthTags: string[] = dish.health_benefit_tags ?? [];
@@ -657,6 +669,14 @@ function scoreDish(
   // ⑥ User spice preference boost/penalty
   if (spiceBoost !== 0 && flavorTags.includes('spicy')) {
     score += spiceBoost;
+  }
+
+  // ⑥' 小美 robot boost — when the household has a cooking robot, float
+  // robot-doable dishes to the top so the helper / parent has the option
+  // of "hand it to the robot tonight". Doesn't disqualify oven-only dishes,
+  // just nudges robot-doable ones up by half a flavor-tag's worth.
+  if (hasXiaomei && dish.xiaomei_compatible) {
+    score += 0.15;
   }
 
   // ⑦ Learned-preference signal — folds in user_preference_scores (positive
@@ -1021,10 +1041,15 @@ export function useRecommendDishes(
           localPrefs.vegetarianOnly,
         );
 
+        // "我有小美料理机" toggle — read at scoring time so toggling the
+        // switch in Settings affects the next menu refresh without a
+        // hook remount.
+        const hasXiaomei = localStorage.getItem('has_xiaomei_robot') === 'true';
+
         const sorted = filtered
           .map(dish => ({
             dish,
-            score: scoreDish(dish, profile, humidity, solarTerm, scores, localPrefs.spiceBoost),
+            score: scoreDish(dish, profile, humidity, solarTerm, scores, localPrefs.spiceBoost, hasXiaomei),
           }))
           .sort((a, b) => b.score - a.score)
           .map(s => s.dish);

@@ -719,9 +719,24 @@ export default function Home() {
                         <p style={{ fontSize: 9, letterSpacing: "0.18em", color: "rgba(0,0,0,0.30)", fontWeight: 700 }}>
                           NO. {String(idx + 1).padStart(2, '0')}
                         </p>
-                        <p className="font-serif font-black truncate mt-0.5" style={{ fontSize: 18, color: "#1a1a1a", letterSpacing: "-0.005em" }}>
-                          {dishTitle(dish)}
-                        </p>
+                        <div className="flex items-center gap-1.5">
+                          <p className="font-serif font-black truncate" style={{ fontSize: 18, color: "#1a1a1a", letterSpacing: "-0.005em" }}>
+                            {dishTitle(dish)}
+                          </p>
+                          {/* 小美 chip — only shown when the household has
+                              toggled "我有小美" on AND this dish is robot-
+                              doable. Sits inline with the title so it's
+                              read as a property of the dish. */}
+                          {localStorage.getItem('has_xiaomei_robot') === 'true' && dish.xiaomei_compatible && (
+                            <span
+                              className="shrink-0 rounded-full px-1.5 py-0.5 font-bold leading-none"
+                              style={{ background: 'rgba(255,90,31,0.10)', color: '#FF5A1F', fontSize: 9, letterSpacing: '0.04em' }}
+                              title="小美料理机可以做这道菜"
+                            >
+                              🤖 小美
+                            </span>
+                          )}
+                        </div>
                         <p className="truncate mt-0.5" style={{ fontSize: 11.5, color: "rgba(0,0,0,0.42)" }}>
                           {cuisineLabel(dish)}
                         </p>

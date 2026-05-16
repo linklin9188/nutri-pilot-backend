@@ -290,6 +290,19 @@ export default function Settings() {
     window.dispatchEvent(new Event("nutri-prefs-changed"));
   }
 
+  // 小美 / cooking-robot toggle. Reads + writes the same key the recommend
+  // hook consults so the next menu refresh boosts robot-doable dishes
+  // by +0.15 score.
+  const [hasXiaomei, setHasXiaomei] = useState<boolean>(
+    () => localStorage.getItem("has_xiaomei_robot") === "true"
+  );
+  function toggleHasXiaomei() {
+    const next = !hasXiaomei;
+    setHasXiaomei(next);
+    localStorage.setItem("has_xiaomei_robot", String(next));
+    window.dispatchEvent(new Event("nutri-prefs-changed"));
+  }
+
   function openMember(m: FamilyMember) {
     if (openId === m.id) {
       setOpenId(null);
@@ -682,6 +695,33 @@ export default function Settings() {
 
           {/* ── Membership ── */}
           <MembershipCard />
+
+          {/* ── 小美 / cooking robot toggle ──
+              When ON, the recommend algo boosts robot-doable dishes by
+              +0.15 so they float to the top, and each dish card shows a
+              🤖 chip telling the user / helper "this one can go straight
+              to the robot tonight". */}
+          <button
+            onClick={toggleHasXiaomei}
+            className="w-full bg-white border border-black/5 rounded-[22px] p-4 shadow-[0_4px_20px_rgba(0,0,0,0.04)] flex items-center gap-3 active:scale-[0.98] transition-all"
+          >
+            <span className="text-[24px]">🤖</span>
+            <div className="flex-1 text-left">
+              <p className="font-bold text-[14px]">我有小美料理机</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">
+                打开后，小美能做的菜会被优先推荐，菜单也会标记 🤖
+              </p>
+            </div>
+            <div
+              className="w-11 h-6 rounded-full relative transition-colors"
+              style={{ background: hasXiaomei ? "#FF5A1F" : "rgba(0,0,0,0.12)" }}
+            >
+              <div
+                className="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-all"
+                style={{ left: hasXiaomei ? "22px" : "2px" }}
+              />
+            </div>
+          </button>
 
           {/* ── Pro toolbox (家宴 / 祛湿 / 学校营养) ── */}
           <ProToolbox />

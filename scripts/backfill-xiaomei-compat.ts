@@ -20,25 +20,29 @@ const DRY = process.argv.includes('--dry-run');
 // Incompatible operation buckets — each maps to a human-readable reason
 // surfaced in the UI when a user asks "why doesn't 小美 do this one".
 const INCOMPAT: Array<{ pattern: RegExp; reason: string }> = [
-  // Oven-only (the robot has no oven)
-  { pattern: /(烤箱|预热.*°|180°C|200°C|220°C|烤盘|烘焙|烤至金黄|入烤箱|放入烤箱|oven|preheat|bake|broil|roast in oven)/i,
+  // Oven-only (the robot has no oven). Scope carefully — "preheat the wok"
+  // / "预热炒锅" are NOT oven, only specifically oven-targeted operations
+  // should disqualify.
+  { pattern: /(烤箱|入烤箱|放入烤箱|烤盘|烘焙|烤至金黄|烤至焦黄|焗炉|焗烤|preheat\s+(the\s+)?oven|preheat\s+oven\s+to|bake\s+(at|in|for|until)|broil|roast\s+in\s+(the\s+)?oven|oven\s+at\s+\d+|oven-baked|in\s+the\s+oven)/i,
     reason: '需要烤箱' },
   // Deep frying / open-fire grilling (no fryer / no flame)
   { pattern: /(油炸|炸至|deep fry|炸锅|入油锅|180.*?油温|油温.*180|烧热.*油.*炸|炸熟)/i,
     reason: '需要油炸' },
   { pattern: /(炭烤|明火|炭火|烧烤架|charcoal|grill over|barbecue|烧烤|炙烤|烤架)/i,
     reason: '需要明火/烤架' },
-  // Manual dim-sum folding / dough shaping the robot can't do
-  { pattern: /(包饺子|包子|包馄饨|包春卷|包.*?馅|揉成饺子皮|手工.*?捏|捏成.*?状|擀成.*?圆形|擀.*?面皮|裹上)/,
+  // Manual dim-sum folding / dough shaping the robot can't do.
+  // Be specific so 翻炒裹上酱汁 ≠ false positive: must mention 饺子/包子/
+  // 馄饨/春卷/月饼/汤圆 itself, OR an explicit 擀面皮/包馅 operation.
+  { pattern: /(包饺子|包包子|包馄饨|包春卷|包月饼|包汤圆|擀.*?面皮|擀.*?饺子皮|捏成.*?(饺子|包子|花朵)|包入馅料)/,
     reason: '需手工包/捏' },
-  // Raw / cold-plated assembly
-  { pattern: /(刺身|生鱼片|sashimi|tartare|生切)/i,
+  // Raw / cold-plated assembly the robot can't do (it can't slice sashimi)
+  { pattern: /(刺身|生鱼片|sashimi|tartare|carpaccio)/i,
     reason: '生食/手工拼盘' },
-  // Air fryer / pressure cooker only (different appliance class)
-  { pattern: /(空气炸锅|air fry|高压锅|pressure cooker|instant pot)/i,
+  // Air fryer / pressure cooker only — different appliance class
+  { pattern: /(空气炸锅|air fryer|高压锅|pressure cooker|instant pot)/i,
     reason: '需空气炸锅/高压锅' },
-  // Smoking / curing / advanced
-  { pattern: /(烟熏|smoke|风干|腌制.*?\d+\s*天|low-temp|sous vide|低温慢煮)/i,
+  // Smoking / multi-day curing / sous vide — operations 小美 can't do
+  { pattern: /(烟熏|smoking process|风干\s*\d|腌制.*?\d+\s*天|sous vide|低温慢煮|液氮)/i,
     reason: '需特殊设备' },
 ];
 

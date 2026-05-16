@@ -171,6 +171,25 @@ function DishCard({ dish, small = false, familyMembers = [], homeToday = [], mic
           {michelin.award_type === 'michelin' ? '⭐' : '♦'} {michelin.award_level}
         </div>
       )}
+      {/* 小美 chip — top-right when not occupied by Michelin overlay. Only
+          rendered when the household has toggled "我有小美" on AND this
+          dish is robot-doable, so a household without the robot never
+          sees noise. */}
+      {!michelin
+        && localStorage.getItem('has_xiaomei_robot') === 'true'
+        && (dish as any).xiaomei_compatible && (
+        <div
+          className="absolute top-2 right-2 px-1.5 py-0.5 rounded-full font-bold"
+          style={{
+            background: "rgba(255,255,255,0.92)",
+            color: "#FF5A1F", fontSize: 9, letterSpacing: "0.02em",
+            boxShadow: "0 2px 6px rgba(0,0,0,0.20)",
+          }}
+          title="小美料理机可以做这道菜"
+        >
+          🤖 小美
+        </div>
+      )}
       {/* Title */}
       <div className="absolute bottom-0 left-0 right-0 p-2">
         <p className="text-white font-semibold leading-tight" style={{ fontSize: small ? 11 : 12 }}>
