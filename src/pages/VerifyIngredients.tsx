@@ -82,6 +82,35 @@ function getWeekStart(): string {
 // Without this consolidation the procurement list silently used the static
 // onboarding numbers while the menu used the live selection — i.e. 6 dishes
 // generated for 5 people but ingredients only enough for 3.
+/**
+ * Per-day variant of readHeadcount. Reads nutri_eating_by_day[dayIdx]
+ * first, falling back to the live today selection, then onboarding
+ * defaults. Used for weekly procurement scaling so 周三-only-couple
+ * doesn't get the same ingredient quantity as 周日-全家.
+ */
+function readHeadcountForDay(dayIdx: number): { adults: number; kids: number } {
+  try {
+    const allMembers = JSON.parse(localStorage.getItem('nutri_family_members') || '[]') as Array<{ id: string; lifeStage?: string }>;
+    if (allMembers.length > 0) {
+      // 1) per-day override
+      try {
+        const raw = localStorage.getItem('nutri_eating_by_day');
+        if (raw) {
+          const byDay = JSON.parse(raw) as Record<string, string[]>;
+          const ids = byDay[String(dayIdx)];
+          if (Array.isArray(ids) && ids.length > 0) {
+            const today = allMembers.filter(m => ids.includes(m.id));
+            const kids = today.filter(m => m.lifeStage === '儿童').length;
+            return { adults: today.length - kids, kids };
+          }
+        }
+      } catch {}
+      // 2) fall through to today's default
+    }
+  } catch {}
+  return readHeadcount();
+}
+
 function readHeadcount(): { adults: number; kids: number } {
   try {
     const allMembers = JSON.parse(localStorage.getItem('nutri_family_members') || '[]') as Array<{ id: string; lifeStage?: string }>;
@@ -410,6 +439,31 @@ export default function VerifyIngredients() {
       const allRaw = banquet.dishes.flatMap(dish =>
         dishToIngredients(dish, banquetAdultEquivalent, 0)
       );
+      setIngredients(aggregateIngredients(allRaw));
+      setHaveIt({});
+      return;
+    }
+
+    if (mode === 'week') {
+      // Per-day scaling: each day might have a different headcount (e.g.
+      // weekend has guests, weekday only the couple). Group dishes by day
+      // and scale each day's portions by that day's headcount, then
+      // aggregate. Without this, the shopping list silently used a single
+      // headcount for the whole week and over- or under-bought.
+      const weekMenu = loadWeekMenu();
+      const days: any[] = weekMenu?.days ?? [];
+      const allRaw: any[] = [];
+      let total = 0;
+      for (let i = 0; i < days.length; i++) {
+        const d = days[i];
+        const dayDishes = [...(d.dishes ?? []), ...(d.lunchDishes ?? [])];
+        total += dayDishes.length;
+        const { adults, kids } = readHeadcountForDay(i);
+        for (const dish of dayDishes) {
+          allRaw.push(...dishToIngredients(dish, adults, kids));
+        }
+      }
+      setDishCount(total);
       setIngredients(aggregateIngredients(allRaw));
       setHaveIt({});
       return;

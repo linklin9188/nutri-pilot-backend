@@ -65,10 +65,13 @@ const DAY_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', 
 
 interface EatingMember { id: string; name: string; lifeStage: string; needs: string[] }
 
+function loadAllMembers(): EatingMember[] {
+  try { return JSON.parse(localStorage.getItem('nutri_family_members') || '[]'); }
+  catch { return []; }
+}
+
 function getEatingMembers(): EatingMember[] {
-  const allMembers: EatingMember[] = (() => {
-    try { return JSON.parse(localStorage.getItem('nutri_family_members') || '[]'); } catch { return []; }
-  })();
+  const allMembers = loadAllMembers();
   if (allMembers.length === 0) return [];
   const raw = localStorage.getItem('nutri_eating_today');
   if (!raw) return allMembers; // default: everyone
@@ -77,6 +80,42 @@ function getEatingMembers(): EatingMember[] {
     const filtered = allMembers.filter(m => ids.includes(m.id));
     return filtered.length > 0 ? filtered : allMembers;
   } catch { return allMembers; }
+}
+
+/**
+ * Per-day eating selection. `nutri_eating_by_day` is a
+ * Record<dayIndex(0-6), memberId[]> so the user can say e.g. "周三只有
+ * 夫妻两人" while keeping the weekend at full 5-person. Defaults fall
+ * back to nutri_eating_today, then to "everyone". Empty selection on a
+ * day is treated as no override → use today's default.
+ */
+export function getEatingMembersForDay(dayIdx: number): EatingMember[] {
+  const allMembers = loadAllMembers();
+  if (allMembers.length === 0) return [];
+  try {
+    const raw = localStorage.getItem('nutri_eating_by_day');
+    if (raw) {
+      const byDay = JSON.parse(raw) as Record<string, string[]>;
+      const ids = byDay[String(dayIdx)];
+      if (Array.isArray(ids) && ids.length > 0) {
+        const filtered = allMembers.filter(m => ids.includes(m.id));
+        if (filtered.length > 0) return filtered;
+      }
+    }
+  } catch {}
+  return getEatingMembers();
+}
+
+function getDayHeadcount(dayIdx: number): { adults: number; kids: number } {
+  const members = getEatingMembersForDay(dayIdx);
+  if (members.length === 0) {
+    return {
+      adults: parseInt(localStorage.getItem('nutri_adults') ?? '3', 10),
+      kids:   parseInt(localStorage.getItem('nutri_kids')   ?? '0', 10),
+    };
+  }
+  const kids = members.filter(m => m.lifeStage === '儿童').length;
+  return { adults: members.length - kids, kids };
 }
 
 /**
@@ -116,7 +155,25 @@ function getCacheKey(weekStart: string): string {
   } catch {}
   const intentKey = getIntentHash();
   const cuisineKey = loadCuisineMode().charAt(0); // c / w / a
-  return `weekly_menu_${ALGO_VERSION}_${weekStart}_p${dishesPerDay}_c${cuisineKey}_e${eatingKey}_i${intentKey}`;
+  // Per-day eating override key. Hash the daily lists so any per-day change
+  // busts the cache and rebuilds the affected day. Falls back to '' when no
+  // per-day overrides exist (most users, single eating-today selection).
+  let byDayKey = '';
+  try {
+    const byDayRaw = localStorage.getItem('nutri_eating_by_day');
+    if (byDayRaw) {
+      const byDay = JSON.parse(byDayRaw) as Record<string, string[]>;
+      const parts: string[] = [];
+      for (let i = 0; i < 7; i++) {
+        const ids = byDay[String(i)];
+        if (Array.isArray(ids) && ids.length > 0) {
+          parts.push(`${i}:${ids.slice().sort().join(',')}`);
+        }
+      }
+      if (parts.length > 0) byDayKey = `_d${parts.join('|')}`;
+    }
+  } catch {}
+  return `weekly_menu_${ALGO_VERSION}_${weekStart}_p${dishesPerDay}_c${cuisineKey}_e${eatingKey}_i${intentKey}${byDayKey}`;
 }
 
 // Always use the local-time date to avoid UTC offset shifting the value to the
@@ -610,6 +667,21 @@ function generateWeekPlan(
   const weeklyCatCounts: Record<string, number> = {};
 
   for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+    // Per-day headcount override. If the user toggled who's eating on a
+    // specific day (e.g. only the couple on Wed), this day's adults/kids
+    // differ from the week-level defaults. Otherwise falls back to the
+    // function-level adults/kids passed in by the caller.
+    const dayHc = getDayHeadcount(dayIndex);
+    const dayAdults = dayHc.adults || adults;
+    const dayKids   = dayHc.kids   || kids;
+    const dayDishesPerDay = calcDishCount('晚餐', dayAdults, dayKids);
+    const dayKidSlots = dayKids > 0 ? Math.min(dayKids, 2) : 0;
+    const dayUseSmallTemplate = dayDishesPerDay <= 3;
+    const dayAdultSlots = dayUseSmallTemplate
+      ? Math.max(dayDishesPerDay - dayKidSlots, 1)
+      : dayDishesPerDay;
+    const dayEffectiveKidSlots = dayUseSmallTemplate ? dayKidSlots : 0;
+
     const dayDishes: any[] = [];
     const dayIngredients: string[] = [];
     // Same-day title-keyword hard dedup. Without this, the -0.65 soft penalty
@@ -625,12 +697,12 @@ function generateWeekPlan(
     // Helper mode: track level-3 count per day (hard cap = 1)
     let level3CountToday = 0;
 
-    for (let slot = 0; slot < adultSlots; slot++) {
-      const slotTemplate = useSmallTemplate ? SLOT_PREFERRED_CATS_SMALL : SLOT_PREFERRED_CATS;
+    for (let slot = 0; slot < dayAdultSlots; slot++) {
+      const slotTemplate = dayUseSmallTemplate ? SLOT_PREFERRED_CATS_SMALL : SLOT_PREFERRED_CATS;
       const preferredCats = slotTemplate[slot] ?? [];
 
       // For small families: slot 2 is the soup slot; otherwise slot 3
-      const isSoupSlot = useSmallTemplate ? slot === 2 : slot === 3;
+      const isSoupSlot = dayUseSmallTemplate ? slot === 2 : slot === 3;
 
       // Build scored candidates for this slot
       const allCandidates = pool
@@ -667,7 +739,7 @@ function generateWeekPlan(
           // EXCEPT when lowCarb is on: ban staples entirely, and let slot 4
           // accept main_protein / veggie instead (relax the "slot 4 must
           // be staple" rule). User on keto would otherwise lose 1 dish.
-          if (!useSmallTemplate) {
+          if (!dayUseSmallTemplate) {
             if (lowCarb && isStaple) return false;
             if (!lowCarb && isStaple && CARB_BLOCKED_SLOTS.has(slot)) return false;
             if (!lowCarb && slot === 4 && !isStaple) return false;
@@ -682,8 +754,8 @@ function generateWeekPlan(
           // other slot in both templates. Previously slot 2 (veggie) wasn't
           // blocked, so e.g. 蛋花汤 (course=soup, main=egg/plant) could win
           // the veggie slot, resulting in two soups per day.
-          if (!useSmallTemplate && isSoup && slot !== 3) return false;
-          if (useSmallTemplate  && isSoup && slot !== 2) return false;
+          if (!dayUseSmallTemplate && isSoup && slot !== 3) return false;
+          if (dayUseSmallTemplate  && isSoup && slot !== 2) return false;
 
           return true;
         })
@@ -696,7 +768,7 @@ function generateWeekPlan(
           // penalty would zero out every spicy candidate. Instead, allow
           // spicy on the adult-facing main_protein slots (0/1) while
           // keeping veggie/soup/staple slots mild.
-          const mixedSpice = kids > 0 && profile.taste_pref === 'spicy';
+          const mixedSpice = dayKids > 0 && profile.taste_pref === 'spicy';
           const slotSpiceBoost = mixedSpice
             ? (slot <= 1 ? 0.4 : -0.2)
             : spiceBoost;
@@ -752,7 +824,7 @@ function generateWeekPlan(
           // penalty is graceful — if a category has no candidates (e.g. user
           // has seafood allergy, no seafood in pool), the algo falls through
           // to other categories rather than producing an empty slot.
-          if (!useSmallTemplate && dishesPerDay >= 4) {
+          if (!dayUseSmallTemplate && dayDishesPerDay >= 4) {
             // slot 0: 肉 (pork/beef/poultry) — block seafood here so it has
             // its own slot below, and block plant so slot 0 isn't a salad.
             if (slot === 0 && (cat === 'seafood' || cat === 'plant' || cat === 'other')) {
@@ -826,7 +898,7 @@ function generateWeekPlan(
     // Scored separately with child-friendly criteria: no spicy, prefer light/sweet.
     // They're added to the same day.dishes array so the whole table shares them.
     const kidDishes: any[] = [];
-    if (effectiveKidSlots > 0) {
+    if (dayEffectiveKidSlots > 0) {
       const kidUsedIds = new Set([...usedIds, ...dayDishes.map(d => d.id)]);
       const kidCandidates = pool
         .filter(d => !kidUsedIds.has(d.id))
@@ -852,7 +924,7 @@ function generateWeekPlan(
         .sort((a, b) => b.score - a.score)
         .slice(0, 15);
 
-      weightedRandom(kidCandidates, effectiveKidSlots).forEach(c => {
+      weightedRandom(kidCandidates, dayEffectiveKidSlots).forEach(c => {
         kidDishes.push(c.dish);
         const kw = extractTitleKeyword(c.dish.title_zh ?? c.dish.title ?? '');
         if (kw) pickedTitleKeywords.push(kw);

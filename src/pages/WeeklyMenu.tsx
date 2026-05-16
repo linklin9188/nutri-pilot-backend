@@ -12,6 +12,7 @@ import { supabase } from "../lib/supabase";
 import BottomTabBar from "../components/BottomTabBar";
 import {
   loadFamilyMembers, loadHomeToday, saveHomeToday, dishAllergyFor,
+  loadHomeByDay, saveHomeForDay,
   ALLERGY_INGREDIENTS, ALLERGY_TITLE_KEYWORDS,
   type FamilyMember,
 } from "../lib/familyPrefs";
@@ -423,6 +424,28 @@ export default function WeeklyMenu() {
   const [homeToday, setHomeToday] = useState<string[]>(() =>
     loadHomeToday(familyMembers)
   );
+  // Per-day eating override. Empty entry for a day → use homeToday.
+  const [homeByDay, setHomeByDay] = useState<Record<number, string[]>>(() => loadHomeByDay());
+  const getEatingForDay = (i: number): string[] => homeByDay[i] ?? homeToday;
+  function toggleMemberForDay(dayIdx: number, memberId: string) {
+    setHomeByDay(prev => {
+      const current = prev[dayIdx] ?? homeToday;
+      const next = current.includes(memberId)
+        ? current.filter(id => id !== memberId)
+        : [...current, memberId];
+      // Keep at least 1 member; otherwise revert to default.
+      const safe = next.length === 0 ? homeToday : next;
+      saveHomeForDay(dayIdx, safe.length === homeToday.length &&
+        safe.every(id => homeToday.includes(id)) ? [] : safe);
+      const out = { ...prev };
+      if (safe.length === homeToday.length && safe.every(id => homeToday.includes(id))) {
+        delete out[dayIdx];
+      } else {
+        out[dayIdx] = safe;
+      }
+      return out;
+    });
+  }
 
   // Fetch real breakfast dishes from DB once
   useEffect(() => {
@@ -881,9 +904,42 @@ export default function WeeklyMenu() {
                                 })()}
                               </p>
                             </div>
-                            <MealSection mealIdx={0} dishes={dayBreakfast} familyMembers={familyMembers} homeToday={homeToday} michelinByDishId={overlayForDay} />
-                            <MealSection mealIdx={1} dishes={dayLunch}     familyMembers={familyMembers} homeToday={homeToday} michelinByDishId={overlayForDay} />
-                            <MealSection mealIdx={2} dishes={dayDinner}    familyMembers={familyMembers} homeToday={homeToday} michelinByDishId={overlayForDay} />
+                            {/* Per-day "谁在家吃" chip row — tap to toggle each
+                                member for this day. Drives both dish count
+                                (calcDishCount) and procurement quantity. */}
+                            {familyMembers.length > 0 && (() => {
+                              const dayEating = getEatingForDay(i);
+                              const isCustom = !!homeByDay[i];
+                              return (
+                                <div className="px-5 flex items-center gap-1.5 overflow-x-auto no-scrollbar mb-3">
+                                  <span className="font-serif italic shrink-0" style={{ fontSize: 11, color: "rgba(255,255,255,0.45)" }}>
+                                    在家
+                                  </span>
+                                  {familyMembers.map(m => {
+                                    const sel = dayEating.includes(m.id);
+                                    return (
+                                      <button key={m.id}
+                                        onClick={() => toggleMemberForDay(i, m.id)}
+                                        className="px-2.5 py-1 rounded-full active:scale-90 transition-transform shrink-0"
+                                        style={{
+                                          fontSize: 11, fontWeight: 600,
+                                          background: sel ? "rgba(255,90,31,0.20)" : "rgba(255,255,255,0.06)",
+                                          color:      sel ? "#FF8C54"           : "rgba(255,255,255,0.45)",
+                                          border:     sel ? "1px solid rgba(255,140,84,0.40)" : "1px solid rgba(255,255,255,0.10)",
+                                        }}>
+                                        {m.name?.slice(0, 1) || '·'} {dayEating.length === 0 ? '' : ''}
+                                      </button>
+                                    );
+                                  })}
+                                  <span className="shrink-0" style={{ fontSize: 10, color: "rgba(255,255,255,0.30)" }}>
+                                    · {dayEating.length} 人{isCustom ? ' (本日)' : ''}
+                                  </span>
+                                </div>
+                              );
+                            })()}
+                            <MealSection mealIdx={0} dishes={dayBreakfast} familyMembers={familyMembers} homeToday={getEatingForDay(i)} michelinByDishId={overlayForDay} />
+                            <MealSection mealIdx={1} dishes={dayLunch}     familyMembers={familyMembers} homeToday={getEatingForDay(i)} michelinByDishId={overlayForDay} />
+                            <MealSection mealIdx={2} dishes={dayDinner}    familyMembers={familyMembers} homeToday={getEatingForDay(i)} michelinByDishId={overlayForDay} />
                           </div>
                         );
                       })}

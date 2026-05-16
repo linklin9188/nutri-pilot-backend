@@ -196,6 +196,38 @@ export function saveHomeToday(ids: string[]) {
   window.dispatchEvent(new Event('nutri-home-changed'));
 }
 
+// ── Per-day "who's eating" override ───────────────────────────────────────
+// Keyed by dayIndex (0=Mon … 6=Sun). When a day has no entry, fall back to
+// today's selection so weeks without explicit per-day editing behave as
+// before. Same shape consumed by useWeeklyMenu's getEatingMembersForDay.
+
+export function loadHomeByDay(): Record<number, string[]> {
+  try {
+    const raw = localStorage.getItem('nutri_eating_by_day');
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, string[]>;
+    const out: Record<number, string[]> = {};
+    for (const k of Object.keys(parsed)) {
+      const n = Number(k);
+      if (Number.isInteger(n) && n >= 0 && n <= 6 && Array.isArray(parsed[k])) {
+        out[n] = parsed[k];
+      }
+    }
+    return out;
+  } catch { return {}; }
+}
+
+export function saveHomeForDay(dayIdx: number, ids: string[]): void {
+  const current = loadHomeByDay();
+  if (ids.length === 0) {
+    delete current[dayIdx];
+  } else {
+    current[dayIdx] = ids;
+  }
+  localStorage.setItem('nutri_eating_by_day', JSON.stringify(current));
+  window.dispatchEvent(new Event('nutri-prefs-changed'));
+}
+
 // ── Aggregated family prefs for menu generation ───────────────────────────────
 
 export interface FamilyMenuPrefs {
