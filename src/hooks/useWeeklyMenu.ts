@@ -55,7 +55,7 @@ export interface WeeklyMenu {
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v23'; // lunch scales with headcount; same-day title-keyword hard dedup; congee banned from dinner staple
+export const ALGO_VERSION = 'v24'; // force-bust 5-person 3-dish stale DB caches generated before D fix landed
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

@@ -586,21 +586,14 @@ export default function Home() {
 
           {/* Header action stack: language toggle on top, QR scan below */}
           <div className="flex flex-col items-end gap-2 shrink-0">
-            {/* Language cycler — short label, cycles zh → 繁 → EN → tl → id */}
+            {/* Language cycler — short label, cycles zh → 繁 → EN → tl → id.
+                QR/fridge-scan was here too; moved to the bottom 扫冰箱 grid
+                button so the header stays single-action and clean. */}
             <button onClick={cycleLanguage}
               className="px-3 h-8 rounded-full flex items-center justify-center font-bold active:scale-95 transition-transform"
               style={{ background: "white", boxShadow: "0 4px 14px rgba(0,0,0,0.06)", fontSize: 11, color: "#1a1a1a", minWidth: 56 }}
               title="切换语言 / Switch language">
               {LANGUAGE_LABEL[language]}
-            </button>
-            {/* QR — round, paper-card, subtle */}
-            <button onClick={() => setIsFridgeScanOpen(true)}
-              className="w-11 h-11 rounded-full flex items-center justify-center active:scale-90 transition-transform"
-              style={{ background: "white", boxShadow: "0 4px 14px rgba(0,0,0,0.06)" }}
-              title="扫食材">
-              <span className="material-symbols-outlined" style={{ fontSize: 22, color: "#FF5A1F" }}>
-                qr_code_scanner
-              </span>
             </button>
           </div>
         </div>
@@ -630,16 +623,14 @@ export default function Home() {
                 </button>
               ))}
             </div>
-            <button onClick={() => navigate("/weekly")}
-              className="inline-flex items-center gap-1 active:scale-95"
-              style={{ fontSize: 12, color: "rgba(0,0,0,0.55)", fontWeight: 600 }}>
-              本周菜单
-              <span className="material-symbols-outlined" style={{ fontSize: 16 }}>arrow_forward</span>
-            </button>
+            {/* 本周菜单 + 收藏 quick links moved to the 菜单 tab so Home
+                stays focused on today's recommendation. Bottom nav still
+                covers both — 菜单 tab is /weekly, and the WeeklyMenu page
+                now hosts the favorites shortcut. */}
           </div>
 
-          {/* Cuisine filter — 中餐 / 西餐 / 全部. + favorites shortcut. */}
-          <div className="flex items-center justify-between mb-3">
+          {/* Cuisine filter — 中餐 / 西餐 / 全部 (favorites shortcut moved to /weekly) */}
+          <div className="flex items-center justify-start mb-3">
             <div className="inline-flex p-1 rounded-2xl gap-0.5"
               style={{ background: "rgba(0,0,0,0.05)" }}>
               {([
@@ -659,17 +650,6 @@ export default function Home() {
                 </button>
               ))}
             </div>
-            {/* 我的收藏 quick entry — taps the same store HeartButton writes to */}
-            <button
-              onClick={() => navigate('/favorites')}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl active:scale-95 transition-transform"
-              style={{ background: "rgba(255,90,31,0.10)" }}
-              title="我的收藏">
-              <span className="material-symbols-outlined" style={{ fontSize: 16, color: "#FF5A1F", fontVariationSettings: "'FILL' 1" }}>
-                favorite
-              </span>
-              <span style={{ fontSize: 12, color: "#FF5A1F", fontWeight: 700 }}>收藏</span>
-            </button>
           </div>
 
           {/* Editorial menu card — paper background, generous padding */}
@@ -885,26 +865,25 @@ export default function Home() {
           );
         })()}
 
-        {/* 换菜 / 烹饪 — primary actions of the day. Just icon + label, no
-            subtitle. Free = 1 swap/day, Pro = 5 swaps/day (= 5 套菜单).
-            烹饪 routes to /prep (the prep page itself flows to /cook),
-            so we save the separate 备菜 button. */}
+        {/* 扫冰箱 / 烹饪 — primary actions of the day. Per-dish 换菜 is
+            still on each menu row (sync_alt icon), so this bulk action
+            became redundant; 扫冰箱 is the more useful first-click. */}
         <div className="grid grid-cols-2 gap-3">
-          {/* 换菜 */}
+          {/* 扫冰箱 — opens the camera picker, then geminiVision analyzes
+              ingredients and suggests recipes from what's visible. */}
           <button
-            onClick={handleSwapAll}
-            disabled={dishesLoading}
-            className="rounded-2xl bg-white px-4 py-3.5 flex items-center justify-center gap-3 active:scale-[0.98] transition-transform disabled:opacity-60"
+            onClick={() => fridgeInputRef.current?.click()}
+            className="rounded-2xl bg-white px-4 py-3.5 flex items-center justify-center gap-3 active:scale-[0.98] transition-transform"
             style={{ boxShadow: "0 6px 20px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.04)" }}
           >
             <div className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0"
-              style={{ background: "rgba(108,92,231,0.10)" }}>
-              <span className="material-symbols-outlined" style={{ fontSize: 22, color: "#6C5CE7", fontVariationSettings: "'FILL' 1" }}>
-                refresh
+              style={{ background: "rgba(0,180,216,0.12)" }}>
+              <span className="material-symbols-outlined" style={{ fontSize: 22, color: "#00B4D8", fontVariationSettings: "'FILL' 1" }}>
+                kitchen
               </span>
             </div>
             <p className="font-serif font-black" style={{ fontSize: 17, color: "#1a1a1a", letterSpacing: "-0.005em" }}>
-              换菜
+              扫冰箱
             </p>
           </button>
 
