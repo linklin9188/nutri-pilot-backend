@@ -10,8 +10,12 @@ import { useRecommendDishes, fetchSwapOptions, type SupabaseDish } from "../hook
 import { useWeeklyMenu } from "../hooks/useWeeklyMenu";
 import {
   analyzeFridgePhoto, fileToBase64,
-  type ScannedDish, type ScanScene, type ScanLocale,
+  type ScanScene, type ScanLocale,
 } from "../lib/geminiVision";
+import {
+  suggestDishesFromScan, normalizeIngredients,
+  type MatchedDish,
+} from "../lib/scanMatch";
 import { supabase } from "../lib/supabase";
 import BottomTabBar from "../components/BottomTabBar";
 import { useSubscription } from "../lib/subscription";
@@ -321,7 +325,7 @@ export default function Home() {
   const [isFridgeScanOpen, setIsFridgeScanOpen] = useState(false);
   const [fridgeScanLoading, setFridgeScanLoading] = useState(false);
   const [fridgeIngredients, setFridgeIngredients] = useState<string[]>([]);
-  const [fridgeDishes, setFridgeDishes] = useState<ScannedDish[]>([]);
+  const [fridgeDishes, setFridgeDishes] = useState<MatchedDish[]>([]);
   const [fridgeError, setFridgeError] = useState<string | null>(null);
   const [scanScene, setScanScene]   = useState<ScanScene>('fridge');     // 冰箱 vs 超市货架
   const [scanLocale, setScanLocale] = useState<ScanLocale>('zh');         // 简体 / 繁體 输出
@@ -530,13 +534,20 @@ export default function Home() {
     setIsFridgeScanOpen(true);
     try {
       const { base64, mimeType } = await fileToBase64(file);
-      // Scene + locale picked in the drawer header drive the prompt:
-      // - fridge → suggest dishes from visible ingredients
-      // - market → suggest dishes to shop FOR based on shelf items
-      // - locale → simplified vs traditional Chinese output
+      // Gemini Vision now ONLY returns the detected ingredient list
+      // (cheap output). Actual dish suggestions come from the DB via
+      // scanMatch — that way the user sees real dishes with image /
+      // steps / nutrition / can-add-to-menu, not invented strings.
       const result = await analyzeFridgePhoto(base64, mimeType, scanScene, scanLocale);
       setFridgeIngredients(result.detected_ingredients);
-      setFridgeDishes(result.dishes);
+      const normalized = normalizeIngredients(result.detected_ingredients);
+      const matches = await suggestDishesFromScan({
+        ingredients: normalized,
+        cuisineMode,
+        scene: scanScene,
+        limit: 6,
+      });
+      setFridgeDishes(matches);
     } catch {
       setFridgeError("识别失败，请重试");
     } finally {
@@ -1159,13 +1170,20 @@ export default function Home() {
                     </div>
                   </div>
                 )}
-                {/* Group dishes by cuisine: 中式 first, 西式 below.
-                    Older payloads without a 'cuisine' field default to chinese. */}
+                {/* Render real DB dishes (MatchedDish) — group by
+                    origin_cuisine bucket (中式 vs 西式), then per-card
+                    show image / kcal / 命中食材 / "看做法" CTA so the
+                    user can act immediately. Old shape was an invented
+                    string + description; new shape is a real `dishes`
+                    row with id, image_url, prep_steps_json, kcal. */}
                 {([
                   { key: 'chinese' as const, label: '中式推荐', emoji: '🥢' },
                   { key: 'western' as const, label: '西式推荐', emoji: '🍝' },
                 ]).map(group => {
-                  const items = fridgeDishes.filter(d => (d.cuisine ?? 'chinese') === group.key);
+                  const items = fridgeDishes.filter(d => {
+                    const isWestern = d.origin_cuisine === 'western';
+                    return group.key === 'western' ? isWestern : !isWestern;
+                  });
                   if (items.length === 0) return null;
                   return (
                     <div key={group.key} className="mb-5">
@@ -1173,37 +1191,55 @@ export default function Home() {
                         {group.emoji} {group.label}（{items.length} 道）
                       </p>
                       <div className="space-y-3">
-                        {items.map((dish, i) => (
-                          <div key={`${group.key}-${i}`} className="p-4 rounded-2xl border shadow-sm bg-white"
+                        {items.map((dish) => (
+                          <button key={dish.id}
+                            onClick={() => {
+                              localStorage.setItem("generatedMenu", JSON.stringify([{ id: dish.id, title_zh: dish.title_zh, image_url: dish.image_url }]));
+                              navigate(`/prep?dish_id=${dish.id}`);
+                            }}
+                            className="w-full p-3 rounded-2xl border shadow-sm bg-white text-left active:scale-[0.99] transition-transform"
                             style={{ borderColor: "rgba(0,0,0,0.06)" }}>
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="flex-1">
-                                {/* Single-language display per i18n cleanup —
-                                    show whichever name matches the active
-                                    language, not both at once. */}
-                                <p className="font-bold" style={{ fontSize: 15 }}>
-                                  {isChinese ? (dish.name_zh || dish.name_en) : (dish.name_en || dish.name_zh)}
+                            <div className="flex items-start gap-3">
+                              {dish.image_url && (
+                                <img src={dish.image_url} alt={dish.title_zh}
+                                  className="w-16 h-16 rounded-xl object-cover shrink-0"
+                                  onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <p className="font-bold truncate" style={{ fontSize: 15 }}>
+                                  {isChinese ? (dish.title_zh || dish.title_en) : (dish.title_en || dish.title_zh)}
                                 </p>
+                                <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                  {dish.cook_method && (
+                                    <span className="px-1.5 py-0.5 rounded-md font-semibold"
+                                      style={{ fontSize: 10, background: "rgba(0,0,0,0.06)", color: "rgba(0,0,0,0.45)" }}>
+                                      {dish.cook_method}
+                                    </span>
+                                  )}
+                                  {dish.nutrition_kcal_per_serving && (
+                                    <span className="px-1.5 py-0.5 rounded-md font-semibold"
+                                      style={{ fontSize: 10, background: "rgba(255,90,31,0.08)", color: "#FF5A1F" }}>
+                                      {dish.nutrition_kcal_per_serving} kcal
+                                    </span>
+                                  )}
+                                  {dish.xiaomei_compatible && localStorage.getItem('has_xiaomei_robot') === 'true' && (
+                                    <span className="px-1.5 py-0.5 rounded-md font-semibold"
+                                      style={{ fontSize: 10, background: "rgba(255,90,31,0.10)", color: "#FF5A1F" }}>
+                                      🤖
+                                    </span>
+                                  )}
+                                </div>
+                                {dish.matched_count > 0 && (
+                                  <p className="mt-1.5 truncate" style={{ fontSize: 11, color: "rgba(0,0,0,0.55)" }}>
+                                    用到您的：{dish.matched_ingredients.join(' · ')}
+                                  </p>
+                                )}
                               </div>
-                              <div className="flex flex-col items-end gap-1">
-                                <span className="px-2 py-0.5 rounded-md font-semibold"
-                                  style={{ fontSize: 11, background: "rgba(0,0,0,0.06)", color: "rgba(0,0,0,0.45)" }}>
-                                  {dish.cook_method}
-                                </span>
-                                <span className="px-2 py-0.5 rounded-md font-semibold"
-                                  style={{
-                                    fontSize: 10,
-                                    background: dish.difficulty === "简单" ? "rgba(52,211,153,0.1)" : "rgba(251,191,36,0.1)",
-                                    color: dish.difficulty === "简单" ? "#059669" : "#d97706",
-                                  }}>
-                                  {dish.difficulty} · {dish.time_minutes}分钟
-                                </span>
-                              </div>
+                              <span className="material-symbols-outlined shrink-0" style={{ fontSize: 20, color: "rgba(0,0,0,0.30)" }}>
+                                chevron_right
+                              </span>
                             </div>
-                            <p style={{ fontSize: 12, color: "rgba(0,0,0,0.45)", lineHeight: 1.55 }} className="mt-2">
-                              {dish.description}
-                            </p>
-                          </div>
+                          </button>
                         ))}
                       </div>
                     </div>

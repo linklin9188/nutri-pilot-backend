@@ -65,40 +65,26 @@ export async function analyzeFridgePhoto(
   scene:       ScanScene = 'fridge',
   locale:      ScanLocale = 'zh',
 ): Promise<ScanResult> {
-  const prompt = `You are a home cooking expert who knows both Chinese family cooking and Western home cooking equally well. ${SCENE_INTRO[scene]}
+  const prompt = `You are a food identifier. ${SCENE_INTRO[scene]}
 
 ${LOCALE_INSTRUCTION[locale]}
 
-Step 1: Identify every food ingredient you can clearly see.
+Your ONLY job: identify every food ingredient clearly visible in the
+photo. Use common cooking names (番茄 not 西红柿 cv 字), one canonical
+name per item. Skip packaging / brand text / non-food objects.
 
-Step 2: Suggest exactly SIX dishes the user can make:
-  • THREE Chinese dishes (各种菜系: 粤 / 川 / 江浙 / 北方 / etc — vary methods)
-  • THREE Western dishes (e.g. pan-seared protein, salad, pasta, omelette, sandwich, soup)
+If the same ingredient appears multiple times (e.g. 3 个番茄), list it
+ONCE. Skip ambiguous items you're not 80% sure about — false positives
+waste downstream dish-matching effort.
 
 Return ONLY valid JSON in this exact shape:
-{
-  "detected_ingredients": ["ingredient1", ...],
-  "dishes": [
-    {
-      "cuisine": "chinese",
-      "name_zh": "菜名",
-      "name_en": "Dish Name",
-      "ingredients_used": ["ing1", "ing2"],
-      "cook_method": "清炒",
-      "difficulty": "简单",
-      "time_minutes": 15,
-      "description": "≤25 characters in the requested Chinese variant"
-    }
-  ]
-}
+{ "detected_ingredients": ["番茄", "鸡蛋", "西兰花", "猪肉", ...] }
 
 Rules:
-- The "cuisine" field must be exactly "chinese" or "western".
-- Order: 3 chinese dishes first, then 3 western dishes.
-- Vary cooking methods within each bucket.
-- difficulty must be exactly one of: 简单 / 中等 / 稍复杂.
-- Prefer quick dishes (<30 min). Mark anything 45 min+ as 稍复杂.
-- Do not output any text outside the JSON.`;
+- detected_ingredients should have 3–15 items typically. If you see
+  <3 ingredients return what you can; don't pad with guesses.
+- Each item is a SHORT noun (1-4 chars Chinese, or 1-3 words English).
+- Do not output any text outside the JSON. No markdown fence.`;
 
   const json = await callGemini({
     endpoint: 'vision',
