@@ -12,14 +12,14 @@
  * lets a determined attacker just set localStorage. Session is the
  * authoritative source.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
 type AuthState = 'checking' | 'authed' | 'anon';
 
 interface Props {
-  children: React.ReactNode;
+  children: ReactNode;
   /** Where to send unauthenticated visitors. Defaults to /login. */
   redirectTo?: string;
   /** When true the helper /signin route is used (helpers don't share the

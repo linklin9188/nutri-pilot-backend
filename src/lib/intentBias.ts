@@ -17,7 +17,11 @@
  * only weight the ones we already score on. Keeps the algorithm stable.
  */
 
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${import.meta.env.VITE_GEMINI_API_KEY}`;
+// Gemini key is server-side only now (in Supabase secrets). The
+// previous in-bundle VITE_GEMINI_API_KEY was extractable by anyone
+// inspecting Network and could be used to drain billing.
+import { getUserId } from './userId';
+const PARSE_INTENT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/parse-intent`;
 
 const LS_KEY  = 'nutri_intent_bias_v1';
 const EVENT   = 'nutri-intent-bias-changed';
@@ -97,28 +101,24 @@ Output ONLY valid JSON:
 
 export async function parseIntent(userText: string): Promise<IntentBias> {
   if (!userText.trim()) throw new Error('请输入你想要的菜单偏好');
-  if (!import.meta.env.VITE_GEMINI_API_KEY) {
-    throw new Error('Gemini API key not configured');
-  }
+  const userId = getUserId() ?? 'anonymous';
 
-  const res = await fetch(GEMINI_URL, {
-    method: 'POST',
+  // Hit the Supabase edge function instead of Google directly. The edge
+  // function holds the Gemini key in secrets, enforces a 20/day per-user
+  // rate limit (against api_usage_daily), and proxies to Gemini.
+  const res = await fetch(PARSE_INTENT_URL, {
+    method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text: PROMPT(userText) }] }],
-      generationConfig: { responseMimeType: 'application/json' },
-    }),
+    body:    JSON.stringify({ user_id: userId, text: userText.trim() }),
   });
-  const json = await res.json() as any;
-  if (!res.ok) throw new Error(json.error?.message ?? 'Gemini API error');
-
-  const text: string = json.candidates?.[0]?.content?.parts?.[0]?.text ?? '{}';
-  let parsed: any;
-  try {
-    parsed = JSON.parse(text.replace(/```json\n?/g, '').replace(/```/g, '').trim());
-  } catch {
-    throw new Error('解析 AI 返回失败，请换个说法再试');
+  const j = await res.json();
+  if (res.status === 429) {
+    throw new Error(j.error || '今日 AI 解析额度已用完，明日再试');
   }
+  if (!res.ok) {
+    throw new Error(j.error || '解析失败，请稍后重试');
+  }
+  const parsed = j.bias ?? {};
 
   return {
     userText:       userText.trim(),

@@ -16,11 +16,55 @@
 // Test locally: supabase functions serve create-checkout-session --no-verify-jwt
 
 import Stripe from "https://esm.sh/stripe@14.21.0?target=deno";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") ?? "", {
   apiVersion: "2023-10-16",
   httpClient: Stripe.createFetchHttpClient(),
 });
+
+const supabase = createClient(
+  Deno.env.get("SUPABASE_URL") ?? "",
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+  { auth: { persistSession: false } },
+);
+
+// Allow-list of valid Stripe live-mode price IDs. Keep in sync with
+// src/pages/Pricing.tsx STRIPE_PRICE_IDS + supabase/functions/
+// stripe-webhook/index.ts PRICE_TO_PLAN. Without this an attacker
+// could create checkout sessions for arbitrary prices and burn through
+// Stripe's per-account session quota.
+const ALLOWED_PRICE_IDS = new Set([
+  "price_1TXD3dL2TBEx2Gg0TRBnWrE9", // pro_monthly  HK$66
+  "price_1TXDCwL2TBEx2Gg0n6pSJLsJ", // pro_halfyear HK$199
+  "price_1TXDDjL2TBEx2Gg05nADOkJb", // pro_yearly   HK$365
+]);
+
+const CHECKOUT_DAILY_LIMIT = 10;
+const ENDPOINT = "create-checkout-session";
+
+async function bumpCounter(userId: string): Promise<{ ok: boolean; count: number }> {
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: existing } = await supabase
+    .from("api_usage_daily")
+    .select("count")
+    .eq("user_id", userId)
+    .eq("day", today)
+    .eq("endpoint", ENDPOINT)
+    .maybeSingle();
+  const currentCount = (existing as { count?: number } | null)?.count ?? 0;
+  if (currentCount >= CHECKOUT_DAILY_LIMIT) {
+    return { ok: false, count: currentCount };
+  }
+  await supabase.from("api_usage_daily").upsert({
+    user_id:    userId,
+    day:        today,
+    endpoint:   ENDPOINT,
+    count:      currentCount + 1,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "user_id,day,endpoint" });
+  return { ok: true, count: currentCount + 1 };
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -42,6 +86,20 @@ Deno.serve(async (req: Request) => {
 
     if (!user_id || !price_id) {
       return json({ error: "user_id and price_id are required" }, 400);
+    }
+
+    // L1 hardening: price_id allow-list. Stops attackers from spinning
+    // up Stripe sessions with arbitrary prices.
+    if (!ALLOWED_PRICE_IDS.has(price_id)) {
+      return json({ error: "Unknown price_id" }, 400);
+    }
+
+    // L1 hardening: per-user daily quota. 10/day is generous for legit
+    // users (typical = 1–2 sessions before settling on a plan) but
+    // blocks scripted abuse.
+    const rate = await bumpCounter(user_id);
+    if (!rate.ok) {
+      return json({ error: "Too many checkout attempts today. Try again tomorrow." }, 429);
     }
 
     const session = await stripe.checkout.sessions.create({

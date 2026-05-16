@@ -870,11 +870,18 @@ export default function Home() {
             became redundant; 扫冰箱 is the more useful first-click. */}
         <div className="grid grid-cols-2 gap-3">
           {/* 扫冰箱 — opens the camera picker, then geminiVision analyzes
-              ingredients and suggests recipes from what's visible. */}
+              ingredients and suggests recipes from what's visible.
+              GATED: anonymous users get bounced to /login first because
+              this is a Gemini Vision call (real token cost — needs a
+              real account to attribute usage and rate-limit). */}
           <button
-            onClick={() => fridgeInputRef.current?.click()}
+            onClick={() => {
+              if (!isLoggedIn) { navigate('/login', { state: { from: '/' } }); return; }
+              fridgeInputRef.current?.click();
+            }}
             className="rounded-2xl bg-white px-4 py-3.5 flex items-center justify-center gap-3 active:scale-[0.98] transition-transform"
             style={{ boxShadow: "0 6px 20px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.04)" }}
+            title={isLoggedIn ? '扫冰箱' : '请先登录后使用'}
           >
             <div className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0"
               style={{ background: "rgba(0,180,216,0.12)" }}>
@@ -883,7 +890,7 @@ export default function Home() {
               </span>
             </div>
             <p className="font-serif font-black" style={{ fontSize: 17, color: "#1a1a1a", letterSpacing: "-0.005em" }}>
-              扫冰箱
+              {isLoggedIn ? '扫冰箱' : '扫冰箱 🔒'}
             </p>
           </button>
 
