@@ -21,6 +21,7 @@ import IntentRegenModal from "../components/IntentRegenModal";
 import { loadIntentBias } from "../lib/intentBias";
 import { getUserId } from "../lib/userId";
 import { loadCuisineMode, type CuisineMode } from "../lib/cuisineFilter";
+import { HeartButton } from "../components/HeartButton";
 
 // ── Solar term (节气) calculator ─────────────────────────────────────────────
 
@@ -603,26 +604,38 @@ export default function Home() {
             </button>
           </div>
 
-          {/* Cuisine filter — 中餐 / 西餐 / 全部. Default 中餐 so users who
-              want Chinese food don't see pasta in their list. */}
-          <div className="inline-flex p-1 rounded-2xl gap-0.5 mb-3"
-            style={{ background: "rgba(0,0,0,0.05)" }}>
-            {([
-              { key: 'chinese', label: '中餐' },
-              { key: 'western', label: '西餐' },
-              { key: 'all',     label: '全部' },
-            ] as const).map(({ key, label }) => (
-              <button key={key} onClick={() => setCuisineMode(key)}
-                className="px-3 py-1 rounded-xl font-bold transition-all active:scale-95"
-                style={{
-                  fontSize: 12,
-                  background: cuisineMode === key ? "white" : "transparent",
-                  color: cuisineMode === key ? "#1a1a1a" : "rgba(0,0,0,0.42)",
-                  boxShadow: cuisineMode === key ? "0 2px 8px rgba(0,0,0,0.08)" : "none",
-                }}>
-                {label}
-              </button>
-            ))}
+          {/* Cuisine filter — 中餐 / 西餐 / 全部. + favorites shortcut. */}
+          <div className="flex items-center justify-between mb-3">
+            <div className="inline-flex p-1 rounded-2xl gap-0.5"
+              style={{ background: "rgba(0,0,0,0.05)" }}>
+              {([
+                { key: 'chinese', label: '中餐' },
+                { key: 'western', label: '西餐' },
+                { key: 'all',     label: '全部' },
+              ] as const).map(({ key, label }) => (
+                <button key={key} onClick={() => setCuisineMode(key)}
+                  className="px-3 py-1 rounded-xl font-bold transition-all active:scale-95"
+                  style={{
+                    fontSize: 12,
+                    background: cuisineMode === key ? "white" : "transparent",
+                    color: cuisineMode === key ? "#1a1a1a" : "rgba(0,0,0,0.42)",
+                    boxShadow: cuisineMode === key ? "0 2px 8px rgba(0,0,0,0.08)" : "none",
+                  }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            {/* 我的收藏 quick entry — taps the same store HeartButton writes to */}
+            <button
+              onClick={() => navigate('/favorites')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl active:scale-95 transition-transform"
+              style={{ background: "rgba(255,90,31,0.10)" }}
+              title="我的收藏">
+              <span className="material-symbols-outlined" style={{ fontSize: 16, color: "#FF5A1F", fontVariationSettings: "'FILL' 1" }}>
+                favorite
+              </span>
+              <span style={{ fontSize: 12, color: "#FF5A1F", fontWeight: 700 }}>收藏</span>
+            </button>
           </div>
 
           {/* Editorial menu card — paper background, generous padding */}
@@ -714,6 +727,7 @@ export default function Home() {
                         </p>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
+                        <HeartButton dish={dish} sourceTag={mealTime} size={18} />
                         <button onClick={() => openSwapDrawer(idx)}
                           className="w-9 h-9 rounded-full flex items-center justify-center active:scale-90 transition-transform"
                           style={{ background: "rgba(0,0,0,0.04)" }}
