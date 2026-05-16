@@ -759,6 +759,47 @@ export default function WeeklyMenu() {
         </div>
       )}
 
+      {/* ── 本周食材多样性 ── 中国居民膳食指南 2022 要求每周 25+ 种食物
+          (每日 12+)，避免一周吃来吃去就那 8 道菜 */}
+      {weeklyMenu && !loading && (() => {
+        const allDishes: any[] = [];
+        for (const day of weeklyMenu.days ?? []) {
+          for (const meal of ['breakfast','lunch','dinner'] as const) {
+            for (const d of (day as any)[meal] ?? []) {
+              allDishes.push(d);
+            }
+          }
+        }
+        // Count unique main_ingredient values — better proxy than dish
+        // count (避免 "西红柿炒蛋" 和 "西红柿牛腩" 都算 2 种)
+        const uniqueIngs = new Set(allDishes.map(d => d.main_ingredient).filter(Boolean));
+        const n = uniqueIngs.size;
+        const target = 25;
+        const pct = Math.min(100, Math.round(n * 100 / target));
+        const color = n >= target ? '#16A34A' : n >= target * 0.6 ? '#F59E0B' : '#DC2626';
+        return (
+          <div className="relative z-10 mx-5 mb-4 rounded-2xl p-3 flex items-center gap-3"
+            style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}>
+            <span style={{ fontSize: 20 }}>🥗</span>
+            <div className="flex-1 min-w-0">
+              <p className="font-bold text-white" style={{ fontSize: 12 }}>
+                本周食材 {n} / {target} 种
+              </p>
+              <div className="w-full h-1.5 rounded-full mt-1.5 overflow-hidden"
+                style={{ background: 'rgba(255,255,255,0.10)' }}>
+                <div className="h-full transition-all"
+                  style={{ width: `${pct}%`, background: color }} />
+              </div>
+              <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)', marginTop: 3 }}>
+                {n >= target
+                  ? '✅ 达标！饮食多样性足够'
+                  : `离每周 25 种还差 ${target - n} 种 — 试试新食材`}
+              </p>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ── Content area: show meals OR lock card ─────────────────── */}
       {isDayLocked(selectedDay) ? (
         <div className="relative z-10 flex-1">

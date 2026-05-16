@@ -22,6 +22,7 @@ import { loadIntentBias } from "../lib/intentBias";
 import { getUserId } from "../lib/userId";
 import { loadCuisineMode, type CuisineMode } from "../lib/cuisineFilter";
 import { HeartButton } from "../components/HeartButton";
+import DailyNutritionStrip from "../components/DailyNutritionStrip";
 
 // ── Solar term (节气) calculator ─────────────────────────────────────────────
 
@@ -776,6 +777,21 @@ export default function Home() {
 
           </div>
         </section>
+
+        {/* 今日营养 strip — 中国营养主厨 daily scorecard.
+            Pulls today's lunch+dinner from weeklyMenu, falls back to the
+            current displayMenu for whichever meal is active so the user
+            sees their nutrition state even before weekly is generated. */}
+        {(() => {
+          const todayIso = new Date().toISOString().slice(0,10);
+          const todayMenu = (weeklyMenu?.days ?? []).find(d => d.date === todayIso);
+          const meals = {
+            '早餐': mealTime === '早餐' ? displayMenu as any : [],
+            '午餐': (todayMenu?.lunchDishes ?? (mealTime === '午餐' ? displayMenu : [])) as any,
+            '晚餐': (todayMenu?.dishes ?? (mealTime === '晚餐' ? displayMenu : [])) as any,
+          };
+          return <DailyNutritionStrip meals={meals} kcalTarget={2000} />;
+        })()}
 
         {/* Intent input — taps into IntentRegenModal. Shows the current
             saved intent (if any) so the user knows the algo is biased. */}
