@@ -14,8 +14,14 @@ const COUNTRY_CODES = [
 
 export default function Login() {
   const navigate = useNavigate();
-  const { t, toggleLanguage, isEnglishish } = useLanguage();
-  const showEnglish = isEnglishish;
+  const { t, language, setLanguage } = useLanguage();
+  // 3-way cycle: 简 → 繁 → EN → 简
+  const langChip = language === 'zh' ? '简'
+                 : language === 'zh-Hant' ? '繁'
+                 : 'EN';
+  const cycleLang3 = () => {
+    setLanguage(language === 'zh' ? 'zh-Hant' : language === 'zh-Hant' ? 'en' : 'zh');
+  };
 
   // ── step flow ──────────────────────────────────────────────────────
   const [step, setStep] = useState<Step>("login");
@@ -248,12 +254,13 @@ export default function Login() {
       style={{ background: "#080808" }}>
       {heroBg}
 
-      {/* Language toggle */}
+      {/* Language toggle — 简 / 繁 / EN three-way cycle */}
       <header className="relative z-10 flex justify-end p-6">
-        <button onClick={toggleLanguage}
+        <button onClick={cycleLang3}
           className="w-9 h-9 rounded-full flex items-center justify-center text-[12px] font-bold text-white/70 hover:text-white transition-colors"
-          style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.10)" }}>
-          {showEnglish ? "EN" : "中"}
+          style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.10)" }}
+          title="切换语言 / Change language">
+          {langChip}
         </button>
       </header>
 
@@ -652,7 +659,7 @@ export default function Login() {
                 <div key={section.icon} className="space-y-4">
                   <h3 className="text-[14px] font-semibold flex items-center gap-2 text-white/80" style={{ letterSpacing: "0.04em" }}>
                     <span className="material-symbols-outlined text-[18px] text-[#FF5A1F]">{section.icon}</span>
-                    {showEnglish ? section.q.en : section.q.zh}
+                    {language === 'en' ? section.q.en : section.q.zh}
                   </h3>
                   <div className="flex flex-wrap gap-2">
                     {section.opts.map(opt => {
@@ -664,7 +671,7 @@ export default function Login() {
                             ? { background: "#FF5A1F", color: "white", fontWeight: 600, boxShadow: "0 0 16px rgba(255,90,31,0.35)", border: "1px solid transparent" }
                             : { background: "rgba(255,255,255,0.09)", border: "1px solid rgba(255,255,255,0.13)", color: "rgba(255,255,255,0.70)", backdropFilter: "blur(8px)" }
                           }>
-                          {showEnglish ? opt.en : opt.zh}
+                          {language === 'en' ? opt.en : opt.zh}
                         </button>
                       );
                     })}

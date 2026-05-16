@@ -50,12 +50,42 @@ const FALLBACK: Record<Language, Language> = {
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
+/**
+ * Map a BCP-47 locale tag (navigator.language / navigator.languages) to one
+ * of our supported Languages. Conservative — anything we don't recognise
+ * falls back to English.
+ */
+function detectFromBrowser(): Language | null {
+  const tags = typeof navigator !== 'undefined'
+    ? (navigator.languages?.length ? navigator.languages : [navigator.language])
+    : [];
+  for (const raw of tags) {
+    if (!raw) continue;
+    const tag = raw.toLowerCase();
+    // Traditional Chinese: zh-Hant, zh-TW, zh-HK, zh-MO
+    if (tag === 'zh-hant' || tag.startsWith('zh-hant-') ||
+        tag === 'zh-tw'   || tag === 'zh-hk' || tag === 'zh-mo') return 'zh-Hant';
+    // Simplified Chinese: zh, zh-CN, zh-Hans, zh-SG, zh-MY
+    if (tag === 'zh' || tag.startsWith('zh-cn') || tag.startsWith('zh-hans') ||
+        tag === 'zh-sg' || tag === 'zh-my') return 'zh';
+    // English variants
+    if (tag === 'en' || tag.startsWith('en-')) return 'en';
+    // Tagalog / Filipino — helper-facing
+    if (tag === 'tl' || tag.startsWith('tl-') || tag === 'fil' || tag.startsWith('fil-')) return 'tl';
+    // Bahasa Indonesia
+    if (tag === 'id' || tag.startsWith('id-')) return 'id';
+  }
+  return null;
+}
+
 function defaultForRole(): Language {
   const role = localStorage.getItem('nutri_role');
   // Helpers default to English; the helper view will switch to Tagalog
   // once we expose a Tagalog button. We don't auto-pick Tagalog because
   // English is a safe assumption when we don't know the helper's origin.
-  return role === 'helper' ? 'en' : 'zh';
+  if (role === 'helper') return detectFromBrowser() === 'tl' ? 'tl' : 'en';
+  // Employer side: prefer browser-detected Chinese variant, else 简体.
+  return detectFromBrowser() ?? 'zh';
 }
 
 export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
