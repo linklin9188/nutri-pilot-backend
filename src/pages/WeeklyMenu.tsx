@@ -634,6 +634,19 @@ export default function WeeklyMenu() {
             </span>
           </button>
 
+          {/* 收藏 — moved from Home header per UX consolidation (Home stays
+              focused on today's loop; WeeklyMenu hosts the
+              menu-management entry points). */}
+          <button
+            onClick={() => navigate('/favorites')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all active:scale-95"
+            style={{ background: "rgba(255,90,31,0.18)", border: "1px solid rgba(255,90,31,0.30)" }}
+            title="我的收藏"
+          >
+            <span style={{ fontSize: 13 }}>❤️</span>
+            <span className="font-semibold" style={{ fontSize: 11, color: "#FF8C54" }}>收藏</span>
+          </button>
+
           {/* 📞 预约大厨 — only appears when michelin mode is active. Opens a
               lead-capture modal; service is "敬请期待". */}
           {michelinMode && isPro && (
