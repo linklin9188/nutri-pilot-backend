@@ -157,6 +157,9 @@ async function persistProfileToDb(prefs: Record<string, unknown>): Promise<void>
   // Persist low-carb flag for the lunch / breakfast templates and hardFilter
   // to read at score time. Skip the staple slot when this is on.
   localStorage.setItem('nutri_low_carb', (prefs.goal as string) === 'low_carb' ? '1' : '0');
+  // Pregnancy override — QuickSetup goal='pregnancy' is the test-phase entry
+  // for hasPregnant. familyPrefs.ts ORs this with member.lifeStage='孕期'.
+  localStorage.setItem('nutri_has_pregnant_override', (prefs.goal as string) === 'pregnancy' ? '1' : '0');
   const userId = getUserId();
   if (!userId) return;
 

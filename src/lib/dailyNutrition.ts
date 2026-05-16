@@ -70,6 +70,21 @@ function normalizeProtein(p: string): typeof DAILY.required_proteins[number] | n
   return null;
 }
 
+/**
+ * Effective household size in "adult-equivalent servings". Used to scale
+ * the per-person targets (2000 kcal · 30g 油 · 5g 盐 · 25g 糖) up to a
+ * whole-family target, so a 4-person dinner of 3000 kcal isn't flagged
+ * red against a 2000-kcal individual cap. Kids weighted 0.7.
+ */
+export function householdServings(): number {
+  try {
+    const adults = parseInt(localStorage.getItem('nutri_adults') ?? '1', 10);
+    const kids   = parseInt(localStorage.getItem('nutri_kids')   ?? '0', 10);
+    const total  = (Number.isFinite(adults) ? adults : 1) + 0.7 * (Number.isFinite(kids) ? kids : 0);
+    return Math.max(1, total);
+  } catch { return 1; }
+}
+
 export interface DailySnapshot {
   kcal: {
     breakfast: number;
@@ -85,16 +100,25 @@ export interface DailySnapshot {
   oilGramsEstimate:   number;
   saltGramsEstimate:  number;
   sugarGramsEstimate: number;
+  /** Household-scaled caps (per-person cap × adult-equivalent servings).
+   *  Strip pills compare actual against THESE, not the per-person caps. */
+  caps: { oil: number; salt: number; sugar: number };
   /** "high" dish counts — surfaces specific offenders, not just totals. */
   highOilDishes:   DishLike[];
   highSaltDishes:  DishLike[];
   highSugarDishes: DishLike[];
   distinctFoods:   number;            // unique main_ingredient + side categories
   cookMethodCount: number;            // diversity signal
+  servings: number;                   // household serving count used for scaling
 }
 
-export function summarizeDay(meals: DayMeals, opts?: { kcalTarget?: number }): DailySnapshot {
-  const target = opts?.kcalTarget ?? DAILY.kcal.default;
+export function summarizeDay(meals: DayMeals, opts?: { kcalTarget?: number; servings?: number }): DailySnapshot {
+  // Scale per-person caps up to a household-wide target so a 4-person
+  // dinner total isn't shamed against a 1-person cap. `kcalTarget` if
+  // explicitly provided overrides the household scaling (e.g. a single-
+  // user setup that wants the literal 2000).
+  const servings = opts?.servings ?? householdServings();
+  const target   = opts?.kcalTarget ?? Math.round(DAILY.kcal.default * servings);
 
   const kcalOf = (m: DishLike[]) => m.reduce((n, d) => n + (d.nutrition_kcal_per_serving ?? 0), 0);
   const bk = kcalOf(meals.早餐);
@@ -145,11 +169,17 @@ export function summarizeDay(meals: DayMeals, opts?: { kcalTarget?: number }): D
     oilGramsEstimate:   Math.round(oilG),
     saltGramsEstimate:  Math.round(saltG * 10) / 10,
     sugarGramsEstimate: Math.round(sugarG),
+    caps: {
+      oil:   Math.round(DAILY.oil_g_cap   * servings),
+      salt:  Math.round(DAILY.salt_g_cap  * servings * 10) / 10,
+      sugar: Math.round(DAILY.sugar_g_cap * servings),
+    },
     highOilDishes,
     highSaltDishes,
     highSugarDishes,
     distinctFoods:   distinct.size,
     cookMethodCount: methodSet.size,
+    servings,
   };
 }
 

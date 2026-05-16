@@ -10,7 +10,7 @@
  * "高盐: 京酱肉丝 · 三杯鸡").
  */
 import { useEffect, useState } from 'react';
-import { summarizeDay, capStatus, splitStatus, DAILY, type DayMeals } from '../lib/dailyNutrition';
+import { summarizeDay, capStatus, splitStatus, DAILY, type DayMeals, type DailySnapshot } from '../lib/dailyNutrition';
 import { getEatenToday } from '../lib/eatingDiary';
 
 const tint = (s: 'good' | 'warn' | 'over' | 'off') =>
@@ -68,9 +68,11 @@ export default function DailyNutritionStrip({ meals, kcalTarget }: Props) {
   };
   const snap = summarizeDay(mealsForSnap, { kcalTarget });
 
-  const oilStat   = capStatus(snap.oilGramsEstimate,   DAILY.oil_g_cap);
-  const saltStat  = capStatus(snap.saltGramsEstimate,  DAILY.salt_g_cap);
-  const sugarStat = capStatus(snap.sugarGramsEstimate, DAILY.sugar_g_cap);
+  // Caps are household-scaled (per-person cap × servings) so a 4-person
+  // family doesn't get red-flagged for normal household totals.
+  const oilStat   = capStatus(snap.oilGramsEstimate,   snap.caps.oil);
+  const saltStat  = capStatus(snap.saltGramsEstimate,  snap.caps.salt);
+  const sugarStat = capStatus(snap.sugarGramsEstimate, snap.caps.sugar);
 
   const splitStat = {
     breakfast: splitStatus(snap.kcal.splitPct.breakfast, 30),
@@ -145,9 +147,9 @@ export default function DailyNutritionStrip({ meals, kcalTarget }: Props) {
 
         {/* ── Row 3 · 油/盐/糖 上限 ─────────────────────── */}
         <div className="flex items-center gap-1.5">
-          <Pill label="油" value={`${snap.oilGramsEstimate}g`}   cap={DAILY.oil_g_cap}   stat={oilStat} />
-          <Pill label="盐" value={`${snap.saltGramsEstimate}g`}  cap={DAILY.salt_g_cap}  stat={saltStat} />
-          <Pill label="糖" value={`${snap.sugarGramsEstimate}g`} cap={DAILY.sugar_g_cap} stat={sugarStat} />
+          <Pill label="油" value={`${snap.oilGramsEstimate}g`}   cap={snap.caps.oil}   stat={oilStat} />
+          <Pill label="盐" value={`${snap.saltGramsEstimate}g`}  cap={snap.caps.salt}  stat={saltStat} />
+          <Pill label="糖" value={`${snap.sugarGramsEstimate}g`} cap={snap.caps.sugar} stat={sugarStat} />
           <span style={{ fontSize: 10, color: 'rgba(0,0,0,0.42)', marginLeft: 'auto' }}>
             {snap.distinctFoods}/12 食材 · {snap.cookMethodCount} 烹饪法
           </span>

@@ -221,12 +221,16 @@ export function getFamilyMenuPrefs(dishesPerDay = 4): FamilyMenuPrefs {
 
   // Detect pregnant members directly from the raw nutri_family_members JSON
   // (the post-convert FamilyMember interface intentionally drops lifeStage).
-  let hasPregnant = false;
+  // Also honour the QuickSetup 'pregnancy' goal override — without this the
+  // hard ban + soft prefer in pregnancy.ts never fires for users who picked
+  // pregnancy in the goal question but haven't separately edited their
+  // family-members list.
+  let hasPregnant = localStorage.getItem('nutri_has_pregnant_override') === '1';
   try {
     const rawJson = localStorage.getItem('nutri_family_members');
     if (rawJson) {
       const raw = JSON.parse(rawJson) as Array<{ lifeStage?: string }>;
-      hasPregnant = raw.some(m => m.lifeStage === '孕期');
+      hasPregnant = hasPregnant || raw.some(m => m.lifeStage === '孕期');
     }
   } catch {}
 

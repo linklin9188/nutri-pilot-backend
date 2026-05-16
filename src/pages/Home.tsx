@@ -839,7 +839,10 @@ export default function Home() {
             '午餐': (todayMenu?.lunchDishes ?? (mealTime === '午餐' ? displayMenu : [])) as any,
             '晚餐': (todayMenu?.dishes ?? (mealTime === '晚餐' ? displayMenu : [])) as any,
           };
-          return <DailyNutritionStrip meals={meals} kcalTarget={2000} />;
+          // No explicit kcalTarget — summarizeDay auto-scales by
+          // householdServings so a 4-person family target = 7400 kcal
+          // not 2000.
+          return <DailyNutritionStrip meals={meals} />;
         })()}
 
         {/* Intent input — taps into IntentRegenModal. Shows the current
