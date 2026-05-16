@@ -24,6 +24,12 @@ interface LanguageContextType {
    *  English when the Tagalog string isn't provided, and to the Chinese
    *  string for zh / zh-Hant users. */
   t3: (en: string, zh: string, tl: string) => string;
+  /** 4-language helper for views that need explicit Bahasa Indonesia.
+   *  HelperCook step screen is the canonical caller — both Filipino and
+   *  Indonesian helpers spend the most time looking at "Step X of Y",
+   *  "Tap to pause", "Done, next step", etc., so each gets a real
+   *  translation instead of falling back to English. */
+  t4: (en: string, zh: string, tl: string, id: string) => string;
   isChinese: boolean;                // true for zh AND zh-Hant
   isEnglishish: boolean;             // true for en AND tl (until Tagalog strings land)
   isTagalog: boolean;                // true for tl only
@@ -116,6 +122,15 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return zh;   // 'zh' and 'zh-Hant' both fall here
   };
 
+  // 4-language helper — adds explicit Indonesian. HelperCook step screen
+  // is the canonical caller. Same lookup order: language === id|tl|en|zh.
+  const t4 = (en: string, zh: string, tl: string, id: string) => {
+    if (language === 'id')  return id;
+    if (language === 'tl')  return tl;
+    if (language === 'en')  return en;
+    return zh;
+  };
+
   const explicitSetLanguage = (lang: Language) => {
     setHasExplicitPref(true);
     setLanguage(lang);
@@ -130,6 +145,7 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         cycleLanguage,
         t,
         t3,
+        t4,
         isChinese:    isChinese(language),
         isEnglishish: isEnglishish(language),
         isTagalog:    language === 'tl',

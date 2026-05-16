@@ -55,7 +55,7 @@ export interface WeeklyMenu {
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v22'; // pregnancy safety: ban raw seafood / high-mercury fish + prefer iron/folate
+export const ALGO_VERSION = 'v23'; // lunch scales with headcount; same-day title-keyword hard dedup; congee banned from dinner staple
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -610,6 +610,11 @@ function generateWeekPlan(
   for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
     const dayDishes: any[] = [];
     const dayIngredients: string[] = [];
+    // Same-day title-keyword hard dedup. Without this, the -0.65 soft penalty
+    // in scoreForWeek wasn't enough to stop 上汤娃娃菜 + 虾米娃娃菜 landing
+    // in the same dinner. Hard-block any candidate whose title keyword has
+    // already been picked today.
+    const dayTitleKeywords: string[] = [];
 
     // Track allergen dishes per day (soft-cap at 25% of daily slots)
     let allergenDishCountToday = 0;
@@ -629,6 +634,16 @@ function generateWeekPlan(
       const allCandidates = pool
         .filter(d => !usedIds.has(d.id) && !dayDishes.some(p => p.id === d.id))
         .filter(d => {
+          // Same-day title-keyword hard dedup (e.g. no 2× 娃娃菜 per dinner).
+          const kw = extractTitleKeyword(d.title_zh ?? d.title ?? '');
+          if (kw && dayTitleKeywords.includes(kw)) return false;
+
+          // 粥 (congee) is a breakfast/light-meal staple, not a dinner main.
+          // 5 dishes leak in with meal_type=dinner/all; ban them from the
+          // dinner staple slot regardless.
+          const title = (d.title_zh ?? d.title ?? '');
+          if (title.includes('粥') || title.includes('稀饭')) return false;
+
           const cat = ingCategory(d.main_ingredient ?? 'other');
           // Use DB course_type when available for more accurate classification
           const courseType: string = d.course_type ?? '';
@@ -780,9 +795,12 @@ function generateWeekPlan(
         if (isAllergen) allergenDishCountToday++;
       }
 
-      // Track title keyword for weekly dedup
+      // Track title keyword for weekly dedup + same-day hard dedup
       const kw = extractTitleKeyword(picked.title_zh ?? picked.title ?? '');
-      if (kw) pickedTitleKeywords.push(kw);
+      if (kw) {
+        pickedTitleKeywords.push(kw);
+        dayTitleKeywords.push(kw);
+      }
 
       const cat = ingCategory(picked.main_ingredient ?? 'other');
       weeklyCatCounts[cat] = (weeklyCatCounts[cat] ?? 0) + 1;
@@ -911,10 +929,29 @@ function generateWeekPlan(
       .sort((a, b) => b.score - a.score)
       .slice(0, 10);
 
-    const stapleLunch = weightedRandom(staplePool, lunchPlan.staple).map(c => enrichRaw(c.dish));
-    const veggieLunch = weightedRandom(veggiePool, lunchPlan.veggie).map(c => enrichRaw(c.dish));
-    const meatLunch   = weightedRandom(meatPool,   lunchPlan.meat  ).map(c => enrichRaw(c.dish));
-    const soupLunch   = weightedRandom(soupPool,   lunchPlan.soup  ).map(c => enrichRaw(c.dish));
+    // Sequential pick with same-day title-keyword hard dedup. weightedRandom
+    // doesn't know about already-picked keywords, so picking 2 veggies from
+    // veggiePool top could land 上汤娃娃菜 + 虾米娃娃菜. Filter each pool
+    // against the running keyword set before its draw.
+    const lunchKwsSeen: string[] = [];
+    const pickFromPool = (poolArr: { dish: any; score: number }[], n: number): any[] => {
+      if (n <= 0) return [];
+      const filtered = poolArr.filter(c => {
+        const kw = extractTitleKeyword(c.dish.title_zh ?? c.dish.title ?? '');
+        return !(kw && lunchKwsSeen.includes(kw));
+      });
+      const picks = weightedRandom(filtered, n).map(c => enrichRaw(c.dish));
+      picks.forEach(d => {
+        const kw = extractTitleKeyword(d.title_zh ?? d.title ?? '');
+        if (kw) lunchKwsSeen.push(kw);
+      });
+      return picks;
+    };
+
+    const stapleLunch = pickFromPool(staplePool, lunchPlan.staple);
+    const veggieLunch = pickFromPool(veggiePool, lunchPlan.veggie);
+    const meatLunch   = pickFromPool(meatPool,   lunchPlan.meat);
+    const soupLunch   = pickFromPool(soupPool,   lunchPlan.soup);
 
     // Track lunch picks across days so they can't repeat — also feed title
     // keywords into the weekly dedup tracker, and add IDs to usedIds so a

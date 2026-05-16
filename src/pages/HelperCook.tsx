@@ -64,7 +64,7 @@ function DishListScreen({ dishes, loading, onSelect }: {
   onSelect: (dish: DishWithCook) => void;
 }) {
   const navigate = useNavigate();
-  const { t3, isChinese } = useLanguage();
+  const { t3, t4, isChinese } = useLanguage();
   // Single-language dish title — was `dish.title_zh` only, which ignored the
   // language toggle. Now switches to the English/Tagalog/Indo fallback when
   // the user isn't on a Chinese variant.
@@ -82,10 +82,10 @@ function DishListScreen({ dishes, loading, onSelect }: {
           </button>
           <div>
             <h1 className="text-white font-black" style={{ fontSize: 22 }}>
-              {t3("Today's Cooking", "今日烹饪", "Pagluluto Ngayon")}
+              {t4("Today's Cooking", "今日烹饪", "Pagluluto Ngayon", "Masakan Hari Ini")}
             </h1>
             <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>
-              {t3("Choose a dish to start", "选一道菜开始", "Pumili ng ulam")}
+              {t4("Choose a dish to start", "选一道菜开始", "Pumili ng ulam", "Pilih hidangan untuk mulai")}
             </p>
           </div>
         </div>
@@ -100,10 +100,11 @@ function DishListScreen({ dishes, loading, onSelect }: {
           <div className="flex flex-col items-center justify-center py-24 gap-3">
             <span className="text-5xl">🍽</span>
             <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14, textAlign: 'center' }}>
-              {t3(
+              {t4(
                 "No menu yet. Ask the employer to generate today's menu first.",
                 "还没有菜单，请等雇主生成今日菜单。",
-                "Wala pang menu. Hintayin ang employer na gumawa ng menu."
+                "Wala pang menu. Hintayin ang employer na gumawa ng menu.",
+                "Belum ada menu. Minta majikan membuat menu hari ini dulu."
               )}
             </p>
           </div>
@@ -151,13 +152,17 @@ function DishListScreen({ dishes, loading, onSelect }: {
                       {hasSteps ? 'check_circle' : 'hourglass_empty'}
                     </span>
                     <span style={{ fontSize: 12, color: hasSteps ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)' }}>
-                      {hasSteps ? `${steps.length} steps` : 'Steps generating…'}
+                      {hasSteps
+                        ? `${steps.length} ${t4('steps', '步', 'hakbang', 'langkah')}`
+                        : t4('Steps generating…', '步骤生成中…', 'Ginagawa ang hakbang…', 'Sedang membuat langkah…')}
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full"
                     style={{ background: hasSteps ? 'rgba(255,90,31,0.2)' : 'rgba(255,255,255,0.06)' }}>
                     <span style={{ fontSize: 12, fontWeight: 700, color: hasSteps ? '#FF5A1F' : 'rgba(255,255,255,0.25)' }}>
-                      {hasSteps ? 'Start cooking ›' : 'Not ready'}
+                      {hasSteps
+                        ? t4('Start cooking ›', '开始烹饪 ›', 'Magsimulang magluto ›', 'Mulai memasak ›')
+                        : t4('Not ready', '尚未准备', 'Hindi pa handa', 'Belum siap')}
                     </span>
                   </div>
                 </div>
@@ -178,7 +183,7 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
   onBack: () => void;
   onNextDish: (dish: DishWithCook) => void;
 }) {
-  const { isChinese } = useLanguage();
+  const { t4, isChinese } = useLanguage();
   // Same single-language picker as DishListScreen — used in header, completion
   // banner, and the "next dish" CTA so the toggle reaches every label.
   const dishTitle = (d: DishWithCook) =>
@@ -301,7 +306,12 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
               {dishTitle(dish)}
             </h1>
             <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>
-              Step {currentIdx + 1} of {steps.length} · {completedCount} done
+              {t4(
+                `Step ${currentIdx + 1} of ${steps.length} · ${completedCount} done`,
+                `第 ${currentIdx + 1} 步 / 共 ${steps.length} · 已完成 ${completedCount}`,
+                `Hakbang ${currentIdx + 1} ng ${steps.length} · ${completedCount} tapos`,
+                `Langkah ${currentIdx + 1} dari ${steps.length} · ${completedCount} selesai`,
+              )}
             </p>
           </div>
         </div>
@@ -328,24 +338,44 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
 
       <main className="flex-1 px-5 pb-6 flex flex-col gap-4">
 
-        {/* Heat level indicator */}
-        {heatCfg && (
-          <div className="rounded-3xl px-5 py-4 flex items-center gap-4"
-            style={{ background: heatCfg.light, border: `1.5px solid ${heatCfg.border}` }}>
-            <div className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 text-3xl"
-              style={{ background: heatCfg.bg + '22' }}>
-              {heatCfg.icon}
+        {/* Heat level indicator — labels come from a 4-language table
+            keyed by heat.level so 大火/中火/小火 etc. translate properly. */}
+        {heatCfg && (() => {
+          const HEAT_LABEL = {
+            high:   { en: 'High Heat',   zh: '大火',   tl: 'Mataas na Apoy',  id: 'Api Besar' },
+            medium: { en: 'Medium Heat', zh: '中火',   tl: 'Katamtamang Apoy', id: 'Api Sedang' },
+            low:    { en: 'Low Heat',    zh: '小火',   tl: 'Mahinang Apoy',   id: 'Api Kecil' },
+            simmer: { en: 'Simmer',      zh: '文火慢炖', tl: 'Pakuluan ng Mahina', id: 'Api Pelan' },
+            temp:   { en: heat.label,    zh: heat.label, tl: heat.label, id: heat.label }, // raw °C
+          } as const;
+          const HEAT_SUB = {
+            high:   { en: 'Fast & hot — keep it moving',   zh: '快速翻炒，不能停手',           tl: 'Mabilis at mainit — galawin lagi', id: 'Cepat & panas — aduk terus' },
+            medium: { en: 'Steady heat — stir evenly',     zh: '火力稳定，均匀翻炒',           tl: 'Pantay na init — haluin nang patas', id: 'Panas stabil — aduk merata' },
+            low:    { en: 'Gentle — don\'t rush',          zh: '温柔加热，不要急',             tl: 'Mahina — huwag magmadali',          id: 'Lembut — jangan terburu-buru' },
+            simmer: { en: 'Cover and wait patiently',      zh: '盖盖焖煮，耐心等候',           tl: 'Takpan at maghintay',               id: 'Tutup dan tunggu' },
+            temp:   { en: heat.sublabel, zh: heat.sublabel, tl: heat.sublabel, id: heat.sublabel },
+          } as const;
+          const lvl = heat.level as keyof typeof HEAT_LABEL;
+          const lab = HEAT_LABEL[lvl];
+          const sub = HEAT_SUB[lvl];
+          return (
+            <div className="rounded-3xl px-5 py-4 flex items-center gap-4"
+              style={{ background: heatCfg.light, border: `1.5px solid ${heatCfg.border}` }}>
+              <div className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 text-3xl"
+                style={{ background: heatCfg.bg + '22' }}>
+                {heatCfg.icon}
+              </div>
+              <div>
+                <p className="font-black" style={{ fontSize: 26, color: heatCfg.bg, lineHeight: 1 }}>
+                  {t4(lab.en, lab.zh, lab.tl, lab.id)}
+                </p>
+                <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', marginTop: 4 }}>
+                  {t4(sub.en, sub.zh, sub.tl, sub.id)}
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="font-black" style={{ fontSize: 26, color: heatCfg.bg, lineHeight: 1 }}>
-                {heat.label}
-              </p>
-              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', marginTop: 4 }}>
-                {heat.sublabel}
-              </p>
-            </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Step action text */}
         <div className="rounded-3xl px-5 py-5 flex-1"
@@ -356,7 +386,9 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
               {isDone ? '✓' : step.step}
             </div>
             <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontWeight: 600 }}>
-              {isDone ? 'Done ✓' : 'Current step'}
+              {isDone
+                ? t4('Done ✓', '已完成 ✓', 'Tapos ✓', 'Selesai ✓')
+                : t4('Current step', '当前步骤', 'Kasalukuyang hakbang', 'Langkah saat ini')}
             </span>
           </div>
           <p className="text-white leading-relaxed" style={{ fontSize: 17, fontWeight: 500, lineHeight: 1.6 }}>
@@ -382,7 +414,7 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
               color: timerDone ? '#25D366' : timerRunning ? '#FF5A1F' : 'rgba(255,255,255,0.6)',
               fontVariantNumeric: 'tabular-nums',
             }}>
-              {timerDone ? 'Done!' : formatTime(timerRemaining)}
+              {timerDone ? t4('Done!', '完成！', 'Tapos na!', 'Selesai!') : formatTime(timerRemaining)}
             </div>
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined" style={{
@@ -396,7 +428,11 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
                 fontSize: 13, fontWeight: 700,
                 color: timerDone ? '#25D366' : timerRunning ? '#FF5A1F' : 'rgba(255,255,255,0.4)',
               }}>
-                {timerDone ? 'Timer done ✓' : timerRunning ? `Tap to pause` : `Tap to resume`}
+                {timerDone
+                  ? t4('Timer done ✓', '计时结束 ✓', 'Tapos na ang oras ✓', 'Waktu habis ✓')
+                  : timerRunning
+                    ? t4('Tap to pause', '点击暂停', 'I-tap para i-pause', 'Ketuk untuk jeda')
+                    : t4('Tap to resume', '点击继续', 'I-tap para ituloy', 'Ketuk untuk lanjut')}
               </span>
               {timerRunning && <div className="w-2 h-2 rounded-full bg-[#FF5A1F] animate-pulse" />}
             </div>
@@ -412,31 +448,36 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
             style={{ background: 'rgba(37,211,102,0.12)', border: '1.5px solid rgba(37,211,102,0.3)' }}>
             <p className="text-3xl mb-2">🎉</p>
             <p className="font-black text-white" style={{ fontSize: 18 }}>
-              {dishTitle(dish)} {isChinese ? '完成！' : 'done!'}
+              {dishTitle(dish)} {t4('done!', '完成！', 'tapos na!', 'selesai!')}
             </p>
             <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', marginTop: 4 }}>
-              {dishIndex + 1} / {dishes.length} {isChinese ? '道菜' : 'dishes'}
+              {dishIndex + 1} / {dishes.length} {t4('dishes', '道菜', 'ulam', 'hidangan')}
             </p>
           </div>
           {nextDish ? (
             <button onClick={() => onNextDish(nextDish)}
               className="w-full h-14 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform font-bold text-white"
               style={{ background: 'linear-gradient(135deg, #FF5A1F, #FF9054)', fontSize: 15, boxShadow: '0 8px 24px rgba(255,90,31,0.35)' }}>
-              {isChinese ? '开始下一道：' : 'Next dish: '}{dishTitle(nextDish)}
+              {t4('Next dish: ', '开始下一道：', 'Susunod na ulam: ', 'Hidangan berikutnya: ')}{dishTitle(nextDish)}
               <span className="material-symbols-outlined text-white" style={{ fontSize: 20 }}>arrow_forward_ios</span>
             </button>
           ) : (
             <div className="rounded-2xl p-4 text-center"
               style={{ background: 'rgba(37,211,102,0.08)', border: '1px solid rgba(37,211,102,0.2)' }}>
               <p className="font-black text-white" style={{ fontSize: 16 }}>
-                {isChinese ? '全部完成！今日菜肴上桌 🍽️' : 'All done! Today’s menu is ready 🍽️'}
+                {t4(
+                  'All done! Today’s menu is ready 🍽️',
+                  '全部完成！今日菜肴上桌 🍽️',
+                  'Tapos na! Handa na ang menu ngayon 🍽️',
+                  'Semua selesai! Menu hari ini siap 🍽️',
+                )}
               </p>
             </div>
           )}
           <button onClick={onBack}
             className="w-full h-12 rounded-2xl flex items-center justify-center font-semibold"
             style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.5)', fontSize: 14 }}>
-            {isChinese ? '返回菜单列表' : 'Back to menu'}
+            {t4('Back to menu', '返回菜单列表', 'Bumalik sa menu', 'Kembali ke menu')}
           </button>
         </div>
       ) : (
@@ -445,7 +486,9 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
             className="flex-1 h-14 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-30"
             style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)' }}>
             <span className="material-symbols-outlined text-white" style={{ fontSize: 20 }}>arrow_back_ios</span>
-            <span className="text-white font-bold" style={{ fontSize: 14 }}>Back</span>
+            <span className="text-white font-bold" style={{ fontSize: 14 }}>
+              {t4('Back', '上一步', 'Bumalik', 'Kembali')}
+            </span>
           </button>
 
           {isLast ? (
@@ -453,13 +496,13 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
               className="flex-[2] h-14 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform font-bold text-white"
               style={{ background: 'linear-gradient(135deg, #25D366, #128C7E)', fontSize: 15 }}>
               <span className="material-symbols-outlined text-white" style={{ fontSize: 20, fontVariationSettings: "'FILL' 1" }}>check_circle</span>
-              完成这道菜！
+              {t4('Finish this dish!', '完成这道菜！', 'Tapusin ang ulam na ito!', 'Selesaikan hidangan ini!')}
             </button>
           ) : (
             <button onClick={markDoneAndNext}
               className="flex-[2] h-14 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform font-bold text-white"
               style={{ background: 'linear-gradient(135deg, #FF5A1F, #FF9054)', fontSize: 15 }}>
-              Done, next step
+              {t4('Done, next step', '完成，下一步', 'Tapos, susunod', 'Selesai, lanjut')}
               <span className="material-symbols-outlined text-white" style={{ fontSize: 20 }}>arrow_forward_ios</span>
             </button>
           )}
