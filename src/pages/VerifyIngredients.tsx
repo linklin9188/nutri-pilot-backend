@@ -73,7 +73,32 @@ function getWeekStart(): string {
   return formatLocalDate(monday);
 }
 
+// Single source of truth for "who's eating today" — the same selection the
+// Home page uses for menu generation. Reads:
+//   1. nutri_family_members + nutri_eating_today (today's table selection)
+//      — what useWeeklyMenu and useRecommendDishes consume.
+//   2. nutri_adults / nutri_kids fallback for users who haven't set up
+//      family members yet (onboarding default).
+// Without this consolidation the procurement list silently used the static
+// onboarding numbers while the menu used the live selection — i.e. 6 dishes
+// generated for 5 people but ingredients only enough for 3.
 function readHeadcount(): { adults: number; kids: number } {
+  try {
+    const allMembers = JSON.parse(localStorage.getItem('nutri_family_members') || '[]') as Array<{ id: string; lifeStage?: string }>;
+    if (allMembers.length > 0) {
+      const eatingIds = (() => {
+        try { return JSON.parse(localStorage.getItem('nutri_eating_today') || 'null') as string[] | null; }
+        catch { return null; }
+      })();
+      const today = eatingIds && eatingIds.length > 0
+        ? allMembers.filter(m => eatingIds.includes(m.id))
+        : allMembers; // default: everyone
+      const kids = today.filter(m => m.lifeStage === '儿童').length;
+      const adults = today.length - kids;
+      return { adults, kids };
+    }
+  } catch {}
+  // Fallback: onboarding-set static counts.
   const adults = parseInt(localStorage.getItem('nutri_adults') ?? '2', 10);
   const kids   = parseInt(localStorage.getItem('nutri_kids')   ?? '0', 10);
   return { adults, kids };
