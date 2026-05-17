@@ -638,12 +638,13 @@ export default function Home() {
 
       <main className="flex flex-col gap-4 pt-2 pb-4 px-4">
 
-        {/* Weekend (Sat/Sun) → swap menu surface for: 顶部下周菜单 preview
-            (让用户提前看 + 采购) + 底部本周营养回顾 / 外食建议。Mon-Fri
-            continues to render the full meal flow below. */}
+        {/* Weekend (Sat/Sun) → swap menu surface (user-confirmed 2026-05-17):
+            1) "出门换换口味" hero + 本周饭桌+缺什么合一框 + 5 家餐厅推荐
+            2) 简化的"下周菜单"nav card 跳 /weekly
+            Mon-Fri continues to render the full meal flow below. */}
         {isWeekend() ? <>
-          <NextWeekMenuPreview />
           <WeekendDiningReport />
+          <NextWeekMenuPreview />
         </> : <>
 
         {/* ① TODAY'S MENU — Editorial hero ────────────────────────
@@ -994,6 +995,28 @@ export default function Home() {
           // not 2000.
           return <DailyNutritionStrip meals={meals} />;
         })()}
+
+        {/* 工作日导航入口 — "本周末出门吃"。让 Mon-Fri 用户提前看 / 预订
+            周末的香港餐厅推荐。周六周日则不显示这个 nav (Home 上面已经
+            inline 展示了 WeekendDiningReport)。 */}
+        <button
+          onClick={() => navigate('/weekend')}
+          className="w-full rounded-2xl px-4 py-3 flex items-center gap-3 active:scale-[0.99] transition-transform text-left"
+          style={{
+            background: 'linear-gradient(135deg, #FFFAF5 0%, #FFE9D2 100%)',
+            border: '1px solid rgba(255,140,80,0.20)',
+            boxShadow: '0 4px 14px rgba(255,140,80,0.10)',
+          }}>
+          <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+            style={{ background: 'white', boxShadow: '0 2px 6px rgba(0,0,0,0.06)' }}>
+            <span style={{ fontSize: 18 }}>🍽</span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-bold text-[13.5px]" style={{ color: '#1a1a1a' }}>本周末出门吃</p>
+            <p className="text-[11px]" style={{ color: 'rgba(0,0,0,0.50)' }}>提前看 5 家香港好馆子 · 预订留位</p>
+          </div>
+          <span className="material-symbols-outlined shrink-0" style={{ fontSize: 18, color: '#FF5A1F' }}>chevron_right</span>
+        </button>
 
         {/* Intent input — taps into IntentRegenModal. Shows the current
             saved intent (if any) so the user knows the algo is biased. */}

@@ -21,6 +21,7 @@ import WeeklyMenu from './pages/WeeklyMenu';
 import SignIn from './pages/SignIn';
 import Pricing from './pages/Pricing';
 import Banquet from './pages/Banquet';
+import WeekendDining from './pages/WeekendDining';
 import ProWellness from './pages/ProWellness';
 import ProSchoolBalance from './pages/ProSchoolBalance';
 import Favorites from './pages/Favorites';
@@ -117,6 +118,7 @@ function AppShell() {
       <Route path="/helper"   element={<RequireAuth helperRole><HelperHome /></RequireAuth>} />
       <Route path="/community" element={<RequireAuth><Community /></RequireAuth>} />
       <Route path="/banquet"  element={<RequireAuth><Banquet /></RequireAuth>} />
+      <Route path="/weekend"  element={<RequireAuth><WeekendDining /></RequireAuth>} />
       <Route path="/pro/wellness"       element={<RequireAuth><ProWellness /></RequireAuth>} />
       <Route path="/pro/school-balance" element={<RequireAuth><ProSchoolBalance /></RequireAuth>} />
       <Route path="/favorites" element={<RequireAuth><Favorites /></RequireAuth>} />

@@ -10,19 +10,22 @@
  * 缓存合在一起 reduce。在家庭助理语气下温馨表达 — "今天出门换换口味吧"。
  */
 import { useEffect, useState } from 'react';
-import { summarizeWeek, buildDiningSuggestions, type WeeklySummary, type DiningSuggestion } from '../lib/weeklyDiarySummary';
+import { summarizeWeek, buildDiningSuggestions, FOOD_GROUPS_ORDER, type WeeklySummary, type DiningSuggestion, type FoodGroup } from '../lib/weeklyDiarySummary';
 import { type DiningTag, resolveRestaurantImage } from '../lib/hkRestaurants';
-import { DAILY } from '../lib/dailyNutrition';
 
-const PROTEIN_LABEL: Record<string, { emoji: string; label: string }> = {
-  fish:      { emoji: '🐟', label: '鱼' },
-  shellfish: { emoji: '🦐', label: '虾蟹' },
-  meat:      { emoji: '🥩', label: '红肉' },
-  poultry:   { emoji: '🍗', label: '禽肉' },
-  egg:       { emoji: '🥚', label: '蛋' },
-  dairy:     { emoji: '🥛', label: '奶' },
-  soy:       { emoji: '🌱', label: '豆' },
-  tofu:      { emoji: '🌱', label: '豆腐' },
+// 10 类食材组 — 用户视角轮值（鱼/红肉/白肉/蛋/蔬菜/豆/菌/奶/主食/水果），
+// 灰色 chip = 这周没沾，绿色 = 上桌过。
+const FOOD_GROUP_META: Record<FoodGroup, { emoji: string; label: string }> = {
+  fish:     { emoji: '🐟', label: '鱼' },
+  meat:     { emoji: '🥩', label: '红肉' },
+  poultry:  { emoji: '🍗', label: '白肉' },
+  egg:      { emoji: '🥚', label: '蛋' },
+  veggie:   { emoji: '🥬', label: '蔬菜' },
+  soy:      { emoji: '🌱', label: '豆' },
+  mushroom: { emoji: '🍄', label: '菌' },
+  dairy:    { emoji: '🥛', label: '奶' },
+  grain:    { emoji: '🌾', label: '主食' },
+  fruit:    { emoji: '🍎', label: '水果' },
 };
 
 export default function WeekendDiningReport() {
@@ -43,25 +46,29 @@ export default function WeekendDiningReport() {
 
   return (
     <div className="flex flex-col gap-4 px-4 pt-2 pb-8">
-      {/* Hero header — HK harbour-side restaurant vibe.
-          Image: Victoria Harbour with waterfront dining ambience; chosen to
-          set up "出门换换口味" as a clearly Hong-Kong experience. The dark
-          gradient overlay keeps text legible while letting the harbour
-          colors show through. */}
+      {/* Hero header — 暖光餐厅内景，纯氛围图，无任何政治 / 国旗元素
+          (用户 2026-05-17 明确禁止)。后续可以换海边餐厅的图，但任何
+          带国家符号 / 政治画面的都不允许。*/}
       <section
         className="rounded-3xl pt-5 pb-6 relative overflow-hidden"
         style={{ minHeight: 180 }}>
-        {/* Background photo */}
+        {/* Background photo — restaurant interior, warm pendant lights. */}
         <div className="absolute inset-0 z-0">
           <img
-            src="https://images.unsplash.com/photo-1532375810709-75b1da00537c?w=1200&q=85&auto=format&fit=crop"
+            src="https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=1200&q=85&auto=format&fit=crop"
             alt=""
             className="w-full h-full object-cover"
-            style={{ objectPosition: 'center 35%' }}
+            style={{ objectPosition: 'center 45%' }}
+            onError={e => {
+              // Fallback to a different restaurant-interior photo if the
+              // primary URL fails; both are well-known Unsplash assets.
+              (e.target as HTMLImageElement).src =
+                'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=1200&q=85&auto=format&fit=crop';
+            }}
           />
-          {/* Dark gradient overlay so the cream text reads against any photo */}
+          {/* Warm gradient overlay so the cream text reads against any photo */}
           <div className="absolute inset-0" style={{
-            background: 'linear-gradient(160deg, rgba(20,30,50,0.55) 0%, rgba(20,30,50,0.25) 45%, rgba(255,160,80,0.15) 100%)',
+            background: 'linear-gradient(160deg, rgba(40,25,15,0.55) 0%, rgba(60,35,20,0.30) 50%, rgba(255,140,60,0.20) 100%)',
           }} />
         </div>
         <div className="relative z-10 px-5">
@@ -71,11 +78,11 @@ export default function WeekendDiningReport() {
           </p>
           <h2 className="font-serif font-black mt-1 text-white"
             style={{ fontSize: 26, lineHeight: 1.2, textShadow: '0 2px 8px rgba(0,0,0,0.45)' }}>
-            出門換換口味吧
+            出门换换口味吧
           </h2>
           <p className="font-serif italic mt-2 text-white/85"
             style={{ fontSize: 13, lineHeight: 1.5, textShadow: '0 1px 4px rgba(0,0,0,0.35)' }}>
-            週一到週五在家好好做了幾頓，今天放下鍋鏟。我把本週吃過的整理給您，再挑幾間香港的好館子。
+            周一到周五在家好好做了几顿，今天放下锅铲。我把本周吃过的整理给您，再挑几家好馆子。
           </p>
         </div>
       </section>
@@ -95,29 +102,36 @@ export default function WeekendDiningReport() {
         </div>
       ) : (
         <>
-          {/* 本周饭桌摘要 — 5 大蛋白 + 数据 */}
+          {/* 本周饭桌 — 10 类食材轮值 grid + 一句话提示。
+              用户 2026-05-17：分类好（鱼/红肉/白肉/蛋/蔬菜/豆/菌/奶/主食/水果），
+              灰色 chip = 缺，色彩 chip = 上桌过；文字描述跟 grid 放一起。*/}
           <section className="rounded-3xl bg-white px-5 py-5"
             style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }}>
-            <p className="text-[11px] font-bold text-secondary/60 uppercase tracking-wider mb-3">本周饭桌</p>
+            <div className="flex items-baseline justify-between mb-3">
+              <p className="text-[11px] font-bold text-secondary/60 uppercase tracking-wider">本周饭桌</p>
+              <p className="text-[10px] font-bold" style={{ color: 'rgba(0,0,0,0.40)', letterSpacing: '0.04em' }}>
+                {summary.groupsCovered.size} / {FOOD_GROUPS_ORDER.length} 类
+              </p>
+            </div>
 
-            {/* 5 protein checklist */}
-            <p className="text-[13px] font-semibold text-on-surface mb-2">蛋白质轮值</p>
-            <div className="flex flex-wrap gap-2 mb-4">
-              {(DAILY.required_proteins as readonly string[]).map(p => {
-                const meta = PROTEIN_LABEL[p] ?? { emoji: '🍽', label: p };
-                const hit = summary.proteinsCovered.includes(p as any);
+            {/* 10-chip grid — 灰色就是这周缺的 */}
+            <div className="grid grid-cols-5 gap-1.5 mb-4">
+              {FOOD_GROUPS_ORDER.map(g => {
+                const hit = summary.groupsCovered.has(g);
+                const meta = FOOD_GROUP_META[g];
                 return (
-                  <div key={p}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full"
+                  <div key={g}
+                    className="flex flex-col items-center gap-0.5 py-2.5 rounded-xl"
                     style={{
                       background: hit ? 'rgba(37, 211, 102, 0.10)' : 'rgba(0,0,0,0.04)',
-                      border: hit ? '1px solid rgba(37, 211, 102, 0.25)' : '1px solid rgba(0,0,0,0.06)',
+                      border: hit ? '1px solid rgba(37, 211, 102, 0.22)' : '1px solid rgba(0,0,0,0.06)',
                     }}>
-                    <span style={{ fontSize: 14 }}>{meta.emoji}</span>
+                    <span style={{ fontSize: 22, opacity: hit ? 1 : 0.30, filter: hit ? 'none' : 'grayscale(1)' }}>
+                      {meta.emoji}
+                    </span>
                     <span style={{
-                      fontSize: 12, fontWeight: 700,
-                      color: hit ? '#1e8449' : 'rgba(0,0,0,0.32)',
-                      textDecoration: hit ? 'none' : 'line-through',
+                      fontSize: 11, fontWeight: 700,
+                      color: hit ? '#1e8449' : 'rgba(0,0,0,0.35)',
                     }}>
                       {meta.label}
                     </span>
@@ -126,41 +140,17 @@ export default function WeekendDiningReport() {
               })}
             </div>
 
-            {/* Quick stats */}
-            <div className="grid grid-cols-3 gap-2 pt-3 border-t border-black/5">
+            {/* 一句话 caption + 数据 */}
+            <p className="font-serif text-[13px] leading-relaxed mb-3" style={{ color: '#1a1a1a' }}>
+              {summary.groupsMissing.length === 0
+                ? '本周饭桌挺均衡，今天随心挑家馆子。'
+                : `这周缺 ${summary.groupsMissing.map(g => FOOD_GROUP_META[g]?.label ?? g).join('、')}，今天出门吃可以补一下。`}
+            </p>
+            <div className="grid grid-cols-2 gap-2 pt-3 border-t border-black/5">
               <Stat value={summary.totalDishes} label="道菜" />
               <Stat value={summary.distinctFoods} label="种食材" />
-              <Stat value={summary.proteinsCovered.length} label="种蛋白" suffix={`/ ${DAILY.required_proteins.length}`} />
             </div>
           </section>
-
-          {/* 缺什么 — 红色提醒 */}
-          {(summary.proteinsMissing.length > 0 || summary.veggieGap || summary.fruitGap || !summary.wholeGrainPresent) && (
-            <section className="rounded-3xl px-5 py-5"
-              style={{
-                background: 'linear-gradient(135deg, #FFF5F0 0%, #FFEEE6 100%)',
-                border: '1px solid rgba(255,90,31,0.15)',
-              }}>
-              <p className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: '#FF5A1F' }}>
-                这周还缺
-              </p>
-              <p className="font-serif text-[14px] leading-relaxed" style={{ color: '#1a1a1a' }}>
-                {(() => {
-                  const gaps: string[] = [];
-                  if (summary.proteinsMissing.length > 0) {
-                    const labels = summary.proteinsMissing.slice(0, 3).map(p => PROTEIN_LABEL[p]?.label ?? p);
-                    gaps.push(labels.join('、'));
-                  }
-                  if (summary.veggieGap) gaps.push('蔬菜少了');
-                  if (summary.fruitGap)  gaps.push('一份水果都没沾');
-                  if (!summary.wholeGrainPresent) gaps.push('粗粮主食');
-                  return gaps.length > 0
-                    ? `这周饭桌上${gaps.join('，')}。今天出门吃，可以挑这些补一下。`
-                    : '本周营养挺均衡，今天随心挑家馆子。';
-                })()}
-              </p>
-            </section>
-          )}
 
           {/* 外食建议 — real HK restaurants tied to this week's gaps.
               Each card: restaurant name + cuisine pill + area + 招牌菜 + the

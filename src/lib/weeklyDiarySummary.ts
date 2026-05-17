@@ -51,15 +51,37 @@ function readEatenForDate(dateISO: string): string[] {
   } catch { return []; }
 }
 
+// ── Food groups (user-confirmed 2026-05-17) ─────────────────────────────────
+// 用户视角的 10 类食材轮值，比 5 大蛋白更直观；灰色 chip = 这周没沾。
+export type FoodGroup =
+  | 'fish'      // 鱼 / 虾蟹海鲜（水产大类）
+  | 'meat'      // 红肉 (猪 / 牛 / 羊)
+  | 'poultry'   // 白肉 (鸡 / 鸭 / 鹅)
+  | 'egg'       // 蛋
+  | 'veggie'    // 蔬菜
+  | 'soy'       // 豆 / 豆制品
+  | 'mushroom'  // 菌菇 (香菇 / 木耳 / 银耳)
+  | 'dairy'     // 奶 / 酸奶 / 芝士
+  | 'grain'     // 主食 (米面 / 杂粮)
+  | 'fruit';    // 水果
+
+export const FOOD_GROUPS_ORDER: FoodGroup[] = [
+  'fish', 'meat', 'poultry', 'egg', 'veggie',
+  'soy',  'mushroom', 'dairy', 'grain', 'fruit',
+];
+
 // ── Public summary shape ────────────────────────────────────────────────────
 export interface WeeklySummary {
   /** Total distinct dishes counted (Mon-Fri, eaten OR planned). */
   totalDishes: number;
   /** Unique main ingredients across the week — proxy for diet variety. */
   distinctFoods: number;
-  /** Which of the 5 protein sources made it onto the table this week. */
+  /** 10 大食材类别本周覆盖情况 — UI 直接渲染 10 个 chip。 */
+  groupsCovered: Set<FoodGroup>;
+  /** 没上桌的类别，用于一句话 caption。 */
+  groupsMissing: FoodGroup[];
+  /** 兼容旧字段：5 大蛋白轮值（外食建议生成时仍用）。*/
   proteinsCovered: ProteinCategory[];
-  /** Required proteins that didn't show up (推荐外食时重点补这些). */
   proteinsMissing: ProteinCategory[];
   /** Total oil/salt/sugar grams across 5 days (raw, for trend display). */
   oilGramsTotal:   number;
@@ -100,6 +122,59 @@ function isWholeGrain(d: any): boolean {
   const title = (d.title_zh ?? '').toLowerCase();
   const KW = ['杂粮','燕麦','糙米','玉米','紫米','黑米','小米','八宝','藜麦'];
   return KW.some(k => title.includes(k));
+}
+
+// 把一道菜归类到 0-N 个食材组 — 一盘"番茄炒蛋"同时算 'veggie' + 'egg'。
+function detectFoodGroups(d: any): FoodGroup[] {
+  const out = new Set<FoodGroup>();
+  const ing = (d.main_ingredient ?? '').toLowerCase();
+  const title = (d.title_zh ?? '').toLowerCase();
+  const ct = d.course_type ?? '';
+  const flavor: string[] = d.flavor_tags ?? [];
+  const proteins: string[] = (d.protein_source ?? []).map((p: string) => (p ?? '').toLowerCase());
+
+  // 鱼 / 海鲜大类 — 鱼贝虾蟹同归一类（用户视角的"鱼"）
+  const FISH_INGS = new Set(['fish','salmon','tuna','cod','seabass','hairtail','shrimp','crab','clam','scallop','oyster','squid','lobster','shellfish','seafood']);
+  if (FISH_INGS.has(ing)) out.add('fish');
+  if (proteins.some(p => ['fish','shellfish','salmon','tuna','shrimp','crab'].includes(p))) out.add('fish');
+
+  // 红肉 — 猪 / 牛 / 羊
+  if (['pork','beef','lamb','mutton'].includes(ing)) out.add('meat');
+  if (proteins.some(p => ['meat','pork','beef','lamb'].includes(p))) out.add('meat');
+
+  // 白肉 — 鸡 / 鸭 / 鹅 / 火鸡
+  if (['chicken','duck','turkey','goose'].includes(ing)) out.add('poultry');
+  if (proteins.some(p => ['poultry','chicken','duck'].includes(p))) out.add('poultry');
+
+  // 蛋
+  if (ing === 'egg' || proteins.includes('egg') || title.includes('蛋')) out.add('egg');
+
+  // 豆 / 豆制品
+  if (['tofu','soy','tempeh','bean'].includes(ing)) out.add('soy');
+  if (proteins.some(p => ['soy','tofu'].includes(p))) out.add('soy');
+  const SOY_KW = ['豆腐','豆干','腐竹','千张','纳豆','黄豆','黑豆','毛豆','豆浆','豆花'];
+  if (SOY_KW.some(k => title.includes(k))) out.add('soy');
+
+  // 菌菇
+  const MUSHROOM_KW = ['菇','菌','木耳','银耳','茯苓','灵芝','口蘑','金针','香菇','平菇'];
+  if (ing === 'mushroom' || MUSHROOM_KW.some(k => title.includes(k))) out.add('mushroom');
+
+  // 奶
+  if (proteins.some(p => ['dairy','milk','cheese','yogurt','butter'].includes(p))) out.add('dairy');
+  const DAIRY_KW = ['牛奶','奶酪','起司','芝士','酸奶','奶油','黄油','炼乳'];
+  if (DAIRY_KW.some(k => title.includes(k))) out.add('dairy');
+
+  // 蔬菜 — course_type / flavor / 标题暗示
+  if (ct === 'veggie_dish' || flavor.includes('veggie')) out.add('veggie');
+  if (['veggie','vegetable','spinach','kale','cabbage','broccoli'].includes(ing)) out.add('veggie');
+
+  // 主食
+  if (ct === 'staple' || ['carb','grain','rice','noodle'].includes(ing)) out.add('grain');
+
+  // 水果
+  if (ing === 'fruit' || ct === 'fruit') out.add('fruit');
+
+  return [...out];
 }
 
 /**
@@ -173,9 +248,18 @@ export async function summarizeWeek(): Promise<WeeklySummary> {
   const fruitCount  = allDishes.filter(isFruitDish).length;
   const wholeGrain  = allDishes.some(isWholeGrain);
 
+  // 10 类食材组 — 灰色 chip 视觉表达哪些上桌、哪些缺
+  const groupsCovered = new Set<FoodGroup>();
+  for (const d of allDishes) {
+    for (const g of detectFoodGroups(d)) groupsCovered.add(g);
+  }
+  const groupsMissing = FOOD_GROUPS_ORDER.filter(g => !groupsCovered.has(g));
+
   return {
     totalDishes: allDishes.length,
     distinctFoods: distinct.size,
+    groupsCovered,
+    groupsMissing,
     proteinsCovered: [...proteinsCovered],
     proteinsMissing,
     oilGramsTotal: oil,
@@ -244,21 +328,26 @@ export function buildDiningSuggestions(summary: WeeklySummary): DiningSuggestion
   const out: DiningSuggestion[] = [];
   const seen = new Set<string>();
   for (const need of needs) {
-    const matches = pickRestaurantsForNeeds([need.tag], 2);
+    const matches = pickRestaurantsForNeeds([need.tag], 3);
     for (const r of matches) {
       if (seen.has(r.id)) continue;
       seen.add(r.id);
       out.push({ restaurant: r, reason: need.reason, tag: need.tag });
-      if (out.length >= 4) break;
+      if (out.length >= 5) break;
     }
-    if (out.length >= 4) break;
+    if (out.length >= 5) break;
   }
-  // All-balanced fallback — surface 2 default recognizable venues
-  if (out.length === 0) {
-    const fallback = pickRestaurantsForNeeds([], 2);
-    for (const r of fallback) {
-      out.push({ restaurant: r, reason: '本週飯桌挺均衡，今天就吃想吃的。', tag: 'banquet' });
+  // Pad with general/recognizable venues so user always gets 5 picks
+  // (用户 2026-05-17 要求周末每天 5 家). When gaps already gave us
+  // enough we just skip the pad loop.
+  if (out.length < 5) {
+    const pad = pickRestaurantsForNeeds([], 8);
+    for (const r of pad) {
+      if (seen.has(r.id)) continue;
+      seen.add(r.id);
+      out.push({ restaurant: r, reason: '本週飯桌挺均衡，這家也值得一試。', tag: 'banquet' });
+      if (out.length >= 5) break;
     }
   }
-  return out.slice(0, 4);
+  return out.slice(0, 5);
 }
