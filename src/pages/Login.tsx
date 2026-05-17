@@ -43,8 +43,9 @@ function launchWeChat() {
     alert("微信登录即将上线，请稍后再试。");
     return;
   }
-  const supaUrl = import.meta.env.VITE_SUPABASE_URL ?? "";
-  const redirect = encodeURIComponent(`${supaUrl}/functions/v1/wechat-mp-callback`);
+  // redirect_uri must be on a whitelisted domain (nothinkeats.com).
+  // /auth/wechat/in bouncer forwards to the Supabase edge function.
+  const redirect = encodeURIComponent(`${window.location.origin}/auth/wechat/in`);
   const state = crypto.randomUUID();
   sessionStorage.setItem('wechat_oauth_state', state);
   const url = `https://open.weixin.qq.com/connect/oauth2/authorize?appid=${appid}&redirect_uri=${redirect}&response_type=code&scope=snsapi_userinfo&state=${state}#wechat_redirect`;

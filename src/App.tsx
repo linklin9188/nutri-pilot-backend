@@ -26,6 +26,7 @@ import ProWellness from './pages/ProWellness';
 import ProSchoolBalance from './pages/ProSchoolBalance';
 import Favorites from './pages/Favorites';
 import WeChatCallback from './pages/WeChatCallback';
+import WeChatIn from './pages/WeChatIn';
 import Privacy from './pages/Privacy';
 import Terms from './pages/Terms';
 import RequireAuth from './components/RequireAuth';
@@ -98,6 +99,7 @@ function AppShell() {
       <Route path="/login" element={<Login />} />
       <Route path="/signin" element={<SignIn />} />
       <Route path="/onboarding" element={<Onboarding />} />
+      <Route path="/auth/wechat/in"   element={<WeChatIn />} />
       <Route path="/auth/wechat/done" element={<WeChatCallback />} />
       <Route path="/pricing" element={<Pricing />} />
       <Route path="/privacy" element={<Privacy />} />

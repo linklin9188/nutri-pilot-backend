@@ -114,8 +114,12 @@ export default function SignIn() {
       goAfterLogin("employer");
       return;
     }
-    const supaUrl  = import.meta.env.VITE_SUPABASE_URL ?? "";
-    const redirect = encodeURIComponent(`${supaUrl}/functions/v1/wechat-mp-callback`);
+    // redirect_uri MUST be on a whitelisted domain (网页授权域名).
+    // *.supabase.co isn't ours and can't host MP_verify, so we use
+    // nothinkeats.com/auth/wechat/in as a thin bouncer that immediately
+    // forwards to the Supabase edge function with the same query params.
+    // See src/pages/WeChatIn.tsx + OAUTH_SETUP.md for the full chain.
+    const redirect = encodeURIComponent(`${window.location.origin}/auth/wechat/in`);
     const state    = crypto.randomUUID();
     sessionStorage.setItem("wechat_oauth_state", state);
     const url = `https://open.weixin.qq.com/connect/oauth2/authorize?appid=${appid}&redirect_uri=${redirect}&response_type=code&scope=snsapi_userinfo&state=${state}#wechat_redirect`;
