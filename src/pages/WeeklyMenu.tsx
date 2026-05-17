@@ -889,6 +889,10 @@ export default function WeeklyMenu() {
                         const dayDinner = day.dishes ?? [];
                         const locked = isDayLocked(i);
                         if (locked) return null;
+                        // 周末规则：周一-周五为本周菜单，今天之前的日子隐藏
+                        // 避免用户星期三还看到周一周二的"昨日菜"。
+                        if (day.dayIndex < todayIdx) return null;
+                        if (day.dayIndex >= 5)       return null;  // safety: never show 周末
                         return (
                           <div key={i} id={`day-${i}`} className="mb-5">
                             <div className="px-5 flex items-baseline justify-between mb-2">

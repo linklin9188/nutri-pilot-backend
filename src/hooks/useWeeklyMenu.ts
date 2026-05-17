@@ -56,7 +56,31 @@ export interface WeeklyMenu {
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v28'; // fix hometown axis dead-path: QuickSetup writes userHometown localStorage + hometownToDbBucket() at persist + readHometownCuisine drops stale whitelist
+export const ALGO_VERSION = 'v29'; // weekday-only weekly menu: skip Sat/Sun generation, Home/WeeklyMenu render today→Friday only
+
+// ── 周末规则 (Weekend rule) — user-confirmed 2026-05-17 ───────────────────────
+// Weekly menu only covers Mon-Fri. Generation skips Sat/Sun; display layers
+// filter past days so the user opening on Wednesday sees Wed-Thu-Fri (3 days
+// remaining). Saturday + Sunday show the "外食营养报告" report instead.
+
+/** 0=Mon ... 4=Fri, 5=Sat, 6=Sun (matches WeeklyDayMenu.dayIndex). */
+export function todayDayIndex(): number {
+  const d = new Date().getDay(); // 0=Sun, 1=Mon, ...
+  return d === 0 ? 6 : d - 1;
+}
+
+/** True when today is Sat or Sun — UI should render the 外食营养报告. */
+export function isWeekend(): boolean {
+  return todayDayIndex() >= 5;
+}
+
+/** Filter a WeeklyMenu's days to "today onwards, weekday only".
+ *  Mon → Mon-Fri (5). Wed → Wed-Fri (3). Sat/Sun → [] (UI fallback to report). */
+export function daysFromTodayOnward<T extends { dayIndex: number }>(days: T[]): T[] {
+  const t = todayDayIndex();
+  if (t >= 5) return [];
+  return days.filter(d => d.dayIndex >= t && d.dayIndex <= 4);
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -670,6 +694,11 @@ function generateWeekPlan(
   const weeklyCatCounts: Record<string, number> = {};
 
   for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+    // 周六周日不生成菜单 (user-confirmed 2026-05-17)：让用户周末出门换换
+    // 口味。Home 在周末展示"外食营养报告" (Phase #4) 而不是空菜单。
+    // 0-4 = Mon-Fri, 5 = Sat, 6 = Sun.
+    if (dayIndex >= 5) continue;
+
     // Per-day headcount override. If the user toggled who's eating on a
     // specific day (e.g. only the couple on Wed), this day's adults/kids
     // differ from the week-level defaults. Otherwise falls back to the
@@ -1187,18 +1216,20 @@ async function loadFromDB(userId: string, weekStart: string): Promise<WeeklyMenu
     (lunchRes.data ?? []).map(r => [r.day_index as number, (r.dish_ids as string[])])
   );
 
-  const days: WeeklyDayMenu[] = dinnerRes.data.map(row => {
-    const dinnerIds = (row.swapped_dish_ids ?? row.dish_ids) as string[];
-    const lunchIds  = lunchMap.get(row.day_index as number) ?? [];
-    const dayIndex  = row.day_index as number;
-    return {
-      date:        dateForDayIndex(weekStart, dayIndex),
-      dayIndex,
-      dayLabel:    DAY_LABELS[dayIndex],
-      dishes:      dinnerIds.map(id => dishMap.get(id)).filter(Boolean).map(d => enrichRaw(d)),
-      lunchDishes: lunchIds.map(id => dishMap.get(id)).filter(Boolean).map(d => enrichRaw(d)),
-    };
-  });
+  const days: WeeklyDayMenu[] = dinnerRes.data
+    .filter(row => (row.day_index as number) < 5)   // drop legacy 周末 rows
+    .map(row => {
+      const dinnerIds = (row.swapped_dish_ids ?? row.dish_ids) as string[];
+      const lunchIds  = lunchMap.get(row.day_index as number) ?? [];
+      const dayIndex  = row.day_index as number;
+      return {
+        date:        dateForDayIndex(weekStart, dayIndex),
+        dayIndex,
+        dayLabel:    DAY_LABELS[dayIndex],
+        dishes:      dinnerIds.map(id => dishMap.get(id)).filter(Boolean).map(d => enrichRaw(d)),
+        lunchDishes: lunchIds.map(id => dishMap.get(id)).filter(Boolean).map(d => enrichRaw(d)),
+      };
+    });
 
   return { weekStart, days };
 }
