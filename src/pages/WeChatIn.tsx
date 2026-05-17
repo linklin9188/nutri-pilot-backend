@@ -14,9 +14,28 @@ import { useEffect } from 'react';
 
 export default function WeChatIn() {
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    if (!code) {
+      window.location.replace('/');
+      return;
+    }
+    // Single-shot guard: WeChat OAuth codes are single-use. If the user
+    // back-navigates to this bouncer or the WeChat in-app browser double-
+    // fires the mount-effect (observed in WeChat 8.x), the second pass
+    // would re-POST the same code and trigger errcode 40163 "code been
+    // used". Track the last processed code in sessionStorage; second hit
+    // with the same code is treated as a no-op back-navigation and goes
+    // home (login likely already succeeded the first time).
+    const STORE_KEY = 'wechat_oauth_processed_code';
+    if (sessionStorage.getItem(STORE_KEY) === code) {
+      window.location.replace('/');
+      return;
+    }
+    sessionStorage.setItem(STORE_KEY, code);
+
     const supaUrl = import.meta.env.VITE_SUPABASE_URL ?? '';
     if (!supaUrl) {
-      // shouldn't happen in production but be defensive — go to home if env missing
       window.location.replace('/');
       return;
     }
