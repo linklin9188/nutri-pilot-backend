@@ -389,6 +389,28 @@ export default function HelperPrep() {
                                               {action}
                                             </p>
                                           )}
+                                          {/* Suzie's Twist substitutes (Simply Chinese Feasts 4D framework).
+                                              Shows pantry-friendly swaps so the helper doesn't have to skip
+                                              the dish when the primary ingredient is missing. */}
+                                          {(() => {
+                                            const subs = useChineseContent
+                                              ? (step.substitutes_zh ?? [])
+                                              : (step.substitutes_en ?? step.substitutes_zh ?? []);
+                                            if (!subs || subs.length === 0) return null;
+                                            return (
+                                              <div className={`mt-2 flex items-start gap-1.5 text-[12px] ${isDone ? 'opacity-40' : ''}`}>
+                                                <span className={`material-symbols-outlined text-[14px] mt-[1px] ${isDone ? 'text-gray-300' : 'text-amber-600'}`}>
+                                                  swap_horiz
+                                                </span>
+                                                <div className={`leading-snug ${isDone ? 'text-gray-300' : 'text-amber-700'}`}>
+                                                  <span className="font-bold">
+                                                    {t4('Can swap:', '可替换：', 'Pwedeng palit:', 'Bisa ganti:')}{' '}
+                                                  </span>
+                                                  {subs.slice(0, 3).join(' / ')}
+                                                </div>
+                                              </div>
+                                            );
+                                          })()}
                                         </div>
                                       </motion.button>
                                     );

@@ -6,6 +6,33 @@ import BottomTabBar from "../components/BottomTabBar";
 import { useLanguage } from "../contexts/LanguageContext";
 import { getHKAlias } from "../lib/hkNames";
 import { ALGO_VERSION as WEEKLY_ALGO_VERSION } from "../hooks/useWeeklyMenu";
+import { supabase } from "../lib/supabase";
+
+// ── Hydrate dishes with prep_steps_json from DB ──────────────────────────
+// Generated weekly menus persisted to localStorage often DON'T include the
+// JSONB prep_steps payload (kept it lean). dishIngredients.ts now prefers
+// prep_steps over the legacy main_ingredient heuristic, so the shopping
+// list needs that data to surface secondary ingredients and substitutes.
+// We do one batched fetch by id, then mutate the dishes in place.
+async function hydratePrepSteps(dishes: any[]): Promise<any[]> {
+  const idsNeeded = dishes
+    .filter(d => d?.id && (!Array.isArray(d.prep_steps_json) || d.prep_steps_json.length === 0))
+    .map(d => d.id);
+  if (idsNeeded.length === 0) return dishes;
+  try {
+    const { data } = await supabase
+      .from('dishes')
+      .select('id, prep_steps_json')
+      .in('id', [...new Set(idsNeeded)]);
+    if (data) {
+      const map = new Map(data.map((d: any) => [d.id, d.prep_steps_json]));
+      for (const d of dishes) {
+        if (d?.id && map.has(d.id)) d.prep_steps_json = map.get(d.id);
+      }
+    }
+  } catch { /* network blip — fall back to heuristic */ }
+  return dishes;
+}
 
 // ── Category grouping ─────────────────────────────────────────────────────────
 const CATEGORY_GROUPS: { label: string; emoji: string; categories: string[] }[] = [
@@ -420,63 +447,78 @@ export default function VerifyIngredients() {
   }, [ingredients, mode]);
 
   useEffect(() => {
-    if (mode === 'banquet') {
-      const banquet = loadBanquet();
-      if (!banquet) {
-        // Banquet expired or never set — fall back gracefully.
-        setMode('week');
+    let cancelled = false;
+
+    async function run() {
+      if (mode === 'banquet') {
+        const banquet = loadBanquet();
+        if (!banquet) {
+          // Banquet expired or never set — fall back gracefully.
+          setMode('week');
+          return;
+        }
+        // Kids 0.5 + elders 0.8 mirrors the banquet algorithm dish-load math.
+        // We bias slightly higher than dishToIngredients's default (kids*0.5)
+        // because banquet portions tend to run larger than weekday family meals.
+        const banquetAdultEquivalent = Math.ceil(
+          banquet.adults + banquet.elders * 0.9 + banquet.kids * 0.5
+        );
+        setBanquetHeads(banquet.adults + banquet.kids + banquet.elders);
+        setDishCount(banquet.dishes.length);
+
+        await hydratePrepSteps(banquet.dishes);
+        if (cancelled) return;
+        const allRaw = banquet.dishes.flatMap(dish =>
+          dishToIngredients(dish, banquetAdultEquivalent, 0)
+        );
+        setIngredients(aggregateIngredients(allRaw));
+        setHaveIt({});
         return;
       }
-      // Kids 0.5 + elders 0.8 mirrors the banquet algorithm dish-load math.
-      // We bias slightly higher than dishToIngredients's default (kids*0.5)
-      // because banquet portions tend to run larger than weekday family meals.
-      const banquetAdultEquivalent = Math.ceil(
-        banquet.adults + banquet.elders * 0.9 + banquet.kids * 0.5
-      );
-      setBanquetHeads(banquet.adults + banquet.kids + banquet.elders);
-      setDishCount(banquet.dishes.length);
 
-      const allRaw = banquet.dishes.flatMap(dish =>
-        dishToIngredients(dish, banquetAdultEquivalent, 0)
-      );
-      setIngredients(aggregateIngredients(allRaw));
-      setHaveIt({});
-      return;
-    }
+      if (mode === 'week') {
+        // Per-day scaling: each day might have a different headcount (e.g.
+        // weekend has guests, weekday only the couple). Group dishes by day
+        // and scale each day's portions by that day's headcount, then
+        // aggregate. Without this, the shopping list silently used a single
+        // headcount for the whole week and over- or under-bought.
+        const weekMenu = loadWeekMenu();
+        const days: any[] = weekMenu?.days ?? [];
+        const allDishes = days.flatMap((d: any) => [...(d.dishes ?? []), ...(d.lunchDishes ?? [])]);
+        await hydratePrepSteps(allDishes);
+        if (cancelled) return;
 
-    if (mode === 'week') {
-      // Per-day scaling: each day might have a different headcount (e.g.
-      // weekend has guests, weekday only the couple). Group dishes by day
-      // and scale each day's portions by that day's headcount, then
-      // aggregate. Without this, the shopping list silently used a single
-      // headcount for the whole week and over- or under-bought.
-      const weekMenu = loadWeekMenu();
-      const days: any[] = weekMenu?.days ?? [];
-      const allRaw: any[] = [];
-      let total = 0;
-      for (let i = 0; i < days.length; i++) {
-        const d = days[i];
-        const dayDishes = [...(d.dishes ?? []), ...(d.lunchDishes ?? [])];
-        total += dayDishes.length;
-        const { adults, kids } = readHeadcountForDay(i);
-        for (const dish of dayDishes) {
-          allRaw.push(...dishToIngredients(dish, adults, kids));
+        const allRaw: any[] = [];
+        let total = 0;
+        for (let i = 0; i < days.length; i++) {
+          const d = days[i];
+          const dayDishes = [...(d.dishes ?? []), ...(d.lunchDishes ?? [])];
+          total += dayDishes.length;
+          const { adults, kids } = readHeadcountForDay(i);
+          for (const dish of dayDishes) {
+            allRaw.push(...dishToIngredients(dish, adults, kids));
+          }
         }
+        setDishCount(total);
+        setIngredients(aggregateIngredients(allRaw));
+        setHaveIt({});
+        return;
       }
-      setDishCount(total);
-      setIngredients(aggregateIngredients(allRaw));
-      setHaveIt({});
-      return;
+
+      const { adults, kids } = readHeadcount();
+      const dishes = getDishes(mode);
+      setDishCount(dishes.length);
+
+      await hydratePrepSteps(dishes);
+      if (cancelled) return;
+      const allRaw = dishes.flatMap(dish => dishToIngredients(dish, adults, kids));
+      const aggregated = aggregateIngredients(allRaw);
+      setIngredients(aggregated);
+      setHaveIt({}); // reset checks when mode changes
     }
 
-    const { adults, kids } = readHeadcount();
-    const dishes = getDishes(mode);
-    setDishCount(dishes.length);
-
-    const allRaw = dishes.flatMap(dish => dishToIngredients(dish, adults, kids));
-    const aggregated = aggregateIngredients(allRaw);
-    setIngredients(aggregated);
-    setHaveIt({}); // reset checks when mode changes
+    run();
+    return () => { cancelled = true; };
   }, [mode]);
 
   const toggleHave = (nameZh: string) => {
@@ -812,6 +854,16 @@ export default function VerifyIngredients() {
                         <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-1">
                           {item.dishes.slice(0, 2).join(' · ')}
                           {item.dishes.length > 2 ? ` +${item.dishes.length - 2}` : ''}
+                        </p>
+                      )}
+                      {/* Suzie's Twist substitutes — when the primary item is
+                          sold out the shopper knows what to grab instead.
+                          Source: prep_steps_json.substitutes_zh, surfaced
+                          through aggregateIngredients. */}
+                      {item.substitutes && item.substitutes.length > 0 && (
+                        <p className="text-[10px] mt-0.5 line-clamp-1"
+                          style={{ color: have ? 'rgba(0,0,0,0.25)' : '#B45309' }}>
+                          {t('Swap: ', '或买：')}{item.substitutes.slice(0, 3).join(' / ')}
                         </p>
                       )}
                     </div>

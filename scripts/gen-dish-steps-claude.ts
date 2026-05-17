@@ -49,6 +49,12 @@ interface PrepStep {
   amount_g: number;
   action_zh: string;
   action_en: string;
+  // ── Simply Chinese Feasts 4D — Suzie's Twist substitutes ─────────────
+  // Pantry-friendly swaps when the primary ingredient is unavailable.
+  // 1-3 items ordered closest analogue first. Omitted when no reasonable
+  // swap exists (e.g. "整鸡" doesn't really swap).
+  substitutes_zh?: string[];
+  substitutes_en?: string[];
 }
 
 interface CookStep {
@@ -56,18 +62,29 @@ interface CookStep {
   action_zh: string;
   action_en: string;
   duration_min: number;
+  // ── Simply Chinese Feasts 4D — 物性目标 / state target ─────────────────
+  // Sensory checkpoint that tells a human cook "this step is actually done".
+  // E.g. "肉变色 / 皮金黄酥脆 / 汤汁挂勺 / 静置定色". Required for non-robot
+  // execution — duration alone is too mechanical.
+  state_target_zh?: string;
+  state_target_en?: string;
 }
 
 interface ClaudeResult {
   dish_id: string;
   prep_steps: PrepStep[];
   cook_steps: CookStep[];
+  // ── Simply Chinese Feasts 4D — 文化背景 / cultural_note ───────────────
+  // One-paragraph (≤120字) backstory: origin, festival, family meaning.
+  // OPTIONAL — only generated for festive / regional-iconic / family
+  // tradition dishes. Most everyday stir-fries leave this null.
+  cultural_note?: string | null;
 }
 
-const SYSTEM_PROMPT = `你是专业厨师，同时也是家庭烹饪机器人系统的数据工程师。你的任务是为每道菜生成精确的备菜清单 + 烹饪步骤。你必须只返回纯 JSON 数组，不带任何解释文字、markdown 围栏或注释。`;
+const SYSTEM_PROMPT = `你是专业厨师，同时也是家庭烹饪机器人系统的数据工程师。你的任务是为每道菜生成精确的备菜清单 + 烹饪步骤（依照 Simply Chinese Feasts 四维框架：基本词汇 / 烹饪术语 / 操作序列 / 物性目标）。你必须只返回纯 JSON 数组，不带任何解释文字、markdown 围栏或注释。`;
 
 function buildPrompt(dishes: DishRow[]): string {
-  return `我会给你一批中文菜肴，为每道菜生成两份精确指令：
+  return `我会给你一批中文菜肴，为每道菜按 Simply Chinese Feasts 四维框架生成三份指令：
 
 【1】prep_steps（菲佣备菜指令）
 格位规则（严格按照以下分类，不要自创新类别）：
@@ -78,12 +95,13 @@ function buildPrompt(dishes: DishRow[]): string {
 - E格：其他（难以归类的食材，尽量少用此类）
 
 要求：
-- amount_g：精确克数（单人份，2人家庭）
+- amount_g：精确克数（4 人家庭一道菜的总量；如菜本身就是 2 人份家常菜请按 4 口家折算）
 - action_zh：菲佣能执行的精确操作，必须含切法尺寸（如"切块3cm×3cm"）或处理方式（如"冷水浸泡10分钟去血水"、"切末"、"拍碎"）
 - 每格最多3条，总步骤不超过10条
 - 不要使用F格（已废弃）
+- substitutes_zh / substitutes_en（Suzie's Twist 可选）：当主料/重要配料在普通超市可能找不到时，列出 1-3 个最接近的替代品（如"虎皮椒"→["羊角椒","螺丝椒","二荆条"]、"叉烧"→["烧肉","蜜汁肉脯"]）。简单常见的食材（葱姜蒜、米饭、鸡蛋）不需要 substitutes，留空数组或省略字段。
 
-【2】cook_steps（烹饪机器人执行步骤）
+【2】cook_steps（烹饪机器人 & 家庭厨师执行步骤）
 要求：
 - 8-12步，按顺序执行
 - 每步必须包含：火候（只写大火/中火/小火三档，烤箱/牛排等西式菜写温度如"180°C"）、时长（X分钟或X秒）、引用格位（如"A格鸡肉"）
@@ -91,6 +109,15 @@ function buildPrompt(dishes: DishRow[]): string {
 - 用可观察判断标准（如"变色"、"出香味"、"冒大泡"）
 - 不要写"适量"，所有用量要具体
 - duration_min：该步骤耗时（分钟，可以是0.5=30秒）
+- state_target_zh / state_target_en（物性目标，Simply Chinese Feasts 4D）：该步骤完成时的感官标志，让没有计时器的家庭主厨/菲佣也能判断"这步做完了"。每步都要写一条，长度 6-18 字：
+  · 例：肉变色、汤色奶白、葱花焦香、油起鱼眼泡、蛋液凝固、皮金黄酥脆、汤汁挂勺、静置定色、面糊起鱼眼泡
+  · 焯水/煮汤类：何时关火（"虾红即关火"/"水开 30 秒"）
+  · 翻炒类：何时下一料（"蒜末焦黄前下肉"）
+
+【3】cultural_note（文化背景，可选）
+仅当此菜是节庆 / 地域名菜 / 家庭传承经典 时填写（≤100字中文），交代来源、节日、家庭含义。
+适合写：饺子、年糕、汤圆、粽子、月饼、佛跳墙、宫保鸡丁、麻婆豆腐、回锅肉、白切鸡、东坡肉、生煎、肉夹馍、油泼面 等。
+不适合写：普通炒青菜、家常蒸蛋、白米饭 等日常菜——省略该字段或返回 null。
 
 输入（JSON数组）：
 ${JSON.stringify(dishes.map(d => ({
@@ -102,7 +129,7 @@ ${JSON.stringify(dishes.map(d => ({
   cuisine: d.origin_cuisine,
 })), null, 2)}
 
-返回纯JSON数组，每个元素必须有 dish_id / prep_steps / cook_steps 三个字段。
+返回纯JSON数组，每个元素必须有 dish_id / prep_steps / cook_steps 三个字段（cultural_note 可选）。
 不要 markdown 代码围栏，不要前后文字，只返回 JSON 数组。`;
 }
 
@@ -166,6 +193,25 @@ const ACTION_FIELDS  = ['action_zh', 'action', 'prep_zh', 'description', 'instru
 const ACTION_EN_FIELDS = ['action_en', 'prep_en', 'instruction_en', 'description_en'];
 const STEP_FIELDS     = ['step', 'step_num', 'step_number', 'order'];
 const DURATION_FIELDS = ['duration_min', 'duration', 'time_min', 'minutes', 'time'];
+const SUBS_ZH_FIELDS  = ['substitutes_zh', 'substitutes', 'subs_zh', 'alt_zh', 'alternatives_zh'];
+const SUBS_EN_FIELDS  = ['substitutes_en', 'subs_en', 'alt_en', 'alternatives_en'];
+const STATE_ZH_FIELDS = ['state_target_zh', 'state_target', 'state_zh', 'doneness_zh', 'sign_zh', 'sign'];
+const STATE_EN_FIELDS = ['state_target_en', 'state_en', 'doneness_en', 'sign_en'];
+const CULTURE_FIELDS  = ['cultural_note', 'culture', 'background', 'origin_note', 'note', 'cultural_background'];
+
+function pickArray(obj: any, fields: string[]): string[] {
+  for (const f of fields) {
+    const v = obj?.[f];
+    if (Array.isArray(v) && v.length > 0) {
+      return v.map(x => String(x ?? '').trim()).filter(Boolean).slice(0, 3);
+    }
+    if (typeof v === 'string' && v.trim()) {
+      // Sometimes Claude returns "A / B / C" as a single string
+      return v.split(/[/、,，]/).map(s => s.trim()).filter(Boolean).slice(0, 3);
+    }
+  }
+  return [];
+}
 
 function pick(obj: any, fields: string[], fallback: any = '') {
   for (const f of fields) {
@@ -181,6 +227,8 @@ function normalizeClaudeResult(r: any): ClaudeResult {
       // Nested style: tray-level group with items array inside
       const tray = (p.category ?? p.tray ?? p.group ?? 'E') as PrepStep['tray'];
       for (const item of p.items) {
+        const subsZh = pickArray(item, SUBS_ZH_FIELDS);
+        const subsEn = pickArray(item, SUBS_EN_FIELDS);
         prepSteps.push({
           tray,
           ingredient_zh: pick(item, NAME_FIELDS, ''),
@@ -188,10 +236,14 @@ function normalizeClaudeResult(r: any): ClaudeResult {
           amount_g:      Number(pick(item, AMOUNT_FIELDS, 0)) || 0,
           action_zh:     pick(item, ACTION_FIELDS, ''),
           action_en:     pick(item, ACTION_EN_FIELDS, ''),
+          ...(subsZh.length > 0 ? { substitutes_zh: subsZh } : {}),
+          ...(subsEn.length > 0 ? { substitutes_en: subsEn } : {}),
         });
       }
     } else {
       // Flat style: each step IS one ingredient
+      const subsZh = pickArray(p, SUBS_ZH_FIELDS);
+      const subsEn = pickArray(p, SUBS_EN_FIELDS);
       prepSteps.push({
         tray:          (p.tray ?? p.category ?? p.group ?? 'E') as PrepStep['tray'],
         ingredient_zh: pick(p, NAME_FIELDS, ''),
@@ -199,18 +251,33 @@ function normalizeClaudeResult(r: any): ClaudeResult {
         amount_g:      Number(pick(p, AMOUNT_FIELDS, 0)) || 0,
         action_zh:     pick(p, ACTION_FIELDS, ''),
         action_en:     pick(p, ACTION_EN_FIELDS, ''),
+        ...(subsZh.length > 0 ? { substitutes_zh: subsZh } : {}),
+        ...(subsEn.length > 0 ? { substitutes_en: subsEn } : {}),
       });
     }
   }
 
-  const cookSteps: CookStep[] = (r.cook_steps ?? []).map((s: any, i: number) => ({
-    step:         Number(pick(s, STEP_FIELDS, i + 1)) || i + 1,
-    action_zh:    pick(s, ACTION_FIELDS, ''),
-    action_en:    pick(s, ACTION_EN_FIELDS, ''),
-    duration_min: Number(pick(s, DURATION_FIELDS, 0)) || 0,
-  }));
+  const cookSteps: CookStep[] = (r.cook_steps ?? []).map((s: any, i: number) => {
+    const stateZh = String(pick(s, STATE_ZH_FIELDS, '') ?? '').trim();
+    const stateEn = String(pick(s, STATE_EN_FIELDS, '') ?? '').trim();
+    return {
+      step:         Number(pick(s, STEP_FIELDS, i + 1)) || i + 1,
+      action_zh:    pick(s, ACTION_FIELDS, ''),
+      action_en:    pick(s, ACTION_EN_FIELDS, ''),
+      duration_min: Number(pick(s, DURATION_FIELDS, 0)) || 0,
+      ...(stateZh ? { state_target_zh: stateZh } : {}),
+      ...(stateEn ? { state_target_en: stateEn } : {}),
+    } as CookStep;
+  });
 
-  return { dish_id: r.dish_id, prep_steps: prepSteps, cook_steps: cookSteps };
+  const culture = String(pick(r, CULTURE_FIELDS, '') ?? '').trim();
+
+  return {
+    dish_id: r.dish_id,
+    prep_steps: prepSteps,
+    cook_steps: cookSteps,
+    cultural_note: culture && culture.length >= 8 ? culture.slice(0, 280) : null,
+  };
 }
 
 // ── Validate ──────────────────────────────────────────────────────────────────
@@ -269,10 +336,34 @@ async function writeResults(pg: Client, results: ClaudeResult[], batch: DishRow[
       console.log(`\n  ⚠️  ${r.dish_id}: UUID not in batch — skipping`);
       continue;
     }
-    await pg.query(
-      `UPDATE dishes SET prep_steps_json = $1, cook_steps_json = $2 WHERE id = $3`,
-      [JSON.stringify(r.prep_steps), JSON.stringify(r.cook_steps), dishId]
-    );
+    // cultural_note: only overwrite when Claude returned one — we don't
+    // want to wipe a manually-edited backstory by setting it to NULL.
+    // The column is added in migration 010_dishes_cultural_note.sql; if
+    // the column doesn't exist yet (older DB), the UPDATE silently
+    // ignores the column via COALESCE-equivalent? Postgres would error,
+    // so we fall back to a no-cultural-note UPDATE on column-missing
+    // errors.
+    if (r.cultural_note) {
+      try {
+        await pg.query(
+          `UPDATE dishes SET prep_steps_json = $1, cook_steps_json = $2, cultural_note = $3 WHERE id = $4`,
+          [JSON.stringify(r.prep_steps), JSON.stringify(r.cook_steps), r.cultural_note, dishId]
+        );
+      } catch (e: any) {
+        // 42703 = undefined_column (migration 010 not run yet)
+        if (e?.code === '42703') {
+          await pg.query(
+            `UPDATE dishes SET prep_steps_json = $1, cook_steps_json = $2 WHERE id = $3`,
+            [JSON.stringify(r.prep_steps), JSON.stringify(r.cook_steps), dishId]
+          );
+        } else throw e;
+      }
+    } else {
+      await pg.query(
+        `UPDATE dishes SET prep_steps_json = $1, cook_steps_json = $2 WHERE id = $3`,
+        [JSON.stringify(r.prep_steps), JSON.stringify(r.cook_steps), dishId]
+      );
+    }
     written++;
   }
   return written;

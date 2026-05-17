@@ -398,6 +398,28 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
                 and stacked the Chinese underneath for every step. */}
             {isChinese ? (step.action_zh || step.action_en) : (step.action_en || step.action_zh)}
           </p>
+
+          {/* 物性目标 / state target — Simply Chinese Feasts 4D framework.
+              The sensory checkpoint that tells a human cook "this step is
+              actually done" (肉变色 / 皮金黄酥脆 / 汤汁挂勺). For non-robot
+              execution this is the difference between "started" and
+              "finished" — duration alone is mechanical. */}
+          {(step.state_target_zh || step.state_target_en) && (
+            <div className="mt-4 flex items-start gap-2 px-3 py-2.5 rounded-2xl"
+              style={{ background: 'rgba(255,200,0,0.08)', border: '1px solid rgba(255,200,0,0.2)' }}>
+              <span className="material-symbols-outlined flex-shrink-0" style={{ fontSize: 18, color: '#FFC800', marginTop: 1, fontVariationSettings: "'FILL' 1" }}>
+                target
+              </span>
+              <div className="flex-1 min-w-0">
+                <div style={{ fontSize: 10, color: 'rgba(255,200,0,0.7)', fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 2 }}>
+                  {t4('Done when', '完成标志', 'Tapos kapag', 'Selesai saat')}
+                </div>
+                <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.88)', fontWeight: 500, lineHeight: 1.5 }}>
+                  {isChinese ? (step.state_target_zh || step.state_target_en) : (step.state_target_en || step.state_target_zh)}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Timer */}

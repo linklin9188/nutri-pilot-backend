@@ -28,6 +28,11 @@ export interface ShoppingIngredient {
   weightGrams: number;   // already scaled to headcount
   unit: 'g' | 'ml' | 'piece';
   category: string;      // for aggregation: 'pork' | 'seafood' | 'veggie' | 'egg' | 'tofu' | 'carb' | 'condiment'
+  /** Suzie's Twist substitutes (Simply Chinese Feasts 4D framework) —
+   *  pantry-friendly swaps for this ingredient. Carries through to the
+   *  shopping list so the shopper can grab a swap when the primary item
+   *  is sold out. Source: prep_steps_json.substitutes_zh. */
+  substitutes?: string[];
 }
 
 // ── Portion tables ─────────────────────────────────────────────────────────────
@@ -156,12 +161,105 @@ function getSecondaryIngredients(dish: any): SecondaryIng[] {
   return result;
 }
 
+// ── prep_steps_json → shopping list (truth source) ───────────────────────────
+//
+// When a dish has prep_steps_json populated, those entries ARE the authoritative
+// ingredient list — they were either authored by the cookbook source or generated
+// by gen-dish-steps-claude with full visibility into the dish. The legacy
+// main_ingredient + course_type heuristic below misses every secondary ingredient
+// the chef actually uses (酱料 / 配菜 / 主食搭档), which is exactly the gap that
+// made the shopping list useless for non-trivial dishes like 蒜蓉粉丝蒸扇贝
+// (粉丝 / 蒜蓉 / 蒸鱼豉油 all invisible to a 'scallop'+'main_protein' guess).
+//
+// Tray convention → shopping category:
+//   A=主料 → use the dish's main_ingredient category (pork/seafood/...)
+//   B=配菜 → 'veggie' (Produce)
+//   C=配料 → 'veggie' (Produce) — 粉丝 / 木耳 / 笋 fall here too
+//   D=调料 → 'condiment' (Staples)
+//   E=其他 / F → 'other'
+function trayToCategory(tray: string, mainIngCat: string): string {
+  switch (tray) {
+    case 'A': return mainIngCat || 'other';
+    case 'B':
+    case 'C': return 'veggie';
+    case 'D': return 'condiment';
+    default:  return 'other';
+  }
+}
+
+function categoryToType(cat: string): 'Meat/Seafood' | 'Produce' | 'Staples' {
+  if (['pork','beef','poultry','seafood'].includes(cat)) return 'Meat/Seafood';
+  if (['carb','condiment'].includes(cat)) return 'Staples';
+  return 'Produce';
+}
+
+function prepStepsToIngredients(dish: any): ShoppingIngredient[] {
+  const steps: any[] = dish.prep_steps_json ?? [];
+  if (!Array.isArray(steps) || steps.length === 0) return [];
+
+  const dishId = dish.id ?? dish.title_zh ?? Math.random().toString();
+  const dishTitle = dish.title_zh || dish.title || '';
+  const mainIngCat = ING_CAT[(dish.main_ingredient ?? 'other').toLowerCase()] ?? 'other';
+
+  // Aggregate by ingredient_zh within the same dish — sometimes prep
+  // splits one ingredient across two prep actions (洗 + 切), we shouldn't
+  // double-buy.
+  const byName = new Map<string, ShoppingIngredient>();
+  steps.forEach((s, idx) => {
+    const nameZh = (s.ingredient_zh ?? '').trim();
+    if (!nameZh) return;
+    const nameEn = (s.ingredient_en ?? '').trim();
+    const amount = Number(s.amount_g) || 0;
+    const tray = (s.tray ?? 'E') as string;
+    const category = trayToCategory(tray, mainIngCat);
+    const subs: string[] = (s.substitutes_zh ?? []).filter(Boolean).slice(0, 3);
+
+    const existing = byName.get(nameZh);
+    if (existing) {
+      existing.weightGrams += amount;
+      // Merge substitutes (dedupe, cap 3)
+      if (subs.length > 0) {
+        const merged = [...new Set([...(existing.substitutes ?? []), ...subs])].slice(0, 3);
+        existing.substitutes = merged;
+      }
+      return;
+    }
+
+    byName.set(nameZh, {
+      id: `${dishId}_p${idx}`,
+      dishId,
+      dishTitle,
+      name: nameEn ? `${nameZh} (${nameEn})` : nameZh,
+      nameZh,
+      type: categoryToType(category),
+      weightGrams: amount,
+      unit: 'g',
+      category,
+      substitutes: subs.length > 0 ? subs : undefined,
+    });
+  });
+
+  return [...byName.values()].filter(i => i.weightGrams > 0);
+}
+
 // ── Main export ────────────────────────────────────────────────────────────────
 
 /**
  * Given a dish record from Supabase + headcount, returns the full ingredient list.
+ *
+ * Priority:
+ *   1. If prep_steps_json is populated → use those entries verbatim (authoritative).
+ *      Headcount scaling skipped — prep steps are already total-per-dish for a
+ *      standard family-size serving as the generator was instructed to size them.
+ *   2. Otherwise → fall back to the main_ingredient + course_type heuristic.
  */
 export function dishToIngredients(dish: any, adults: number, kids: number): ShoppingIngredient[] {
+  // Path A — prep_steps_json present, use it directly.
+  if (Array.isArray(dish.prep_steps_json) && dish.prep_steps_json.length > 0) {
+    return prepStepsToIngredients(dish);
+  }
+
+  // Path B — heuristic fallback (legacy, used for dishes without prep_steps yet)
   const effectivePeople = Math.max(1, adults + kids * 0.5);
   const courseType: string = dish.course_type ?? 'main_protein';
   const ingKey: string = (dish.main_ingredient ?? 'other').toLowerCase();
@@ -253,6 +351,10 @@ export interface AggregatedIngredient {
   category: string;
   unit: 'g' | 'ml' | 'piece';
   dishes: string[];   // which dishes use this ingredient
+  /** Merged substitutes across all dishes that use this ingredient — shown
+   *  in the shopping list so the shopper knows what to grab if the primary
+   *  item is sold out. */
+  substitutes?: string[];
 }
 
 /**
@@ -281,6 +383,10 @@ export function aggregateIngredients(
       if (!existing.dishes.includes(ing.dishTitle)) {
         existing.dishes.push(ing.dishTitle);
       }
+      // Merge substitutes from the new contributor (dedupe, cap 3)
+      if (ing.substitutes && ing.substitutes.length > 0) {
+        existing.substitutes = [...new Set([...(existing.substitutes ?? []), ...ing.substitutes])].slice(0, 3);
+      }
     } else {
       map.set(key, {
         nameZh: ing.nameZh,
@@ -290,6 +396,7 @@ export function aggregateIngredients(
         category: ing.category,
         unit: ing.unit,
         dishes: [ing.dishTitle],
+        substitutes: ing.substitutes,
       });
     }
   }
