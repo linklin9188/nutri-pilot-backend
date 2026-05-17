@@ -249,12 +249,86 @@ function persistMembers(members: FamilyMember[]) {
 
 // ─── main page ────────────────────────────────────────────────────────────────
 
+// ── Onboarding choice tables (sourced from QuickSetup) ───────────────────────
+// Settings surfaces the same goal / spice / hometown questions so the user
+// can change their global flavor without re-running onboarding. Copying the
+// options inline (rather than importing from QuickSetup) keeps Settings
+// independently editable and avoids a refactor of the question schema.
+const TASTE_OPTIONS = {
+  goal: [
+    { id: "fatloss",   label: "减脂瘦身", icon: "🔥" },
+    { id: "muscle",    label: "增肌健体", icon: "💪" },
+    { id: "balanced",  label: "营养均衡", icon: "🥗" },
+    { id: "nourish",   label: "养生调理", icon: "🍵" },
+    { id: "pregnancy", label: "怀孕备孕", icon: "🤰" },
+    { id: "growth",    label: "长高变壮", icon: "🌱" },
+    { id: "low_carb",  label: "低碳生酮", icon: "🥑" },
+  ],
+  spice: [
+    { id: "none",   label: "完全不辣", icon: "🥛" },
+    { id: "mild",   label: "微微辣",   icon: "🫑" },
+    { id: "medium", label: "中辣",     icon: "🌶️" },
+    { id: "hot",    label: "越辣越好", icon: "🔥" },
+  ],
+  hometown: [
+    { id: "guangdong",     label: "粤菜", icon: "🦞" },
+    { id: "sichuan",       label: "川菜", icon: "🌶️" },
+    { id: "shandong",      label: "鲁菜", icon: "🥟" },
+    { id: "jiangsu",       label: "苏菜", icon: "🍤" },
+    { id: "zhejiang",      label: "浙菜", icon: "🍵" },
+    { id: "fujian",        label: "闽菜", icon: "🦀" },
+    { id: "hunan",         label: "湘菜", icon: "🍖" },
+    { id: "anhui",         label: "徽菜", icon: "🍲" },
+    { id: "no_preference", label: "都行", icon: "🤷" },
+  ],
+};
+
+const TASTE_LABELS: Record<keyof typeof TASTE_OPTIONS, string> = {
+  goal:     "近来想怎么吃",
+  spice:    "能吃多辣",
+  hometown: "惦记的家乡味",
+};
+const TASTE_ICONS: Record<keyof typeof TASTE_OPTIONS, string> = {
+  goal: "🎯",
+  spice: "🌶️",
+  hometown: "🏠",
+};
+
+function readQuickPrefs(): Record<string, string | string[]> {
+  try { return JSON.parse(localStorage.getItem("quickPrefs") || "{}"); }
+  catch { return {}; }
+}
+function writeQuickPref(key: string, value: string) {
+  const prev = readQuickPrefs();
+  prev[key] = value;
+  localStorage.setItem("quickPrefs", JSON.stringify(prev));
+  // Keep the legacy aliases scoreDish / breakfastCombos / WeeklyMenu read.
+  if (key === "spice")    localStorage.setItem("userSpice", value);
+  if (key === "goal")     localStorage.setItem("userDiet",  value);
+  if (key === "hometown") localStorage.setItem("userHometown", value);
+  window.dispatchEvent(new Event("nutri-prefs-changed"));
+}
+
 export default function Settings() {
   const navigate = useNavigate();
 
   const [members,   setMembers]   = useState<FamilyMember[]>(loadMembers);
   const [openId,    setOpenId]    = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<FamilyMember | null>(null);
+
+  // 我的口味 — surface onboarding answers, inline editable.
+  const [quickPrefs, setQuickPrefs] = useState<Record<string, string | string[]>>(readQuickPrefs);
+  const [openTaste,  setOpenTaste]  = useState<keyof typeof TASTE_OPTIONS | null>(null);
+  const pickTaste = (key: keyof typeof TASTE_OPTIONS, value: string) => {
+    writeQuickPref(key, value);
+    setQuickPrefs(p => ({ ...p, [key]: value }));
+    setOpenTaste(null);
+  };
+  const currentTasteLabel = (key: keyof typeof TASTE_OPTIONS): string => {
+    const id = quickPrefs[key];
+    const opt = TASTE_OPTIONS[key].find(o => o.id === id);
+    return opt ? `${opt.icon} ${opt.label}` : "未设置";
+  };
 
   const [helperName, setHelperName] = useState(() => localStorage.getItem("helperName") || "Maria Santos");
   const [helperLang, setHelperLang] = useState(() => localStorage.getItem("helperLang") || "tagalog");
@@ -374,6 +448,61 @@ export default function Settings() {
         </header>
 
         <div className="px-4 space-y-3">
+
+          {/* ── 我的口味 ── inline editor for the three global onboarding
+              answers (目标 / 辣度 / 家乡味). 忌口 + 健康状况 live on the
+              family member cards below — kept distinct so per-member needs
+              don't get conflated with the household default. */}
+          <div className="pt-1">
+            <p className="text-[11px] font-bold text-secondary/50 uppercase tracking-wider px-1 mb-2">我的口味</p>
+            <div className="bg-white rounded-[22px] shadow-[0_4px_20px_rgba(0,0,0,0.05)] overflow-hidden">
+              {(Object.keys(TASTE_OPTIONS) as (keyof typeof TASTE_OPTIONS)[]).map((key, idx) => {
+                const isOpen = openTaste === key;
+                const isLast = idx === Object.keys(TASTE_OPTIONS).length - 1;
+                return (
+                  <div key={key} className={isLast ? "" : "border-b border-black/5"}>
+                    <button
+                      onClick={() => setOpenTaste(isOpen ? null : key)}
+                      className="w-full flex items-center gap-3 px-5 py-4 active:bg-black/[0.02] transition-colors text-left">
+                      <div className="w-9 h-9 rounded-full bg-[#FFF3E0] flex items-center justify-center text-[18px]">
+                        {TASTE_ICONS[key]}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[14px] font-bold text-on-surface">{TASTE_LABELS[key]}</p>
+                        <p className="text-[12px] text-secondary mt-0.5 truncate">{currentTasteLabel(key)}</p>
+                      </div>
+                      <span className="material-symbols-outlined text-secondary/60 text-[20px] transition-transform duration-200 flex-shrink-0"
+                        style={{ transform: isOpen ? "rotate(180deg)" : "rotate(0deg)" }}>
+                        expand_more
+                      </span>
+                    </button>
+                    {isOpen && (
+                      <div className="px-3 pb-3 border-t border-black/5 bg-black/[0.015]">
+                        <div className="grid grid-cols-3 gap-2 pt-3">
+                          {TASTE_OPTIONS[key].map(opt => {
+                            const sel = quickPrefs[key] === opt.id;
+                            return (
+                              <button
+                                key={opt.id}
+                                onClick={() => pickTaste(key, opt.id)}
+                                className={`flex flex-col items-center gap-1 py-3 px-2 rounded-2xl active:scale-95 transition-all ${
+                                  sel ? "bg-[#FF5A1F]/10 border-[1.5px] border-[#FF5A1F]" : "bg-white border-[1.5px] border-black/5"
+                                }`}>
+                                <span className="text-[20px]">{opt.icon}</span>
+                                <span className={`text-[11px] font-semibold ${sel ? "text-[#FF5A1F]" : "text-secondary"}`}>{opt.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <p className="text-[11px] font-bold text-secondary/50 uppercase tracking-wider px-1 mb-2 pt-3">家庭成员档案</p>
 
           {/* ── Member cards ── */}
           {members.map((m, idx) => {
