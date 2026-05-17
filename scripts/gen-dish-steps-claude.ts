@@ -28,7 +28,13 @@ const LIMIT_ARG = process.argv.find(a => a.startsWith('--limit='));
 const LIMIT     = LIMIT_ARG ? parseInt(LIMIT_ARG.split('=')[1], 10) : Infinity;
 const TITLE_ARG = process.argv.find(a => a.startsWith('--title='));
 const TITLE     = TITLE_ARG ? TITLE_ARG.split('=')[1] : null;
-const BATCH     = 6;     // Claude handles slightly smaller batches for safety
+const MISSING_4D = process.argv.includes('--missing-4d');
+// BATCH halved from 6 → 3 because the 4D prompt's bilingual prep/cook +
+// substitutes + state_target + cultural_note output for 6 dishes routinely
+// blew past the 8000-token cap (528/698 batches failed mid-JSON with
+// "Expected ',' or '}' …"). With BATCH=3 the per-call output sits around
+// 6-8k tokens, well inside the 20k cap.
+const BATCH     = 3;
 const PAUSE     = 2000;  // ms between batches
 
 const MODEL = 'claude-haiku-4-5';
@@ -189,7 +195,7 @@ async function generateBatch(dishes: DishRow[]): Promise<ClaudeResult[]> {
       },
       body: JSON.stringify({
         model:       MODEL,
-        max_tokens:  8000,
+        max_tokens:  20000,
         temperature: 0.1,
         system:      SYSTEM_PROMPT,
         messages:    [{ role: 'user', content: prompt }],
@@ -419,14 +425,27 @@ async function main() {
   console.log(`\n🍳 [Claude] Dish Steps Generator  MODEL=${MODEL}  DRY_RUN=${DRY_RUN}  FORCE=${FORCE}`);
 
   let query = sb.from('dishes')
-    .select('id, title_zh, description_zh, main_ingredient, course_type, origin_cuisine');
-  if (!FORCE) query = query.is('prep_steps_json', null);
+    .select('id, title_zh, description_zh, main_ingredient, course_type, origin_cuisine, cook_steps_json');
+  if (!FORCE && !MISSING_4D) query = query.is('prep_steps_json', null);
   if (TITLE)  query = query.ilike('title_zh', `%${TITLE}%`);
 
   const { data: allDishes, error } = await query;
   if (error || !allDishes) { console.error('Fetch error:', error); process.exit(1); }
 
-  const dishes = isFinite(LIMIT) ? allDishes.slice(0, LIMIT) : allDishes;
+  // --missing-4d: only retry dishes that don't yet have the 4D state_target_zh
+  // marker on cook_steps. Used to resume after a batch failure (the first run
+  // dropped 528/698 due to the now-fixed 8k token cap) without re-doing the
+  // ~100 already-completed dishes.
+  let filtered = allDishes;
+  if (MISSING_4D) {
+    filtered = allDishes.filter((d: any) => {
+      const cookText = JSON.stringify(d.cook_steps_json ?? '');
+      return !cookText.includes('state_target_zh');
+    });
+    console.log(`🔁 --missing-4d filter: ${filtered.length}/${allDishes.length} dishes lack state_target_zh`);
+  }
+
+  const dishes = isFinite(LIMIT) ? filtered.slice(0, LIMIT) : filtered;
   console.log(`📊 Dishes to process: ${dishes.length}${isFinite(LIMIT) ? ` (limited, total pending: ${allDishes.length})` : ''}\n`);
 
   if (DRY_RUN) {
