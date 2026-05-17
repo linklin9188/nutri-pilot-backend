@@ -11,7 +11,7 @@
  */
 import { useEffect, useState } from 'react';
 import { summarizeWeek, buildDiningSuggestions, type WeeklySummary, type DiningSuggestion } from '../lib/weeklyDiarySummary';
-import { type DiningTag } from '../lib/hkRestaurants';
+import { type DiningTag, resolveRestaurantImage } from '../lib/hkRestaurants';
 import { DAILY } from '../lib/dailyNutrition';
 
 const PROTEIN_LABEL: Record<string, { emoji: string; label: string }> = {
@@ -241,76 +241,85 @@ function RestaurantCard({ suggestion }: { suggestion: DiningSuggestion }) {
 
   return (
     <div
-      className="rounded-2xl px-4 py-3.5 transition-all active:scale-[0.99]"
+      className="rounded-2xl overflow-hidden transition-all active:scale-[0.99]"
       style={{
-        background: 'linear-gradient(135deg, #FFFDFB 0%, #FFF7F1 100%)',
+        background: '#FFFDFB',
         border: '1px solid rgba(255,90,31,0.10)',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.03)',
+        boxShadow: '0 2px 12px rgba(0,0,0,0.05)',
       }}>
-      {/* Top row — avatar + name + Michelin pill + price + cuisine + area */}
-      <div className="flex items-start gap-3">
-        <div className="shrink-0 w-11 h-11 rounded-xl flex items-center justify-center text-[22px]"
-          style={{ background: 'rgba(255,90,31,0.10)' }}>
-          {tagEmoji[tag] ?? '🍽'}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <p className="font-serif font-black" style={{ fontSize: 16, color: '#1a1a1a', letterSpacing: '-0.005em' }}>
-              {r.name}
-            </p>
-            {/* Michelin tier pill — surfaces 3★/2★/1★/Bib so users can
-                eyeball the prestige level next to the name. Color tier:
-                red gradient for stars, yellow tint for 必比登 (lower-budget
-                but quality). */}
-            {r.michelin && (
-              <span
-                className="px-1.5 py-0.5 rounded-md font-bold tabular-nums"
-                style={{
-                  fontSize: 9.5, letterSpacing: '0.04em',
-                  background: r.michelin === 'Bib'
-                    ? 'linear-gradient(135deg, #FFF1C7, #FFE49A)'
-                    : 'linear-gradient(135deg, #B91C1C, #DC2626)',
-                  color: r.michelin === 'Bib' ? '#7A5800' : 'white',
-                }}>
-                {r.michelin === 'Bib' ? 'BIB' : `MICHELIN ${r.michelin}`}
-              </span>
-            )}
-            <span className="shrink-0 text-[10px] font-bold tabular-nums ml-auto"
-              style={{ color: 'rgba(0,0,0,0.4)', letterSpacing: '0.08em' }}>
-              {r.price_tier}
-            </span>
-          </div>
-          <p className="mt-0.5" style={{ fontSize: 11.5, color: 'rgba(0,0,0,0.55)' }}>
-            {r.cuisine} <span style={{ color: 'rgba(0,0,0,0.25)' }}>·</span> {r.area}
-          </p>
+      {/* ── Hero photo (16:9-ish) with Michelin pill + price overlay ── */}
+      <div className="relative w-full" style={{ aspectRatio: '16 / 9', background: '#f5f0eb' }}>
+        <img
+          src={resolveRestaurantImage(r)}
+          alt={r.name}
+          loading="lazy"
+          className="absolute inset-0 w-full h-full object-cover"
+        />
+        {/* Bottom gradient so overlay text always reads */}
+        <div className="absolute inset-x-0 bottom-0 h-1/2"
+          style={{ background: 'linear-gradient(to bottom, transparent, rgba(0,0,0,0.55))' }} />
+        {/* Top-right: Michelin pill */}
+        {r.michelin && (
+          <span
+            className="absolute top-2.5 right-2.5 px-2 py-1 rounded-md font-bold tabular-nums"
+            style={{
+              fontSize: 10, letterSpacing: '0.04em',
+              background: r.michelin === 'Bib'
+                ? 'linear-gradient(135deg, #FFF1C7, #FFE49A)'
+                : 'linear-gradient(135deg, #B91C1C, #DC2626)',
+              color: r.michelin === 'Bib' ? '#7A5800' : 'white',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.25)',
+            }}>
+            {r.michelin === 'Bib' ? 'BIB GOURMAND' : `MICHELIN ${r.michelin}`}
+          </span>
+        )}
+        {/* Bottom-left: tag emoji + price tier */}
+        <div className="absolute left-3 bottom-2.5 flex items-center gap-2">
+          <span className="text-[20px]" style={{ filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.4))' }}>
+            {tagEmoji[tag] ?? '🍽'}
+          </span>
+          <span className="text-white font-bold tabular-nums" style={{ fontSize: 11, letterSpacing: '0.08em', textShadow: '0 1px 3px rgba(0,0,0,0.6)' }}>
+            {r.price_tier}
+          </span>
         </div>
       </div>
 
-      {/* Signature dish */}
-      <p className="mt-2 font-serif italic" style={{ fontSize: 12.5, color: '#FF5A1F' }}>
-        招牌：{r.signature}
-      </p>
+      {/* ── Body ─────────────────────────────────────────────────── */}
+      <div className="px-4 py-3.5">
+        {/* Name + cuisine·area */}
+        <p className="font-serif font-black truncate" style={{ fontSize: 17, color: '#1a1a1a', letterSpacing: '-0.005em' }}>
+          {r.name}
+        </p>
+        <p className="mt-0.5" style={{ fontSize: 11.5, color: 'rgba(0,0,0,0.55)' }}>
+          {r.cuisine} <span style={{ color: 'rgba(0,0,0,0.25)' }}>·</span> {r.area}
+        </p>
 
-      {/* Why-this-place reason (gap-driven) */}
-      <p className="mt-1.5 leading-relaxed" style={{ fontSize: 12.5, color: 'rgba(0,0,0,0.6)' }}>
-        {reason} <span className="text-secondary/60" style={{ fontWeight: 500 }}>{r.blurb}</span>
-      </p>
+        {/* Signature dish */}
+        <p className="mt-2 font-serif italic" style={{ fontSize: 12.5, color: '#FF5A1F' }}>
+          招牌：{r.signature}
+        </p>
 
-      {/* Footer — 预订 CTA */}
-      <div className="mt-3 flex items-center justify-between">
-        <span className="text-[10px]" style={{ color: 'rgba(0,0,0,0.32)', letterSpacing: '0.04em' }}>
-          {copied ? '電話已複製 ✓' : (r.phone ?? '查 OpenRice')}
-        </span>
-        <button
-          onClick={handleBook}
-          className="px-3.5 py-1.5 rounded-full font-bold transition-all active:scale-95"
-          style={{
-            background: 'linear-gradient(135deg, #FF5A1F, #FF8C54)',
-            color: 'white', fontSize: 12, letterSpacing: '0.04em',
-            boxShadow: '0 4px 12px rgba(255,90,31,0.28)',
-          }}>
-          預訂 →
-        </button>
+        {/* Why-this-place reason (gap-driven) */}
+        <p className="mt-1.5 leading-relaxed" style={{ fontSize: 12.5, color: 'rgba(0,0,0,0.6)' }}>
+          {reason} <span className="text-secondary/60" style={{ fontWeight: 500 }}>{r.blurb}</span>
+        </p>
+
+        {/* Footer — 预订 CTA */}
+        <div className="mt-3 flex items-center justify-between">
+          <span className="text-[10px]" style={{ color: 'rgba(0,0,0,0.32)', letterSpacing: '0.04em' }}>
+            {copied ? '電話已複製 ✓' : (r.phone ?? '查 OpenRice')}
+          </span>
+          <button
+            onClick={handleBook}
+            className="px-4 py-1.5 rounded-full font-bold transition-all active:scale-95"
+            style={{
+              background: 'linear-gradient(135deg, #FF5A1F, #FF8C54)',
+              color: 'white', fontSize: 12.5, letterSpacing: '0.04em',
+              boxShadow: '0 4px 12px rgba(255,90,31,0.28)',
+            }}>
+            預訂 →
+          </button>
+        </div>
       </div>
     </div>
   );

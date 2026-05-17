@@ -42,7 +42,63 @@ export interface HkRestaurant {
   blurb:       string;
   link?:       string;
   phone?:      string;
+  /** Override hero image URL — if absent, resolveRestaurantImage() picks
+   *  a cuisine-category default. Use a full https URL (Unsplash, 餐厅官网
+   *  CDN, or self-hosted). Card renders this at the top of the card. */
+  image_url?:  string;
   hidden?:     boolean;
+}
+
+// ── Hero image resolution ─────────────────────────────────────────────
+//
+// We don't have a per-restaurant photo for every entry. Strategy:
+//   1. If r.image_url is set → use it.
+//   2. Else match r.cuisine against keyword fragments → fall back to a
+//      curated Unsplash photo for that cuisine category.
+// Unsplash URLs use stable photo IDs (same pattern as Login.tsx's hero
+// rotation) so the photos won't 404 in the future.
+
+const CUISINE_HERO_MAP: { keywords: string[]; photoId: string; tint: string }[] = [
+  { keywords: ['飲茶', '点心'],          photoId: 'photo-1582450871972-2a4b9f6a8a82', tint: 'dim sum' },
+  { keywords: ['燒鵝', '燒臘', '叉燒'],   photoId: 'photo-1568736333610-eae6e0ab9206', tint: 'roast goose' },
+  { keywords: ['现代粤', '大班樓', 'Mott', '卅二'], photoId: 'photo-1583394838336-acd977736f90', tint: 'modern Cantonese' },
+  { keywords: ['粤菜', '广府', '港式'],   photoId: 'photo-1563245372-f21724e3856d', tint: 'traditional Cantonese' },
+  { keywords: ['法餐', 'French'],         photoId: 'photo-1414235077428-338989a2e8c0', tint: 'fine French' },
+  { keywords: ['意大利', 'Italian'],       photoId: 'photo-1551183053-bf91a1d81141', tint: 'pasta' },
+  { keywords: ['壽司', '寿司', 'Sushi'],   photoId: 'photo-1579871494447-9811cf80d66c', tint: 'sushi' },
+  { keywords: ['燒鳥', 'Yakitori'],        photoId: 'photo-1556909114-f6e7ad7d3136', tint: 'yakitori' },
+  { keywords: ['拉麵', '一蘭'],            photoId: 'photo-1569718212165-3a8278d5f624', tint: 'ramen' },
+  { keywords: ['懷石', '柏屋'],            photoId: 'photo-1611143669185-af224c5e3252', tint: 'kaiseki' },
+  { keywords: ['日料', '日式', '日本'],     photoId: 'photo-1611143669185-af224c5e3252', tint: 'Japanese' },
+  { keywords: ['火鍋', '海底撈'],          photoId: 'photo-1518983546435-91f8b87fe561', tint: 'hot pot' },
+  { keywords: ['川菜', '川式'],            photoId: 'photo-1552566090-a99b21d50fb1', tint: 'Sichuan' },
+  { keywords: ['美式扒', '牛排', 'steak'], photoId: 'photo-1558030006-450675393462', tint: 'steakhouse' },
+  { keywords: ['燒肉', '日式燒'],           photoId: 'photo-1529193591184-b1d58069ecdd', tint: 'yakiniku' },
+  { keywords: ['江浙', '小籠'],            photoId: 'photo-1496116218417-1a781b1c416c', tint: 'xiaolongbao' },
+  { keywords: ['西北', '雜糧', '莜麵'],     photoId: 'photo-1551183053-bf91a1d81141', tint: 'northern noodles' },
+  { keywords: ['雲吞麵', '雲吞'],          photoId: 'photo-1612929633738-8fe44f7ec841', tint: 'wonton' },
+  { keywords: ['煲仔'],                   photoId: 'photo-1604908554049-01408eb8d6fd', tint: 'claypot rice' },
+  { keywords: ['清湯腩', '牛腩'],          photoId: 'photo-1547928576-b822bc410bdf', tint: 'beef brisket' },
+  { keywords: ['茶餐廳'],                  photoId: 'photo-1606852680812-aae90f47ea38', tint: 'HK cafe' },
+  { keywords: ['素食', '沙拉', '素菜'],     photoId: 'photo-1546069901-ba9599a7e63c', tint: 'salad' },
+  { keywords: ['海鮮', '蝦蟹'],            photoId: 'photo-1559339352-11d035aa65de', tint: 'seafood' },
+  { keywords: ['印度', 'Punjab'],          photoId: 'photo-1585937421612-70a008356fbe', tint: 'curry' },
+  { keywords: ['西班牙'],                  photoId: 'photo-1534080564583-6be75777b70a', tint: 'Spanish' },
+  { keywords: ['甜品', '燉奶', '牛奶'],     photoId: 'photo-1488477181946-6428a0291777', tint: 'milk dessert' },
+  { keywords: ['分子', 'Innovation'],     photoId: 'photo-1604908176997-125f25cc6f3d', tint: 'molecular' },
+];
+
+const DEFAULT_HERO = 'photo-1414235077428-338989a2e8c0'; // generic fine dining
+
+export function resolveRestaurantImage(r: HkRestaurant): string {
+  if (r.image_url) return r.image_url;
+  const cuisine = r.cuisine ?? '';
+  for (const { keywords, photoId } of CUISINE_HERO_MAP) {
+    if (keywords.some(k => cuisine.includes(k))) {
+      return `https://images.unsplash.com/${photoId}?w=600&q=80&auto=format&fit=crop`;
+    }
+  }
+  return `https://images.unsplash.com/${DEFAULT_HERO}?w=600&q=80&auto=format&fit=crop`;
 }
 
 // ── 50-restaurant seed ─────────────────────────────────────────────────
