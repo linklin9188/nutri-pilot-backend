@@ -199,7 +199,9 @@ export default function Home() {
     chaoshan: 'Chaoshan', shunde: 'Shunde', taiwanese: 'Taiwanese',
     japanese_korean: 'Japanese/Korean', southeast_asian: 'SE Asian', western: 'Western',
   };
-  const cuisineLabel = (d: { origin_cuisine?: string; desc?: string; type?: string }) => {
+  const cuisineLabel = (d: { origin_cuisine?: string; desc?: string; type?: string; course_type?: string }) => {
+    // 水果 row 显示"餐后水果"小标签，让用户一眼区分它不是要做的菜。
+    if (d.course_type === 'fruit') return isChinese ? '餐后水果 · 时令' : 'Dessert fruit';
     const c = d.origin_cuisine;
     if (!c) return d.desc || d.type || (isChinese ? '家常菜' : 'Home cooking');
     return (isChinese ? CUISINE_LABEL_ZH[c] : CUISINE_LABEL_EN[c]) ?? c.replace('_', ' ');

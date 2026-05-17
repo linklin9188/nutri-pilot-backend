@@ -1334,6 +1334,34 @@ export function useRecommendDishes(
                        : mealTime === '午餐' ? applyLunchTemplate(sorted, dishCount, cuisineMode)
                        :                       applyDinnerTemplate(sorted, dishCount, cuisineMode);
 
+        // ── 餐后水果 slot ─────────────────────────────────────────────
+        // 午餐 / 晚餐 各挂一份时令水果。不受 cuisine filter (水果中西通用)，
+        // 不计入 dishCount (calcDishCount 不变)。早餐不加 (早餐已有 dry+wet+
+        // side 自有结构)。按节气优先 + 当日轮换。
+        if (mealTime !== '早餐') {
+          try {
+            const { data: fruitRows } = await supabase
+              .from('dishes')
+              .select('*')
+              .eq('course_type', 'fruit')
+              .limit(30);
+            const fruits = (fruitRows ?? []).filter(f => {
+              // Honor avoid tags / vegetarian — fruits are inherently vegan
+              // but allergen tags (e.g. 芒果 latex cross-reactivity) still apply.
+              const tags = [...(f.flavor_tags ?? []), ...(f.health_benefit_tags ?? [])];
+              if (profile.avoid_tags.some(t => tags.includes(t))) return false;
+              return true;
+            });
+            if (fruits.length > 0) {
+              const seasonal = fruits.filter(f => f.seasonal_tag === solarTerm.season || f.seasonal_tag === 'all-season');
+              const pool = seasonal.length > 0 ? seasonal : fruits;
+              const dailyIndex = new Date().getDate() + (mealTime === '晚餐' ? 7 : 0);
+              const fruit = pool[dailyIndex % pool.length];
+              if (fruit) balanced.push(fruit);
+            }
+          } catch { /* fruit slot is optional — skip on error */ }
+        }
+
         if (cancelled) return;
 
         setCurrentSolarTerm(solarTerm);
