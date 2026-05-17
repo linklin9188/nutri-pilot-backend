@@ -97,16 +97,17 @@ const QUESTIONS = [
     question: "您最惦记哪一方水土的味道？",
     sub: "我多做家乡口味，让饭桌有点念想。",
     options: [
-      // 中国八大菜系 — Onboarding 用八大菜系 ID，scoreDish 通过
-      // hometownBuckets.ts 落到 DB 现有的 origin_cuisine bucket。
-      { id: "guangdong", label: "粤菜",  desc: "广府 · 顺德 · 港式 · 靓汤", icon: "🦞" },
-      { id: "sichuan",   label: "川菜",  desc: "麻辣 · 鱼香 · 家常",         icon: "🌶️" },
-      { id: "shandong",  label: "鲁菜",  desc: "山东本帮 · 葱烧 · 爆炒",     icon: "🥟" },
-      { id: "jiangsu",   label: "苏菜",  desc: "淮扬 · 苏锡 · 浓油赤酱",     icon: "🍤" },
-      { id: "zhejiang",  label: "浙菜",  desc: "杭帮 · 宁绍 · 鲜咸口",       icon: "🍵" },
-      { id: "fujian",    label: "闽菜",  desc: "福州 · 闽南 · 海味鲜",       icon: "🦀" },
-      { id: "hunan",     label: "湘菜",  desc: "湖南家常 · 辣鲜 · 腊味",     icon: "🍖" },
-      { id: "anhui",     label: "徽菜",  desc: "徽州山珍 · 重油重火",        icon: "🍲" },
+      // 地域大区 — 用户决策 2026-05-17：八大菜系覆盖率不足（北方人没选项），
+      // 改成 7 大区 + 港澳台 + 都行。每个大区的认知摩擦接近 0，且跟 DB
+      // 4 bucket 自然 N:1 对应（见 hometownBuckets.ts）。
+      { id: "south",       label: "华南",   desc: "粤 · 闽 · 桂 · 琼 — 清淡靓汤、海味为主",      icon: "🦞" },
+      { id: "east",        label: "华东",   desc: "沪 · 苏 · 浙 · 皖 — 江南本帮、鲜甜浓油",      icon: "🍤" },
+      { id: "north",       label: "华北",   desc: "京 · 津 · 冀 · 晋 · 蒙 — 面食为主、咸鲜厚重", icon: "🥟" },
+      { id: "northeast",   label: "东北",   desc: "辽 · 吉 · 黑 — 炖菜 · 锅包肉 · 酸菜",         icon: "🍖" },
+      { id: "northwest",   label: "西北",   desc: "陕 · 甘 · 宁 · 青 · 新 — 面食 · 牛羊肉 · 香料", icon: "🌾" },
+      { id: "southwest",   label: "西南",   desc: "川 · 渝 · 湘 · 黔 · 滇 — 麻辣鲜香",           icon: "🌶️" },
+      { id: "central",     label: "华中",   desc: "鄂 · 赣 · 豫 — 偏南方家常",                    icon: "🍲" },
+      { id: "hk_macau_tw", label: "港澳台", desc: "茶餐厅 · 烧腊 · 点心",                         icon: "🍵" },
       { id: "no_preference", label: "都行 / 没偏好", desc: "什么都吃", icon: "🤷" },
     ],
   },

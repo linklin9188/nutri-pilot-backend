@@ -175,7 +175,39 @@ Concrete codifications:
    (lunch already enforced this via `pickWithMethodVariety` —
    dinner now mirrors it via the score gradient).
 
-## Rule 5 — Cache invalidation discipline
+## Rule 5 — Hometown onboarding 用「地域大区」不是「八大菜系」
+
+> 方案 A，干。 — user, 2026-05-17
+
+八大菜系 (粤川鲁苏闽浙湘徽) 覆盖率仅 ≈ 60% 大陆人口（北方人选不到自己，
+河南/北京/东北/西北 都无对应选项），且「徽菜」「闽菜」对 90 后用户认知
+模糊。新方案是 **地域大区**，覆盖率接近 100%、UI 8 个 chip 跟之前视觉
+一致、跟 DB origin_cuisine bucket 天然 N:1 对应：
+
+| Onboarding chip | DB bucket | 覆盖省份 |
+|---|---|---|
+| 华南 (south) | cantonese | 粤 · 闽 · 桂 · 琼 |
+| 华东 (east) | jiangnan | 沪 · 苏 · 浙 · 皖 |
+| 华北 (north) | northern | 京 · 津 · 冀 · 晋 · 蒙 |
+| 东北 (northeast) | northern | 辽 · 吉 · 黑 |
+| 西北 (northwest) | northern | 陕 · 甘 · 宁 · 青 · 新 |
+| 西南 (southwest) | sichuan | 川 · 渝 · 湘 · 黔 · 滇 |
+| 华中 (central) | jiangnan | 鄂 · 赣 · 豫 |
+| 港澳台 (hk_macau_tw) | cantonese | 港 · 澳 · 台 |
+| 都行 (no_preference) | (null) | (没有家乡偏好) |
+
+**兼容性**：legacy 八大菜系 id (`guangdong` / `sichuan` / `shandong` /
+`jiangsu` / `fujian` / `zhejiang` / `hunan` / `anhui`) 仍然注册在
+`HOMETOWN_TO_DB_BUCKETS`，所以已经走过 onboarding 的老用户的
+`localStorage.userHometown` 不会失效。UI 显示时找不到对应 chip 不亮，
+但后端的家乡 bonus 仍然准确生效。
+
+**为什么不是省份下拉**：34 省 onboarding 摩擦大，后端 DB 4 bucket 接不住
+34 省的精细信号（除非把 dishes 重新按省份标注，700 道 × 34 省的 backfill
+是个大工程）。地域大区是当前 DB 粒度下的最优解；未来 DB 细化时可以再
+拆（华南 → 粤 / 闽 / 客家 / 潮汕，西南 → 川 / 湘 / 黔 等）。
+
+## Rule 6 — Cache invalidation discipline
 
 Any change to the scoring functions, slot allocator, breakfast template,
 or cuisine filter **must** bump `ALGO_VERSION` in
@@ -191,8 +223,10 @@ history:
 - v31 → v32: equal per-hometown base + first-impression boost +
   seasonal + 快餐感 damp + breakfast hometown fallback
 - v32 → v33: cumulative count + power curve replacing EMA
+- v33 → v34: dinner cook-method variety (-0.30 per repeat)
+- v34 → v35: hometown onboarding 改地域大区 (legacy 八大菜系 兼容)
 
-## Rule 6 — Disagree on the record
+## Rule 7 — Disagree on the record
 
 > 我提出的每次的优化思路，你可以提出反对意见，如果认为我的思路更好，
 > 那么就学习我的思路，帮我优化成 skill。 — user, 2026-05-17

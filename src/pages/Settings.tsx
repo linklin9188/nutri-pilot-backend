@@ -272,14 +272,17 @@ const TASTE_OPTIONS = {
     { id: "hot",    label: "越辣越好", icon: "🔥" },
   ],
   hometown: [
-    { id: "guangdong",     label: "粤菜", icon: "🦞" },
-    { id: "sichuan",       label: "川菜", icon: "🌶️" },
-    { id: "shandong",      label: "鲁菜", icon: "🥟" },
-    { id: "jiangsu",       label: "苏菜", icon: "🍤" },
-    { id: "zhejiang",      label: "浙菜", icon: "🍵" },
-    { id: "fujian",        label: "闽菜", icon: "🦀" },
-    { id: "hunan",         label: "湘菜", icon: "🍖" },
-    { id: "anhui",         label: "徽菜", icon: "🍲" },
+    // 地域大区 — 跟 QuickSetup 同步。Legacy 八大菜系 id 在
+    // hometownBuckets.ts 仍能识别，所以已注册的老用户的 chip 即使
+    // 不亮起也不影响后端的家乡加分。
+    { id: "south",       label: "华南",   icon: "🦞" },
+    { id: "east",        label: "华东",   icon: "🍤" },
+    { id: "north",       label: "华北",   icon: "🥟" },
+    { id: "northeast",   label: "东北",   icon: "🍖" },
+    { id: "northwest",   label: "西北",   icon: "🌾" },
+    { id: "southwest",   label: "西南",   icon: "🌶️" },
+    { id: "central",     label: "华中",   icon: "🍲" },
+    { id: "hk_macau_tw", label: "港澳台", icon: "🍵" },
     { id: "no_preference", label: "都行", icon: "🤷" },
   ],
 };

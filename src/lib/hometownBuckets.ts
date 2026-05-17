@@ -1,50 +1,76 @@
 /**
- * hometownBuckets — 八大菜系 ID ↔ DB origin_cuisine bucket 的映射层。
+ * hometownBuckets — 地域大区 ↔ DB origin_cuisine bucket 的映射层。
  *
- * Onboarding 让用户从中国八大菜系里挑（粤川鲁苏闽浙湘徽），但 DB 现有的
- * origin_cuisine 字段只有 6 个 bucket（cantonese / sichuan / jiangnan /
- * northern / japanese_korean / southeast_asian / western），还没细化到八
- * 大菜系。这个映射层把新 ID 落到现有 bucket，让 scoreDish 的 hometown
- * 30% 加分 + breakfastCombos 的乡味早餐立刻生效，DB 细化 backfill 可以
- * 当成 Phase B 慢慢做。
+ * 2026-05-17 重构：从「八大菜系」改成「地域大区」。
  *
- * 映射原则：
- *   · 同地理 + 同家常调味 → 同 bucket
- *   · 闽菜暂归 cantonese（粤闽邻近，海产口味相近）
- *   · 湘菜暂归 sichuan（辣味相近，等 DB 真的有湘菜再独立）
- *   · 鲁菜归 northern（DB 的 northern 114 道里大半是鲁菜底子）
- *   · 苏/浙/徽归 jiangnan（淮扬 + 杭帮 + 徽州，都是江南体系）
+ * 用户研究（产品决策 2026-05-17）：
+ *   · 八大菜系覆盖率 ≈ 60% 大陆人口（北方人选不到自己）
+ *   · 「徽菜」「闽菜」对 90 后用户认知模糊，UX 卡顿
+ *   · 地域大区跟地理对应、跟 DB 4 bucket 天然 1:1，且每个用户都知道
+ *     自己属于哪个大区
+ *
+ * 新方案（7 个大区 + 港澳台 + 没偏好）：
+ *   华南 → cantonese      （粤 · 闽 · 桂 · 琼 · 港 · 澳）
+ *   华东 → jiangnan       （沪 · 苏 · 浙 · 皖）
+ *   华北 → northern       （京 · 津 · 冀 · 晋 · 蒙）
+ *   东北 → northern       （辽 · 吉 · 黑）
+ *   西北 → northern       （陕 · 甘 · 宁 · 青 · 新）
+ *   西南 → sichuan        （川 · 渝 · 湘 · 黔 · 滇 — 辣味家族）
+ *   华中 → jiangnan       （鄂 · 赣 · 豫 — 偏南、口味跟江南更近）
+ *   港澳台 → cantonese    （独立选项，但映射到粤菜 bucket）
+ *
+ * Legacy 八大菜系 id (guangdong/sichuan/shandong/...) 也保留兼容，已经
+ * 注册过家乡的老用户的 localStorage / DB 数据不会失效。
  */
 
-export type HometownId =
-  | 'guangdong'   // 粤菜（广府 · 顺德 · 港式 · 客家 · 潮州）
-  | 'sichuan'     // 川菜
-  | 'shandong'    // 鲁菜
-  | 'jiangsu'     // 苏菜（淮扬）
-  | 'fujian'      // 闽菜
-  | 'zhejiang'    // 浙菜
-  | 'hunan'       // 湘菜
-  | 'anhui'       // 徽菜
+// 地域大区 ID — 新 onboarding 使用
+export type RegionId =
+  | 'south'       // 华南
+  | 'east'        // 华东
+  | 'north'       // 华北
+  | 'northeast'   // 东北
+  | 'northwest'   // 西北
+  | 'southwest'   // 西南
+  | 'central'     // 华中
+  | 'hk_macau_tw' // 港澳台
   | 'no_preference';
+
+// Legacy 八大菜系 ID — 兼容老用户
+export type LegacyHometownId =
+  | 'guangdong' | 'sichuan' | 'shandong' | 'jiangsu'
+  | 'fujian'    | 'zhejiang' | 'hunan'   | 'anhui';
+
+export type HometownId = RegionId | LegacyHometownId;
 
 /** Onboarding ID → DB origin_cuisine bucket(s). */
 export const HOMETOWN_TO_DB_BUCKETS: Record<HometownId, string[]> = {
-  guangdong:     ['cantonese'],
-  sichuan:       ['sichuan'],
-  shandong:      ['northern'],
-  jiangsu:       ['jiangnan'],
-  fujian:        ['cantonese'],   // 闽粤邻近 fallback
-  zhejiang:      ['jiangnan'],
-  hunan:         ['sichuan'],     // 辣味 fallback
-  anhui:         ['jiangnan'],
-  no_preference: [],
+  // 新地域大区
+  south:        ['cantonese'],
+  east:         ['jiangnan'],
+  north:        ['northern'],
+  northeast:    ['northern'],
+  northwest:    ['northern'],
+  southwest:    ['sichuan'],
+  central:      ['jiangnan'],   // 鄂 / 赣 / 豫 偏南方口味
+  hk_macau_tw:  ['cantonese'],
+  no_preference:[],
+
+  // Legacy 八大菜系（保留兼容老用户）
+  guangdong:    ['cantonese'],
+  sichuan:      ['sichuan'],
+  shandong:     ['northern'],
+  jiangsu:      ['jiangnan'],
+  fujian:       ['cantonese'],
+  zhejiang:     ['jiangnan'],
+  hunan:        ['sichuan'],
+  anhui:        ['jiangnan'],
 };
 
 /**
  * Returns true if a dish's origin_cuisine matches the user's hometown
- * preference (either exact match against the same ID, or matches the
- * fallback DB bucket). Used by scoreDish + breakfastCombos so users
- * who pick 鲁菜 still get a hometown bonus on DB rows tagged 'northern'.
+ * preference (exact match or via the fallback DB bucket). Used by
+ * scoreDish + breakfastCombos so a 华北 user still gets a hometown
+ * bonus on DB rows tagged 'northern'.
  */
 export function hometownMatches(userPref: string | null | undefined, dishOrigin: string | null | undefined): boolean {
   if (!userPref || !dishOrigin) return false;
@@ -55,8 +81,7 @@ export function hometownMatches(userPref: string | null | undefined, dishOrigin:
 
 /**
  * Map a user-facing hometown ID to its primary DB origin_cuisine bucket.
- * Used by breakfastCombos to look up regional breakfast sets — 鲁菜 →
- * northern → 北方早餐 (饺子 / 油条 / 八宝粥 …).
+ * Used by breakfastCombos and the scorer's origin base function.
  *
  * Returns null for 'no_preference' (no regional bias).
  */
@@ -64,7 +89,8 @@ export function hometownToDbBucket(userPref: string | null | undefined): string 
   if (!userPref) return null;
   const buckets = HOMETOWN_TO_DB_BUCKETS[userPref as HometownId];
   if (buckets && buckets.length > 0) return buckets[0];
-  // Legacy values (cantonese / northern / jiangnan / sichuan) pass through
-  // unchanged so saved profiles from before the 八大菜系 split still work.
+  // Bare DB-bucket values (cantonese / northern / jiangnan / sichuan) pass
+  // through so anything written directly to user_profiles.hometown_cuisine
+  // by an edge function still works.
   return userPref;
 }
