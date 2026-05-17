@@ -207,6 +207,18 @@ export default function Home() {
     return (isChinese ? CUISINE_LABEL_ZH[c] : CUISINE_LABEL_EN[c]) ?? c.replace('_', ' ');
   };
 
+  // 水果 row 暂时没图，用 emoji 当 placeholder 比 stock fallback 图更亲切。
+  // Map keyed by title_zh — covers all 15 fruits seeded via scripts/seed-fruits.ts.
+  const FRUIT_EMOJI: Record<string, string> = {
+    '苹果': '🍎', '香蕉': '🍌', '火龙果': '🐉', '草莓': '🍓', '樱桃': '🍒',
+    '西瓜': '🍉', '葡萄': '🍇', '蓝莓': '🫐', '桃子': '🍑', '芒果': '🥭',
+    '哈密瓜': '🍈', '梨': '🍐', '柚子': '🍋', '猕猴桃': '🥝', '橙子': '🍊',
+  };
+  const fruitEmoji = (d: any): string | null => {
+    if (d?.course_type !== 'fruit') return null;
+    return FRUIT_EMOJI[d.title_zh] ?? '🍽';
+  };
+
   // ── 换菜 quota: 1/day free, 5/day Pro (= 5 套菜单/天) ───────────────
   const { isPro } = useSubscription();
   const swapQuotaKey = (() => {
@@ -846,17 +858,23 @@ export default function Home() {
                   {displayMenu.slice(0, 5).map((dish: any, idx: number) => (
                     <div key={idx} className="relative flex items-center gap-4 py-3.5"
                       style={{ borderTop: idx === 0 ? 'none' : '1px solid rgba(0,0,0,0.04)' }}>
-                      <div className="relative w-[78px] h-[78px] rounded-2xl overflow-hidden shrink-0"
+                      <div className="relative w-[78px] h-[78px] rounded-2xl overflow-hidden shrink-0 flex items-center justify-center"
                         style={{
-                          background: "rgba(0,0,0,0.04)",
+                          background: fruitEmoji(dish) ? "linear-gradient(135deg, #FFF7F2, #FFE4D0)" : "rgba(0,0,0,0.04)",
                           boxShadow: "0 4px 12px rgba(0,0,0,0.06)",
                         }}>
-                        <img
-                          src={dish.img || dish.image_url || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=240&h=240&fit=crop"}
-                          alt={dishTitle(dish)}
-                          className="w-full h-full object-cover"
-                          onError={e => { (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=240&h=240&fit=crop"; }}
-                        />
+                        {fruitEmoji(dish) ? (
+                          <span style={{ fontSize: 44, lineHeight: 1 }} aria-label={dishTitle(dish)}>
+                            {fruitEmoji(dish)}
+                          </span>
+                        ) : (
+                          <img
+                            src={dish.img || dish.image_url || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=240&h=240&fit=crop"}
+                            alt={dishTitle(dish)}
+                            className="w-full h-full object-cover"
+                            onError={e => { (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=240&h=240&fit=crop"; }}
+                          />
+                        )}
                       </div>
                       <div className="flex-1 min-w-0">
                         {/* Tiny editorial label number. */}
