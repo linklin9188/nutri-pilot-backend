@@ -6,7 +6,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
-import { useWeeklyMenu, isWeekend } from "../hooks/useWeeklyMenu";
+import { useWeeklyMenu, isWeekend, todayDayIndex } from "../hooks/useWeeklyMenu";
 import WeekendDiningReport from "../components/WeekendDiningReport";
 import { type SupabaseDish } from "../hooks/useSupabaseMenu";
 import { supabase } from "../lib/supabase";
@@ -335,6 +335,9 @@ function SkeletonDay() {
 const FREE_DAYS = 3; // today + next 2 days visible; rest locked
 
 // ── Locked day overlay ────────────────────────────────────────────────────────
+// Spec 2026-05-17: the 7-day weekly view is a member-only feature. Free
+// users see today's column (as a tease) and an upgrade card for the rest
+// of the week — the daily Home menu remains available without paying.
 function LockedDayCard({ onUnlock }: { onUnlock: () => void }) {
   return (
     <div className="mx-5 mt-2">
@@ -361,10 +364,10 @@ function LockedDayCard({ onUnlock }: { onUnlock: () => void }) {
           style={{ background: "linear-gradient(to bottom, rgba(10,10,10,0.2) 0%, rgba(10,10,10,0.85) 50%)" }}>
           <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3"
             style={{ background: "rgba(255,90,31,0.15)", border: "1.5px solid rgba(255,90,31,0.35)" }}>
-            <span className="material-symbols-outlined text-[#FF5A1F]" style={{ fontSize: 28 }}>lock</span>
+            <span className="material-symbols-outlined text-[#FF5A1F]" style={{ fontSize: 28 }}>workspace_premium</span>
           </div>
-          <p className="text-white font-bold mb-1" style={{ fontSize: 16 }}>登录后查看完整周菜单</p>
-          <p className="text-white/40 mb-5" style={{ fontSize: 12 }}>免费账号可解锁 7 天完整菜单</p>
+          <p className="text-white font-bold mb-1" style={{ fontSize: 16 }}>会员解锁整周菜单</p>
+          <p className="text-white/40 mb-5" style={{ fontSize: 12 }}>每日菜单始终免费 · 整周规划 + 一步采购 需会员</p>
           <button onClick={onUnlock}
             className="px-8 h-11 rounded-2xl font-semibold flex items-center gap-2 transition-all active:scale-95"
             style={{
@@ -372,8 +375,8 @@ function LockedDayCard({ onUnlock }: { onUnlock: () => void }) {
               boxShadow: "0 6px 20px rgba(255,90,31,0.35)",
               fontSize: 14, color: "white",
             }}>
-            <span className="material-symbols-outlined" style={{ fontSize: 16 }}>login</span>
-            立即登录
+            <span className="material-symbols-outlined" style={{ fontSize: 16 }}>arrow_upward</span>
+            升级会员
           </button>
         </div>
       </motion.div>
@@ -386,13 +389,14 @@ function LockedDayCard({ onUnlock }: { onUnlock: () => void }) {
 export default function WeeklyMenu() {
   const navigate = useNavigate();
   const { weeklyMenu, loading } = useWeeklyMenu();
-  const isLoggedIn = !!localStorage.getItem("isLoggedIn");
-
-  // Default to today's day index (Mon=0…Sun=6)
-  const todayIdx = (() => {
-    const d = new Date().getDay();
-    return d === 0 ? 6 : d - 1;
-  })();
+  // Default day for the weekly view. weeklyMenu.days only covers Mon-Fri
+  // (dayIndex 0-4), so on weekends (todayDayIndex returns 5 or 6) we
+  // showcase 周一 instead — otherwise weeklyMenu.days[5/6] is undefined
+  // and the whole content area renders "本周菜单正在生成中". The
+  // un-clamped "real today" is kept around for the Mon-Fri-only header
+  // (so周一's column still shows "周一" not "今天" when it isn't today).
+  const realTodayIdx = todayDayIndex();
+  const todayIdx = realTodayIdx >= 5 ? 0 : realTodayIdx;
   const [selectedDay, setSelectedDay] = useState(todayIdx);
   const [breakfastPool, setBreakfastPool] = useState<SupabaseDish[]>([]);
 
@@ -460,9 +464,11 @@ export default function WeeklyMenu() {
       });
   }, []);
 
-  // Free users can only view days 0–2 (Mon/Tue/Wed)
-  const isDayLocked = (i: number) =>
-    !isLoggedIn && (i < todayIdx || i >= todayIdx + FREE_DAYS);
+  // Non-members can preview today's column only — every other day on the
+  // 7-day view is locked behind the membership upgrade. Today's column
+  // matches what they already see on Home, so it acts as a familiar
+  // anchor rather than a teaser they can't act on.
+  const isDayLocked = (i: number) => !isPro && i !== todayIdx;
   const effectiveDay = isDayLocked(selectedDay) ? todayIdx : selectedDay;
 
   const dayMenu  = weeklyMenu?.days[effectiveDay];
@@ -543,8 +549,11 @@ export default function WeeklyMenu() {
   const overlayForDay = (michelinMode && isPro) ? michelinByDishId : {};
 
   function handleShoppingList() {
-    if (!isLoggedIn) {
-      navigate('/login');
+    // One-step shopping is member-only (spec 2026-05-17). Non-members
+    // get bounced to /pricing instead of /login — login alone doesn't
+    // unlock this anymore.
+    if (!isPro) {
+      navigate('/pricing');
       return;
     }
     // Write all weekly dishes to localStorage so VerifyIngredients can read them
@@ -734,9 +743,9 @@ export default function WeeklyMenu() {
         </div>
 
         {/* Free tier hint */}
-        {!isLoggedIn && (
+        {!isPro && (
           <p className="mt-2 text-white/30" style={{ fontSize: 11, letterSpacing: "0.04em" }}>
-            🔓 免费查看今天起 3 天 · 登录解锁完整 7 天
+            🔓 免费查看今天菜单 · 升级会员解锁完整 7 天 + 一步采购
           </p>
         )}
 
@@ -881,7 +890,7 @@ export default function WeeklyMenu() {
       {/* ── Content area: show meals OR lock card ─────────────────── */}
       {isDayLocked(selectedDay) ? (
         <div className="relative z-10 flex-1">
-          <LockedDayCard onUnlock={() => navigate('/login')} />
+          <LockedDayCard onUnlock={() => navigate('/pricing')} />
         </div>
       ) : (
         <>
@@ -971,9 +980,9 @@ export default function WeeklyMenu() {
                         );
                       })}
                       {/* Free-tier locked days hint */}
-                      {!isLoggedIn && (
+                      {!isPro && (
                         <div className="mx-5 mt-2">
-                          <LockedDayCard onUnlock={() => navigate('/login')} />
+                          <LockedDayCard onUnlock={() => navigate('/pricing')} />
                         </div>
                       )}
                     </div>
@@ -997,18 +1006,18 @@ export default function WeeklyMenu() {
           onClick={handleShoppingList}
           className="w-full h-[52px] rounded-2xl font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
           style={{
-            background: isLoggedIn
+            background: isPro
               ? "linear-gradient(135deg, #FF5A1F, #FF8C54)"
               : "rgba(255,255,255,0.08)",
-            boxShadow: isLoggedIn ? "0 8px 28px rgba(255,90,31,0.35)" : "none",
-            border: isLoggedIn ? "none" : "1px solid rgba(255,255,255,0.12)",
-            fontSize: 15, color: isLoggedIn ? "white" : "rgba(255,255,255,0.45)",
+            boxShadow: isPro ? "0 8px 28px rgba(255,90,31,0.35)" : "none",
+            border: isPro ? "none" : "1px solid rgba(255,255,255,0.12)",
+            fontSize: 15, color: isPro ? "white" : "rgba(255,255,255,0.45)",
           }}
         >
           <span className="material-symbols-outlined" style={{ fontSize: 20 }}>
-            {isLoggedIn ? "shopping_cart" : "lock"}
+            {isPro ? "shopping_cart" : "workspace_premium"}
           </span>
-          {isLoggedIn ? "一键生成本周购物清单" : "登录后生成购物清单"}
+          {isPro ? "一键生成本周购物清单" : "升级会员 · 一步采购"}
         </button>
       </div>
 

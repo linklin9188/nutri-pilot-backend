@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { useLanguage, type Language } from "../contexts/LanguageContext";
 import { supabase } from "../lib/supabase";
+import { markLogin } from "../lib/userLifecycle";
 
 type Role = "employer" | "helper";
 
@@ -43,6 +44,9 @@ function devTestLogin(role: Role, providerLabel: string) {
   localStorage.setItem("userId", userId);
   localStorage.setItem("nutri_user_id", userId);
   localStorage.setItem("nutri_role", role);
+  // Idempotent: writes first-login epoch + flags this browser session as
+  // the new-user session iff this is the very first login on this device.
+  markLogin();
   // LanguageProvider listens for this to re-derive default language
   // (helper → en, employer → zh).
   window.dispatchEvent(new Event("nutri-prefs-changed"));

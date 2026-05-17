@@ -8,6 +8,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useRecommendDishes, fetchSwapOptions, type SupabaseDish } from "../hooks/useSupabaseMenu";
 import { useWeeklyMenu, isWeekend, todayDayIndex } from "../hooks/useWeeklyMenu";
+import { isNewUserSession, isWithinTrial } from "../lib/userLifecycle";
 import WeekendDiningReport from "../components/WeekendDiningReport";
 import NextWeekMenuPreview from "../components/NextWeekMenuPreview";
 import {
@@ -420,6 +421,16 @@ export default function Home() {
   // daysFromTodayOnward().
   const todayIdx = todayDayIndex();
 
+  // Weekday label for the main menu headline — product call 2026-05-17,
+  // "today's menu" was too vague for users tracking weekly progression.
+  // After 20:00 todayDayIndex already rolls to tomorrow, so the label
+  // naturally previews the next day.
+  const WEEKDAY_LABELS_ZH = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'] as const;
+  const WEEKDAY_LABELS_EN = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] as const;
+  const weekdayLabel = language === 'en'
+    ? `${WEEKDAY_LABELS_EN[todayIdx]}'s menu`
+    : `${WEEKDAY_LABELS_ZH[todayIdx]}菜单`;
+
   // Build display menu per meal tab
   const storedMenuRaw: any[] = (() => {
     try { return JSON.parse(localStorage.getItem("generatedMenu") || "[]"); } catch { return []; }
@@ -644,8 +655,13 @@ export default function Home() {
         {/* Weekend (Sat/Sun) → swap menu surface (user-confirmed 2026-05-17):
             1) "出门换换口味" hero + 本周饭桌+缺什么合一框 + 5 家餐厅推荐
             2) 简化的"下周菜单"nav card 跳 /weekly
-            Mon-Fri continues to render the full meal flow below. */}
-        {isWeekend() ? <>
+            Mon-Fri continues to render the full meal flow below.
+
+            New-user gate (2026-05-17): first-ever session always sees the
+            daily-menu surface regardless of weekday — restaurant recs are
+            a "returning user" reward. Second login onward, the weekend
+            branch kicks in. */}
+        {(isWeekend() && !isNewUserSession()) ? <>
           <WeekendDiningReport />
           <NextWeekMenuPreview />
         </> : <>
@@ -821,7 +837,7 @@ export default function Home() {
             {/* Header strip: "在家用餐" + member dots, refined */}
             <div className="flex items-center gap-2 px-5 pt-4 pb-2.5 overflow-x-auto no-scrollbar">
               <span className="font-serif" style={{ fontSize: 12, color: "rgba(0,0,0,0.42)", fontStyle: "italic", whiteSpace: 'nowrap' }}>
-                今日餐桌
+                {weekdayLabel}
               </span>
               <span style={{ color: "rgba(0,0,0,0.10)" }}>·</span>
               {allMembers.map((m, idx) => {

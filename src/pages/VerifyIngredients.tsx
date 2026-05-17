@@ -7,6 +7,7 @@ import { useLanguage } from "../contexts/LanguageContext";
 import { getHKAlias } from "../lib/hkNames";
 import { ALGO_VERSION as WEEKLY_ALGO_VERSION } from "../hooks/useWeeklyMenu";
 import { supabase } from "../lib/supabase";
+import { useSubscription } from "../lib/subscription";
 
 // ── Hydrate dishes with prep_steps_json from DB ──────────────────────────
 // Generated weekly menus persisted to localStorage often DON'T include the
@@ -416,6 +417,15 @@ type ShopMode = 'today' | 'week' | 'banquet';
 export default function VerifyIngredients() {
   const navigate = useNavigate();
   const { t } = useLanguage();
+
+  // One-step shopping is member-only (spec 2026-05-17). Bounce non-members
+  // to /pricing on mount so they hit the paywall instead of an empty
+  // shopping list. We check after the initial render so the redirect
+  // doesn't fight RequireAuth's location-state handoff.
+  const { isPro, loading: subLoading } = useSubscription();
+  useEffect(() => {
+    if (!subLoading && !isPro) navigate('/pricing', { replace: true });
+  }, [subLoading, isPro, navigate]);
 
   // If the user just arrived from /banquet, default to that view.
   const arrivedFromBanquet = typeof window !== 'undefined'

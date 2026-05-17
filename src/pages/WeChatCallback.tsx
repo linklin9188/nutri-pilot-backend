@@ -11,6 +11,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { setUserId } from '../lib/userId';
+import { markLogin } from '../lib/userLifecycle';
 
 export default function WeChatCallback() {
   const navigate = useNavigate();
@@ -31,6 +32,10 @@ export default function WeChatCallback() {
 
     localStorage.setItem('isLoggedIn', 'true');
     setUserId(userId);
+    // Record first-login timestamp (idempotent — only writes the very
+    // first time per device) and flag this session as "new user" so Home
+    // skips the weekend-dining surface on first impression.
+    markLogin();
     // Clear the WeChat oauth state (anti-CSRF cookie used by launchWeChat).
     sessionStorage.removeItem('wechat_oauth_state');
     // Tell any listening hooks that prefs / identity changed.
