@@ -175,6 +175,38 @@ Concrete codifications:
    (lunch already enforced this via `pickWithMethodVariety` —
    dinner now mirrors it via the score gradient).
 
+## Rule 4.5 — Western high-end framing (HK premium clientele)
+
+> 然后再按照西餐高级厨师和香港高端人群的定位再优化西餐。
+> — user, 2026-05-17
+
+Within `origin='western'` dishes only, apply a second-level title
+keyword bias to lift 欧陆 fine dining and damp 美/英式 fast-casual:
+
+| Title keyword | Bonus |
+|---|---|
+| 意式 / 法式 / 法棍 / 牛角包 / 西班牙 / 地中海 / 普罗旺斯 / 摩洛哥 / 土耳其 / 巴萨米可 / 蘑菇炖饭 / 千层面 / 披萨 / 意面 / 炖菜 | **+0.12** |
+| 三明治 / 汉堡 / 玉米饼 / 热狗 / 玉米片 / 墨西哥卷 / 牧羊人派 / 潜艇堡 / 吐司 | **-0.08** |
+| (其他 western) | 0 |
+
+This bias is **non-disqualifying** — a casual dish can still surface if
+the user clearly prefers it via usage data. Implementation lives in
+`westernHighEndBias()` in both scorers. Activates regardless of
+cuisineMode because non-western dishes return 0 anyway (the guard is the
+first line of the helper).
+
+## Rule 4.6 — Trial expiry on Home
+
+> 任何新用户都可以打开看到 ... 一周后再次打开就需要付费。
+> — user, 2026-05-17
+
+Non-members whose `userLifecycle.isWithinTrial()` returns false see
+`<TrialExpiredCard/>` on Home in place of the daily menu / weekend
+dining surface. Members (`useSubscription().isPro`) and within-trial
+users bypass the gate. New-user first session is always within trial
+because `markLogin()` writes `first_login_at = Date.now()` on the very
+first login. The 7-day window is measured against that timestamp.
+
 ## Rule 5 — Hometown onboarding 用「地域大区」不是「八大菜系」
 
 > 方案 A，干。 — user, 2026-05-17
@@ -255,6 +287,7 @@ history:
 - v33 → v34: dinner cook-method variety (-0.30 per repeat)
 - v34 → v35: hometown onboarding 改地域大区 (legacy 八大菜系 兼容)
 - v35 → v36: pool-aware breakfast combo rotation (避免川人撞上空 sichuan combo)
+- v36 → v37: western high-end bias (欧陆 +0.12 / 美式 fast-casual -0.08)
 
 ## Rule 7 — Disagree on the record
 

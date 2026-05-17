@@ -56,7 +56,7 @@ export interface WeeklyMenu {
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v36'; // Pool-aware breakfast combo rotation: skip combos with 0 keyword hits in the breakfast pool (川 users no longer surfaced 北方 breakfast by accident — they now get universal 豆浆/包子/茶叶蛋 fallback instead). Plus v35: hometown 改地域大区, v34: cook-method variety, v33: power curve.
+export const ALGO_VERSION = 'v37'; // Western high-end bias (HK premium clientele): 欧陆系 (意/法/西班牙/地中海/普罗旺斯) +0.12, 美式 fast-casual (三明治/汉堡/玉米饼/牧羊人派) -0.08 — within origin='western' pool only. Plus v36: pool-aware breakfast combo rotation, v35: hometown 改地域大区, v34: cook-method variety, v33: power curve.
 
 // ── 周末规则 (Weekend rule) — user-confirmed 2026-05-17 ───────────────────────
 // Weekly menu only covers Mon-Fri. Generation skips Sat/Sun; display layers
@@ -418,6 +418,20 @@ function usagePower(n: number): number {
 // untouched.
 const FAST_FOOD_TITLE_HINTS = ['盖饭', '盖浇饭', '便当', '炒饭', '烩饭', '焗饭', '泡饭'];
 
+// Western high-end positioning (香港高端用户视角)。Origin 是 'western'
+// 时再做一次内部排序，让欧陆系 (意式 / 法式 / 西班牙 / 地中海 / 普罗旺斯
+// / 摩洛哥 / 土耳其) 排到前面，美式 / 英式 (三明治 / 汉堡 / 玉米饼 /
+// 牧羊人派) 排到后面。非 western dish 不受这个 bias 影响。
+const WESTERN_FINE_DINING_HINTS  = ['意式', '法式', '法棍', '牛角包', '西班牙', '地中海', '普罗旺斯', '摩洛哥', '土耳其', '巴萨米可', '蘑菇炖饭', '千层面', '披萨', '意面', '炖菜'];
+const WESTERN_CASUAL_HINTS       = ['三明治', '汉堡', '玉米饼', '热狗', '玉米片', '墨西哥卷', '牧羊人派', '潜艇堡', '吐司'];
+
+function westernHighEndBias(title: string, origin: string): number {
+  if (origin !== 'western') return 0;
+  if (WESTERN_FINE_DINING_HINTS.some(k => title.includes(k))) return 0.12;
+  if (WESTERN_CASUAL_HINTS.some(k => title.includes(k))) return -0.08;
+  return 0;
+}
+
 // Month → season tag. DB seasonal_tag uses "Spring/Summer/Autumn/Winter"
 // (also lowercase variants). Northern hemisphere months.
 function currentSeasonTag(): string {
@@ -662,6 +676,10 @@ function scoreForWeek({
   if (FAST_FOOD_TITLE_HINTS.some(k => _title.includes(k))) {
     score -= 0.15;
   }
+
+  // ── 17. Western high-end positioning (HK premium clientele) ────────────
+  // 仅 origin='western' 触发。让欧陆系排前，美式/英式 fast casual 排后。
+  score += westernHighEndBias(_title, origin);
 
   return score;
 }

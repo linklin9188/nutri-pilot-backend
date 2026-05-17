@@ -715,6 +715,19 @@ function originBaseForUser(dishOrigin: string, userBucket: string | null): numbe
 // is untouched (港式茶餐厅 蛋饭 + 炒饭 is legitimate).
 const FAST_FOOD_TITLE_HINTS = ['盖饭', '盖浇饭', '便当', '炒饭', '烩饭', '焗饭', '泡饭'];
 
+// Western high-end positioning (HK premium clientele). Within origin
+// 'western', lift 欧陆 (意 / 法 / 西班牙 / 地中海 / 普罗旺斯 / 摩洛哥 /
+// 土耳其) and damp 美 / 英式 (三明治 / 汉堡 / 牧羊人派 / 潜艇堡 ...).
+const WESTERN_FINE_DINING_HINTS = ['意式', '法式', '法棍', '牛角包', '西班牙', '地中海', '普罗旺斯', '摩洛哥', '土耳其', '巴萨米可', '蘑菇炖饭', '千层面', '披萨', '意面', '炖菜'];
+const WESTERN_CASUAL_HINTS       = ['三明治', '汉堡', '玉米饼', '热狗', '玉米片', '墨西哥卷', '牧羊人派', '潜艇堡', '吐司'];
+
+function westernHighEndBias(title: string, origin: string): number {
+  if (origin !== 'western') return 0;
+  if (WESTERN_FINE_DINING_HINTS.some(k => title.includes(k))) return 0.12;
+  if (WESTERN_CASUAL_HINTS.some(k => title.includes(k))) return -0.08;
+  return 0;
+}
+
 // Current-month → seasonal_tag bonus. DB stores 'Spring' / 'Summer' /
 // 'Autumn' / 'Winter' (also lowercase variants); 'All-Season/Balanced'
 // covers 80%+ of rows so we don't penalise it — just boost the in-season
@@ -790,12 +803,15 @@ function scoreDish(
   // ①''' Premium-positioning damp — Chinese high-end chef perspective:
   // 盖饭/便当/炒饭/烩饭 read as 快餐, drag the dinner experience down a
   // notch. Breakfast is exempt (港式 + 北方 早餐里炒饭/煎饼合规)。
+  const _title = (dish.title_zh ?? '').toString();
   if (mealTime !== '早餐') {
-    const title = (dish.title_zh ?? '').toString();
-    if (FAST_FOOD_TITLE_HINTS.some(k => title.includes(k))) {
+    if (FAST_FOOD_TITLE_HINTS.some(k => _title.includes(k))) {
       score -= 0.15;
     }
   }
+  // ①'''' Western high-end bias — 香港高端用户视角。仅 origin='western'
+  // 触发：欧陆系 +0.12 / 美式 fast-casual -0.08。
+  score += westernHighEndBias(_title, origin);
 
   // ①'''' First-impression boost (2026-05-17 user direction)
   // 首次推荐很重要：新用户首次会话没有 prefScores 历史，全靠 profile +

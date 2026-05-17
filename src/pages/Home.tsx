@@ -136,6 +136,42 @@ function useDailyTip() {
   return { solarTerm, weather, tip };
 }
 
+/**
+ * TrialExpiredCard — shown on Home when a non-member's 7-day trial has
+ * elapsed (user direction 2026-05-17: "用户可以一直打开，一周后再次
+ * 打开就需要付费"). Replaces the daily menu / weekend dining surface
+ * with a clear upgrade card. Members and within-trial users never see
+ * this; first-session new users are always within trial.
+ */
+function TrialExpiredCard({ onUnlock }: { onUnlock: () => void }) {
+  return (
+    <section className="rounded-3xl p-6 text-center"
+      style={{
+        background: "linear-gradient(135deg, #FF5A1F 0%, #FF8C54 60%, #FFB347 100%)",
+        boxShadow: "0 12px 32px rgba(255,90,31,0.30)",
+      }}>
+      <div className="text-[44px] mb-2">⭐</div>
+      <h2 className="font-serif font-black text-white" style={{ fontSize: 22, lineHeight: 1.3 }}>
+        7 天免费试用结束啦
+      </h2>
+      <p className="mt-3 text-white/90" style={{ fontSize: 13, lineHeight: 1.6 }}>
+        感谢您这一周用爱吃。<br />
+        续上爱吃 Pro，继续每天给您安排专属菜单 —<br />
+        整周菜单 · 一步采购 · 米其林菜单 · 学校营养 · 节气养生。
+      </p>
+      <button onClick={onUnlock}
+        className="mt-5 px-7 h-11 rounded-2xl font-bold flex items-center gap-2 mx-auto active:scale-95 transition-transform"
+        style={{ background: "white", color: "#FF5A1F", fontSize: 14, boxShadow: "0 6px 20px rgba(0,0,0,0.15)" }}>
+        <span style={{ fontSize: 16 }}>👑</span>
+        开通会员，解锁全部
+      </button>
+      <p className="mt-3 text-white/70" style={{ fontSize: 11 }}>
+        早鸟价 HK$30/月，前 3 个月
+      </p>
+    </section>
+  );
+}
+
 
 export default function Home() {
   const navigate = useNavigate();
@@ -657,6 +693,14 @@ export default function Home() {
       </header>
 
       <main className="flex flex-col gap-4 pt-2 pb-4 px-4">
+
+        {/* Trial-expired gate (2026-05-17 product spec). Non-members whose
+            7-day 试用期 has elapsed see a paywall card in place of any
+            menu surface. Members and within-trial users see the regular
+            flow below. */}
+        {isLoggedIn && !isPro && !isWithinTrial() ? (
+          <TrialExpiredCard onUnlock={() => navigate('/pricing')} />
+        ) : (<>
 
         {/* Weekend (Sat/Sun) → swap menu surface (user-confirmed 2026-05-17):
             1) "出门换换口味" hero + 本周饭桌+缺什么合一框 + 5 家餐厅推荐
@@ -1231,6 +1275,8 @@ export default function Home() {
         )}
 
         </>}  {/* end of weekday fragment — closes the isWeekend ternary */}
+
+        </>)}  {/* end of trial-expired ternary wrap */}
       </main>
 
       <IntentRegenModal
