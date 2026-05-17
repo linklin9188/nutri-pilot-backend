@@ -146,17 +146,17 @@ const SPICE_BOOST: Record<string, number> = {
  * but I see equal numbers of all cuisines" complaint that motivated the
  * spice-tag readUserTaste() fix.
  */
-const HOMETOWN_VALID = new Set([
-  'sichuan', 'cantonese', 'jiangnan', 'northern',
-  'huaiyang', 'shandong', 'anhui', 'fujian', 'zhejiang', 'hunan',
-  'shanxi', 'yunnan_guizhou', 'chaoshan', 'shunde', 'taiwanese',
-  'japanese_korean', 'southeast_asian', 'western',
-]);
 function readHometownCuisine(): string | null {
+  // Just pass the first non-empty value through. Downstream hometownMatches()
+  // in hometownBuckets.ts knows how to interpret BOTH the new 八大菜系 IDs
+  // (guangdong/sichuan/shandong/jiangsu/zhejiang/fujian/hunan/anhui) AND the
+  // legacy DB bucket IDs (cantonese/sichuan/jiangnan/northern/...). A previous
+  // whitelist filter here dropped "guangdong" and "jiangsu" because it only
+  // knew the legacy IDs, silently killing the 30% hometown axis for two of
+  // the eight cuisines after the 八大菜系 onboarding rollout.
   const raw = (localStorage.getItem('userHometown') ?? '').toLowerCase();
   const first = raw.split(',').map(s => s.trim()).find(Boolean);
-  if (first && HOMETOWN_VALID.has(first)) return first;
-  return null;
+  return first || null;
 }
 
 function readUserTaste(): { tastePref: UserPrefs['tastePref']; impliedSpice: UserPrefs['spiceLevel'] | null } {

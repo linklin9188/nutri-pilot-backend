@@ -56,7 +56,7 @@ export interface WeeklyMenu {
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v27'; // cuisine-aware dish count: 西餐 lunch=2 (staple+soup) / 西餐 dinner=n / 中餐 lunch=n / 中餐 dinner=n+1; pad-phase staple+soup uniqueness
+export const ALGO_VERSION = 'v28'; // fix hometown axis dead-path: QuickSetup writes userHometown localStorage + hometownToDbBucket() at persist + readHometownCuisine drops stale whitelist
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

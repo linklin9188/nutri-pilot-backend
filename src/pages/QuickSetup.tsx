@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { getUserId } from "../lib/userId";
+import { hometownToDbBucket } from "../lib/hometownBuckets";
 
 // Quick 5-question onboarding — no login required
 // Saves to localStorage as "quickPrefs"
@@ -140,17 +141,13 @@ const SPICE_TO_TASTE_PREF: Record<string, string | null> = {
   hot:    'spicy',
 };
 
-// hometown id → user_profiles.hometown_cuisine value matches dish.origin_cuisine.
-const HOMETOWN_TO_CUISINE: Record<string, string | null> = {
-  cantonese:       'cantonese',
-  northern:        'northern',
-  jiangnan:        'jiangnan',
-  sichuan:         'sichuan',
-  japanese_korean: 'japanese_korean',
-  southeast_asian: 'southeast_asian',
-  western:         'western',
-  no_preference:   null,
-};
+// HOMETOWN_TO_CUISINE removed — onboarding now uses 八大菜系 IDs
+// (guangdong/sichuan/shandong/jiangsu/zhejiang/fujian/hunan/anhui). The old
+// map only knew legacy DB IDs (cantonese/jiangnan/...) so post-八大菜系
+// rollout it returned undefined for 7/9 picks and silently wrote NULL,
+// killing the 30% hometown axis. Use hometownToDbBucket() instead — it
+// maps the new ID to the existing DB bucket (粤→cantonese / 鲁→northern /
+// 苏→jiangnan / 浙→jiangnan / 闽→cantonese / 湘→sichuan / 徽→jiangnan).
 // AGE_TO_GROUP removed with the age question. resolveAgeModifiers
 // gracefully no-ops when age_group is null on user_profiles.
 
@@ -166,7 +163,7 @@ async function persistProfileToDb(prefs: Record<string, unknown>): Promise<void>
 
   const dietary_goal    = GOAL_TO_DIETARY_GOAL[(prefs.goal as string) ?? '']   ?? null;
   const taste_pref      = SPICE_TO_TASTE_PREF[(prefs.spice as string) ?? '']   ?? null;
-  const hometown_cuisine = HOMETOWN_TO_CUISINE[(prefs.hometown as string) ?? ''] ?? null;
+  const hometown_cuisine = hometownToDbBucket(prefs.hometown as string);
   // Pass through avoid + health as taste/avoid hints. Only 'seafood' from
   // the avoid list maps cleanly to a flavor_tag; ingredient-level avoids
   // (cilantro/onion/beef/peanut/dairy) keep flowing through the
@@ -280,6 +277,12 @@ export default function QuickSetup() {
     localStorage.setItem("userDiet", prefs.goal as string);
     localStorage.setItem("userSpice", prefs.spice as string);
     localStorage.setItem("userAvoid", (prefs.avoid as string[]).join(","));
+    // userHometown drives readHometownCuisine() in userPrefs.ts which is the
+    // fallback path when the DB upsert hasn't resolved yet (fire-and-forget
+    // promise). Without this, anonymous QuickSetup users had a 30% dead
+    // hometown axis until the upsert returned — often 1-2 weeks if they
+    // never came back online.
+    if (prefs.hometown) localStorage.setItem("userHometown", prefs.hometown as string);
     // Set family defaults if not already configured
     if (!localStorage.getItem("nutri_adults")) localStorage.setItem("nutri_adults", "2");
     if (!localStorage.getItem("nutri_kids"))   localStorage.setItem("nutri_kids",   "0");
