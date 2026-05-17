@@ -55,7 +55,7 @@ export interface WeeklyMenu {
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v26'; // confidence-scaled learned-pref weight: usage data outranks profile after ~30 signals
+export const ALGO_VERSION = 'v27'; // cuisine-aware dish count: 西餐 lunch=2 (staple+soup) / 西餐 dinner=n / 中餐 lunch=n / 中餐 dinner=n+1; pad-phase staple+soup uniqueness
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -135,7 +135,8 @@ function calcDishesForToday(): { dishesPerDay: number; kidSlots: number; adults:
   // Delegate to the canonical calcDishCount so dinner / lunch / breakfast
   // all bucket consistently. Previously this function and calcDishCount
   // disagreed for 3a+2k: this returned 5 dinner, calcDishCount returned 4.
-  const total = calcDishCount('晚餐', adults, kids);
+  // cuisineMode 影响 count（西餐晚餐 = n vs 中餐晚餐 = n+1）— 读 localStorage。
+  const total = calcDishCount('晚餐', adults, kids, loadCuisineMode());
   const kidSlots = kids > 0 ? Math.min(kids, 2) : 0;
   return { dishesPerDay: total, kidSlots, adults, kids };
 }
@@ -674,7 +675,7 @@ function generateWeekPlan(
     const dayHc = getDayHeadcount(dayIndex);
     const dayAdults = dayHc.adults || adults;
     const dayKids   = dayHc.kids   || kids;
-    const dayDishesPerDay = calcDishCount('晚餐', dayAdults, dayKids);
+    const dayDishesPerDay = calcDishCount('晚餐', dayAdults, dayKids, loadCuisineMode());
     const dayKidSlots = dayKids > 0 ? Math.min(dayKids, 2) : 0;
     const dayUseSmallTemplate = dayDishesPerDay <= 3;
     const dayAdultSlots = dayUseSmallTemplate
@@ -975,7 +976,7 @@ function generateWeekPlan(
     // Larger N follow the same N-2 split between veggie and meat.
     // Low-carb already pulled in at function scope (line above).
     const dinnerIds = new Set(dayDishes.map(d => d.id));
-    const lunchTarget = calcDishCount('午餐', adults, kids);
+    const lunchTarget = calcDishCount('午餐', adults, kids, loadCuisineMode());
     const lunchPlan = (() => {
       // Low-carb / keto: drop the staple slot, push the budget into protein.
       if (lowCarb) {

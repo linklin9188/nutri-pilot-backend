@@ -952,27 +952,45 @@ export async function fetchSwapOptions(
 // ── Hook ─────────────────────────────────────────────────────────────────
 
 /**
- * Calculate how many dishes to recommend based on meal type + headcount.
+ * Calculate how many dishes to recommend based on meal type + headcount + cuisine.
  *
- * 中国家庭饭桌 rule (user-confirmed 2026-05-17):
- *   早餐: fixed 3-piece template (dry staple + wet drink + side); 1 人 = 2
- *   午餐: n 道菜 for n 人（"4 人 4 菜 / 三菜一汤"），min 2 / max 8
- *   晚餐: n + 1 道菜（晚餐比午餐多 1 道），min 3 / max 9
+ * Cuisine-aware rules (user-confirmed 2026-05-17):
  *
- * Kids count as 0.5 effective person, so 2a + 2k = eff 3 → 午餐 3 / 晚餐 4.
+ *   中餐 (chinese / all):
+ *     早餐: 3-piece dry+wet+side template (1 人 = 2)
+ *     午餐: n 道菜（"4 人 4 菜 / 三菜一汤"），min 2 / max 8
+ *     晚餐: n + 1 道菜（晚餐比午餐多 1）
  *
- * Previous version used a bucketed formula (eff≤4.5 → 5 dishes etc.) which
- * over-counted: a 4-person 西餐午餐 returned 5 dishes when the user
- * expected 4. Linear round + n/(n+1) split matches actual table-setting
- * habit and avoids leftover-driven food waste.
+ *   西餐 (western) — Western meals are structurally simpler:
+ *     早餐: 3-piece (toast + drink + egg/fruit), same as 中餐
+ *     午餐: 固定 2 道（1 主食 + 1 汤）— 西餐午餐通常是一份意面/三明治 + 一份汤
+ *     晚餐: n 道菜（按人数）— matches 中餐午餐 count, still simpler than 中餐晚餐
+ *
+ * Kids count as 0.5 effective person.
+ *
+ * 中餐 vs 西餐 contrast for 4 people:
+ *   中餐: 早 3 / 午 4 / 晚 5         西餐: 早 3 / 午 2 / 晚 4
+ *
+ * Previous version was cuisine-blind and over-counted 西餐午餐 — a 4-人
+ * 西餐午餐 returned 5 dishes when the family actually eats a single
+ * pasta + soup combo. Cuisine-aware split matches real table-setting habit.
  */
 export function calcDishCount(
   mealTime: '早餐' | '午餐' | '晚餐',
   adults: number,
   kids: number,
+  cuisineMode: CuisineMode = 'chinese',
 ): number {
   const eff = adults + kids * 0.5;
   if (mealTime === '早餐') return eff <= 1 ? 2 : 3;
+
+  // 西餐: lunch is fixed 2 (staple + soup); dinner scales with headcount.
+  if (cuisineMode === 'western') {
+    if (mealTime === '午餐') return 2;
+    return Math.max(2, Math.min(8, Math.round(eff)));   // 晚餐
+  }
+
+  // 中餐 / all — full 中国家庭饭桌
   const lunch = Math.max(2, Math.min(8, Math.round(eff)));
   return mealTime === '晚餐' ? Math.min(9, lunch + 1) : lunch;
 }
@@ -1104,7 +1122,19 @@ function pickWithMethodVariety(
   return sorted.find(d => !used.has(d.id) && pred(d));
 }
 
-function applyLunchTemplate(sorted: any[], target: number): any[] {
+/**
+ * 一桌饭 course_type 去重规则：staple 和 soup 在同一顿里最多各 1 道。
+ * 没有这条，西餐池里 73 staple/6 main_protein 的偏斜会让 pad 阶段
+ * 同桌出现 2 道 staple（披萨 + 意面）— 用户明确反对。
+ */
+function isPadAllowed(d: any, result: any[]): boolean {
+  const ct = d.course_type ?? '';
+  if (ct === 'staple' && result.some(r => r.course_type === 'staple')) return false;
+  if (ct === 'soup'   && result.some(r => r.course_type === 'soup'))   return false;
+  return true;
+}
+
+function applyLunchTemplate(sorted: any[], target: number, cuisineMode: CuisineMode = 'chinese'): any[] {
   if (target <= 0 || sorted.length === 0) return [];
   const used = new Set<string>();
   const usedMethods = new Set<string>();
@@ -1117,13 +1147,27 @@ function applyLunchTemplate(sorted: any[], target: number): any[] {
     }
   };
 
+  // 西餐午餐 = 1 主食 + 1 汤（user-confirmed 2026-05-17）。西餐午餐通常是单
+  // 一碗意面 / 三明治 + 一份汤，pasta+pizza 同桌不是西式饭桌习惯。
+  if (cuisineMode === 'western') {
+    if (target >= 1) take(pickWithMethodVariety(sorted, d => d.course_type === 'staple', used, usedMethods));
+    if (target >= 2) {
+      const soup = pickWithMethodVariety(sorted, d => d.course_type === 'soup', used, usedMethods);
+      if (soup) take(soup);
+      else take(pickWithMethodVariety(sorted, d => d.course_type === 'veggie_dish', used, usedMethods));
+    }
+    // 西餐午餐固定 2 道，不 pad
+    return result;
+  }
+
+  // 中餐午餐 — staple + main_protein + veggie_dish + 按分数补，但不超出
+  // 1 staple / 1 soup（isPadAllowed 守护）。
   if (target >= 1) take(pickWithMethodVariety(sorted, d => d.course_type === 'staple',       used, usedMethods));
   if (target >= 2) take(pickWithMethodVariety(sorted, d => d.course_type === 'main_protein', used, usedMethods));
   if (target >= 3) take(pickWithMethodVariety(sorted, d => d.course_type === 'veggie_dish',  used, usedMethods));
-  // Pad remaining slots — also prefer new cook methods
   while (result.length < target) {
-    const next = sorted.find(d => !used.has(d.id) && d.cook_method && !usedMethods.has(d.cook_method))
-                ?? sorted.find(d => !used.has(d.id));
+    const next = sorted.find(d => !used.has(d.id) && isPadAllowed(d, result) && d.cook_method && !usedMethods.has(d.cook_method))
+                ?? sorted.find(d => !used.has(d.id) && isPadAllowed(d, result));
     if (!next) break;
     take(next);
   }
@@ -1141,7 +1185,7 @@ function applyLunchTemplate(sorted: any[], target: number): any[] {
  * 汤强制：如果池子里 soup 一道都没有，就只能 fallback，但记 console 警示，
  * 让上层知道该补 soup 数据。
  */
-function applyDinnerTemplate(sorted: any[], target: number): any[] {
+function applyDinnerTemplate(sorted: any[], target: number, _cuisineMode: CuisineMode = 'chinese'): any[] {
   if (target <= 0 || sorted.length === 0) return [];
   const used = new Set<string>();
   const usedMethods = new Set<string>();
@@ -1169,10 +1213,11 @@ function applyDinnerTemplate(sorted: any[], target: number): any[] {
       console.warn('[dinnerTemplate] no soup in pool — dinner without 汤 violates the 营养主厨 rule');
     }
   }
-  // Pad remaining slots, preferring new cook methods
+  // Pad — 守护 staple / soup 最多各 1（isPadAllowed），否则西餐池 73 staple
+  // 会把 pad slot 全填成 pizza+pasta+sandwich。
   while (result.length < target) {
-    const next = sorted.find(d => !used.has(d.id) && d.cook_method && !usedMethods.has(d.cook_method))
-                ?? sorted.find(d => !used.has(d.id));
+    const next = sorted.find(d => !used.has(d.id) && isPadAllowed(d, result) && d.cook_method && !usedMethods.has(d.cook_method))
+                ?? sorted.find(d => !used.has(d.id) && isPadAllowed(d, result));
     if (!next) break;
     take(next);
   }
@@ -1212,7 +1257,7 @@ export function useRecommendDishes(
     '晚餐': ['dinner', 'all'],
   };
   const allowedMealTypes = mealTypeFilter[mealTime] ?? ['dinner', 'all'];
-  const dishCount = calcDishCount(mealTime, adults, kids);
+  const dishCount = calcDishCount(mealTime, adults, kids, cuisineMode);
 
   useEffect(() => {
     let cancelled = false;
@@ -1284,8 +1329,8 @@ export function useRecommendDishes(
         // 没主食保证). Templates enforce: 早餐 dry+wet+side, 午餐
         // staple+protein+veggie, 晚餐 staple+protein+leafy+soup.
         const balanced = mealTime === '早餐' ? applyBreakfastTemplate(sorted, dishCount)
-                       : mealTime === '午餐' ? applyLunchTemplate(sorted, dishCount)
-                       :                       applyDinnerTemplate(sorted, dishCount);
+                       : mealTime === '午餐' ? applyLunchTemplate(sorted, dishCount, cuisineMode)
+                       :                       applyDinnerTemplate(sorted, dishCount, cuisineMode);
 
         if (cancelled) return;
 
