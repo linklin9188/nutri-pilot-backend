@@ -55,7 +55,7 @@ export interface WeeklyMenu {
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v25'; // 中国家庭饭桌 rule: 午餐=n 人 n 菜, 晚餐=n+1 (was bucketed over-count)
+export const ALGO_VERSION = 'v26'; // confidence-scaled learned-pref weight: usage data outranks profile after ~30 signals
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

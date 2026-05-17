@@ -763,10 +763,19 @@ function scoreDish(
   // ⑦ Learned-preference signal — folds in user_preference_scores (positive
   // for tags the user has historically accepted, negative for rejected).
   // Values from the table are roughly in [-1, 1]; we sum matches across
-  // flavor_tags + health_benefit_tags + origin_cuisine + seafood detector,
-  // then dampen by LEARNED_WEIGHT so it nudges ranking without overriding
-  // the explicit profile signal.
-  const LEARNED_WEIGHT = 0.35;
+  // flavor_tags + health_benefit_tags + origin_cuisine + seafood detector.
+  //
+  // Weight is CONFIDENCE-SCALED: per the product principle "使用数据才是真
+  // 数据"，as the user accumulates non-zero feedback signals across tags,
+  // learned weight grows past the profile's 1.0 cap so usage gradually
+  // dominates the static画像. Cold-start (0 signals) → weight 0.35 (gentle
+  // nudge). After ~30 distinct non-zero tag signals → weight 1.50, which
+  // exceeds the 1.0 profile baseline so a strongly-liked / strongly-disliked
+  // pattern in cooking history outranks the onboarding answers.
+  const learnedSignals = Object.values(prefScores)
+    .filter(v => typeof v === 'number' && v !== 0).length;
+  const learnedConfidence = Math.min(1, learnedSignals / 30);
+  const LEARNED_WEIGHT = 0.35 + 1.15 * learnedConfidence;
   let learnedSum = 0;
   let learnedHits = 0;
   const SEAFOOD_INGS = new Set([

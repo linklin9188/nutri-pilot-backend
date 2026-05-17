@@ -30,7 +30,7 @@ Frontend bundle has NO Gemini key. `VITE_GEMINI_API_KEY` is removed.
 - New Gemini call site → add a new `endpoint` to `supabase/functions/gemini-proxy/index.ts`, never reintroduce direct frontend calls.
 
 ### `ALGO_VERSION` cache busting
-Constant in `src/hooks/useWeeklyMenu.ts`. Currently **`v24`**.
+Constant in `src/hooks/useWeeklyMenu.ts`. Currently **`v26`**.
 
 - ANY change to scoring / scaling / filter / breakfast template / slot allocation → **bump** it.
 - Downstream cache readers (`VerifyIngredients.tsx` for procurement etc.) MUST `import { ALGO_VERSION }`, never hardcode the version string.
@@ -47,7 +47,7 @@ Adding a SKU: confirm the price exists in **live** Stripe (test-mode IDs = silen
 
 ## Algorithm (live in `useWeeklyMenu.ts` + `useSupabaseMenu.ts`)
 
-- **5-axis `scoreDish`**: goal / taste / spice / hometown / health-tags + learned `prefScores`
+- **5-axis `scoreDish`**: goal / taste / spice / hometown / health-tags + learned `prefScores` (confidence-scaled: cold-start weight 0.35, after ~30 non-zero tag signals → 1.50, which outranks the 1.0 profile baseline. Per product principle: 使用数据 > 画像数据)
 - **Allergen hard filter** (NOT score) — `ALLERGEN_TO_INGREDIENTS` map in `useSupabaseMenu`
 - **Per-member slot allocation** (`memberMainSlots`) — for divergent-goal households (e.g. 备孕 wife + 增肌 husband), dinner main slots 0/1 are assigned to home members 0/1 with 1.5× amplified per-member scoring
 - **Per-day headcount**: `loadHomeByDay()` / `saveHomeForDay(idx, ids)` in `familyPrefs.ts`. Both WeeklyMenu (generation) and VerifyIngredients (procurement scaling) read this
