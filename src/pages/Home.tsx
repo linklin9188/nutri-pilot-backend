@@ -7,7 +7,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useRecommendDishes, fetchSwapOptions, type SupabaseDish } from "../hooks/useSupabaseMenu";
-import { useWeeklyMenu } from "../hooks/useWeeklyMenu";
+import { useWeeklyMenu, isWeekend } from "../hooks/useWeeklyMenu";
+import WeekendDiningReport from "../components/WeekendDiningReport";
 import {
   analyzeFridgePhoto, fileToBase64,
   type ScanScene, type ScanLocale,
@@ -622,6 +623,10 @@ export default function Home() {
 
       <main className="flex flex-col gap-4 pt-2 pb-4 px-4">
 
+        {/* Weekend (Sat/Sun) → swap entire menu surface for the dining
+            report. Mon-Fri continues to render the full meal flow below. */}
+        {isWeekend() ? <WeekendDiningReport /> : <>
+
         {/* ① TODAY'S MENU — Editorial hero ────────────────────────
             Inspired by food magazine layouts: large dish photography on
             the left, generous typography on the right. No internal padding
@@ -1115,6 +1120,7 @@ export default function Home() {
           </div>
         )}
 
+        </>}  {/* end of weekday fragment — closes the isWeekend ternary */}
       </main>
 
       <IntentRegenModal
