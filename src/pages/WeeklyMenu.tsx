@@ -6,7 +6,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
-import { useWeeklyMenu } from "../hooks/useWeeklyMenu";
+import { useWeeklyMenu, isWeekend } from "../hooks/useWeeklyMenu";
+import WeekendDiningReport from "../components/WeekendDiningReport";
 import { type SupabaseDish } from "../hooks/useSupabaseMenu";
 import { supabase } from "../lib/supabase";
 import BottomTabBar from "../components/BottomTabBar";
@@ -559,6 +560,28 @@ export default function WeeklyMenu() {
     // Smooth-scroll to that day's section in the all-week list
     const el = document.getElementById(`day-${i}`);
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // 周末规则 (2026-05-17): 周六周日不生成菜单。WeeklyMenu 的两条过滤
+  // (day.dayIndex < todayIdx + day.dayIndex >= 5) 在 Sat/Sun 会把所有 7 天
+  // 都隐藏，整页空白。复用 WeekendDiningReport — 跟 Home 的周末展示一致，
+  // 不再让用户进入一个 dead-end 页面。
+  if (isWeekend()) {
+    return (
+      <div className="min-h-screen max-w-md mx-auto" style={{ background: "#fff7f2", paddingBottom: 140 }}>
+        <div className="flex items-center px-5 pt-12 pb-1">
+          <button
+            onClick={() => navigate("/")}
+            className="w-9 h-9 rounded-2xl flex items-center justify-center transition-all active:scale-90"
+            style={{ background: "rgba(0,0,0,0.04)" }}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: 20, color: "rgba(0,0,0,0.7)" }}>arrow_back</span>
+          </button>
+        </div>
+        <WeekendDiningReport />
+        <BottomTabBar />
+      </div>
+    );
   }
 
   return (
