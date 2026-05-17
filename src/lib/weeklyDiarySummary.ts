@@ -189,106 +189,76 @@ export async function summarizeWeek(): Promise<WeeklySummary> {
 
 // ── 外食 推荐生成 ───────────────────────────────────────────────────────────
 //
-// Translates summary gaps to a few "今天出门吃什么" suggestions. Each entry
-// has an emoji, a restaurant category hint, and a one-line "为什么" reason
-// the family-assistant tone can read out loud.
+// Pairs the user's nutritional gaps with curated HK restaurants from
+// hkRestaurants.ts. Each suggestion is a real venue with name + signature
+// dish + 一句话 reason — so the recommendation card can flow straight into
+// a "预订" CTA. (Future monetization path per user direction 2026-05-17:
+// 推荐 → 预订 → 餐厅合作分成.)
+import { pickRestaurantsForNeeds, type HkRestaurant, type DiningTag } from './hkRestaurants';
+
 export interface DiningSuggestion {
-  emoji: string;
-  title: string;        // 推荐餐厅类型 / 菜
-  reason: string;       // 一句话补什么
-  tag: string;          // 'protein' | 'veggie' | 'fruit' | 'grain' | 'light'
+  restaurant: HkRestaurant;
+  /** 1-2 sentence why-this-place — tailored to the gap that surfaced it. */
+  reason: string;
+  /** The gap category this suggestion covers (drives UI sort + analytics). */
+  tag: DiningTag;
 }
 
-const PROTEIN_SUGGESTIONS: Record<ProteinCategory, DiningSuggestion> = {
-  fish: {
-    emoji: '🐟', tag: 'protein',
-    title: '粤式蒸鱼 / 日料寿司',
-    reason: '这周一条鱼都没上桌，外面吃一顿补点 omega-3。',
-  },
-  shellfish: {
-    emoji: '🦐', tag: 'protein',
-    title: '虾蟹大排档 / 粤式海鲜',
-    reason: '虾蟹补锌补硒，本周空缺，今天好好享受一顿。',
-  },
-  meat: {
-    emoji: '🥩', tag: 'protein',
-    title: '烤肉 / 涮羊肉',
-    reason: '红肉补铁补蛋白，本周没吃，今天换换口味。',
-  },
-  poultry: {
-    emoji: '🍗', tag: 'protein',
-    title: '白切鸡 / 烤鸡',
-    reason: '禽肉清淡补蛋白，外面来一份。',
-  },
-  egg: {
-    emoji: '🥚', tag: 'protein',
-    title: '茶餐厅蛋治 / 蛋包饭',
-    reason: '简单的蛋类补一下，省事又营养。',
-  },
-  dairy: {
-    emoji: '🥛', tag: 'protein',
-    title: '咖啡馆下午茶 / 酸奶吧',
-    reason: '一杯拿铁或一碗酸奶，钙就够了。',
-  },
-  soy: {
-    emoji: '🌱', tag: 'protein',
-    title: '豆腐火锅 / 客家豆腐',
-    reason: '豆制品补优质植物蛋白，今天清淡一点。',
-  },
-  tofu: {
-    emoji: '🌱', tag: 'protein',
-    title: '麻婆豆腐 / 客家酿豆腐',
-    reason: '豆腐家常又补蛋白，馆子做的更地道。',
-  },
+const PROTEIN_TO_TAG: Record<ProteinCategory, { tag: DiningTag; reason: string }> = {
+  fish:      { tag: 'fish',      reason: '本週一條魚都沒上桌，週末補一頓 omega-3。' },
+  shellfish: { tag: 'shellfish', reason: '蝦蟹補鋅補硒，本週空缺、週末好好享受。' },
+  meat:      { tag: 'meat',      reason: '紅肉補鐵補蛋白，本週沒沾，今天換換口味。' },
+  poultry:   { tag: 'poultry',   reason: '禽肉清淡又補蛋白，外面來一份很合適。' },
+  egg:       { tag: 'egg',       reason: '蛋類本週缺，茶餐廳一份滑蛋飯解決。' },
+  dairy:     { tag: 'dairy',     reason: '本週鈣可能不夠，一杯燉奶或酸奶補上。' },
+  soy:       { tag: 'soy',       reason: '豆製品補優質植物蛋白，今天清淡一點。' },
+  tofu:      { tag: 'soy',       reason: '豆腐家常又補蛋白，館子做的更地道。' },
 };
 
 /**
- * Build up to 4 dining suggestions ordered by impact (proteins first, then
- * 缺蔬菜 / 缺水果 / 缺粗粮).
+ * Map the WeeklySummary gaps to up to 4 real-restaurant suggestions.
+ * Ordering: missing proteins → veggie gap → fruit gap → grain gap →
+ * oil/salt overload. Deduplicates so the same restaurant doesn't show
+ * up twice when it covers multiple gaps.
  */
 export function buildDiningSuggestions(summary: WeeklySummary): DiningSuggestion[] {
-  const out: DiningSuggestion[] = [];
-  // Top 2 missing proteins
+  // Collect needs in priority order, then ask hkRestaurants for matches.
+  const needs: { tag: DiningTag; reason: string }[] = [];
   for (const p of summary.proteinsMissing.slice(0, 2)) {
-    const s = PROTEIN_SUGGESTIONS[p];
-    if (s) out.push(s);
+    const m = PROTEIN_TO_TAG[p];
+    if (m) needs.push(m);
   }
   if (summary.veggieGap) {
-    out.push({
-      emoji: '🥗', tag: 'veggie',
-      title: '素食馆 / 沙拉店',
-      reason: '本周蔬菜少了点，今天换个全蔬菜的清爽。',
-    });
+    needs.push({ tag: 'veggie', reason: '本週蔬菜少了點，週末換個蔬菜為主的館子。' });
   }
   if (summary.fruitGap) {
-    out.push({
-      emoji: '🍓', tag: 'fruit',
-      title: '水果店 / 鲜榨果汁',
-      reason: '这周水果一份没沾，下午买点尝尝时令。',
-    });
+    needs.push({ tag: 'fruit',  reason: '一週一口水果沒沾？下午買杯鮮榨果汁補維 C。' });
   }
   if (!summary.wholeGrainPresent) {
-    out.push({
-      emoji: '🌾', tag: 'grain',
-      title: '杂粮饭店 / 燕麦粥',
-      reason: '本周主食都是白米白面，今天换点杂粮 B 族。',
-    });
+    needs.push({ tag: 'grain',  reason: '主食都是白米白麵？來碗雜糧麵補 B 族維生素。' });
   }
-  // 油盐糖超标 → 提醒清淡
   if (summary.oilGramsTotal > 80 || summary.saltGramsTotal > 30) {
-    out.push({
-      emoji: '🍵', tag: 'light',
-      title: '清汤粤式 / 怀石料理',
-      reason: '本周油盐有点重，今天找家清淡的歇歇。',
-    });
+    needs.push({ tag: 'light',  reason: '本週油鹽偏重，週末找家清淡的歇歇。' });
   }
-  // Default fallback when everything looks balanced
+
+  const out: DiningSuggestion[] = [];
+  const seen = new Set<string>();
+  for (const need of needs) {
+    const matches = pickRestaurantsForNeeds([need.tag], 2);
+    for (const r of matches) {
+      if (seen.has(r.id)) continue;
+      seen.add(r.id);
+      out.push({ restaurant: r, reason: need.reason, tag: need.tag });
+      if (out.length >= 4) break;
+    }
+    if (out.length >= 4) break;
+  }
+  // All-balanced fallback — surface 2 default recognizable venues
   if (out.length === 0) {
-    out.push({
-      emoji: '🌸', tag: 'light',
-      title: '挑一家想念已久的馆子',
-      reason: '本周饭桌很均衡，今天就吃想吃的。',
-    });
+    const fallback = pickRestaurantsForNeeds([], 2);
+    for (const r of fallback) {
+      out.push({ restaurant: r, reason: '本週飯桌挺均衡，今天就吃想吃的。', tag: 'banquet' });
+    }
   }
   return out.slice(0, 4);
 }
