@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { getUserId } from "../lib/userId";
 
-// Quick 4-question onboarding — no login required
+// Quick 5-question onboarding — no login required
 // Saves to localStorage as "quickPrefs"
 
 const QUESTIONS = [
@@ -90,23 +90,11 @@ const QUESTIONS = [
       { id: "no_preference",    label: "都行 / 没偏好", desc: "什么都吃", icon: "🤷" },
     ],
   },
-  {
-    // Age group — drives resolveAgeModifiers (boost/penalty by life stage).
-    // Maps to user_profiles.age_group.
-    id: "age",
-    step: 6,
-    emoji: "🎂",
-    question: "主要做饭对象的年龄段？",
-    sub: "孩子要清淡、老人要养生，AI 会按这个微调",
-    options: [
-      { id: "child",   label: "儿童 (0–12)",   desc: "口味温和、易咀嚼",     icon: "🧒" },
-      { id: "teen",    label: "青少年 (13–18)", desc: "高蛋白、长身体",       icon: "🧑‍🎓" },
-      { id: "youth",   label: "青年 (19–35)",  desc: "多元营养、看口味",     icon: "🧑" },
-      { id: "middle",  label: "中年 (36–55)",  desc: "控油控盐、护心血管",   icon: "👨‍💼" },
-      { id: "senior",  label: "老年 (56+)",    desc: "易消化、低嘌呤",       icon: "👴" },
-    ],
-  },
 ] as const;
+// Age question was previously here; removed at user's request because
+// 主要做饭对象 is ambiguous in households with mixed ages. resolveAgeModifiers
+// downstream is null-safe so age_group=NULL is fine. Family-member level
+// life-stage in family_members still drives per-member adjustments.
 
 // Map QuickSetup answers → valid user_profiles columns. Values are chosen
 // to match the actual tags present in dishes (health_benefit_tags +
@@ -144,14 +132,8 @@ const HOMETOWN_TO_CUISINE: Record<string, string | null> = {
   western:         'western',
   no_preference:   null,
 };
-// age id → user_profiles.age_group. resolveAgeModifiers reads this.
-const AGE_TO_GROUP: Record<string, string | null> = {
-  child:  'child',
-  teen:   'teen',
-  youth:  'youth',
-  middle: 'middle',
-  senior: 'senior',
-};
+// AGE_TO_GROUP removed with the age question. resolveAgeModifiers
+// gracefully no-ops when age_group is null on user_profiles.
 
 async function persistProfileToDb(prefs: Record<string, unknown>): Promise<void> {
   // Persist low-carb flag for the lunch / breakfast templates and hardFilter
@@ -166,7 +148,6 @@ async function persistProfileToDb(prefs: Record<string, unknown>): Promise<void>
   const dietary_goal    = GOAL_TO_DIETARY_GOAL[(prefs.goal as string) ?? '']   ?? null;
   const taste_pref      = SPICE_TO_TASTE_PREF[(prefs.spice as string) ?? '']   ?? null;
   const hometown_cuisine = HOMETOWN_TO_CUISINE[(prefs.hometown as string) ?? ''] ?? null;
-  const age_group       = AGE_TO_GROUP[(prefs.age as string) ?? '']            ?? null;
   // Pass through avoid + health as taste/avoid hints. Only 'seafood' from
   // the avoid list maps cleanly to a flavor_tag; ingredient-level avoids
   // (cilantro/onion/beef/peanut/dairy) keep flowing through the
@@ -180,7 +161,6 @@ async function persistProfileToDb(prefs: Record<string, unknown>): Promise<void>
       dietary_goal,
       taste_pref,
       hometown_cuisine,
-      age_group,
       avoid_tags,
       updated_at:       new Date().toISOString(),
     },
@@ -206,26 +186,46 @@ export default function QuickSetup() {
     }, 320);
   };
 
+  // Commit a multi-select answer and advance. Extracted so both the explicit
+  // "none → instant jump" path and the debounced "user paused after picking"
+  // path land in the same place.
+  const commitMulti = (sel: string[]) => {
+    const next = { ...answers, [q.id]: sel.length ? sel : ["none"] };
+    setAnswers(next);
+    setMultiSel([]);
+    if (isLast) finish(next);
+    else setStep(s => s + 1);
+  };
+
   const toggleMulti = (id: string) => {
-    if (id === "none") { setMultiSel(["none"]); return; }
+    // Picking "无忌口 / 没有特殊情况" is an end-of-question signal — auto-advance
+    // immediately at the single-select cadence (320ms). User asked: 选完直接
+    // 跳下一页，不需要点下一步.
+    if (id === "none") {
+      setMultiSel(["none"]);
+      setTimeout(() => commitMulti(["none"]), 320);
+      return;
+    }
     setMultiSel(p =>
       p.includes("none") ? [id] :
       p.includes(id) ? p.filter(x => x !== id) : [...p, id]
     );
   };
 
-  // Advance from a multi-select step: save current selection into answers, reset for next
-  const advanceMulti = () => {
-    const sel = multiSel.length ? multiSel : ["none"];
-    const next = { ...answers, [q.id]: sel };
-    setAnswers(next);
-    setMultiSel([]);
-    if (isLast) {
-      finish(next);
-    } else {
-      setStep(s => s + 1);
-    }
-  };
+  // Debounced auto-advance for multi-select pages: 1.8s after the user's last
+  // tap, commit whatever's selected. Every new tap restarts the timer so they
+  // can deselect / add without losing the page. "none" path short-circuits
+  // through toggleMulti above and never hits this debounce.
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!("multi" in q) || !q.multi) return;
+    if (multiSel.length === 0) return;
+    if (multiSel.includes("none")) return; // toggleMulti handles this path
+    debounceRef.current = setTimeout(() => commitMulti(multiSel), 1800);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [multiSel, step]);
 
   const finish = (finalAnswers?: Record<string, string | string[]>) => {
     const merged = finalAnswers ?? answers;
@@ -335,16 +335,23 @@ export default function QuickSetup() {
                   );
                 })}
               </div>
-              <button onClick={advanceMulti}
-                disabled={multiSel.length === 0}
-                className="mt-6 w-full h-[52px] rounded-2xl font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-30"
-                style={{
-                  background: "linear-gradient(135deg, #FF5A1F, #FF8C54)",
-                  boxShadow: "0 8px 24px rgba(255,90,31,0.28)",
-                  fontSize: 15, color: "white",
-                }}>
-                {isLast ? "生成我的专属菜单 →" : "下一步 →"}
-              </button>
+              {/* No "下一步" button — multi-select auto-advances 1.8s after the
+                  user's last tap (debounce in useEffect above). The hint line
+                  below tells the user what's happening; the skip link is the
+                  escape hatch when they want "no preference" without picking
+                  the "none" chip. */}
+              <div className="mt-6 flex items-center justify-between" style={{ minHeight: 36 }}>
+                {multiSel.length > 0 && !multiSel.includes("none") ? (
+                  <p className="text-white/55" style={{ fontSize: 12, letterSpacing: "0.04em" }}>
+                    已选 {multiSel.length} 项 · 稍后自动进入下一题
+                  </p>
+                ) : <span />}
+                <button onClick={() => commitMulti(["none"])}
+                  className="text-white/35 hover:text-white/65 transition-colors"
+                  style={{ fontSize: 12, letterSpacing: "0.04em" }}>
+                  跳过此问 →
+                </button>
+              </div>
             </>
           ) : (
             <div className="flex flex-col gap-3 flex-1">
