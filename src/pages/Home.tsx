@@ -9,6 +9,7 @@ import { useNavigate } from "react-router-dom";
 import { useRecommendDishes, fetchSwapOptions, type SupabaseDish } from "../hooks/useSupabaseMenu";
 import { useWeeklyMenu, isWeekend } from "../hooks/useWeeklyMenu";
 import WeekendDiningReport from "../components/WeekendDiningReport";
+import NextWeekMenuPreview from "../components/NextWeekMenuPreview";
 import {
   analyzeFridgePhoto, fileToBase64,
   type ScanScene, type ScanLocale,
@@ -637,9 +638,13 @@ export default function Home() {
 
       <main className="flex flex-col gap-4 pt-2 pb-4 px-4">
 
-        {/* Weekend (Sat/Sun) → swap entire menu surface for the dining
-            report. Mon-Fri continues to render the full meal flow below. */}
-        {isWeekend() ? <WeekendDiningReport /> : <>
+        {/* Weekend (Sat/Sun) → swap menu surface for: 顶部下周菜单 preview
+            (让用户提前看 + 采购) + 底部本周营养回顾 / 外食建议。Mon-Fri
+            continues to render the full meal flow below. */}
+        {isWeekend() ? <>
+          <NextWeekMenuPreview />
+          <WeekendDiningReport />
+        </> : <>
 
         {/* ① TODAY'S MENU — Editorial hero ────────────────────────
             Inspired by food magazine layouts: large dish photography on

@@ -212,9 +212,18 @@ function formatLocalDate(d: Date): string {
 }
 
 function getMondayISO(): string {
+  return getWeekStartISO(0);
+}
+
+/**
+ * Compute the Monday of the week shifted by `weekOffset` weeks from today.
+ * 0 = this week's Monday (default). 1 = next week's Monday — used on
+ * weekends to fetch next week's plan so the user can shop ahead.
+ */
+export function getWeekStartISO(weekOffset: number = 0): string {
   const d = new Date();
   const day = d.getDay(); // 0=Sun
-  const diff = day === 0 ? -6 : 1 - day;
+  const diff = (day === 0 ? -6 : 1 - day) + weekOffset * 7;
   d.setDate(d.getDate() + diff);
   return formatLocalDate(d);
 }
@@ -1281,7 +1290,7 @@ async function saveToHistory(userId: string, menu: WeeklyMenu): Promise<void> {
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
-export function useWeeklyMenu() {
+export function useWeeklyMenu(weekOffset: number = 0) {
   const [weeklyMenu, setWeeklyMenu] = useState<WeeklyMenu | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -1289,7 +1298,7 @@ export function useWeeklyMenu() {
   // Re-generate when user updates preferences or eating selection changes
   useEffect(() => {
     const handler = () => {
-      const weekStart = getMondayISO();
+      const weekStart = getWeekStartISO(weekOffset);
       localStorage.removeItem(getCacheKey(weekStart));
       setWeeklyMenu(null);
       setRefreshKey(k => k + 1);
@@ -1300,7 +1309,7 @@ export function useWeeklyMenu() {
       window.removeEventListener('nutri-prefs-changed', handler);
       window.removeEventListener('nutri-intent-bias-changed', handler);
     };
-  }, []);
+  }, [weekOffset]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1308,7 +1317,7 @@ export function useWeeklyMenu() {
     async function build() {
       setLoading(true);
 
-      const weekStart = getMondayISO();
+      const weekStart = getWeekStartISO(weekOffset);
       const userId    = getUserId() ?? 'anonymous';
 
       // 1. Try DB cache first — but SKIP if algo version has changed since last save.
@@ -1498,7 +1507,7 @@ export function useWeeklyMenu() {
     build();
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshKey]);
+  }, [refreshKey, weekOffset]);
 
   // Swap a single dish on a given day (user override)
   async function swapDish(dayIndex: number, slotIndex: number, newDish: SupabaseDish) {
