@@ -66,7 +66,7 @@ export const BENEFITS: MembershipBenefit[] = [
     emoji: '🧑‍🍳',
     title: '米其林大厨上门',
     desc:  '按场次预约职业厨师到家做饭，从米其林菜单里挑当晚菜品',
-    status: 'live',
+    status: 'coming_soon',
   },
   {
     emoji: '🎉',
