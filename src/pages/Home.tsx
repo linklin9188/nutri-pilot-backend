@@ -725,7 +725,7 @@ export default function Home() {
               ) : displayMenu.length > 0 ? (
                 <div className="flex flex-col">
                   {displayMenu.slice(0, 5).map((dish: any, idx: number) => (
-                    <div key={idx} className="flex items-center gap-4 py-3.5"
+                    <div key={idx} className="relative flex items-center gap-4 py-3.5"
                       style={{ borderTop: idx === 0 ? 'none' : '1px solid rgba(0,0,0,0.04)' }}>
                       <div className="relative w-[78px] h-[78px] rounded-2xl overflow-hidden shrink-0"
                         style={{
@@ -740,61 +740,78 @@ export default function Home() {
                         />
                       </div>
                       <div className="flex-1 min-w-0">
-                        {/* Tiny editorial label number */}
+                        {/* Tiny editorial label number. */}
                         <p style={{ fontSize: 9, letterSpacing: "0.18em", color: "rgba(0,0,0,0.30)", fontWeight: 700 }}>
                           NO. {String(idx + 1).padStart(2, '0')}
                         </p>
-                        <div className="flex items-center gap-1.5">
-                          <p className="font-serif font-black truncate" style={{ fontSize: 18, color: "#1a1a1a", letterSpacing: "-0.005em" }}>
-                            {dishTitle(dish)}
-                          </p>
-                          {/* 小美 chip — only shown when the household has
-                              toggled "我有小美" on AND this dish is robot-
-                              doable. Sits inline with the title so it's
-                              read as a property of the dish. */}
+                        {/* Title row — wraps to up to 2 lines so long names
+                            stay readable. First line clears the absolute
+                            top-right action cluster via paddingRight; the
+                            wrapped second line uses the same width (kept simple
+                            — overflow into line 2 reads correctly). */}
+                        <p className="font-serif font-black"
+                          style={{
+                            fontSize: 18,
+                            color: "#1a1a1a",
+                            letterSpacing: "-0.005em",
+                            lineHeight: 1.2,
+                            paddingRight: 96,
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden',
+                          }}>
+                          {dishTitle(dish)}
+                          {/* 小美 chip — only when household has 小美 on AND
+                              this dish is robot-doable. Inline trailer of the
+                              title so it's read as a property of the dish. */}
                           {localStorage.getItem('has_xiaomei_robot') === 'true' && dish.xiaomei_compatible && (
                             <span
-                              className="shrink-0 rounded-full px-1.5 py-0.5 font-bold leading-none"
+                              className="rounded-full px-1.5 py-0.5 font-bold leading-none ml-1.5 align-middle"
                               style={{ background: 'rgba(255,90,31,0.10)', color: '#FF5A1F', fontSize: 9, letterSpacing: '0.04em' }}
                               title="小美料理机可以做这道菜"
                             >
                               🤖 小美
                             </span>
                           )}
-                        </div>
+                        </p>
+                        {/* Cuisine label — full row width since it sits below
+                            the absolute action cluster's vertical extent. */}
                         <p className="truncate mt-0.5" style={{ fontSize: 11.5, color: "rgba(0,0,0,0.42)" }}>
                           {cuisineLabel(dish)}
                         </p>
                       </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <HeartButton dish={dish} sourceTag={mealTime} size={18} />
+                      {/* Top-right action cluster — hoisted out of the inline
+                          flow so the title can use the full row width. Compact
+                          14px icons in 24px hit-targets keep the cluster
+                          unobtrusive at the corner. */}
+                      <div className="absolute top-1.5 right-1 flex items-center gap-0 z-10">
+                        <HeartButton dish={dish} sourceTag={mealTime} size={14} className="!p-1.5" />
                         {/* ✓ 已吃 — toggle persists to localStorage via
                             eatingDiary; DailyNutritionStrip flips from
                             "计划" to "实际" mode the moment any dish is
                             ticked. */}
                         <button onClick={() => handleToggleEaten(dish.id)}
-                          className="w-9 h-9 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+                          className="w-6 h-6 rounded-full flex items-center justify-center active:scale-90 transition-transform"
                           style={{
-                            background: eatenSet.has(dish.id) ? 'rgba(22,163,74,0.15)' : 'rgba(0,0,0,0.04)',
+                            background: eatenSet.has(dish.id) ? 'rgba(22,163,74,0.15)' : 'transparent',
                           }}
                           title={eatenSet.has(dish.id) ? '已吃 · 点击取消' : '标记为已吃'}>
                           <span className="material-symbols-outlined" style={{
-                            fontSize: 18,
+                            fontSize: 14,
                             color: eatenSet.has(dish.id) ? '#16A34A' : 'rgba(0,0,0,0.40)',
                             fontVariationSettings: eatenSet.has(dish.id) ? "'FILL' 1" : "'FILL' 0",
                           }}>{eatenSet.has(dish.id) ? 'check_circle' : 'radio_button_unchecked'}</span>
                         </button>
                         <button onClick={() => openSwapDrawer(idx)}
-                          className="w-9 h-9 rounded-full flex items-center justify-center active:scale-90 transition-transform"
-                          style={{ background: "rgba(0,0,0,0.04)" }}
+                          className="w-6 h-6 rounded-full flex items-center justify-center active:scale-90 transition-transform"
                           title="换一道">
-                          <span className="material-symbols-outlined" style={{ fontSize: 18, color: "rgba(0,0,0,0.40)" }}>sync_alt</span>
+                          <span className="material-symbols-outlined" style={{ fontSize: 14, color: "rgba(0,0,0,0.40)" }}>sync_alt</span>
                         </button>
                         <button onClick={() => hideDish(dish.id)}
-                          className="w-9 h-9 rounded-full flex items-center justify-center active:scale-90 transition-transform"
-                          style={{ background: "rgba(0,0,0,0.04)" }}
+                          className="w-6 h-6 rounded-full flex items-center justify-center active:scale-90 transition-transform"
                           title="删除这道菜">
-                          <span className="material-symbols-outlined" style={{ fontSize: 18, color: "rgba(0,0,0,0.40)" }}>close</span>
+                          <span className="material-symbols-outlined" style={{ fontSize: 14, color: "rgba(0,0,0,0.40)" }}>close</span>
                         </button>
                       </div>
                     </div>
