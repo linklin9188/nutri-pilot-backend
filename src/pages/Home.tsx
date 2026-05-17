@@ -139,7 +139,13 @@ function useDailyTip() {
 
 export default function Home() {
   const navigate = useNavigate();
-  const isLoggedIn = !!localStorage.getItem("isLoggedIn");
+  // Auth state — use the userId in storage as the single source of truth.
+  // Historically we also checked the `isLoggedIn` flag, but multiple write
+  // paths (QuickSetup, devTestLogin, WeChatCallback) didn't always set the
+  // flag in lockstep with userId, causing the "登录解锁" banner to linger
+  // for users who were in fact logged in. userId is the minimum the rest
+  // of the app needs to attribute requests — matches RequireAuth.
+  const isLoggedIn = !!getUserId();
 
   // mealTime must be declared before useRecommendDishes
   const [mealTime, setMealTime] = useState<"早餐" | "午餐" | "晚餐">(() => {

@@ -56,7 +56,7 @@ export interface WeeklyMenu {
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v30'; // cuisine filter 4-way (chinese/hk-style/western/all) + kid-friendly bias (is_kid_friendly + breakfast egg + dinner calcium when nutri_kids>0)
+export const ALGO_VERSION = 'v31'; // 粥/稀饭 globally banned from lunch + dinner pools (breakfast-only) + 20:00 day rollover via todayDayIndex
 
 // ── 周末规则 (Weekend rule) — user-confirmed 2026-05-17 ───────────────────────
 // Weekly menu only covers Mon-Fri. Generation skips Sat/Sun; display layers
@@ -669,7 +669,7 @@ const SLOT_PREFERRED_CATS_SMALL: string[][] = [
 ];
 
 function generateWeekPlan(
-  pool: any[],
+  poolRaw: any[],
   profile: { hometown_cuisine: string | null; dietary_goal: string | null; taste_pref: string | null },
   prefScores: Record<string, number>,
   recentIds: Map<string, number>,
@@ -683,6 +683,16 @@ function generateWeekPlan(
   adults = 2,
   kids = 0,
 ): WeeklyMenu {
+  // 粥 / 稀饭 are breakfast-only in Chinese cuisine — user direction
+  // 2026-05-17. Stripped once at function entry so every lunch + dinner
+  // pool below inherits the ban (the previous per-slot filter only ran
+  // on the dinner-staple slot, leaking porridge into lunch staple +
+  // dinner subpools). Breakfast generation runs in useSupabaseMenu with
+  // its own breakfast pool, so this filter doesn't affect 早餐 picks.
+  const pool = poolRaw.filter(d => {
+    const t = (d.title_zh ?? d.title ?? '');
+    return !t.includes('粥') && !t.includes('稀饭');
+  });
   const weekStart = getMondayISO();
   const days: WeeklyDayMenu[] = [];
   const usedIds = new Set<string>();
