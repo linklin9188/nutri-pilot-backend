@@ -94,11 +94,32 @@ export default function SignIn() {
   const handleFacebook  = () => startSocialLogin("facebook");
 
   const handleWeChat = async () => {
-    // Supabase doesn't ship a first-party WeChat OAuth provider; this stub
-    // wires the button to the test login until a real WeChat backend is built.
     setError("");
-    devTestLogin("employer", "wechat");
-    goAfterLogin("employer");
+    // 微信网页授权 (snsapi_userinfo). Only works inside the WeChat in-app
+    // browser. supabase/functions/wechat-mp-callback exchanges the code
+    // for openid, upserts user_profiles, and 302s back to
+    // /auth/wechat/done with the userId in the URL hash.
+    const appid = import.meta.env.VITE_WECHAT_APPID;
+    if (!appid) {
+      setError("微信登录尚未配置");
+      return;
+    }
+    const isWeChatBrowser = /MicroMessenger/i.test(navigator.userAgent);
+    if (!isWeChatBrowser) {
+      // Outside WeChat browser, fall back to dev test login so the rest of
+      // the flow stays usable (we can't trigger 网页授权 without the WeChat
+      // shell). Once 网站应用 (open.weixin.qq.com qrconnect) is wired up
+      // we can add a QR fallback here.
+      devTestLogin("employer", "wechat");
+      goAfterLogin("employer");
+      return;
+    }
+    const supaUrl  = import.meta.env.VITE_SUPABASE_URL ?? "";
+    const redirect = encodeURIComponent(`${supaUrl}/functions/v1/wechat-mp-callback`);
+    const state    = crypto.randomUUID();
+    sessionStorage.setItem("wechat_oauth_state", state);
+    const url = `https://open.weixin.qq.com/connect/oauth2/authorize?appid=${appid}&redirect_uri=${redirect}&response_type=code&scope=snsapi_userinfo&state=${state}#wechat_redirect`;
+    window.location.href = url;
   };
 
   return (
