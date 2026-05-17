@@ -27,6 +27,7 @@ import { loadIntentBias, applyIntentBias, getIntentHash } from '../lib/intentBia
 import { applyPregnancyAdjustments } from '../lib/pregnancy';
 import { getUserId } from '../lib/userId';
 import { applyCuisineFilter, loadCuisineMode } from '../lib/cuisineFilter';
+import { hometownMatches } from '../lib/hometownBuckets';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -402,8 +403,9 @@ function scoreForWeek({
 
   // ── 1. Cuisine origin rebalancing (fixes western 32% volume bias) ─────────
   // If user has a hometown preference, override the default penalty/bonus.
+  // hometownMatches handles 八大菜系 IDs (鲁/苏/浙/闽/徽/湘) → DB bucket fallback.
   let score = ORIGIN_BASE_SCORE[origin] ?? 0;
-  if (profile.hometown_cuisine && origin === profile.hometown_cuisine) {
+  if (hometownMatches(profile.hometown_cuisine, origin)) {
     score += 0.40;  // strong hometown match overrides default
   }
 

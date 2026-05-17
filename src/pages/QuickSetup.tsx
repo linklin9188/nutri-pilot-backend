@@ -17,7 +17,7 @@ const QUESTIONS = [
     id: "household",
     step: 1,
     emoji: "🍽",
-    question: "今天几位围桌？",
+    question: "今天几位用餐？",
     sub: "我按这个安排菜量，孩子算半位。之后随时能改。",
     // No options — rendered as a 2-stepper (adults / kids) in the page.
     // Kept here so progress bar + question header reuse the same metadata.
@@ -96,14 +96,17 @@ const QUESTIONS = [
     question: "您最惦记哪一方水土的味道？",
     sub: "我多做家乡口味，让饭桌有点念想。",
     options: [
-      { id: "cantonese",        label: "粤菜 · 港式",  desc: "广式、港式、靓汤", icon: "🦞" },
-      { id: "northern",         label: "北方菜",       desc: "鲁/京/东北/西北",  icon: "🥟" },
-      { id: "jiangnan",         label: "江南菜",       desc: "苏沪杭、本帮、淮扬", icon: "🍤" },
-      { id: "sichuan",          label: "川菜",         desc: "麻辣、香辣、家常",   icon: "🌶️" },
-      { id: "japanese_korean",  label: "日韩料理",     desc: "和食、韩餐",         icon: "🍣" },
-      { id: "southeast_asian",  label: "东南亚",       desc: "泰越、马新印",       icon: "🍛" },
-      { id: "western",          label: "西餐",         desc: "意法、美式",         icon: "🍝" },
-      { id: "no_preference",    label: "都行 / 没偏好", desc: "什么都吃", icon: "🤷" },
+      // 中国八大菜系 — Onboarding 用八大菜系 ID，scoreDish 通过
+      // hometownBuckets.ts 落到 DB 现有的 origin_cuisine bucket。
+      { id: "guangdong", label: "粤菜",  desc: "广府 · 顺德 · 港式 · 靓汤", icon: "🦞" },
+      { id: "sichuan",   label: "川菜",  desc: "麻辣 · 鱼香 · 家常",         icon: "🌶️" },
+      { id: "shandong",  label: "鲁菜",  desc: "山东本帮 · 葱烧 · 爆炒",     icon: "🥟" },
+      { id: "jiangsu",   label: "苏菜",  desc: "淮扬 · 苏锡 · 浓油赤酱",     icon: "🍤" },
+      { id: "zhejiang",  label: "浙菜",  desc: "杭帮 · 宁绍 · 鲜咸口",       icon: "🍵" },
+      { id: "fujian",    label: "闽菜",  desc: "福州 · 闽南 · 海味鲜",       icon: "🦀" },
+      { id: "hunan",     label: "湘菜",  desc: "湖南家常 · 辣鲜 · 腊味",     icon: "🍖" },
+      { id: "anhui",     label: "徽菜",  desc: "徽州山珍 · 重油重火",        icon: "🍲" },
+      { id: "no_preference", label: "都行 / 没偏好", desc: "什么都吃", icon: "🤷" },
     ],
   },
 ] as const;

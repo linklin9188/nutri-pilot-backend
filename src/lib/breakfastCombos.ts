@@ -209,8 +209,14 @@ function pickCombo(
   avoidTags: string[],
   dayIndex: number,
 ): BreakfastCombo {
+  // 八大菜系 ID → DB bucket fallback. User picked 鲁菜 (shandong) →
+  // breakfast combos tagged 'northern' (饺子/油条/八宝粥) become eligible.
+  // Lazy import to keep this lib treeshake-friendly.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { hometownToDbBucket } = require('./hometownBuckets') as typeof import('./hometownBuckets');
+  const homeBucket = hometownToDbBucket(hometown);
   const eligible = combos.filter(c => {
-    if (c.hometowns.length > 0 && !c.hometowns.includes('*') && hometown && !c.hometowns.includes(hometown)) return false;
+    if (c.hometowns.length > 0 && !c.hometowns.includes('*') && homeBucket && !c.hometowns.includes(homeBucket)) return false;
     if (c.avoidTags?.some(t => avoidTags.includes(t))) return false;
     return true;
   });

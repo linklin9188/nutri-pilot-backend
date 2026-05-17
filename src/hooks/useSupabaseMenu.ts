@@ -5,6 +5,7 @@ import { getFallbackImage } from '../lib/dishImageFallback';
 import { getUserPrefs } from '../lib/userPrefs';
 import { getUserId } from '../lib/userId';
 import { applyCuisineFilter, type CuisineMode } from '../lib/cuisineFilter';
+import { hometownMatches } from '../lib/hometownBuckets';
 
 // ── Public types ──────────────────────────────────────────────────────────
 
@@ -681,9 +682,10 @@ function scoreDish(
   const origin:     string   = dish.origin_cuisine ?? '';
   const ageMods              = resolveAgeModifiers(profile.age_group);
 
-  // ① Hometown (30%)
-  const hometownScore =
-    profile.hometown_cuisine && origin === profile.hometown_cuisine ? 1.0 : 0.0;
+  // ① Hometown (30%) — uses bucket helper so 八大菜系 onboarding IDs
+  // (鲁/苏/浙/闽/徽/湘 ...) fall back to DB's 6-bucket origin_cuisine
+  // (cantonese/sichuan/jiangnan/northern/...) until backfill细化数据。
+  const hometownScore = hometownMatches(profile.hometown_cuisine, origin) ? 1.0 : 0.0;
 
   // ② Goal (40%) + age wellness modifier
   let goalScore = 0.0;
