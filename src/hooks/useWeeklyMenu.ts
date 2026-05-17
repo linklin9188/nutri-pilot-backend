@@ -56,7 +56,7 @@ export interface WeeklyMenu {
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v29'; // weekday-only weekly menu: skip Sat/Sun generation, Home/WeeklyMenu render today→Friday only
+export const ALGO_VERSION = 'v30'; // cuisine filter 4-way (chinese/hk-style/western/all) + kid-friendly bias (is_kid_friendly + breakfast egg + dinner calcium when nutri_kids>0)
 
 // ── 周末规则 (Weekend rule) — user-confirmed 2026-05-17 ───────────────────────
 // Weekly menu only covers Mon-Fri. Generation skips Sat/Sun; display layers
@@ -180,7 +180,10 @@ function getCacheKey(weekStart: string): string {
     if (eatingRaw) eatingKey = (JSON.parse(eatingRaw) as string[]).slice().sort().join('-');
   } catch {}
   const intentKey = getIntentHash();
-  const cuisineKey = loadCuisineMode().charAt(0); // c / w / a
+  // 4 modes: chinese=c · hk-style=h · western=w · all=a. Single-char key
+  // so the cache filename stays compact.
+  const cm = loadCuisineMode();
+  const cuisineKey = cm === 'hk-style' ? 'h' : cm.charAt(0);
   // Per-day eating override key. Hash the daily lists so any per-day change
   // busts the cache and rebuilds the affected day. Falls back to '' when no
   // per-day overrides exist (most users, single eating-today selection).

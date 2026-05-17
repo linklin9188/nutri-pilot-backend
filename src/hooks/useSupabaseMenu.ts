@@ -52,6 +52,9 @@ export interface SupabaseDish {
   image_url: string;
   main_ingredient: string; // e.g. 'beef' | 'chicken' | 'fish' | 'veggie' | 'other'
   is_vegan: boolean;       // Buddhist-friendly / pure plant-based
+  /** 适合儿童的菜——温和、熟悉格式、无辣无重油。Migration 017 自动 tag。
+   *  scoreDish 在家有小孩 (nutri_kids>0) 时给 +0.20 加分。 */
+  is_kid_friendly?: boolean;
   course_type?: string;
   cook_time_min?: number;
   description_zh?: string;
@@ -544,6 +547,8 @@ function enrichDish(dish: any, highlight: boolean): SupabaseDish {
     // Steps — mapped from DB JSONB fields (available once gen-dish-steps runs)
     prep_steps_json: dish.prep_steps_json ?? null,
     cook_steps_json: dish.cook_steps_json ?? null,
+    // 儿童友好 tag (migration 017) — drives +0.20 score boost when family has kids
+    is_kid_friendly: dish.is_kid_friendly ?? false,
     // 文化背景 — null for everyday dishes, only festive/regional-iconic ones carry it
     cultural_note:   dish.cultural_note ?? null,
     // 小美 robot flags
@@ -760,6 +765,33 @@ function scoreDish(
   // by +0.10 at lunch only, so a staple slot prefers them over plain rice.
   if (mealTime === '午餐' && (dish.course_type === 'staple' || dish.main_ingredient === 'grain') && isWholegrain(dish)) {
     score += 0.10;
+  }
+
+  // ⑥'' 家有小孩的餐桌偏向 (migration 017 + user 2026-05-17):
+  //   · is_kid_friendly: +0.20 (温和、熟悉、无辣无重油的菜显著上浮)
+  //   · 早餐 + egg: +0.15 (长高需要早餐高蛋白)
+  //   · 晚餐 + 钙源 (奶/豆/小鱼小虾): +0.10 (骨骼发育)
+  // 三条加起来在「家有小孩 + 早餐含蛋」场景能给一道菜 +0.45，足够把
+  // 「白米粥 + 咸菜」从早餐 staple slot 挤掉、换成「番茄炒蛋 + 牛奶」。
+  // 读 localStorage 是 OK 的——scoreDish 在一次菜单生成里被调用 ~50 次，
+  // 反正 nutri_kids 不会在一次生成中途变。
+  const kidsCount = parseInt(typeof localStorage !== 'undefined' ? (localStorage.getItem('nutri_kids') ?? '0') : '0', 10);
+  const hasKids = kidsCount > 0;
+  if (hasKids) {
+    if (dish.is_kid_friendly) score += 0.20;
+    if (mealTime === '早餐') {
+      const proteinSrc = (dish.protein_source ?? []) as string[];
+      if (dish.main_ingredient === 'egg' || proteinSrc.includes('egg')) score += 0.15;
+    }
+    if (mealTime === '晚餐') {
+      const proteinSrc = (dish.protein_source ?? []) as string[];
+      const calciumRich =
+        ['dairy', 'tofu'].includes(dish.main_ingredient ?? '') ||
+        proteinSrc.some(p => ['dairy', 'tofu', 'soy'].includes(p)) ||
+        flavorTags.includes('veggie') ||  // 绿叶菜也是钙源
+        ((dish.title_zh ?? '').match(/(豆腐|奶|芝士|酸奶|小鱼|虾|青菜|芥兰|芥蘭|西兰花|西蘭花|油菜|苋菜|菠菜)/));
+      if (calciumRich) score += 0.10;
+    }
   }
 
   // ⑦ Learned-preference signal — folds in user_preference_scores (positive

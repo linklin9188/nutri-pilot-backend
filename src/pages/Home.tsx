@@ -27,6 +27,7 @@ import IntentRegenModal from "../components/IntentRegenModal";
 import { loadIntentBias } from "../lib/intentBias";
 import { getUserId } from "../lib/userId";
 import { loadCuisineMode, type CuisineMode } from "../lib/cuisineFilter";
+import { loadFamilyMembers } from "../lib/familyPrefs";
 import { HeartButton } from "../components/HeartButton";
 import DailyNutritionStrip from "../components/DailyNutritionStrip";
 import { toggleEaten, getEatenToday } from "../lib/eatingDiary";
@@ -647,6 +648,13 @@ export default function Home() {
           <NextWeekMenuPreview />
         </> : <>
 
+        {/* 家庭成员补全 nudge — 仅对「家有小孩、家庭成员档案不全、未被
+            dismiss」的雇主显示一次。点 CTA 跳 /settings；按 × 永久关闭。
+            产品意图（user 2026-05-17）：onboarding 只采到家庭层偏好，
+            富妈妈 + 2 孩子的场景下推荐立刻能翻倍准确度——只要她肯花
+            2 分钟分别建档 (一个不吃鱼 + 一个长高需求等)。 */}
+        <FamilyMemberNudge />
+
         {/* ① TODAY'S MENU — Editorial hero ────────────────────────
             Inspired by food magazine layouts: large dish photography on
             the left, generous typography on the right. No internal padding
@@ -680,14 +688,15 @@ export default function Home() {
             <div className="inline-flex p-1 rounded-2xl gap-0.5"
               style={{ background: "rgba(0,0,0,0.05)" }}>
               {([
-                { key: 'chinese', label: '中餐' },
-                { key: 'western', label: '西餐' },
-                { key: 'all',     label: '全部' },
+                { key: 'all',      label: '全部' },
+                { key: 'chinese',  label: '中餐' },
+                { key: 'hk-style', label: '港式' },
+                { key: 'western',  label: '西餐' },
               ] as const).map(({ key, label }) => (
                 <button key={key} onClick={() => setCuisineMode(key)}
-                  className="px-3 py-1 rounded-xl font-bold transition-all active:scale-95"
+                  className="px-2.5 py-1 rounded-xl font-bold transition-all active:scale-95"
                   style={{
-                    fontSize: 12,
+                    fontSize: 11.5,
                     background: cuisineMode === key ? "white" : "transparent",
                     color: cuisineMode === key ? "#1a1a1a" : "rgba(0,0,0,0.42)",
                     boxShadow: cuisineMode === key ? "0 2px 8px rgba(0,0,0,0.08)" : "none",
@@ -1459,6 +1468,74 @@ export default function Home() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── 家庭成员补全 nudge ──────────────────────────────────────────────────
+// 仅在以下三条都成立时显示：
+//   · 家有小孩 (nutri_kids > 0)
+//   · family_members 数量 < adults + kids (档案不全)
+//   · 用户没按过 × (nutri_family_nudge_v1 != 'dismissed')
+//
+// 点 CTA → /settings；× → 永久 dismiss。这是 onboarding → daily use 中间
+// 的一个"补全 hook"，目的是让她在第一次进 Home 时立刻意识到「分别建档
+// = 推荐更懂每个孩子」。
+function FamilyMemberNudge() {
+  const navigate = useNavigate();
+  const [shouldShow, setShouldShow] = useState(false);
+
+  useEffect(() => {
+    const kids = parseInt(localStorage.getItem("nutri_kids") ?? "0", 10) || 0;
+    const adults = parseInt(localStorage.getItem("nutri_adults") ?? "0", 10) || 0;
+    const expected = adults + kids;
+    if (kids <= 0) return; // 没小孩，nudge 无意义
+    if (localStorage.getItem("nutri_family_nudge_v1") === "dismissed") return;
+    const members = loadFamilyMembers();
+    if (members.length >= expected) return; // 已建档全
+    setShouldShow(true);
+  }, []);
+
+  if (!shouldShow) return null;
+
+  const dismiss = () => {
+    localStorage.setItem("nutri_family_nudge_v1", "dismissed");
+    setShouldShow(false);
+  };
+
+  return (
+    <div
+      className="rounded-2xl px-4 py-3 flex items-start gap-3 relative"
+      style={{
+        background: "linear-gradient(135deg, rgba(255,90,31,0.08), rgba(255,140,84,0.06))",
+        border: "1px solid rgba(255,90,31,0.18)",
+      }}>
+      <span className="text-[24px] shrink-0" style={{ filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.1))" }}>👨‍👩‍👧‍👦</span>
+      <div className="flex-1 min-w-0">
+        <p className="font-serif font-black" style={{ fontSize: 14.5, color: "#1a1a1a" }}>
+          给每位家人建个档案
+        </p>
+        <p className="mt-0.5 leading-relaxed" style={{ fontSize: 12, color: "rgba(0,0,0,0.55)" }}>
+          一个孩子不爱鱼、另一个长高需要奶——分别填上 2 分钟，推荐立刻懂他们。
+        </p>
+        <button
+          onClick={() => navigate("/settings")}
+          className="mt-2 px-3 py-1 rounded-full font-bold active:scale-95 transition-all"
+          style={{
+            background: "linear-gradient(135deg, #FF5A1F, #FF8C54)",
+            color: "white", fontSize: 12, letterSpacing: "0.04em",
+            boxShadow: "0 2px 8px rgba(255,90,31,0.25)",
+          }}>
+          去填档案 →
+        </button>
+      </div>
+      <button
+        onClick={dismiss}
+        className="absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center active:scale-90"
+        style={{ background: "rgba(0,0,0,0.05)" }}
+        aria-label="dismiss">
+        <span style={{ fontSize: 11, color: "rgba(0,0,0,0.45)" }}>✕</span>
+      </button>
     </div>
   );
 }

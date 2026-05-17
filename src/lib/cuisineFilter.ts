@@ -1,51 +1,65 @@
 /**
  * cuisineFilter — shared cuisine-mode → origin_cuisine query helper.
  *
- * `cuisineMode` is the 中餐 / 西餐 / 全部 toggle on Home. Previously it was
- * only enforced as a post-filter in displayMenu, so the recommend/weekly
- * pool would score across all cuisines, then UI would strip western —
- * collapsing 3 candidates down to 1 when the top-scored happened to
- * straddle. This module pushes the filter down to the DB query so the
- * top-N scoring picks from the right cuisine bucket directly.
+ * 4 modes (user 2026-05-17: HK-born kids 有港式情结，分开):
+ *   all       — 不过滤
+ *   chinese   — 中餐（粤菜以外的中式）：川 / 苏 / 鲁 / 浙 / 闽 / 湘 / 徽 / 江浙
+ *   hk-style  — 港式：粤菜 (cantonese) + 标题含「港式 / 茶餐厅 / 菠萝包 ...」
+ *   western   — 西餐：origin_cuisine='western'
  */
 
-export type CuisineMode = 'chinese' | 'western' | 'all';
+export type CuisineMode = 'chinese' | 'hk-style' | 'western' | 'all';
 
-/** Read the saved Home cuisine mode. Falls back to 'chinese'. */
+const HK_STYLE_KEYWORDS = ['港式', '茶餐厅', '茶餐廳', '菠萝包', '菠蘿包', '丝袜奶茶', '絲襪奶茶', '蛋挞', '蛋撻', '凉茶', '涼茶', '车仔面', '車仔麵', '云吞面', '雲吞麵', '叉烧饭', '叉燒飯', '烧腊', '燒臘'];
+
+/** Read the saved Home cuisine mode. Falls back to 'all' (more permissive
+ *  default for new users — they can narrow if they have a preference). */
 export function loadCuisineMode(): CuisineMode {
   const saved = localStorage.getItem('home_cuisine_mode');
-  if (saved === 'chinese' || saved === 'western' || saved === 'all') return saved;
-  return 'chinese';
+  if (saved === 'chinese' || saved === 'western' || saved === 'all' || saved === 'hk-style') return saved;
+  return 'all';
 }
 
 /**
- * Apply the cuisine filter to a Supabase query builder. Returns the same
- * builder for chaining. The "all" mode is a no-op.
+ * Apply the cuisine filter to a Supabase / PostgREST query builder.
+ * Returns the same builder for chaining. `all` is a no-op.
  *
- * - chinese: origin_cuisine NOT western (NULL allowed)
- * - western: origin_cuisine = western
- *
- * Implementation note: PostgREST `.neq` with `null` doesn't strip NULL
- * rows, which is what we want — a dish with no origin still counts as
- * non-western.
+ * For hk-style, we can only push the cantonese half down to the DB
+ * cleanly (origin_cuisine='cantonese'). Title-keyword HK dishes (港式
+ * 茶餐厅 etc.) without origin='cantonese' get caught by matchesCuisine
+ * at the in-memory scoring pass.
  */
-export function applyCuisineFilter<T extends { eq: any; neq: any }>(
+export function applyCuisineFilter<T extends { eq: any; neq: any; not: any }>(
   query: T,
   mode: CuisineMode,
 ): T {
   if (mode === 'all') return query;
-  if (mode === 'western') return query.eq('origin_cuisine', 'western');
-  // chinese
-  return query.neq('origin_cuisine', 'western');
+  if (mode === 'western')   return query.eq('origin_cuisine', 'western');
+  if (mode === 'hk-style')  return query.eq('origin_cuisine', 'cantonese');
+  // chinese — NOT western AND NOT cantonese (the everything-else middle)
+  return query.not('origin_cuisine', 'in', '(western,cantonese)');
 }
 
-/** In-memory filter (for client-side scoring loops that already have the rows). */
+/** In-memory filter (for client-side scoring loops that already have rows). */
 export function matchesCuisine(
-  origin: string | null | undefined,
+  originOrDish: string | { origin_cuisine?: string | null; title_zh?: string | null } | null | undefined,
   mode: CuisineMode,
 ): boolean {
   if (mode === 'all') return true;
-  const c = (origin ?? '').toLowerCase();
-  if (mode === 'western') return c === 'western';
-  return c !== 'western';
+  const origin = (typeof originOrDish === 'string'
+    ? originOrDish
+    : (originOrDish?.origin_cuisine ?? '')).toLowerCase();
+  const title = (typeof originOrDish === 'object' && originOrDish
+    ? (originOrDish.title_zh ?? '')
+    : '');
+
+  if (mode === 'western')  return origin === 'western';
+  if (mode === 'hk-style') {
+    if (origin === 'cantonese') return true;
+    return HK_STYLE_KEYWORDS.some(k => title.includes(k));
+  }
+  // chinese — neither western nor cantonese (and not a port-keyword dish)
+  if (origin === 'western' || origin === 'cantonese') return false;
+  if (HK_STYLE_KEYWORDS.some(k => title.includes(k))) return false;
+  return true;
 }
