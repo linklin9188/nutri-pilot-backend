@@ -5,7 +5,8 @@ import { getFallbackImage } from '../lib/dishImageFallback';
 import { getUserPrefs } from '../lib/userPrefs';
 import { getUserId } from '../lib/userId';
 import { applyCuisineFilter, type CuisineMode } from '../lib/cuisineFilter';
-import { hometownMatches } from '../lib/hometownBuckets';
+import { hometownMatches, hometownToDbBucket } from '../lib/hometownBuckets';
+import { isNewUserSession } from '../lib/userLifecycle';
 
 // ── Public types ──────────────────────────────────────────────────────────
 
@@ -672,6 +673,65 @@ function isWholegrain(d: any): boolean {
   return WHOLEGRAIN_KEYWORDS.some(k => title.includes(k.toLowerCase()));
 }
 
+/**
+ * 跟随用户家乡的菜系基础分（2026-05-17 重写）。
+ *
+ * 用户的核心要求是「算法平等」：任何家乡的用户，看到自己家乡的菜，得分
+ * 都应该一样高。旧实现是一张固定表 (粤 0.15 / 川 0.10 …)，结果四川人
+ * 看川菜的总分比广东人看粤菜低 0.05，这是不公平的。新实现把基础分变成
+ * 「按登录用户的家乡 bucket 自动算」的函数，每个家乡的人看自己家乡都
+ * 拿到完全相同的 +0.20。和 useWeeklyMenu.ts 的 originBaseFor 同源同口径。
+ *
+ *   家乡完全匹配           +0.20
+ *   地理邻近圈             +0.08
+ *   其他中餐 / 国际        +0.04
+ *   西餐                  -0.10
+ *   没设家乡：八大菜系一律 +0.08，国际 +0.04，西餐 -0.10
+ */
+const NEIGHBORHOOD_BY_BUCKET_USM: Record<string, string[]> = {
+  cantonese: ['cantonese'],
+  jiangnan:  ['jiangnan'],
+  sichuan:   ['sichuan'],
+  northern:  ['northern'],
+};
+
+function originBaseForUser(dishOrigin: string, userBucket: string | null): number {
+  if (!dishOrigin) return 0;
+  if (dishOrigin === 'western') return -0.10;
+  if (!userBucket || userBucket === 'no_preference') {
+    if (['cantonese', 'northern', 'jiangnan', 'sichuan'].includes(dishOrigin)) return 0.08;
+    if (['japanese_korean', 'southeast_asian'].includes(dishOrigin)) return 0.04;
+    return 0;
+  }
+  if (dishOrigin === userBucket) return 0.20;
+  const neighbors = NEIGHBORHOOD_BY_BUCKET_USM[userBucket] ?? [];
+  if (neighbors.includes(dishOrigin)) return 0.08;
+  if (['cantonese', 'northern', 'jiangnan', 'sichuan'].includes(dishOrigin)) return 0.04;
+  if (['japanese_korean', 'southeast_asian'].includes(dishOrigin)) return 0.04;
+  return 0;
+}
+
+// Premium-positioning damp: titles that feel like 快餐 / 便当 (the
+// "set-meal-on-a-tray" school of Chinese cooking) get a small negative
+// at lunch/dinner mains. Doesn't disqualify — just nudges down a tier so
+// 厨房做出的 stir-fried + 汤+饭 layout wins over a 盖饭 box. Breakfast
+// is untouched (港式茶餐厅 蛋饭 + 炒饭 is legitimate).
+const FAST_FOOD_TITLE_HINTS = ['盖饭', '盖浇饭', '便当', '炒饭', '烩饭', '焗饭', '泡饭'];
+
+// Current-month → seasonal_tag bonus. DB stores 'Spring' / 'Summer' /
+// 'Autumn' / 'Winter' (also lowercase variants); 'All-Season/Balanced'
+// covers 80%+ of rows so we don't penalise it — just boost the in-season
+// minority so a 冬瓜汤 in July or 萝卜炖排骨 in January ranks slightly
+// higher. Northern hemisphere seasons (3-5 Spring, 6-8 Summer, 9-11
+// Autumn, 12-2 Winter).
+function currentSeasonalTag(): 'Spring' | 'Summer' | 'Autumn' | 'Winter' {
+  const m = new Date().getMonth() + 1;
+  if (m >= 3 && m <= 5)  return 'Spring';
+  if (m >= 6 && m <= 8)  return 'Summer';
+  if (m >= 9 && m <= 11) return 'Autumn';
+  return 'Winter';
+}
+
 function scoreDish(
   dish: any,
   profile: UserProfile5D,
@@ -710,6 +770,51 @@ function scoreDish(
   }
 
   let score = hometownScore * 0.30 + goalScore * 0.40 + tasteScore * 0.30;
+
+  // ①' Origin base score — follows the user's hometown bucket so every
+  // user sees the same +0.20 on their own 家乡 menu. Replaces the legacy
+  // fixed table that was unfair (粤 0.15 vs 川 0.10).
+  const _userBucket = hometownToDbBucket(profile.hometown_cuisine);
+  score += originBaseForUser(origin, _userBucket);
+
+  // ①'' Seasonality — small in-season bonus so 冬瓜 / 萝卜 / 春笋 / 秋藕
+  // rise when the calendar matches. 'All-Season/Balanced' (most rows) is
+  // untouched, so this can only lift the minority that have a real season.
+  const seasonTag = (dish.seasonal_tag ?? '') as string;
+  if (seasonTag && seasonTag.toLowerCase() === currentSeasonalTag().toLowerCase()) {
+    score += 0.08;
+  }
+
+  // ①''' Premium-positioning damp — Chinese high-end chef perspective:
+  // 盖饭/便当/炒饭/烩饭 read as 快餐, drag the dinner experience down a
+  // notch. Breakfast is exempt (港式 + 北方 早餐里炒饭/煎饼合规)。
+  if (mealTime !== '早餐') {
+    const title = (dish.title_zh ?? '').toString();
+    if (FAST_FOOD_TITLE_HINTS.some(k => title.includes(k))) {
+      score -= 0.15;
+    }
+  }
+
+  // ①'''' First-impression boost (2026-05-17 user direction)
+  // 首次推荐很重要：新用户首次会话没有 prefScores 历史，全靠 profile +
+  // popularity。我们对 (a) profile-match 的菜放大 1.3×，(b) 让流行度
+  // (employer_crown_likes / times_kept_in_menu / health_score) 介入，
+  // 让新用户第一眼看到的菜不靠随机，而是社区验证过的「都说好」的家常。
+  if (isNewUserSession()) {
+    // (a) profile-match 放大：goal + taste + hometown 任一匹配，乘以 0.15
+    // 的额外奖励（在 hometown match 0.40 + goal 0.40 + taste 0.30 之上）
+    const profileMatch = (hometownScore > 0 ? 1 : 0)
+                       + (goalScore > 0    ? 1 : 0)
+                       + (tasteScore > 0   ? 1 : 0);
+    score += profileMatch * 0.15;
+
+    // (b) popularity signal — small bonus on community-validated dishes.
+    // health_score 范围 0–10 (DB rule)；times_kept_in_menu 通常 0–200.
+    const hs:   number = Number(dish.health_score ?? 0);
+    const kept: number = Number(dish.times_kept_in_menu ?? 0);
+    score += (hs / 10) * 0.10;             // 满分 +0.10
+    score += Math.min(kept, 50) / 50 * 0.08; // 满分 +0.08 (50+ 留存的菜)
+  }
 
   // ④ Humidity correction (独立于节气)
   if (humidity > 85 && healthTags.includes('damp_clear')) {
@@ -1088,34 +1193,63 @@ function applyBreakfastTemplate(sorted: any[], target: number): any[] {
     // legacy bucket template so the user still sees `target` dishes.
   } catch { /* fall through to legacy */ }
 
+  // ── Hometown-aware legacy fallback (2026-05-17) ──
+  // When the combo picker couldn't fill every slot from BREAKFAST_COMBOS
+  // (DB gap for that hometown), we used to drop straight into the global
+  // sorted[0] which is heavily 北方-biased (DB has more northern breakfast
+  // rows). Result: 粤 / 川 / 苏 users all surfaced 北方 breakfast despite
+  // hometown set. We now prefer dishes whose origin_cuisine matches the
+  // user's hometown bucket, falling through to the global pool only if
+  // the regional pool is empty.
+  const { hometownToDbBucket } = require('../lib/hometownBuckets') as typeof import('../lib/hometownBuckets');
+  const userHometown = (typeof localStorage !== 'undefined' && localStorage.getItem('userHometown'))
+                        ? (localStorage.getItem('userHometown') ?? '').split(',')[0]
+                        : null;
+  const homeBucket = hometownToDbBucket(userHometown);
+  const matchesBucket = (d: any) => !homeBucket || d.origin_cuisine === homeBucket;
+
+  // Two passes per filter: regional-first, then global. If a user has no
+  // hometown set (homeBucket=null) `matchesBucket` is always true and the
+  // two passes collapse to the original behavior.
   const dryCandidates = sorted.filter(isDryBreakfast);
   const wetCandidates = sorted.filter(isWetBreakfast);
+  const dryRegional   = dryCandidates.filter(matchesBucket);
+  const wetRegional   = wetCandidates.filter(matchesBucket);
+
   const used = new Set<string>();
   const result: any[] = [];
   const take = (d: any | undefined) => {
     if (d && !used.has(d.id)) { used.add(d.id); result.push(d); }
   };
 
-  // Slot 1 — dry staple
-  if (target >= 1) take(dryCandidates[0]);
-  // Slot 2 — wet drink
-  if (target >= 2) take(wetCandidates.find(d => !used.has(d.id)));
-  // Slot 3 — side, prefer egg first, then 凉菜 / 豆制品 / other
+  // Slot 1 — dry staple (regional preferred)
+  if (target >= 1) take(dryRegional[0] ?? dryCandidates[0]);
+  // Slot 2 — wet drink (regional preferred)
+  if (target >= 2) {
+    take(wetRegional.find(d => !used.has(d.id)) ?? wetCandidates.find(d => !used.has(d.id)));
+  }
+  // Slot 3 — side, prefer egg first, then 凉菜 / 豆制品 / other.
+  // Same regional-first treatment.
   if (target >= 3) {
     const EGG_KW = ['蛋', 'egg'];
     const SIDE_KW = ['凉拌', '腌', '腐乳', '豆干', '千张', '豆腐皮', '酱牛肉', '肉松', '肉丝'];
     const titleOf = (d: any) => ((d.title_zh ?? '') as string).toLowerCase();
-    const egg = sorted.find(d => !used.has(d.id) && EGG_KW.some(k => titleOf(d).includes(k.toLowerCase())));
-    const sidePick = egg
-                  ?? sorted.find(d => !used.has(d.id) && SIDE_KW.some(k => titleOf(d).includes(k.toLowerCase())))
-                  ?? sorted.find(d => !used.has(d.id) && !isWetBreakfast(d) && !isDryBreakfast(d));
-    take(sidePick);
+    const findSide = (pool: any[]) =>
+      pool.find(d => !used.has(d.id) && EGG_KW.some(k => titleOf(d).includes(k.toLowerCase())))
+      ?? pool.find(d => !used.has(d.id) && SIDE_KW.some(k => titleOf(d).includes(k.toLowerCase())))
+      ?? pool.find(d => !used.has(d.id) && !isWetBreakfast(d) && !isDryBreakfast(d));
+    take(findSide(sorted.filter(matchesBucket)) ?? findSide(sorted));
   }
-  // Pad with whatever scored highest if any slot was empty
-  let i = 0;
-  while (result.length < target && i < sorted.length) {
-    take(sorted[i]);
-    i++;
+  // Pad with whatever scored highest if any slot was empty — regional first,
+  // then global.
+  const padPools = [sorted.filter(matchesBucket), sorted];
+  for (const padPool of padPools) {
+    let i = 0;
+    while (result.length < target && i < padPool.length) {
+      take(padPool[i]);
+      i++;
+    }
+    if (result.length >= target) break;
   }
   return result;
 }

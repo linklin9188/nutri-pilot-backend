@@ -27,7 +27,7 @@ import { loadIntentBias, applyIntentBias, getIntentHash } from '../lib/intentBia
 import { applyPregnancyAdjustments } from '../lib/pregnancy';
 import { getUserId } from '../lib/userId';
 import { applyCuisineFilter, loadCuisineMode } from '../lib/cuisineFilter';
-import { hometownMatches } from '../lib/hometownBuckets';
+import { hometownMatches, hometownToDbBucket } from '../lib/hometownBuckets';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -56,7 +56,7 @@ export interface WeeklyMenu {
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v31'; // 粥/稀饭 globally banned from lunch + dinner pools (breakfast-only) + 20:00 day rollover via todayDayIndex
+export const ALGO_VERSION = 'v32'; // 平等的家乡基础分 (per-user originBaseFor) + seasonal_tag in-season bonus + 快餐感降权 + dinner 烹饪法多样性 + 早餐 hometown fallback + 首次推荐 profile×1.3 + popularity boost
 
 // ── 周末规则 (Weekend rule) — user-confirmed 2026-05-17 ───────────────────────
 // Weekly menu only covers Mon-Fri. Generation skips Sat/Sun; display layers
@@ -347,15 +347,70 @@ function getMaxPerCategory(dishesPerDay: number): Record<string, number> {
 // We apply a base score adjustment by origin so the algorithm doesn't just pick
 // by volume. Chinese-origin cuisines get a slight lift; western gets a slight
 // penalty unless the user has a western preference.
-const ORIGIN_BASE_SCORE: Record<string, number> = {
-  cantonese:       0.15,
-  northern:        0.12,
-  jiangnan:        0.12,
-  sichuan:         0.10,
-  southeast_asian: 0.08,
-  japanese_korean: 0.08,
-  western:        -0.10,   // mild penalty — overridden if user profile = western
+/**
+ * 跟随用户的菜系基础分（2026-05-17 重写，user-direction）。
+ *
+ * 旧实现是一张固定表（粤 0.15、川 0.10、北 0.12 …），结果四川用户看到
+ * 自家川菜的总分比广东用户看到自家粤菜的总分还低，对其他地域的用户
+ * 不公平。新实现按 **登录用户的家乡** 动态算：
+ *
+ *   ① 用户家乡 bucket = dish origin       →  +0.20  （家乡圈，最高）
+ *   ② 邻近地理圈                          →  +0.08  （比如粤+闽、苏+浙+徽、川+湘）
+ *   ③ 中餐其他主流地域                    →  +0.04
+ *   ④ 日韩 / 东南亚                       →  +0.04
+ *   ⑤ 西餐                                →  -0.10  （抵消 DB 西餐数量过多的偏斜）
+ *   ⑥ 用户没设家乡 → 八大菜系一律 +0.08，西餐 -0.10
+ *
+ * 叠加在 hometownMatches() 的 +0.40 之上，所以家乡菜的总加分 ≈ 0.60，
+ * 任何用户看到自己家乡都是绝对最高分。
+ */
+
+// 地理邻近圈 — 同圈内的菜系 + 0.08。圈外 +0.04。
+const NEIGHBORHOOD_BY_BUCKET: Record<string, string[]> = {
+  cantonese: ['cantonese'],                       // 粤菜独立 (邻近的闽菜在 hometownBuckets 已 fallback 到 cantonese)
+  jiangnan:  ['jiangnan'],                        // 苏浙徽 都已 fallback 到 jiangnan
+  sichuan:   ['sichuan'],                         // 川湘 都已 fallback 到 sichuan
+  northern:  ['northern'],                        // 鲁菜 fallback 在此
 };
+
+function originBaseFor(dishOrigin: string, userBucket: string | null): number {
+  if (!dishOrigin) return 0;
+  if (dishOrigin === 'western') return -0.10;
+  // 没家乡偏好：八大菜系一律平等，国际中等
+  if (!userBucket || userBucket === 'no_preference') {
+    if (['cantonese', 'northern', 'jiangnan', 'sichuan'].includes(dishOrigin)) return 0.08;
+    if (['japanese_korean', 'southeast_asian'].includes(dishOrigin)) return 0.04;
+    return 0;
+  }
+  // 完全匹配：家乡菜的 +0.40 已经在 hometownMatches 加过了，base 不再叠加，
+  // 单独走 0.20 这条；hometownMatches 拿到的是另一个 axis 的 +0.40，两者
+  // 都触发的话总共能给同家乡菜累积 +0.60。
+  if (dishOrigin === userBucket) return 0.20;
+  // 邻近圈
+  const neighbors = NEIGHBORHOOD_BY_BUCKET[userBucket] ?? [];
+  if (neighbors.includes(dishOrigin)) return 0.08;
+  // 其他中餐
+  if (['cantonese', 'northern', 'jiangnan', 'sichuan'].includes(dishOrigin)) return 0.04;
+  // 日韩 / 东南亚
+  if (['japanese_korean', 'southeast_asian'].includes(dishOrigin)) return 0.04;
+  return 0;
+}
+
+// Premium-positioning damp: titles that feel like 快餐 / 便当 get a small
+// negative at lunch/dinner mains. Doesn't disqualify, just nudges down a
+// tier so 厨房做出的炒菜+汤+饭 layout wins over a 盖饭. Breakfast is
+// untouched.
+const FAST_FOOD_TITLE_HINTS = ['盖饭', '盖浇饭', '便当', '炒饭', '烩饭', '焗饭', '泡饭'];
+
+// Month → season tag. DB seasonal_tag uses "Spring/Summer/Autumn/Winter"
+// (also lowercase variants). Northern hemisphere months.
+function currentSeasonTag(): string {
+  const m = new Date().getMonth() + 1;
+  if (m >= 3 && m <= 5)  return 'spring';
+  if (m >= 6 && m <= 8)  return 'summer';
+  if (m >= 9 && m <= 11) return 'autumn';
+  return 'winter';
+}
 
 // ── Age profile system ────────────────────────────────────────────────────────
 
@@ -449,9 +504,12 @@ function scoreForWeek({
   // ── 1. Cuisine origin rebalancing (fixes western 32% volume bias) ─────────
   // If user has a hometown preference, override the default penalty/bonus.
   // hometownMatches handles 八大菜系 IDs (鲁/苏/浙/闽/徽/湘) → DB bucket fallback.
-  let score = ORIGIN_BASE_SCORE[origin] ?? 0;
+  // Hometown bucket = the DB origin slug 当前用户 maps to (e.g. shandong →
+  // 'northern'). Falling back to null when the user hasn't picked yet.
+  const userBucket = hometownToDbBucket(profile.hometown_cuisine);
+  let score = originBaseFor(origin, userBucket);
   if (hometownMatches(profile.hometown_cuisine, origin)) {
-    score += 0.40;  // strong hometown match overrides default
+    score += 0.40;  // strong hometown match — stacks on top of the base bias
   }
 
   // ── 2. Dietary goal — only count tags BEYOND 'maintain' ──────────────────
@@ -561,6 +619,24 @@ function scoreForWeek({
   // so bias can only reorder within a slot's candidates — it can't change
   // a soup slot into a meat slot.
   score = applyIntentBias(score, dish, loadIntentBias());
+
+  // ── 15. Seasonality (2026-05-17, high-end chef positioning) ───────────
+  // DB seasonal_tag matches current calendar season → small bonus so
+  // 冬瓜汤 in July or 萝卜炖排骨 in January ranks above its all-season
+  // peers. "All-Season/Balanced" (≈80% of rows) is untouched.
+  const seasonTag = ((dish.seasonal_tag ?? '') as string).toLowerCase();
+  if (seasonTag && seasonTag === currentSeasonTag()) {
+    score += 0.08;
+  }
+
+  // ── 16. Premium-positioning damp ───────────────────────────────────────
+  // 盖饭 / 便当 / 炒饭 / 烩饭 read as 快餐 at a serious lunch/dinner table.
+  // Soft negative — doesn't disqualify, but stops them winning the staple
+  // slot over a proper rice + 3 dishes layout.
+  const _title = (dish.title_zh ?? dish.title ?? '').toString();
+  if (FAST_FOOD_TITLE_HINTS.some(k => _title.includes(k))) {
+    score -= 0.15;
+  }
 
   return score;
 }
@@ -752,6 +828,11 @@ function generateWeekPlan(
     // in the same dinner. Hard-block any candidate whose title keyword has
     // already been picked today.
     const dayTitleKeywords: string[] = [];
+    // Same-day cook-method dedup (2026-05-17, high-end chef positioning).
+    // 4 道炒菜 同一桌读起来单调; the lunch template already enforces method
+    // variety via pickWithMethodVariety. We mirror that for dinner by
+    // applying a soft penalty inside the scoring loop below.
+    const dayCookMethods: string[] = [];
 
     // ── Per-member main-slot allocation (一人一菜) ───────────────────
     // When 2+ members are home with distinct goals (e.g. wife 备孕 +
