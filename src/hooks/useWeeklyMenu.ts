@@ -348,50 +348,38 @@ function getMaxPerCategory(dishesPerDay: number): Record<string, number> {
 // by volume. Chinese-origin cuisines get a slight lift; western gets a slight
 // penalty unless the user has a western preference.
 /**
- * 跟随用户的菜系基础分（2026-05-17 重写，user-direction）。
+ * 菜系基础分（2026-05-17 二次澄清，user-direction）。
  *
- * 旧实现是一张固定表（粤 0.15、川 0.10、北 0.12 …），结果四川用户看到
- * 自家川菜的总分比广东用户看到自家粤菜的总分还低，对其他地域的用户
- * 不公平。新实现按 **登录用户的家乡** 动态算：
+ * 用户两条规则：
+ *   规则 1: 用户登记了家乡 → 家乡菜的权重要大（保持强加分，由
+ *           hometownMatches() 的 +0.60 体现，独立于 base）
+ *   规则 2: 用户没登记家乡 → 各菜系平等（不要默认偏向北方）
  *
- *   ① 用户家乡 bucket = dish origin       →  +0.20  （家乡圈，最高）
- *   ② 邻近地理圈                          →  +0.08  （比如粤+闽、苏+浙+徽、川+湘）
- *   ③ 中餐其他主流地域                    →  +0.04
- *   ④ 日韩 / 东南亚                       →  +0.04
- *   ⑤ 西餐                                →  -0.10  （抵消 DB 西餐数量过多的偏斜）
- *   ⑥ 用户没设家乡 → 八大菜系一律 +0.08，西餐 -0.10
+ * 据此，base 分按以下设计：
  *
- * 叠加在 hometownMatches() 的 +0.40 之上，所以家乡菜的总加分 ≈ 0.60，
- * 任何用户看到自己家乡都是绝对最高分。
+ *   • 用户设了家乡：
+ *       自家家乡:           0      （家乡靠 hometownMatches +0.60，不在 base 重复加）
+ *       其他中餐 / 国际:     +0.04 （轻度均衡）
+ *       西餐:               -0.10 （抵消 DB 西餐数量偏斜）
+ *
+ *   • 用户没设家乡：
+ *       cantonese / northern / jiangnan / sichuan:  +0.08 （绝对平等，不偏北方）
+ *       japanese_korean / southeast_asian:          +0.04
+ *       western:                                    -0.10
  */
-
-// 地理邻近圈 — 同圈内的菜系 + 0.08。圈外 +0.04。
-const NEIGHBORHOOD_BY_BUCKET: Record<string, string[]> = {
-  cantonese: ['cantonese'],                       // 粤菜独立 (邻近的闽菜在 hometownBuckets 已 fallback 到 cantonese)
-  jiangnan:  ['jiangnan'],                        // 苏浙徽 都已 fallback 到 jiangnan
-  sichuan:   ['sichuan'],                         // 川湘 都已 fallback 到 sichuan
-  northern:  ['northern'],                        // 鲁菜 fallback 在此
-};
-
 function originBaseFor(dishOrigin: string, userBucket: string | null): number {
   if (!dishOrigin) return 0;
   if (dishOrigin === 'western') return -0.10;
-  // 没家乡偏好：八大菜系一律平等，国际中等
   if (!userBucket || userBucket === 'no_preference') {
+    // 平等模式：四大中餐 origin 拿同样的 +0.08，谁也不偏
     if (['cantonese', 'northern', 'jiangnan', 'sichuan'].includes(dishOrigin)) return 0.08;
     if (['japanese_korean', 'southeast_asian'].includes(dishOrigin)) return 0.04;
     return 0;
   }
-  // 完全匹配：家乡菜的 +0.40 已经在 hometownMatches 加过了，base 不再叠加，
-  // 单独走 0.20 这条；hometownMatches 拿到的是另一个 axis 的 +0.40，两者
-  // 都触发的话总共能给同家乡菜累积 +0.60。
-  if (dishOrigin === userBucket) return 0.20;
-  // 邻近圈
-  const neighbors = NEIGHBORHOOD_BY_BUCKET[userBucket] ?? [];
-  if (neighbors.includes(dishOrigin)) return 0.08;
-  // 其他中餐
+  // 设了家乡：家乡菜 base 不重复加，全部 +0.60 加分由 hometownMatches 给
+  if (dishOrigin === userBucket) return 0;
+  // 其他中餐 / 国际 menu 给个轻度均衡，让 weekly menu 偶尔来一道别的口味
   if (['cantonese', 'northern', 'jiangnan', 'sichuan'].includes(dishOrigin)) return 0.04;
-  // 日韩 / 东南亚
   if (['japanese_korean', 'southeast_asian'].includes(dishOrigin)) return 0.04;
   return 0;
 }
@@ -509,7 +497,10 @@ function scoreForWeek({
   const userBucket = hometownToDbBucket(profile.hometown_cuisine);
   let score = originBaseFor(origin, userBucket);
   if (hometownMatches(profile.hometown_cuisine, origin)) {
-    score += 0.40;  // strong hometown match — stacks on top of the base bias
+    // 家乡权重要大（user direction 2026-05-17）。+0.60 让自家菜系跟其他
+    // 菜系的差距拉到 0.56+ (家乡 0.60 vs 其他中餐 base 0.04)，确保家乡
+    // 菜永远是绝对最高分。
+    score += 0.60;
   }
 
   // ── 2. Dietary goal — only count tags BEYOND 'maintain' ──────────────────

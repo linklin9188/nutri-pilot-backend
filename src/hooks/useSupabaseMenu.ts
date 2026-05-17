@@ -674,27 +674,10 @@ function isWholegrain(d: any): boolean {
 }
 
 /**
- * 跟随用户家乡的菜系基础分（2026-05-17 重写）。
- *
- * 用户的核心要求是「算法平等」：任何家乡的用户，看到自己家乡的菜，得分
- * 都应该一样高。旧实现是一张固定表 (粤 0.15 / 川 0.10 …)，结果四川人
- * 看川菜的总分比广东人看粤菜低 0.05，这是不公平的。新实现把基础分变成
- * 「按登录用户的家乡 bucket 自动算」的函数，每个家乡的人看自己家乡都
- * 拿到完全相同的 +0.20。和 useWeeklyMenu.ts 的 originBaseFor 同源同口径。
- *
- *   家乡完全匹配           +0.20
- *   地理邻近圈             +0.08
- *   其他中餐 / 国际        +0.04
- *   西餐                  -0.10
- *   没设家乡：八大菜系一律 +0.08，国际 +0.04，西餐 -0.10
+ * 菜系基础分（2026-05-17 二次澄清）。规则同 useWeeklyMenu.originBaseFor：
+ * 家乡菜的权重由 hometown score axis 单独给（重的那一份在那里），base
+ * 不重复叠加；没设家乡的用户走平等模式。详细见 useWeeklyMenu.ts。
  */
-const NEIGHBORHOOD_BY_BUCKET_USM: Record<string, string[]> = {
-  cantonese: ['cantonese'],
-  jiangnan:  ['jiangnan'],
-  sichuan:   ['sichuan'],
-  northern:  ['northern'],
-};
-
 function originBaseForUser(dishOrigin: string, userBucket: string | null): number {
   if (!dishOrigin) return 0;
   if (dishOrigin === 'western') return -0.10;
@@ -703,9 +686,8 @@ function originBaseForUser(dishOrigin: string, userBucket: string | null): numbe
     if (['japanese_korean', 'southeast_asian'].includes(dishOrigin)) return 0.04;
     return 0;
   }
-  if (dishOrigin === userBucket) return 0.20;
-  const neighbors = NEIGHBORHOOD_BY_BUCKET_USM[userBucket] ?? [];
-  if (neighbors.includes(dishOrigin)) return 0.08;
+  // 家乡菜的强加分由 hometownScore axis 在 5D 打分时给，base 不重复
+  if (dishOrigin === userBucket) return 0;
   if (['cantonese', 'northern', 'jiangnan', 'sichuan'].includes(dishOrigin)) return 0.04;
   if (['japanese_korean', 'southeast_asian'].includes(dishOrigin)) return 0.04;
   return 0;
@@ -771,9 +753,14 @@ function scoreDish(
 
   let score = hometownScore * 0.30 + goalScore * 0.40 + tasteScore * 0.30;
 
-  // ①' Origin base score — follows the user's hometown bucket so every
-  // user sees the same +0.20 on their own 家乡 menu. Replaces the legacy
-  // fixed table that was unfair (粤 0.15 vs 川 0.10).
+  // 家乡权重要大（user direction 2026-05-17）。除了 5D 里的 hometownScore
+  // axis (×0.30) 之外，再额外 +0.30 让家乡菜跟其他菜系拉到 0.60 的差距，
+  // 跟 useWeeklyMenu.scoreForWeek 的 +0.60 hometown bonus 同口径。这意味着
+  // 任何家乡设了的用户，自家菜系几乎一定排在最前面。
+  if (hometownScore > 0) score += 0.30;
+
+  // ①' Origin base score — 没设家乡的用户走平等模式（四大中餐 +0.08），
+  // 设了家乡的用户家乡菜 base = 0 (避免重复加，强加分已在上面给完)。
   const _userBucket = hometownToDbBucket(profile.hometown_cuisine);
   score += originBaseForUser(origin, _userBucket);
 
