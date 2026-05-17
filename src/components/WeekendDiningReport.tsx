@@ -11,7 +11,7 @@
  */
 import { useEffect, useState } from 'react';
 import { summarizeWeek, buildDiningSuggestions, FOOD_GROUPS_ORDER, type WeeklySummary, type DiningSuggestion, type FoodGroup } from '../lib/weeklyDiarySummary';
-import { type DiningTag, resolveRestaurantImage } from '../lib/hkRestaurants';
+import { RestaurantCard } from './RestaurantCard';
 
 // 10 类食材组 — 用户视角轮值（鱼/红肉/白肉/蛋/蔬菜/豆/菌/奶/主食/水果），
 // 灰色 chip = 这周没沾，绿色 = 上桌过。
@@ -200,117 +200,5 @@ function Stat({ value, label, suffix }: { value: number; label: string; suffix?:
   );
 }
 
-// Per-card render. Separate component so we can attach state for booking
-// flow later (loading state, confirmation modal, etc.).
-function RestaurantCard({ suggestion }: { suggestion: DiningSuggestion }) {
-  const { restaurant: r, reason, tag } = suggestion;
-  const [copied, setCopied] = useState(false);
-
-  // 预订 stub: prefer external link → fallback to phone copy → fallback to alert.
-  // Real booking flow lives in Phase 2 (餐厅合作 + 抽成).
-  const handleBook = () => {
-    if (r.link) {
-      window.open(r.link, '_blank', 'noopener,noreferrer');
-      return;
-    }
-    if (r.phone) {
-      navigator.clipboard?.writeText(r.phone).catch(() => {/* offline-tolerant */});
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
-      return;
-    }
-    alert('預訂功能即將上線，敬請期待 🍴');
-  };
-
-  // Map tag → small icon for the card avatar
-  const tagEmoji: Record<DiningTag, string> = {
-    fish: '🐟', shellfish: '🦐', meat: '🥩', poultry: '🍗', egg: '🥚',
-    dairy: '🥛', soy: '🌱', veggie: '🥗', fruit: '🍓', grain: '🌾',
-    light: '🍵', banquet: '🌸',
-  };
-
-  return (
-    <div
-      className="rounded-2xl overflow-hidden transition-all active:scale-[0.99]"
-      style={{
-        background: '#FFFDFB',
-        border: '1px solid rgba(255,90,31,0.10)',
-        boxShadow: '0 2px 12px rgba(0,0,0,0.05)',
-      }}>
-      {/* ── Hero photo (16:9-ish) with Michelin pill + price overlay ── */}
-      <div className="relative w-full" style={{ aspectRatio: '16 / 9', background: '#f5f0eb' }}>
-        <img
-          src={resolveRestaurantImage(r)}
-          alt={r.name}
-          loading="lazy"
-          className="absolute inset-0 w-full h-full object-cover"
-        />
-        {/* Bottom gradient so overlay text always reads */}
-        <div className="absolute inset-x-0 bottom-0 h-1/2"
-          style={{ background: 'linear-gradient(to bottom, transparent, rgba(0,0,0,0.55))' }} />
-        {/* Top-right: Michelin pill */}
-        {r.michelin && (
-          <span
-            className="absolute top-2.5 right-2.5 px-2 py-1 rounded-md font-bold tabular-nums"
-            style={{
-              fontSize: 10, letterSpacing: '0.04em',
-              background: r.michelin === 'Bib'
-                ? 'linear-gradient(135deg, #FFF1C7, #FFE49A)'
-                : 'linear-gradient(135deg, #B91C1C, #DC2626)',
-              color: r.michelin === 'Bib' ? '#7A5800' : 'white',
-              boxShadow: '0 2px 6px rgba(0,0,0,0.25)',
-            }}>
-            {r.michelin === 'Bib' ? 'BIB GOURMAND' : `MICHELIN ${r.michelin}`}
-          </span>
-        )}
-        {/* Bottom-left: tag emoji + price tier */}
-        <div className="absolute left-3 bottom-2.5 flex items-center gap-2">
-          <span className="text-[20px]" style={{ filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.4))' }}>
-            {tagEmoji[tag] ?? '🍽'}
-          </span>
-          <span className="text-white font-bold tabular-nums" style={{ fontSize: 11, letterSpacing: '0.08em', textShadow: '0 1px 3px rgba(0,0,0,0.6)' }}>
-            {r.price_tier}
-          </span>
-        </div>
-      </div>
-
-      {/* ── Body ─────────────────────────────────────────────────── */}
-      <div className="px-4 py-3.5">
-        {/* Name + cuisine·area */}
-        <p className="font-serif font-black truncate" style={{ fontSize: 17, color: '#1a1a1a', letterSpacing: '-0.005em' }}>
-          {r.name}
-        </p>
-        <p className="mt-0.5" style={{ fontSize: 11.5, color: 'rgba(0,0,0,0.55)' }}>
-          {r.cuisine} <span style={{ color: 'rgba(0,0,0,0.25)' }}>·</span> {r.area}
-        </p>
-
-        {/* Signature dish */}
-        <p className="mt-2 font-serif italic" style={{ fontSize: 12.5, color: '#FF5A1F' }}>
-          招牌：{r.signature}
-        </p>
-
-        {/* Why-this-place reason (gap-driven) */}
-        <p className="mt-1.5 leading-relaxed" style={{ fontSize: 12.5, color: 'rgba(0,0,0,0.6)' }}>
-          {reason} <span className="text-secondary/60" style={{ fontWeight: 500 }}>{r.blurb}</span>
-        </p>
-
-        {/* Footer — 预订 CTA */}
-        <div className="mt-3 flex items-center justify-between">
-          <span className="text-[10px]" style={{ color: 'rgba(0,0,0,0.32)', letterSpacing: '0.04em' }}>
-            {copied ? '電話已複製 ✓' : (r.phone ?? '查 OpenRice')}
-          </span>
-          <button
-            onClick={handleBook}
-            className="px-4 py-1.5 rounded-full font-bold transition-all active:scale-95"
-            style={{
-              background: 'linear-gradient(135deg, #FF5A1F, #FF8C54)',
-              color: 'white', fontSize: 12.5, letterSpacing: '0.04em',
-              boxShadow: '0 4px 12px rgba(255,90,31,0.28)',
-            }}>
-            預訂 →
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+// RestaurantCard extracted to ./RestaurantCard.tsx — the compact version
+// with tap-to-detail modal + 3 booking channels (WhatsApp / OpenRice / tel).
