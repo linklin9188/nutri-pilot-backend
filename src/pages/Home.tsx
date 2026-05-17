@@ -146,6 +146,10 @@ export default function Home() {
   const [todayKids, setTodayKids] = useState(2);
   const [veganOnly, setVeganOnly] = useState(false);
   const [intentModalOpen, setIntentModalOpen] = useState(false);
+  // Inline headcount popover — lets the user change "今天几位用餐" right
+  // from Home without diving into Settings. Writes nutri_adults/kids and
+  // triggers menu refresh via the existing useRecommendDishes hook.
+  const [headcountOpen, setHeadcountOpen] = useState(false);
 
   // Cuisine filter: 中餐 (non-western asian) / 西餐 (western) / all.
   // Default '中' so users who type 中餐 mentally don't get pasta in their list.
@@ -646,8 +650,8 @@ export default function Home() {
                 now hosts the favorites shortcut. */}
           </div>
 
-          {/* Cuisine filter — 中餐 / 西餐 / 全部 (favorites shortcut moved to /weekly) */}
-          <div className="flex items-center justify-start mb-3">
+          {/* Cuisine filter + 今日用餐人数 chip — same row, two halves. */}
+          <div className="relative flex items-center justify-between mb-3">
             <div className="inline-flex p-1 rounded-2xl gap-0.5"
               style={{ background: "rgba(0,0,0,0.05)" }}>
               {([
@@ -667,6 +671,108 @@ export default function Home() {
                 </button>
               ))}
             </div>
+
+            {/* 今日用餐人数 chip — tap to expand the +/- stepper popover.
+                Writes nutri_adults / nutri_kids; useRecommendDishes picks
+                up the new count on the next refresh tick. */}
+            <button
+              onClick={() => setHeadcountOpen(o => !o)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold active:scale-95 transition-transform"
+              style={{
+                fontSize: 12,
+                background: "white",
+                color: "#1a1a1a",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+              }}
+              title="今日几位用餐">
+              <span className="material-symbols-outlined" style={{ fontSize: 14, color: "#FF5A1F" }}>group</span>
+              <span>{todayAdults} 大{todayKids > 0 ? ` + ${todayKids} 小` : ""}</span>
+              <span className="material-symbols-outlined" style={{ fontSize: 14, color: "rgba(0,0,0,0.4)", transition: "transform 0.2s", transform: headcountOpen ? "rotate(180deg)" : "rotate(0deg)" }}>expand_more</span>
+            </button>
+
+            {/* Stepper popover */}
+            {headcountOpen && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setHeadcountOpen(false)} />
+                <div className="absolute right-0 top-full mt-2 z-40 rounded-2xl p-4 w-[260px]"
+                  style={{
+                    background: "white",
+                    boxShadow: "0 12px 32px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.06)",
+                  }}>
+                  <p className="text-[11px] font-bold text-secondary/60 uppercase tracking-wider mb-3">今日几位用餐</p>
+
+                  {/* Adults stepper */}
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <p className="text-[13px] font-bold text-on-surface">大人</p>
+                      <p className="text-[10px] text-secondary/60">每位算 1 人</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          const n = Math.max(1, todayAdults - 1);
+                          setTodayAdults(n);
+                          localStorage.setItem("nutri_adults", String(n));
+                          window.dispatchEvent(new Event("nutri-prefs-changed"));
+                        }}
+                        className="w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+                        style={{ background: "rgba(0,0,0,0.06)" }}>
+                        <span className="material-symbols-outlined" style={{ fontSize: 18, color: "#1a1a1a" }}>remove</span>
+                      </button>
+                      <span className="font-black tabular-nums text-center" style={{ fontSize: 20, minWidth: 28, color: "#1a1a1a" }}>{todayAdults}</span>
+                      <button
+                        onClick={() => {
+                          const n = Math.min(12, todayAdults + 1);
+                          setTodayAdults(n);
+                          localStorage.setItem("nutri_adults", String(n));
+                          window.dispatchEvent(new Event("nutri-prefs-changed"));
+                        }}
+                        className="w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+                        style={{ background: "#FF5A1F" }}>
+                        <span className="material-symbols-outlined text-white" style={{ fontSize: 18 }}>add</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Kids stepper */}
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <p className="text-[13px] font-bold text-on-surface">孩子</p>
+                      <p className="text-[10px] text-secondary/60">每位算半人</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          const n = Math.max(0, todayKids - 1);
+                          setTodayKids(n);
+                          localStorage.setItem("nutri_kids", String(n));
+                          window.dispatchEvent(new Event("nutri-prefs-changed"));
+                        }}
+                        className="w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+                        style={{ background: "rgba(0,0,0,0.06)" }}>
+                        <span className="material-symbols-outlined" style={{ fontSize: 18, color: "#1a1a1a" }}>remove</span>
+                      </button>
+                      <span className="font-black tabular-nums text-center" style={{ fontSize: 20, minWidth: 28, color: "#1a1a1a" }}>{todayKids}</span>
+                      <button
+                        onClick={() => {
+                          const n = Math.min(8, todayKids + 1);
+                          setTodayKids(n);
+                          localStorage.setItem("nutri_kids", String(n));
+                          window.dispatchEvent(new Event("nutri-prefs-changed"));
+                        }}
+                        className="w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+                        style={{ background: "#FF5A1F" }}>
+                        <span className="material-symbols-outlined text-white" style={{ fontSize: 18 }}>add</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <p className="text-center text-[11px] text-secondary/70 pt-1 border-t border-black/5">
+                    共 {todayAdults + todayKids} 人 · 等效 {(todayAdults + todayKids * 0.5).toFixed(1)} 人份
+                  </p>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Editorial menu card — paper background, generous padding */}
