@@ -138,8 +138,23 @@ Deno.serve(async (req: Request) => {
       if (data) userId = (data as any).id;
     }
 
-    // 4. Create new user_profiles row if first-time.
+    // 4. Create new user_profiles row if first-time AND we have a nickname
+    //    (snsapi_userinfo scope). On the silent path (snsapi_base scope) we
+    //    only have an openid — no display_name, which the schema requires
+    //    and many UIs assume non-null. So on silent-with-no-match we bounce
+    //    the user to /login where they go through the regular consent flow.
+    const isSilent = scope === "snsapi_base" || !scope.includes("snsapi_userinfo");
     if (!userId) {
+      if (isSilent) {
+        // First-time user came in via silent re-auth — we have no nickname,
+        // so we can't satisfy the display_name NOT NULL constraint. Punt
+        // to /login; the explicit 微信登录 button will request
+        // snsapi_userinfo and create the profile properly.
+        return new Response(null, {
+          status: 302,
+          headers: { Location: `${APP_ORIGIN}/login` },
+        });
+      }
       userId = crypto.randomUUID();
       isNew = true;
       const { error } = await supabase.from("user_profiles").insert({

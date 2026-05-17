@@ -32,6 +32,7 @@ import RequireAuth from './components/RequireAuth';
 import { syncFavoritesFromCloud } from './lib/favorites';
 import { LanguageProvider } from './contexts/LanguageContext';
 import { supabase } from './lib/supabase';
+import { maybeAttemptSilent } from './lib/wechatSilentLogin';
 
 
 // Smart entry point for "/". Anonymous-first: visitors don't need to log in
@@ -44,6 +45,21 @@ import { supabase } from './lib/supabase';
 //  • No quickPrefs yet                         → /setup (anonymous onboarding)
 //  • Has quickPrefs                            → Home
 function RootRedirect() {
+  // Silent re-auth for WeChat users who lost localStorage between sessions
+  // (公众号 / 朋友圈 / 群聊 link clicks open in webview contexts whose
+  // storage isn't always persisted). attemptSilent() redirects away, so
+  // this branch never falls through to render.
+  if (maybeAttemptSilent()) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: '#080808' }}>
+        <div className="text-center">
+          <div className="inline-block w-8 h-8 rounded-full border-2 border-white/20 border-t-[#FF5A1F] animate-spin mb-3" />
+          <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.6)' }}>正在登录…</p>
+        </div>
+      </div>
+    );
+  }
+
   const role = localStorage.getItem("nutri_role");
   if (role === "helper") return <Navigate to="/helper" replace />;
   const hasPrefs = !!localStorage.getItem("quickPrefs");

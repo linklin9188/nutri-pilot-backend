@@ -705,8 +705,11 @@ export default function Home() {
           <div className="relative flex items-center justify-between mb-3">
             <div className="inline-flex p-1 rounded-2xl gap-0.5"
               style={{ background: "rgba(0,0,0,0.05)" }}>
+              {/* "全部" chip removed 2026-05-17 per product call —
+                  always force a specific cuisine to keep menus culturally
+                  coherent. If a user's last-chosen mode was 'all' (legacy),
+                  the useState init / loadCuisineMode falls back to '中餐'. */}
               {([
-                { key: 'all',      label: '全部' },
                 { key: 'chinese',  label: '中餐' },
                 { key: 'hk-style', label: '港式' },
                 { key: 'western',  label: '西餐' },
@@ -1193,6 +1196,32 @@ export default function Home() {
               className="px-4 py-2 rounded-xl font-bold text-white shrink-0 active:scale-95"
               style={{ fontSize: 12, background: "#FF5A1F" }}>登录</button>
           </div>
+        )}
+
+        {/* Pro upgrade nav — shown to logged-in non-members. Skipped on
+            first-session new users so their initial impression isn't a
+            paywall pitch. Tap → /pricing where the full benefits block
+            + plans + Stripe checkout live. */}
+        {isLoggedIn && !isPro && !isNewUserSession() && (
+          <button onClick={() => navigate('/pricing')}
+            className="w-full rounded-2xl px-4 py-3.5 flex items-center gap-3 active:scale-[0.98] transition-all"
+            style={{
+              background: "linear-gradient(135deg, #FF5A1F 0%, #FF8C54 60%, #FFB347 100%)",
+              boxShadow: "0 8px 24px rgba(255,90,31,0.28)",
+            }}>
+            <span style={{ fontSize: 24 }}>⭐</span>
+            <div className="flex-1 min-w-0 text-left">
+              <p className="font-bold text-white" style={{ fontSize: 14 }}>
+                解锁爱吃 Pro 会员
+              </p>
+              <p style={{ fontSize: 11, color: "rgba(255,255,255,0.85)", lineHeight: 1.4 }}>
+                整周菜单 · 一键采购 · 米其林菜单 · 大厨上门 · 学校营养
+              </p>
+            </div>
+            <span className="material-symbols-outlined text-white shrink-0" style={{ fontSize: 20 }}>
+              chevron_right
+            </span>
+          </button>
         )}
 
         </>}  {/* end of weekday fragment — closes the isWeekend ternary */}

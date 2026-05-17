@@ -12,12 +12,15 @@ export type CuisineMode = 'chinese' | 'hk-style' | 'western' | 'all';
 
 const HK_STYLE_KEYWORDS = ['港式', '茶餐厅', '茶餐廳', '菠萝包', '菠蘿包', '丝袜奶茶', '絲襪奶茶', '蛋挞', '蛋撻', '凉茶', '涼茶', '车仔面', '車仔麵', '云吞面', '雲吞麵', '叉烧饭', '叉燒飯', '烧腊', '燒臘'];
 
-/** Read the saved Home cuisine mode. Falls back to 'all' (more permissive
- *  default for new users — they can narrow if they have a preference). */
+/** Read the saved Home cuisine mode. "全部" was retired 2026-05-17 — the
+ *  picker now forces a specific cuisine, so legacy 'all' values from
+ *  localStorage are coerced to '中餐' on read. CuisineMode type still
+ *  carries 'all' for internal callers (applyCuisineFilter no-op), but the
+ *  Home UI never sets it again. */
 export function loadCuisineMode(): CuisineMode {
   const saved = localStorage.getItem('home_cuisine_mode');
-  if (saved === 'chinese' || saved === 'western' || saved === 'all' || saved === 'hk-style') return saved;
-  return 'all';
+  if (saved === 'chinese' || saved === 'western' || saved === 'hk-style') return saved;
+  return 'chinese';
 }
 
 /**

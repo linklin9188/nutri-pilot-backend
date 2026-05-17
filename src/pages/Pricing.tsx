@@ -27,6 +27,7 @@ import {
 } from "../lib/subscription";
 import { getUserId } from "../lib/userId";
 import BottomTabBar from "../components/BottomTabBar";
+import MembershipBenefits from "../components/MembershipBenefits";
 
 // Stripe Payment Link / Price IDs are filled in once the Stripe products are
 // created. Until then the "升级" button surfaces a configuration message and
@@ -72,16 +73,6 @@ const PLANS = [
   },
 ];
 
-const PRO_FEATURES = [
-  { emoji: "⭐", title: "米其林灵感菜单", desc: "解锁主厨级菜谱、精致摆盘与高端食材组合" },
-  { emoji: "🎉", title: "家宴菜单",       desc: "在家请客 10–20 人，按场合 / 忌口 / 孕妇·助长高自动排菜" },
-  { emoji: "🌿", title: "港式祛湿调理",   desc: "按节气 + 身体感受推汤水：冬瓜薏米 / 五指毛桃 / 川贝雪梨…" },
-  { emoji: "🎒", title: "学校营养补全",   desc: "输入孩子在校菜单，AI 推荐补全缺口的家常晚餐 3 道" },
-  { emoji: "🛒", title: "高端食材采购源", desc: "City'super、SOLE、HKTVmall Premium 直送（即将上线）" },
-  { emoji: "👨‍👩‍👧", title: "无限家庭成员", desc: "家庭多人偏好聚合，外佣/长辈/儿童分别建档" },
-  { emoji: "📅", title: "全周菜单解锁", desc: "免费版只能看本周前 3 天，Pro 解锁完整 7 天" },
-  { emoji: "🔄", title: "无限菜品替换", desc: "不喜欢的菜，一键 AI 换一道（同营养水平）" },
-];
 
 export default function Pricing() {
   const navigate = useNavigate();
@@ -255,21 +246,9 @@ export default function Pricing() {
           </section>
         )}
 
-        {/* Features */}
-        <section className="bg-white rounded-3xl p-5 shadow-sm">
-          <h3 className="font-bold text-[14px] mb-3 text-gray-500">Pro 解锁</h3>
-          <div className="space-y-3">
-            {PRO_FEATURES.map(f => (
-              <div key={f.title} className="flex items-start gap-3">
-                <span className="text-[22px] flex-shrink-0">{f.emoji}</span>
-                <div className="flex-1">
-                  <p className="font-bold text-[14px]">{f.title}</p>
-                  <p className="text-[12px] text-gray-500 mt-0.5">{f.desc}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
+        {/* Features — single source of truth in MembershipBenefits so the
+            Pricing upsell + Settings post-buy surface never drift apart. */}
+        <MembershipBenefits isPro={isPro} />
 
         {/* Plans */}
         {!isPro && (

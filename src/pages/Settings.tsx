@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import BottomTabBar from "../components/BottomTabBar";
+import MembershipBenefits from "../components/MembershipBenefits";
 import { useSubscription } from "../lib/subscription";
 import { useLanguage, LANGUAGE_LABEL, type Language } from "../contexts/LanguageContext";
 import { getUserId } from "../lib/userId";
@@ -311,6 +312,7 @@ function writeQuickPref(key: string, value: string) {
 
 export default function Settings() {
   const navigate = useNavigate();
+  const { proReason } = useSubscription();
 
   const [members,   setMembers]   = useState<FamilyMember[]>(loadMembers);
   const [openId,    setOpenId]    = useState<string | null>(null);
@@ -826,6 +828,14 @@ export default function Settings() {
 
           {/* ── Membership ── */}
           <MembershipCard />
+
+          {/* Detailed benefits block — sits below the card so non-members
+              who tapped the upgrade gradient land on a concrete list of
+              what they're paying for. Members see the same list as a
+              record of unlocked features. The block carries its own
+              legal disclaimer (health-advice scope, coming-soon timing,
+              cancellation terms) so we don't make promises we can't keep. */}
+          <MembershipBenefits isPro={proReason === 'paid' || proReason === 'helper'} />
 
           {/* ── 小美 / cooking robot toggle ──
               When ON, the recommend algo boosts robot-doable dishes by
