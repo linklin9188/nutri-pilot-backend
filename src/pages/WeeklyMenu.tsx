@@ -616,7 +616,7 @@ export default function WeeklyMenu() {
             onClick={() => setIntentOpen(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all active:scale-95"
             style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.10)" }}
-            title="说说你想要什么菜单，AI 重新生成"
+            title="说说您想吃什么，我重新安排"
           >
             <span style={{ fontSize: 13 }}>📝</span>
             <span className="font-semibold" style={{ fontSize: 11, color: "rgba(255,255,255,0.80)" }}>重新生成</span>

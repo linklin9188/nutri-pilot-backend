@@ -193,13 +193,38 @@ function categoryToType(cat: string): 'Meat/Seafood' | 'Produce' | 'Staples' {
   return 'Produce';
 }
 
-function prepStepsToIngredients(dish: any): ShoppingIngredient[] {
+// ── Headcount scaling for prep_steps amounts ───────────────────────────────
+//
+// Historical prompt asked Claude to generate prep_steps "for a 2-person
+// home", and recent prompts say "for a 4-person family". The actual DB
+// data is a mixture — sampling typical dishes (披萨 香肠 150g / 羊肉
+// 300g / 肉丝 300g / 红烧肉 500g) shows the de-facto baseline is around
+// 2.5 effective people. We scale by (effPeople / BASELINE) so a 4-person
+// household gets ~1.6× the listed amount and a 1-person student gets
+// ~0.4× — close enough to a real shopping target without re-generating
+// every prep_steps row.
+//
+// When the backfill that re-pegs all amount_g to 4-person baseline lands
+// (a planned cleanup pass), bump BASELINE_PEOPLE to 4 here so 4-person
+// households get exactly 1× and the prep card displays match purchase
+// quantities.
+const PREP_STEPS_BASELINE_PEOPLE = 2.5;
+// Sanity bounds — extreme household sizes shouldn't blow ingredient
+// quantities to absurd values (a 1-person shopper buying 60g of pork is
+// fine; a 12-person banquet buying 1.5kg per side dish is also fine).
+const SCALE_MIN = 0.3;
+const SCALE_MAX = 4.0;
+
+function prepStepsToIngredients(dish: any, effPeople: number): ShoppingIngredient[] {
   const steps: any[] = dish.prep_steps_json ?? [];
   if (!Array.isArray(steps) || steps.length === 0) return [];
 
   const dishId = dish.id ?? dish.title_zh ?? Math.random().toString();
   const dishTitle = dish.title_zh || dish.title || '';
   const mainIngCat = ING_CAT[(dish.main_ingredient ?? 'other').toLowerCase()] ?? 'other';
+
+  const rawScale = effPeople / PREP_STEPS_BASELINE_PEOPLE;
+  const scale = Math.max(SCALE_MIN, Math.min(SCALE_MAX, rawScale));
 
   // Aggregate by ingredient_zh within the same dish — sometimes prep
   // splits one ingredient across two prep actions (洗 + 切), we shouldn't
@@ -209,7 +234,12 @@ function prepStepsToIngredients(dish: any): ShoppingIngredient[] {
     const nameZh = (s.ingredient_zh ?? '').trim();
     if (!nameZh) return;
     const nameEn = (s.ingredient_en ?? '').trim();
-    const amount = Number(s.amount_g) || 0;
+    const rawAmount = Number(s.amount_g) || 0;
+    // Condiments (生抽/老抽/盐/糖/料酒) scale much less aggressively —
+    // a 4-person family doesn't actually need 1.6× the soy sauce.
+    const isCondiment = (s.tray ?? '') === 'D';
+    const factor = isCondiment ? Math.min(1.5, 1 + (scale - 1) * 0.4) : scale;
+    const amount = Math.round(rawAmount * factor);
     const tray = (s.tray ?? 'E') as string;
     const category = trayToCategory(tray, mainIngCat);
     const subs: string[] = (s.substitutes_zh ?? []).filter(Boolean).slice(0, 3);
@@ -248,19 +278,22 @@ function prepStepsToIngredients(dish: any): ShoppingIngredient[] {
  * Given a dish record from Supabase + headcount, returns the full ingredient list.
  *
  * Priority:
- *   1. If prep_steps_json is populated → use those entries verbatim (authoritative).
- *      Headcount scaling skipped — prep steps are already total-per-dish for a
- *      standard family-size serving as the generator was instructed to size them.
- *   2. Otherwise → fall back to the main_ingredient + course_type heuristic.
+ *   1. If prep_steps_json is populated → use those entries, scaled by
+ *      (effPeople / PREP_STEPS_BASELINE_PEOPLE). DB amount_g was historically
+ *      sized for a ~2.5-person household; without scaling a 4-person family
+ *      would under-buy. Condiments scale gentler than mains.
+ *   2. Otherwise → fall back to the main_ingredient + course_type heuristic
+ *      which already multiplies by effectivePeople.
  */
 export function dishToIngredients(dish: any, adults: number, kids: number): ShoppingIngredient[] {
-  // Path A — prep_steps_json present, use it directly.
+  const effectivePeople = Math.max(1, adults + kids * 0.5);
+
+  // Path A — prep_steps_json present, use it (scaled).
   if (Array.isArray(dish.prep_steps_json) && dish.prep_steps_json.length > 0) {
-    return prepStepsToIngredients(dish);
+    return prepStepsToIngredients(dish, effectivePeople);
   }
 
   // Path B — heuristic fallback (legacy, used for dishes without prep_steps yet)
-  const effectivePeople = Math.max(1, adults + kids * 0.5);
   const courseType: string = dish.course_type ?? 'main_protein';
   const ingKey: string = (dish.main_ingredient ?? 'other').toLowerCase();
   const isSeafood = ING_CAT[ingKey] === 'seafood';

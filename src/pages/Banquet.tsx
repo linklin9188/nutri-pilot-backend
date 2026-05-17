@@ -148,7 +148,7 @@ function Header({ step, onBack }: { step: Step; onBack: () => void }) {
   const labels: Record<Step, { title: string; sub: string }> = {
     headcount: { title: "家宴菜单", sub: "1 / 2 · 餐桌人数" },
     cuisine:   { title: "家宴菜单", sub: "2 / 2 · 风格 · 忌口 · 特殊需求" },
-    result:    { title: "家宴菜单", sub: "已为你安排" },
+    result:    { title: "家宴菜单", sub: "已为您安排好了" },
   };
   const { title, sub } = labels[step];
   return (

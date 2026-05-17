@@ -359,7 +359,7 @@ export default function Login() {
                 style={{ width: 36, height: 2, background: "#FF5A1F", boxShadow: "0 0 12px rgba(255,90,31,0.6)" }} />
 
               <p className="text-white/85 font-light" style={{ fontSize: 18, letterSpacing: "0.06em", lineHeight: 1.5 }}>
-                {t("No more thinking about what to eat", "吃啥不用想，AI 替你想～")}
+                {t("No more thinking about what to eat", "今天吃啥，交给我惦记")}
               </p>
             </motion.div>
 
@@ -699,7 +699,7 @@ export default function Login() {
                 {t("Your Profile", "建立味觉档案")}
               </h2>
               <p className="text-white/45 font-light leading-relaxed" style={{ fontSize: 14, letterSpacing: "0.04em" }}>
-                {t("We tailor every meal to your nutrition needs.", "每一份菜单，都按你的营养需求精准定制。")}
+                {t("We tailor every meal to your nutrition needs.", "每一桌菜，我都按您的身子和口味，细细安排。")}
               </p>
             </div>
 

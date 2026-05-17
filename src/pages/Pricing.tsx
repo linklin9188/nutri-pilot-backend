@@ -97,7 +97,7 @@ export default function Pricing() {
     if (status === "success") {
       refreshSubscriptionFromSupabase().then(s => {
         if (s.isPro) {
-          setMessage("订阅成功，已为你解锁 Pro 功能 🎉");
+          setMessage("订阅好啦，已为您解锁 Pro 🎉");
         } else {
           setMessage("正在确认支付，稍等几秒再刷新看看…");
         }
@@ -157,7 +157,7 @@ export default function Pricing() {
         </button>
         <div className="flex-1">
           <h1 className="text-[18px] font-bold">爱吃 Pro</h1>
-          <p className="text-[11px] text-gray-400 mt-0.5">{isPro ? "你的会员状态" : "解锁全部功能"}</p>
+          <p className="text-[11px] text-gray-400 mt-0.5">{isPro ? "您的会员状态" : "解锁全部功能"}</p>
         </div>
       </header>
 

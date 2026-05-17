@@ -9,11 +9,27 @@ import { getUserId } from "../lib/userId";
 
 const QUESTIONS = [
   {
-    id: "goal",
+    // 用餐人数 first — drives dishCount + portion scaling for every
+    // recommendation downstream. The phrasing is "今天几位用餐" not
+    // "家里几口人" because the same number is editable inline on Home
+    // every day (用户周三 vs 周日 人数可以不同). Onboarding answer
+    // becomes the default; daily override lives on Home.
+    id: "household",
     step: 1,
+    emoji: "🍽",
+    question: "今天几位围桌？",
+    sub: "我按这个安排菜量，孩子算半位。之后随时能改。",
+    // No options — rendered as a 2-stepper (adults / kids) in the page.
+    // Kept here so progress bar + question header reuse the same metadata.
+    custom: "household" as const,
+    options: [] as const,
+  },
+  {
+    id: "goal",
+    step: 2,
     emoji: "🎯",
-    question: "你现在最想要的是？",
-    sub: "我们会根据这个定制你的每日菜单",
+    question: "这阵子，您想怎么吃？",
+    sub: "我按这个调每天的菜。",
     options: [
       { id: "fatloss",   label: "减脂瘦身",   desc: "低卡、高饱腹感",         icon: "🔥" },
       { id: "muscle",    label: "增肌健体",   desc: "高蛋白、促恢复",         icon: "💪" },
@@ -28,8 +44,8 @@ const QUESTIONS = [
     id: "spice",
     step: 2,
     emoji: "🌶️",
-    question: "你能接受多辣？",
-    sub: "诚实回答，AI 会严格按你的口味推荐",
+    question: "您能吃多辣？",
+    sub: "告诉我实在的口味，我照着挑。",
     options: [
       { id: "none",   label: "完全不辣", desc: "一点辣都不行", icon: "🥛" },
       { id: "mild",   label: "微微辣",   desc: "可以接受轻微辛辣", icon: "🫑" },
@@ -41,8 +57,8 @@ const QUESTIONS = [
     id: "avoid",
     step: 3,
     emoji: "🚫",
-    question: "有什么忌口吗？",
-    sub: "可多选，AI 会自动过滤这些食材",
+    question: "有什么忌口的吗？",
+    sub: "可多选，我帮您一一绕开。",
     multi: true,
     options: [
       { id: "none",      label: "没有忌口",  icon: "✅" },
@@ -59,8 +75,8 @@ const QUESTIONS = [
     id: "health",
     step: 4,
     emoji: "🩺",
-    question: "有需要注意的健康状况吗？",
-    sub: "AI 会自动优化菜品选择，过滤不适合的食材",
+    question: "身子有什么要照顾的？",
+    sub: "我挑合适的食材，温温和和地养着。",
     multi: true,
     options: [
       { id: "none",          label: "没有特殊情况", icon: "✅" },
@@ -77,8 +93,8 @@ const QUESTIONS = [
     id: "hometown",
     step: 5,
     emoji: "🏠",
-    question: "你最熟悉/最爱吃哪种菜系？",
-    sub: "AI 会优先推荐你家乡口味的菜",
+    question: "您最惦记哪一方水土的味道？",
+    sub: "我多做家乡口味，让饭桌有点念想。",
     options: [
       { id: "cantonese",        label: "粤菜 · 港式",  desc: "广式、港式、靓汤", icon: "🦞" },
       { id: "northern",         label: "北方菜",       desc: "鲁/京/东北/西北",  icon: "🥟" },
@@ -173,9 +189,26 @@ export default function QuickSetup() {
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
   const [multiSel, setMultiSel] = useState<string[]>([]);
+  // Household stepper state — defaults match nutri_adults / nutri_kids
+  // localStorage to keep existing users' previously-set values across a
+  // re-run of QuickSetup.
+  const [householdAdults, setHouseholdAdults] = useState<number>(() =>
+    Math.max(1, parseInt(localStorage.getItem('nutri_adults') ?? '2', 10)));
+  const [householdKids, setHouseholdKids] = useState<number>(() =>
+    Math.max(0, parseInt(localStorage.getItem('nutri_kids') ?? '0', 10)));
 
   const q = QUESTIONS[step];
   const isLast = step === QUESTIONS.length - 1;
+  const isHousehold = (q as any).custom === 'household';
+
+  const commitHousehold = () => {
+    localStorage.setItem('nutri_adults', String(householdAdults));
+    localStorage.setItem('nutri_kids',   String(householdKids));
+    const next = { ...answers, household: `${householdAdults}a${householdKids}k` };
+    setAnswers(next);
+    if (isLast) finish(next);
+    else setStep(s => s + 1);
+  };
 
   const handleSingle = (id: string) => {
     const next = { ...answers, [q.id]: id };
@@ -317,7 +350,79 @@ export default function QuickSetup() {
           </div>
 
           {/* Options */}
-          {"multi" in q && q.multi ? (
+          {isHousehold ? (
+            <div className="flex flex-col gap-5 flex-1">
+              {/* Adults stepper */}
+              <div className="rounded-2xl p-5"
+                style={{ background: 'rgba(255,255,255,0.06)', border: '1.5px solid rgba(255,255,255,0.09)' }}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-white font-semibold" style={{ fontSize: 15 }}>大人</p>
+                    <p className="text-white/45 font-light" style={{ fontSize: 12, marginTop: 2 }}>每位按 1 人计算</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => setHouseholdAdults(n => Math.max(1, n - 1))}
+                      className="w-11 h-11 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+                      style={{ background: 'rgba(255,255,255,0.08)' }}>
+                      <span className="material-symbols-outlined text-white" style={{ fontSize: 22 }}>remove</span>
+                    </button>
+                    <span className="text-white font-black tabular-nums text-center" style={{ fontSize: 28, minWidth: 36 }}>
+                      {householdAdults}
+                    </span>
+                    <button
+                      onClick={() => setHouseholdAdults(n => Math.min(12, n + 1))}
+                      className="w-11 h-11 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+                      style={{ background: '#FF5A1F' }}>
+                      <span className="material-symbols-outlined text-white" style={{ fontSize: 22 }}>add</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Kids stepper */}
+              <div className="rounded-2xl p-5"
+                style={{ background: 'rgba(255,255,255,0.06)', border: '1.5px solid rgba(255,255,255,0.09)' }}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-white font-semibold" style={{ fontSize: 15 }}>孩子</p>
+                    <p className="text-white/45 font-light" style={{ fontSize: 12, marginTop: 2 }}>按 0.5 人计算，会触发儿童菜 slot</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => setHouseholdKids(n => Math.max(0, n - 1))}
+                      className="w-11 h-11 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+                      style={{ background: 'rgba(255,255,255,0.08)' }}>
+                      <span className="material-symbols-outlined text-white" style={{ fontSize: 22 }}>remove</span>
+                    </button>
+                    <span className="text-white font-black tabular-nums text-center" style={{ fontSize: 28, minWidth: 36 }}>
+                      {householdKids}
+                    </span>
+                    <button
+                      onClick={() => setHouseholdKids(n => Math.min(8, n + 1))}
+                      className="w-11 h-11 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+                      style={{ background: '#FF5A1F' }}>
+                      <span className="material-symbols-outlined text-white" style={{ fontSize: 22 }}>add</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Summary chip */}
+              <div className="text-center text-white/60" style={{ fontSize: 13, letterSpacing: '0.04em' }}>
+                共 {householdAdults + householdKids} 人 · 等效 {(householdAdults + householdKids * 0.5).toFixed(1)} 人份
+              </div>
+
+              {/* Confirm button */}
+              <button
+                onClick={commitHousehold}
+                className="mt-2 h-14 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform font-bold text-white"
+                style={{ background: 'linear-gradient(135deg, #FF5A1F, #FF9054)', fontSize: 15, boxShadow: '0 8px 24px rgba(255,90,31,0.35)' }}>
+                下一步
+                <span className="material-symbols-outlined text-white" style={{ fontSize: 20 }}>arrow_forward_ios</span>
+              </button>
+            </div>
+          ) : "multi" in q && q.multi ? (
             <>
               <div className="grid grid-cols-2 gap-3 flex-1">
                 {q.options.map(opt => {
@@ -343,13 +448,13 @@ export default function QuickSetup() {
               <div className="mt-6 flex items-center justify-between" style={{ minHeight: 36 }}>
                 {multiSel.length > 0 && !multiSel.includes("none") ? (
                   <p className="text-white/55" style={{ fontSize: 12, letterSpacing: "0.04em" }}>
-                    已选 {multiSel.length} 项 · 稍后自动进入下一题
+                    已选 {multiSel.length} 项 · 稍等带您往下走
                   </p>
                 ) : <span />}
                 <button onClick={() => commitMulti(["none"])}
                   className="text-white/35 hover:text-white/65 transition-colors"
                   style={{ fontSize: 12, letterSpacing: "0.04em" }}>
-                  跳过此问 →
+                  这题先放一放 →
                 </button>
               </div>
             </>
@@ -388,7 +493,7 @@ export default function QuickSetup() {
             }}
               className="mt-4 text-center text-white/25 hover:text-white/50 transition-colors"
               style={{ fontSize: 12, letterSpacing: "0.06em" }}>
-              跳过，先看看菜单
+              先随便看看
             </button>
           )}
         </motion.div>
