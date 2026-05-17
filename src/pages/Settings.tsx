@@ -863,6 +863,27 @@ export default function Settings() {
             退出登录
           </button>
 
+          {/* ── Legal / contact — links to /privacy and /terms ─────────────
+              Required by WeChat 小程序 提审 (审核员要在 app 内能找到这两
+              页). Also surfaces them to the雇主, who otherwise only ever
+              sees them at first-time onboarding via Login footer. */}
+          <div className="flex items-center justify-center gap-3 pt-2 pb-1 text-[12px] text-gray-400">
+            <button onClick={() => navigate("/terms")}
+              className="hover:text-gray-600 transition-colors underline-offset-2 hover:underline">
+              服务条款
+            </button>
+            <span>·</span>
+            <button onClick={() => navigate("/privacy")}
+              className="hover:text-gray-600 transition-colors underline-offset-2 hover:underline">
+              隐私政策
+            </button>
+            <span>·</span>
+            <a href="mailto:jianjiaolin9@gmail.com"
+              className="hover:text-gray-600 transition-colors underline-offset-2 hover:underline">
+              联系我们
+            </a>
+          </div>
+
         </div>
       </div>
       <BottomTabBar />
