@@ -945,17 +945,17 @@ export async function fetchSwapOptions(
 /**
  * Calculate how many dishes to recommend based on meal type + headcount.
  *
- * 早餐: fixed 3-piece template (dry staple + wet drink + side) for any
- *      household > 0. 1 person gets 2.
- * 午餐: scales with effective headcount, slightly smaller than dinner
- *      (HK lunch convention).
- * 晚餐: scales with effective headcount, +1 over lunch for the same family
- *      (Chinese dinner is the bigger meal).
+ * 中国家庭饭桌 rule (user-confirmed 2026-05-17):
+ *   早餐: fixed 3-piece template (dry staple + wet drink + side); 1 人 = 2
+ *   午餐: n 道菜 for n 人（"4 人 4 菜 / 三菜一汤"），min 2 / max 8
+ *   晚餐: n + 1 道菜（晚餐比午餐多 1 道），min 3 / max 9
  *
- * kids count as 0.5 effective person.
+ * Kids count as 0.5 effective person, so 2a + 2k = eff 3 → 午餐 3 / 晚餐 4.
  *
- * Bucketed so 3a+2k (eff 4.0) gets 5 lunch / 6 dinner, fixing the
- * "数量少了" complaint where the old linear formula returned 4.
+ * Previous version used a bucketed formula (eff≤4.5 → 5 dishes etc.) which
+ * over-counted: a 4-person 西餐午餐 returned 5 dishes when the user
+ * expected 4. Linear round + n/(n+1) split matches actual table-setting
+ * habit and avoids leftover-driven food waste.
  */
 export function calcDishCount(
   mealTime: '早餐' | '午餐' | '晚餐',
@@ -964,16 +964,8 @@ export function calcDishCount(
 ): number {
   const eff = adults + kids * 0.5;
   if (mealTime === '早餐') return eff <= 1 ? 2 : 3;
-  const base =
-    eff <= 1.5 ? 2 :
-    eff <= 2.5 ? 3 :
-    eff <= 3.5 ? 4 :
-    eff <= 4.5 ? 5 :
-    eff <= 5.5 ? 5 :
-    eff <= 7.5 ? 6 :
-    Math.min(8, Math.round(eff));
-  // Dinner is bigger than lunch for the same family — HK convention.
-  return mealTime === '晚餐' ? Math.max(3, base + 1) : Math.max(3, base);
+  const lunch = Math.max(2, Math.min(8, Math.round(eff)));
+  return mealTime === '晚餐' ? Math.min(9, lunch + 1) : lunch;
 }
 
 // ── Breakfast template: dry staple + wet drink + side ─────────────────────
