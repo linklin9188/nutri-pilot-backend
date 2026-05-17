@@ -10,7 +10,7 @@
  */
 import { supabase } from './supabase';
 import { DAILY, type ProteinCategory } from './dailyNutrition';
-import { ALGO_VERSION } from '../hooks/useWeeklyMenu';
+import { ALGO_VERSION, getWeekStartISO } from '../hooks/useWeeklyMenu';
 
 // ── Local date helpers (mirror VerifyIngredients, kept local to avoid cycle) ──
 function formatLocalDate(d: Date): string {
@@ -19,16 +19,7 @@ function formatLocalDate(d: Date): string {
   const dd = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${dd}`;
 }
-function getMondayISO(): string {
-  const d = new Date();
-  const day = d.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  d.setDate(d.getDate() + diff);
-  return formatLocalDate(d);
-}
-
-function loadWeekMenu(): any | null {
-  const weekStart = getMondayISO();
+function loadWeekMenu(weekStart: string): any | null {
   const prefix = `weekly_menu_${ALGO_VERSION}_${weekStart}`;
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
@@ -180,16 +171,20 @@ function detectFoodGroups(d: any): FoodGroup[] {
 /**
  * Pulls Mon-Fri dish data (eaten where marked, planned otherwise) and reduces
  * to a single weekly snapshot.
+ *
+ * Default `weekOffset = 0` 本周 Mon-Fri — 周末打开 Home 时看刚结束的工作周。
+ * 等菲佣打卡数据落地后会有真实"actual"数据，到时可以再用 weekOffset=-1 做
+ * 历史对比；参数留着不动以备后用。
  */
-export async function summarizeWeek(): Promise<WeeklySummary> {
-  const weekStart = getMondayISO();
+export async function summarizeWeek(weekOffset: number = 0): Promise<WeeklySummary> {
+  const weekStart = getWeekStartISO(weekOffset);
   const [y, m, dd] = weekStart.split('-').map(Number);
 
   // Collect candidate dish IDs and inline dish objects from both sources
   const eatenIds: string[] = [];
   const plannedDishes: any[] = [];
 
-  const weekMenu = loadWeekMenu();
+  const weekMenu = loadWeekMenu(weekStart);
   const days: any[] = weekMenu?.days ?? [];
 
   for (let i = 0; i < 5; i++) {
@@ -300,54 +295,70 @@ const PROTEIN_TO_TAG: Record<ProteinCategory, { tag: DiningTag; reason: string }
 };
 
 /**
- * Map the WeeklySummary gaps to up to 4 real-restaurant suggestions.
- * Ordering: missing proteins → veggie gap → fruit gap → grain gap →
- * oil/salt overload. Deduplicates so the same restaurant doesn't show
- * up twice when it covers multiple gaps.
+ * Map the WeeklySummary gaps to 10 real-restaurant suggestions =
+ * 5 香港 + 5 深圳. Sat / Sun show different sets via slice rotation
+ * (Sat takes top-5 per city, Sun takes 6-10) so the two weekend days
+ * differ even when gap signal is identical.
+ *
+ * Ordering within each city: missing proteins → 缺蔬菜 → 缺水果 →
+ * 缺粗粮 → 油盐重. Sorted by gap-match count then Michelin tier.
+ *
+ * User direction 2026-05-17: 周六日，分别 5家香港5家深圳。
  */
 export function buildDiningSuggestions(summary: WeeklySummary): DiningSuggestion[] {
-  // Collect needs in priority order, then ask hkRestaurants for matches.
   const needs: { tag: DiningTag; reason: string }[] = [];
   for (const p of summary.proteinsMissing.slice(0, 2)) {
     const m = PROTEIN_TO_TAG[p];
     if (m) needs.push(m);
   }
   if (summary.veggieGap) {
-    needs.push({ tag: 'veggie', reason: '本週蔬菜少了點，週末換個蔬菜為主的館子。' });
+    needs.push({ tag: 'veggie', reason: '本週蔬菜少了點，換個蔬菜為主的館子。' });
   }
   if (summary.fruitGap) {
-    needs.push({ tag: 'fruit',  reason: '一週一口水果沒沾？下午買杯鮮榨果汁補維 C。' });
+    needs.push({ tag: 'fruit',  reason: '一週水果沒沾，下午買杯鮮榨補維 C。' });
   }
   if (!summary.wholeGrainPresent) {
-    needs.push({ tag: 'grain',  reason: '主食都是白米白麵？來碗雜糧麵補 B 族維生素。' });
+    needs.push({ tag: 'grain',  reason: '主食都是白米白麵，來碗雜糧補 B 族。' });
   }
   if (summary.oilGramsTotal > 80 || summary.saltGramsTotal > 30) {
-    needs.push({ tag: 'light',  reason: '本週油鹽偏重，週末找家清淡的歇歇。' });
+    needs.push({ tag: 'light',  reason: '本週油鹽偏重，找家清淡的歇歇。' });
   }
 
-  const out: DiningSuggestion[] = [];
-  const seen = new Set<string>();
-  for (const need of needs) {
-    const matches = pickRestaurantsForNeeds([need.tag], 3);
-    for (const r of matches) {
-      if (seen.has(r.id)) continue;
-      seen.add(r.id);
-      out.push({ restaurant: r, reason: need.reason, tag: need.tag });
-      if (out.length >= 5) break;
+  // Sat = 6, Sun = 0 in JS getDay(). Sun takes the second half of each
+  // matched pool so the user sees a different 5+5 vs Saturday.
+  const dow = new Date().getDay();
+  const sliceStart = dow === 0 ? 5 : 0;
+  const PER_CITY   = 5;
+
+  function pickCity(city: 'HK' | 'SZ'): DiningSuggestion[] {
+    const candidates: DiningSuggestion[] = [];
+    const seen = new Set<string>();
+    for (const need of needs) {
+      const matches = pickRestaurantsForNeeds([need.tag], 4, city);
+      for (const r of matches) {
+        if (seen.has(r.id)) continue;
+        seen.add(r.id);
+        candidates.push({ restaurant: r, reason: need.reason, tag: need.tag });
+      }
     }
-    if (out.length >= 5) break;
-  }
-  // Pad with general/recognizable venues so user always gets 5 picks
-  // (用户 2026-05-17 要求周末每天 5 家). When gaps already gave us
-  // enough we just skip the pad loop.
-  if (out.length < 5) {
-    const pad = pickRestaurantsForNeeds([], 8);
-    for (const r of pad) {
-      if (seen.has(r.id)) continue;
-      seen.add(r.id);
-      out.push({ restaurant: r, reason: '本週飯桌挺均衡，這家也值得一試。', tag: 'banquet' });
-      if (out.length >= 5) break;
+    if (candidates.length === 0) {
+      const fallback = pickRestaurantsForNeeds([], 10, city);
+      for (const r of fallback) {
+        candidates.push({ restaurant: r, reason: '本週飯桌挺均衡，這家也值得一試。', tag: 'banquet' });
+      }
     }
+    // Pad with city-side balanced picks so we always have ≥10 to slice
+    if (candidates.length < sliceStart + PER_CITY) {
+      const pad = pickRestaurantsForNeeds([], 10, city);
+      for (const r of pad) {
+        if (seen.has(r.id)) continue;
+        seen.add(r.id);
+        candidates.push({ restaurant: r, reason: '挑這家換換口味。', tag: 'banquet' });
+        if (candidates.length >= sliceStart + PER_CITY) break;
+      }
+    }
+    return candidates.slice(sliceStart, sliceStart + PER_CITY);
   }
-  return out.slice(0, 5);
+
+  return [...pickCity('HK'), ...pickCity('SZ')];
 }

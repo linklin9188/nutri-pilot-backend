@@ -1,26 +1,30 @@
 /**
- * hkRestaurants — curated 50-restaurant Hong Kong dining seed.
+ * hkRestaurants — curated dining seed for 香港 + 深圳 (100 venues total).
  *
  * Used by the weekend "外食营养报告" — matches WeeklySummary nutritional
- * gaps to real HK restaurants. Tilted toward 米其林 (3星/2星/1星) +
- * 必比登推介 (Bib Gourmand) + 香港老字号 — names every HK family already
- * recognizes so 推荐 → 预订 transition is friction-free.
+ * gaps to real venues. Tilted toward 米其林 / 必比登 / 老字号 + SZ 高排名
+ * 连锁，名字大家都熟，推薦 → 預訂 zero friction.
  *
  * 后续盈利路径：
- *   Phase 1 (now): stub 预订 button → opens OpenRice / 餐厅官网 / 复制电话
- *   Phase 2: 餐厅合作 booking (commission per seat / 会员优先排位)
+ *   Phase 1 (now): 預訂 button → WhatsApp / OpenRice / tel
+ *   Phase 2: 餐厅合作 booking (commission per seat)
  *   Phase 3: Pro 会员独家优惠
  *
- * Add new restaurants here; downstream weeklyDiarySummary picks them up
- * automatically as long as good_for is tagged correctly.
+ * 周末展示规则 (user 2026-05-17): Sat/Sun 各 5 港 + 5 深 = 10 卡。
  */
 
+export type City = 'HK' | 'SZ';
+
+// HK areas (kept named HkArea for back-compat with existing imports).
 export type HkArea =
   | '中環'    | '上環'    | '西環'    | '銅鑼灣'  | '尖沙咀'
   | '佐敦'    | '灣仔'    | '北角'    | '太古'    | '旺角'
   | '油麻地'  | '九龍城'  | '荃灣'    | '沙田'    | '將軍澳'
   | '西貢'    | '深水埗'  | '紅磡'    | '赤柱'    | '天后'
-  | '中半山'  | '銅鑼灣半山';
+  | '中半山'  | '銅鑼灣半山'
+  // SZ areas
+  | '福田'    | '南山'    | '罗湖'    | '蛇口'    | '香蜜湖'
+  | '龙华'    | '宝安'    | '龙岗'    | '前海'    | '后海';
 
 export type DiningTag =
   | 'fish' | 'shellfish' | 'meat' | 'poultry' | 'egg'
@@ -36,6 +40,7 @@ export interface HkRestaurant {
   cuisine:     string;
   good_for:    DiningTag[];
   area:        HkArea;
+  city:        City;
   price_tier:  '$' | '$$' | '$$$' | '$$$$';
   michelin?:   MichelinTier;
   signature:   string;
@@ -43,8 +48,7 @@ export interface HkRestaurant {
   link?:       string;
   phone?:      string;
   /** Override hero image URL — if absent, resolveRestaurantImage() picks
-   *  a cuisine-category default. Use a full https URL (Unsplash, 餐厅官网
-   *  CDN, or self-hosted). Card renders this at the top of the card. */
+   *  a cuisine-category default. */
   image_url?:  string;
   hidden?:     boolean;
 }
@@ -117,6 +121,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: '3★',
     good_for: ['banquet', 'fish', 'shellfish', 'poultry'],
     area: '中環',
+    city: 'HK',
     price_tier: '$$$$',
     signature: '龍景軒燒鴨・鮑魚燴飯',
     blurb: '全球首間摘三星的中菜館（四季酒店）。一年最多兩次，值得。',
@@ -130,6 +135,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: '3★',
     good_for: ['banquet', 'fish', 'meat', 'dairy'],
     area: '中環',
+    city: 'HK',
     price_tier: '$$$$',
     signature: '布雷斯雞・芝士車',
     blurb: '四季酒店法餐殿堂。芝士車是全港最強，週末慶生首選。',
@@ -143,6 +149,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: '3★',
     good_for: ['banquet', 'poultry', 'fish', 'shellfish'],
     area: '尖沙咀',
+    city: 'HK',
     price_tier: '$$$$',
     signature: '當紅炸子雞・蜜汁叉燒',
     blurb: '朗廷酒店镇店之宝，三十年三星老字号。家宴或商务都顶。',
@@ -156,6 +163,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: '3★',
     good_for: ['banquet', 'meat', 'dairy'],
     area: '中環',
+    city: 'HK',
     price_tier: '$$$$',
     signature: '白松露意麵・乳豬慢烤',
     blurb: '亞洲唯一意大利菜三星。秋冬白松露季節必去。',
@@ -171,6 +179,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: '2★',
     good_for: ['banquet', 'fish', 'meat', 'light'],
     area: '中環',
+    city: 'HK',
     price_tier: '$$$$',
     signature: '北海道海膽布甸・季節 tasting menu',
     blurb: '亞洲 50 最佳常客。沒乳製品、無麩質都能完美處理。',
@@ -184,6 +193,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: '2★',
     good_for: ['banquet', 'fish', 'shellfish', 'poultry'],
     area: '灣仔',
+    city: 'HK',
     price_tier: '$$$$',
     signature: '雞油花雕蒸魚翅・脆皮糯米雞',
     blurb: '香港粤菜頂級殿堂。家族壽宴、外國朋友來港，都帶這。',
@@ -197,6 +207,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: '2★',
     good_for: ['banquet', 'poultry', 'fish'],
     area: '中環',
+    city: 'HK',
     price_tier: '$$$',
     signature: '冰燒三層肉・脆皮燒鵝',
     blurb: '新加坡來港的精品粤菜，三層肉是招牌中招牌。',
@@ -210,6 +221,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: '2★',
     good_for: ['fish', 'shellfish', 'light'],
     area: '中環',
+    city: 'HK',
     price_tier: '$$$$',
     signature: 'Omakase 套餐・吞拿魚大腹',
     blurb: '東京三星 Saito 香港分店，魚油 omega-3 想補到極致來這。',
@@ -223,6 +235,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: '2★',
     good_for: ['banquet', 'fish', 'meat'],
     area: '中環',
+    city: 'HK',
     price_tier: '$$$$',
     signature: 'Pierre Gagnaire 簽名 menu',
     blurb: '文華東方 25 樓望維港。Gagnaire 風格的香港呈現。',
@@ -236,6 +249,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: '2★',
     good_for: ['banquet', 'fish', 'meat', 'dairy'],
     area: '中環',
+    city: 'HK',
     price_tier: '$$$$',
     signature: 'Robuchon 土豆泥・鵝肝',
     blurb: 'Robuchon 系全球招牌。土豆泥被稱「全球最強」。',
@@ -249,6 +263,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: '2★',
     good_for: ['banquet', 'fish', 'meat', 'light'],
     area: '中環',
+    city: 'HK',
     price_tier: '$$$$',
     signature: 'Tasting menu 季節食材',
     blurb: '低調精致的法餐館，分量適中、不會吃到撑。',
@@ -262,6 +277,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: '2★',
     good_for: ['banquet'],
     area: '灣仔',
+    city: 'HK',
     price_tier: '$$$$',
     signature: 'X-treme Chinese Cuisine 套餐',
     blurb: 'Alvin Leung 厨魔。分子料理 + 港味基因，獨此一家。',
@@ -277,6 +293,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: '1★',
     good_for: ['poultry', 'soy', 'light', 'banquet'],
     area: '中環',
+    city: 'HK',
     price_tier: '$',
     signature: '酥皮焗叉燒包・腸粉',
     blurb: '全球最平價米其林。週末飲茶、缺禽肉缺豆製品來這。',
@@ -290,6 +307,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: '1★',
     good_for: ['banquet', 'poultry', 'shellfish', 'fish'],
     area: '中環',
+    city: 'HK',
     price_tier: '$$$',
     signature: '燒鵝・燕窩雪燕燉鮮奶',
     blurb: '想吃一頓正經粤菜、招待長輩、慶生，先想這裡。',
@@ -303,6 +321,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: '1★',
     good_for: ['banquet', 'fish', 'shellfish', 'poultry'],
     area: '中環',
+    city: 'HK',
     price_tier: '$$$$',
     signature: '花雕雞油蒸花蟹・陳皮排骨',
     blurb: '亞洲 50 最佳第一名（2021）。全用本地小農食材的粤菜。',
@@ -316,6 +335,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: '1★',
     good_for: ['banquet', 'poultry', 'meat'],
     area: '中環',
+    city: 'HK',
     price_tier: '$$$',
     signature: '蘋果木烤北京鴨・脆皮叉燒',
     blurb: '现代中餐 + 古典氛圍。蘋果木烤鴨提前一天預訂。',
@@ -329,6 +349,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: '1★',
     good_for: ['poultry', 'egg'],
     area: '上環',
+    city: 'HK',
     price_tier: '$$$',
     signature: '雞翅・雞肝醬',
     blurb: '雞的 50 種吃法。本週禽肉空缺、想新鮮體驗來這。',
@@ -342,6 +363,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: '1★',
     good_for: ['fish', 'shellfish', 'light'],
     area: '中環',
+    city: 'HK',
     price_tier: '$$$',
     signature: '海膽烏冬・季節刺身',
     blurb: 'Yardbird 姐妹店。Omakase 走 izakaya 風，輕鬆精致。',
@@ -355,6 +377,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: '1★',
     good_for: ['fish', 'shellfish', 'meat'],
     area: '中環',
+    city: 'HK',
     price_tier: '$$$',
     signature: 'Brittany 生蠔・鴨胸',
     blurb: '法式 bistro 但有星。生蠔季節必試。',
@@ -368,6 +391,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: '1★',
     good_for: ['meat', 'poultry'],
     area: '中環',
+    city: 'HK',
     price_tier: '$$$',
     signature: '澳洲和牛叉燒・煙花鴨',
     blurb: '中西混搭的港味。煙花鴨是 instagram 名場面。',
@@ -381,6 +405,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: '1★',
     good_for: ['banquet', 'fish', 'meat', 'dairy'],
     area: '中環',
+    city: 'HK',
     price_tier: '$$$$',
     signature: '手工意麵・季節 tasting',
     blurb: '只有 28 個位的小酒館。意大利菜想精致来这。',
@@ -394,6 +419,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: '1★',
     good_for: ['banquet', 'fish', 'meat'],
     area: '中環',
+    city: 'HK',
     price_tier: '$$$$',
     signature: '炭烤伊比利亞豬・西班牙海鮮飯',
     blurb: '日西混血厨師 Agustin Balbi 的招牌。',
@@ -407,6 +433,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: '1★',
     good_for: ['meat', 'poultry', 'veggie'],
     area: '中環',
+    city: 'HK',
     price_tier: '$$$',
     signature: 'Tandoori 烤羊腿・naan',
     blurb: '全球首間印度菜星店。素食選擇豐富。',
@@ -420,6 +447,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: '1★',
     good_for: ['fish', 'shellfish', 'light'],
     area: '中環',
+    city: 'HK',
     price_tier: '$$$',
     signature: 'Omakase・吞拿魚大腹',
     blurb: '價位友好的星級壽司。第一次帶長輩吃 omakase 合適。',
@@ -433,6 +461,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: '1★',
     good_for: ['banquet', 'soy', 'meat', 'veggie'],
     area: '尖沙咀',
+    city: 'HK',
     price_tier: '$$',
     signature: '招牌小籠包・酸辣湯',
     blurb: '小籠包黃金 18 摺的祖師爺。家庭聚餐萬能解。',
@@ -446,6 +475,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: '1★',
     good_for: ['poultry', 'banquet'],
     area: '中環',
+    city: 'HK',
     price_tier: '$$$',
     signature: '燒鵝・皮蛋酸薑',
     blurb: '香港燒鵝門面，1942 開業。從金毓茂到米其林星。',
@@ -459,6 +489,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: '1★',
     good_for: ['light', 'fish', 'banquet'],
     area: '中環',
+    city: 'HK',
     price_tier: '$$$$',
     signature: '春季懷石套餐',
     blurb: '油鹽超標想清淡？懷石把味覺重啟。預訂提前 2 週。',
@@ -474,6 +505,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: 'Bib',
     good_for: ['poultry'],
     area: '中環',
+    city: 'HK',
     price_tier: '$',
     signature: '燒鵝瀨粉・例牌燒鵝',
     blurb: '中環人午餐排隊地。燒鵝皮脆汁多，CP 王者。',
@@ -487,6 +519,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: 'Bib',
     good_for: ['shellfish', 'grain', 'light'],
     area: '銅鑼灣',
+    city: 'HK',
     price_tier: '$',
     signature: '蝦子撈麵・鮮蝦雲吞',
     blurb: '蝦子撈麵彈牙、湯底清。1946 老字號。',
@@ -500,6 +533,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: 'Bib',
     good_for: ['shellfish', 'grain'],
     area: '中環',
+    city: 'HK',
     price_tier: '$',
     signature: '三寶麵・大蝦雲吞',
     blurb: '50 港元解決一頓正經。大蝦雲吞有 4 顆飽滿大蝦。',
@@ -513,6 +547,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: 'Bib',
     good_for: ['poultry'],
     area: '銅鑼灣',
+    city: 'HK',
     price_tier: '$',
     signature: '燒鵝拼叉燒飯',
     blurb: '一樂以外另一選擇，銅鑼灣排隊不會那麼瘋。',
@@ -525,6 +560,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: 'Bib',
     good_for: ['meat', 'grain'],
     area: '油麻地',
+    city: 'HK',
     price_tier: '$',
     signature: '臘味煲仔飯・牛肉滑蛋',
     blurb: '冬天必去。鍋巴脆、米飯香、料足。',
@@ -538,6 +574,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: 'Bib',
     good_for: ['egg', 'light', 'poultry'],
     area: '中環',
+    city: 'HK',
     price_tier: '$',
     signature: '蕃茄通粉煎雞蛋・檸蜜',
     blurb: '中環大牌檔活化石。早午餐排隊地，可手寫菜單。',
@@ -550,6 +587,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: 'Bib',
     good_for: ['meat', 'poultry'],
     area: '灣仔',
+    city: 'HK',
     price_tier: '$',
     signature: '燒肉拼叉燒飯',
     blurb: '1948 灣仔老字號。叉燒蜜汁香、燒肉皮脆。',
@@ -563,6 +601,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: 'Bib',
     good_for: ['grain', 'dairy'],
     area: '中環',
+    city: 'HK',
     price_tier: '$$',
     signature: 'Pici 手工粗麵・Cacio e Pepe',
     blurb: '托斯卡尼風 hand-rolled pasta。意麵想吃地道又不貴選這。',
@@ -576,6 +615,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: 'Bib',
     good_for: ['meat', 'light'],
     area: '天后',
+    city: 'HK',
     price_tier: '$',
     signature: '清湯牛腩麵',
     blurb: '香港清湯腩冠軍。牛腩燉得入口即化。',
@@ -589,6 +629,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     michelin: 'Bib',
     good_for: ['meat'],
     area: '中環',
+    city: 'HK',
     price_tier: '$',
     signature: '咖喱牛腩河・清湯牛腩',
     blurb: '中環地標牛腩，1923 開業。下午 2 點以後賣完關門。',
@@ -602,6 +643,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     cuisine: '雲吞麵 · 老字号',
     good_for: ['shellfish', 'grain', 'light'],
     area: '中環',
+    city: 'HK',
     price_tier: '$',
     signature: '鮮蝦雲吞麵・牛腩',
     blurb: '麥奀家族百年雲吞，蝦子重手。',
@@ -613,6 +655,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     cuisine: '茶餐廳 · 早午餐名店',
     good_for: ['egg', 'dairy'],
     area: '佐敦',
+    city: 'HK',
     price_tier: '$',
     signature: '炒滑蛋多士・燉奶',
     blurb: '佐敦排隊地。蛋類、奶類都缺？一頓早餐補齊。',
@@ -624,6 +667,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     cuisine: '甜品 · 燉奶',
     good_for: ['dairy'],
     area: '銅鑼灣',
+    city: 'HK',
     price_tier: '$',
     signature: '雙皮燉奶・薑汁撞奶',
     blurb: '澳門起家，香港多家分店。鈣質補一碗就夠。',
@@ -636,6 +680,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     cuisine: '茶餐廳 · 連鎖',
     good_for: ['egg', 'poultry', 'light'],
     area: '銅鑼灣',
+    city: 'HK',
     price_tier: '$',
     signature: '奶油豬・滑蛋叉燒飯',
     blurb: '24 小時茶餐廳，凌晨進食友好。',
@@ -647,6 +692,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     cuisine: '粤式飲茶 · 經典',
     good_for: ['poultry', 'soy', 'banquet'],
     area: '中環',
+    city: 'HK',
     price_tier: '$$',
     signature: '蝦餃皇・燒賣',
     blurb: '大會堂二樓望維港飲茶。經典港式體驗。',
@@ -659,6 +705,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     cuisine: '粤式飲茶 · 老字号',
     good_for: ['poultry', 'soy', 'banquet'],
     area: '上環',
+    city: 'HK',
     price_tier: '$$',
     signature: '推車點心・蓮蓉包',
     blurb: '推車飲茶活化石。爺爺奶奶帶你來的味道。',
@@ -671,6 +718,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     cuisine: '粤式海鮮 · 街市',
     good_for: ['fish', 'shellfish'],
     area: '將軍澳',
+    city: 'HK',
     price_tier: '$$',
     signature: '清蒸石斑・椒鹽瀨尿蝦',
     blurb: '本週一條魚都沒上桌？三家村現買現做。',
@@ -682,6 +730,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     cuisine: '茶餐廳 · 老字号',
     good_for: ['egg', 'poultry'],
     area: '灣仔',
+    city: 'HK',
     price_tier: '$',
     signature: '菠蘿包・凍奶茶',
     blurb: '灣仔 1956 老字號。菠蘿包剛出爐 4 分鐘內最佳。',
@@ -693,6 +742,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     cuisine: '西北 · 雜糧',
     good_for: ['grain', 'veggie', 'light'],
     area: '銅鑼灣',
+    city: 'HK',
     price_tier: '$$',
     signature: '蕎麥麵・羊雜湯',
     blurb: '主食都是白米白麵？來碗莜麵補 B 族。',
@@ -704,6 +754,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     cuisine: '川式火鍋',
     good_for: ['meat', 'shellfish', 'soy', 'veggie', 'banquet'],
     area: '銅鑼灣',
+    city: 'HK',
     price_tier: '$$$',
     signature: '麻辣鴛鴦鍋・手打蝦滑',
     blurb: '家庭聚餐萬能解。缺紅肉缺蔬菜一鍋補齊。',
@@ -718,6 +769,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     cuisine: '美式扒房',
     good_for: ['meat', 'banquet'],
     area: '尖沙咀',
+    city: 'HK',
     price_tier: '$$$$',
     signature: '24oz Porterhouse・乾式熟成',
     blurb: '紅肉零顧及？週末乾式熟成牛扒補鐵。',
@@ -730,6 +782,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     cuisine: '日式 · 拉麵',
     good_for: ['poultry', 'egg', 'light'],
     area: '銅鑼灣',
+    city: 'HK',
     price_tier: '$$',
     signature: '豚骨拉麵・半熟蛋',
     blurb: '一個人吃飯、想簡單。豚骨湯底補蛋白也清淡。',
@@ -741,6 +794,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     cuisine: '日式燒肉',
     good_for: ['meat'],
     area: '中環',
+    city: 'HK',
     price_tier: '$$$',
     signature: 'A5 和牛・舌',
     blurb: '日式炭火燒肉，私語私語空間，本週紅肉缺它補。',
@@ -753,6 +807,7 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     cuisine: '健康沙拉 · 素食',
     good_for: ['veggie', 'fruit', 'light'],
     area: '中環',
+    city: 'HK',
     price_tier: '$$',
     signature: 'Power Bowl・冷壓果汁',
     blurb: '蔬菜水果都不夠？這裡一頓全補上。',
@@ -764,11 +819,513 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
     cuisine: '素食 · 茶餐',
     good_for: ['veggie', 'light', 'soy'],
     area: '中環',
+    city: 'HK',
     price_tier: '$$',
     signature: '茶葉飯・素點心',
     blurb: '一周肉太多想清淡？港式素食換口味。',
     link: 'https://www.lockcha.com/',
     phone: '+852 2801 7177',
+  },
+
+  // ╔══════════════════════════════════════════════════════════════╗
+  // ║                     深圳餐厅 (50 家)                          ║
+  // ║   涵盖高端 米其林 + 顺德/潮汕/川菜热门连锁 + 网红/老字号       ║
+  // ║   Sat/Sun 各取 5 家展示（与 5 港同列），用户 2026-05-17 定。   ║
+  // ╚══════════════════════════════════════════════════════════════╝
+
+  // ── 米其林 / 高端 (8) ───────────────────────────────────────
+  {
+    id: 'ensue',
+    name: 'Ensue',
+    cuisine: '当代美式 · 米其林二星',
+    michelin: '2★',
+    good_for: ['banquet', 'fish', 'meat'],
+    area: '福田', city: 'SZ', price_tier: '$$$$',
+    signature: 'Tasting menu · 加州时蔬',
+    blurb: 'Christopher Kostow 主理，深圳唯一二星西餐。',
+    link: 'https://www.ensuerestaurant.com/',
+    phone: '+86 755 8366 6888',
+  },
+  {
+    id: 'yong_yi_ting',
+    name: '雍颐庭',
+    cuisine: '粤菜 · 米其林一星',
+    michelin: '1★',
+    good_for: ['banquet', 'fish', 'poultry'],
+    area: '福田', city: 'SZ', price_tier: '$$$$',
+    signature: '蜜汁叉烧 · 龙虎斗',
+    blurb: '深圳柏悦顶级粤菜，商务宴请首选。',
+    phone: '+86 755 8266 1234',
+  },
+  {
+    id: 'jiang_by_chef_fei',
+    name: '江·By Chef Fei',
+    cuisine: '现代粤菜 · 米其林一星',
+    michelin: '1★',
+    good_for: ['banquet', 'fish', 'shellfish'],
+    area: '福田', city: 'SZ', price_tier: '$$$$',
+    signature: '陈皮和牛 · 茶香鸡',
+    blurb: '广州文华厨师 Fei 的深圳分号，现代粤菜代表。',
+    phone: '+86 755 8350 0888',
+  },
+  {
+    id: 'sz_lung_king_heen',
+    name: '隐溪',
+    cuisine: '江浙菜 · 米其林一星',
+    michelin: '1★',
+    good_for: ['banquet', 'fish', 'light'],
+    area: '南山', city: 'SZ', price_tier: '$$$',
+    signature: '蟹粉狮子头 · 蜜汁火方',
+    blurb: '江浙菜雅致代表，环境如苏州园林。',
+    phone: '+86 755 8666 3666',
+  },
+  {
+    id: 'mott_32_sz',
+    name: 'Mott 32 卅二公馆',
+    cuisine: '现代粤菜 · 米其林一星',
+    michelin: '1★',
+    good_for: ['banquet', 'poultry', 'meat'],
+    area: '罗湖', city: 'SZ', price_tier: '$$$',
+    signature: '苹果木烤鸭 · 黑松露虾饺',
+    blurb: '香港 Mott 32 深圳分号，时髦中餐。',
+    link: 'https://www.mott32.com/sz',
+    phone: '+86 755 8366 3232',
+  },
+  {
+    id: 'kai_ze',
+    name: '凯泽公馆',
+    cuisine: '粤菜 · 米其林一星',
+    michelin: '1★',
+    good_for: ['banquet', 'poultry', 'fish'],
+    area: '福田', city: 'SZ', price_tier: '$$$$',
+    signature: '冰烧三层肉 · 蟹黄炒饭',
+    blurb: '低调奢华粤菜会所，每道菜都精雕细琢。',
+    phone: '+86 755 2519 0888',
+  },
+  {
+    id: 'jun_yue_xuan_sz',
+    name: '君悦轩',
+    cuisine: '粤菜 · 米其林一星',
+    michelin: '1★',
+    good_for: ['banquet', 'fish', 'shellfish'],
+    area: '罗湖', city: 'SZ', price_tier: '$$$$',
+    signature: '燕窝养颜炖 · 雪花牛肉',
+    blurb: '君悦酒店招牌粤菜，主厨港大粤菜名家。',
+    phone: '+86 755 8266 1234',
+  },
+  {
+    id: 'da_dong_sz',
+    name: '大董烤鸭店',
+    cuisine: '北京菜 · 烤鸭',
+    good_for: ['banquet', 'poultry'],
+    area: '福田', city: 'SZ', price_tier: '$$$',
+    signature: '酥不腻烤鸭 · 红花汁牛肉',
+    blurb: '北京大董深圳分号，烤鸭皮酥肉嫩。',
+    phone: '+86 755 8888 6688',
+  },
+
+  // ── 潮汕菜 (6) — 深圳潮汕人多，火锅特别旺 ────────────────────
+  {
+    id: 'baheli',
+    name: '八合里海记牛肉火锅',
+    cuisine: '潮汕牛肉火锅',
+    good_for: ['meat', 'soy', 'veggie'],
+    area: '福田', city: 'SZ', price_tier: '$$',
+    signature: '吊龙伴 · 五花趾',
+    blurb: '深圳潮汕牛肉火锅龙头，鲜切牛肉 5 秒涮。',
+    phone: '+86 755 8336 6666',
+  },
+  {
+    id: 'fan_niu',
+    name: '凡牛潮汕牛肉火锅',
+    cuisine: '潮汕牛肉火锅',
+    good_for: ['meat', 'soy'],
+    area: '南山', city: 'SZ', price_tier: '$$',
+    signature: '雪花牛 · 牛舌',
+    blurb: '潮汕牛肉火锅高端版本，分割师现场切肉。',
+  },
+  {
+    id: 'chao_shan_yi_jia',
+    name: '潮上潮粤菜',
+    cuisine: '潮汕菜',
+    good_for: ['fish', 'shellfish', 'banquet'],
+    area: '福田', city: 'SZ', price_tier: '$$$',
+    signature: '蚝烙 · 卤水拼盘',
+    blurb: '潮汕菜系统呈现，海鲜冻甜虾、卤水都地道。',
+  },
+  {
+    id: 'sha_jing_oyster',
+    name: '沙井蚝乡饭店',
+    cuisine: '深圳本土 · 蚝',
+    good_for: ['shellfish'],
+    area: '宝安', city: 'SZ', price_tier: '$$',
+    signature: '炭烤生蚝 · 蚝豉煲',
+    blurb: '沙井蚝是深圳本土特产，本地人首选这家。',
+  },
+  {
+    id: 'le_garden_sz',
+    name: '利苑酒家',
+    cuisine: '粤菜 · 米其林一星',
+    michelin: '1★',
+    good_for: ['banquet', 'poultry', 'shellfish'],
+    area: '福田', city: 'SZ', price_tier: '$$$',
+    signature: '烧鹅 · 燕窝雪燕燉鮮奶',
+    blurb: '香港利苑深圳分号，质量稳定的家宴粤菜。',
+    phone: '+86 755 8366 5188',
+  },
+  {
+    id: 'sun_fei_seafood',
+    name: '顺峰山庄',
+    cuisine: '顺德菜 · 海鲜',
+    good_for: ['fish', 'shellfish', 'banquet'],
+    area: '南山', city: 'SZ', price_tier: '$$$',
+    signature: '清蒸石斑 · 顺德鱼生',
+    blurb: '顺德菜在深圳的代表，鱼生现切食材一流。',
+  },
+
+  // ── 川菜 / 火锅 (6) — 深圳川菜很火 ─────────────────────────
+  {
+    id: 'haidilao_sz',
+    name: '海底捞火锅',
+    cuisine: '川式火锅',
+    good_for: ['meat', 'shellfish', 'soy', 'veggie', 'banquet'],
+    area: '南山', city: 'SZ', price_tier: '$$$',
+    signature: '麻辣鴛鴦鍋 · 手打蝦滑',
+    blurb: '服务封神的火锅，家庭聚餐万能选。',
+    link: 'https://www.haidilao.com/',
+  },
+  {
+    id: 'kao_jiang',
+    name: '烤匠麻辣烤鱼',
+    cuisine: '川式烤鱼',
+    good_for: ['fish'],
+    area: '福田', city: 'SZ', price_tier: '$$',
+    signature: '麻辣烤江团 · 豆腐皮',
+    blurb: '川式烤鱼连锁顶流，鱼肉嫩、麻辣香。',
+  },
+  {
+    id: 'tai_er',
+    name: '太二酸菜鱼',
+    cuisine: '川菜 · 酸菜鱼',
+    good_for: ['fish'],
+    area: '福田', city: 'SZ', price_tier: '$$',
+    signature: '老坛子酸菜鱼',
+    blurb: '酸菜比鱼好吃。排队也要去的网红连锁。',
+  },
+  {
+    id: 'wa_xiao_xia',
+    name: '蛙小侠',
+    cuisine: '川菜 · 牛蛙',
+    good_for: ['meat'],
+    area: '南山', city: 'SZ', price_tier: '$$',
+    signature: '麻辣牛蛙煲',
+    blurb: '牛蛙肉嫩、麻辣层次丰富。深圳分店密集。',
+  },
+  {
+    id: 'tan_yaxue',
+    name: '谭鸭血老火锅',
+    cuisine: '川式火锅 · 鸭血',
+    good_for: ['meat', 'poultry'],
+    area: '福田', city: 'SZ', price_tier: '$$',
+    signature: '鸭血老火锅 · 麻辣牛肉',
+    blurb: '鸭血嫩滑、汤底香醇的成都老火锅深圳分号。',
+  },
+  {
+    id: 'wang_xiang_yuan',
+    name: '望湘园',
+    cuisine: '湘菜',
+    good_for: ['meat', 'poultry'],
+    area: '罗湖', city: 'SZ', price_tier: '$$',
+    signature: '剁椒鱼头 · 腊肉炒饭',
+    blurb: '湘菜连锁旗舰，红油热辣下饭神器。',
+  },
+
+  // ── 粤菜 / 港式 (8) ────────────────────────────────────────
+  {
+    id: 'tim_ho_wan_sz',
+    name: '添好运',
+    cuisine: '粤式飲茶 · 米其林一星',
+    michelin: '1★',
+    good_for: ['poultry', 'soy', 'light'],
+    area: '福田', city: 'SZ', price_tier: '$',
+    signature: '酥皮焗叉烧包',
+    blurb: '香港添好运深圳分号，平价米其林。',
+    link: 'https://www.timhowan.com/',
+  },
+  {
+    id: 'tang_palace',
+    name: '唐宫海鲜舫',
+    cuisine: '粤菜 · 海鲜',
+    good_for: ['fish', 'shellfish', 'banquet'],
+    area: '福田', city: 'SZ', price_tier: '$$$',
+    signature: '蒜蓉粉丝蒸扇贝 · 龙虾',
+    blurb: '深圳老牌粤菜海鲜舫，家宴常选。',
+    phone: '+86 755 8333 7777',
+  },
+  {
+    id: 'fei_cui',
+    name: '翡翠拉面小笼包',
+    cuisine: '上海 / 港式',
+    good_for: ['soy', 'meat', 'grain'],
+    area: '福田', city: 'SZ', price_tier: '$$',
+    signature: '小笼包 · 上海拉面',
+    blurb: '港式上海菜，小笼汤水十足。商场连锁好寻。',
+  },
+  {
+    id: 'tsui_wah_sz',
+    name: '翠华餐厅',
+    cuisine: '茶餐厅 · 港式',
+    good_for: ['egg', 'poultry', 'light'],
+    area: '罗湖', city: 'SZ', price_tier: '$',
+    signature: '奶油猪 · 滑蛋叉烧饭',
+    blurb: '香港翠华深圳分号，地道港式茶餐。',
+  },
+  {
+    id: 'fu_lin_men_sz',
+    name: '富临门',
+    cuisine: '粤菜 · 高端',
+    good_for: ['banquet', 'fish', 'shellfish'],
+    area: '香蜜湖', city: 'SZ', price_tier: '$$$$',
+    signature: '雞油花雕蒸魚 · 鲍鱼焖饭',
+    blurb: '香港富临门深圳分号，传统粤菜殿堂。',
+    phone: '+86 755 8888 6606',
+  },
+  {
+    id: 'shun_de_kitchen',
+    name: '顺德公私房菜',
+    cuisine: '顺德菜',
+    good_for: ['fish', 'poultry', 'light'],
+    area: '南山', city: 'SZ', price_tier: '$$$',
+    signature: '陈村粉 · 桑拿鸡',
+    blurb: '顺德私房菜，清淡而精致的粤菜分支。',
+  },
+  {
+    id: 'lian_xiang_lou_sz',
+    name: '莲香楼',
+    cuisine: '粤式飲茶 · 老字号',
+    good_for: ['poultry', 'soy', 'banquet'],
+    area: '福田', city: 'SZ', price_tier: '$$',
+    signature: '虾饺皇 · 莲蓉包',
+    blurb: '广州百年老字号深圳店，推车点心活化石。',
+  },
+  {
+    id: 'gui_yuan_sz',
+    name: '桂园酒家',
+    cuisine: '粤菜 · 老字号',
+    good_for: ['banquet', 'poultry'],
+    area: '罗湖', city: 'SZ', price_tier: '$$',
+    signature: '脆皮烧鹅 · 蚝皇鲍鱼',
+    blurb: '深圳本土老字号粤菜，开业 30 年。',
+  },
+
+  // ── 江浙 / 北方 (5) ────────────────────────────────────────
+  {
+    id: 'din_tai_fung_sz',
+    name: '鼎泰丰',
+    cuisine: '江浙 · 小笼包',
+    good_for: ['soy', 'meat', 'veggie'],
+    area: '福田', city: 'SZ', price_tier: '$$',
+    signature: '招牌小笼包 · 酸辣汤',
+    blurb: '台湾鼎泰丰深圳分号，18 摺小笼包稳定输出。',
+    link: 'https://www.dintaifung.com.cn/',
+  },
+  {
+    id: 'gui_man_long',
+    name: '桂满陇',
+    cuisine: '杭帮菜',
+    good_for: ['fish', 'light', 'veggie'],
+    area: '南山', city: 'SZ', price_tier: '$$',
+    signature: '西子湖醋鱼 · 龙井虾仁',
+    blurb: '杭帮菜文艺连锁，环境拍照美。',
+  },
+  {
+    id: 'lv_yang_cun',
+    name: '上海绿杨邨',
+    cuisine: '本帮上海菜',
+    good_for: ['meat', 'soy'],
+    area: '福田', city: 'SZ', price_tier: '$$$',
+    signature: '红烧肉 · 油爆虾',
+    blurb: '上海绿杨邨深圳分号，浓油赤酱本帮味。',
+  },
+  {
+    id: 'jiang_nan_zao',
+    name: '江南灶',
+    cuisine: '本帮上海菜',
+    good_for: ['fish', 'soy', 'banquet'],
+    area: '福田', city: 'SZ', price_tier: '$$$',
+    signature: '蟹粉狮子头 · 醉鸡',
+    blurb: '上海绿波廊系深圳分号，江南本帮典范。',
+  },
+  {
+    id: 'xibei_sz',
+    name: '西贝莜面村',
+    cuisine: '西北 · 雜糧',
+    good_for: ['grain', 'veggie', 'light'],
+    area: '南山', city: 'SZ', price_tier: '$$',
+    signature: '莜面村套餐 · 羊杂汤',
+    blurb: '西北菜连锁，缺粗粮主食来一份。',
+    link: 'https://www.xibei.com.cn/',
+  },
+
+  // ── 日料 / 韩餐 / 国际 (8) ─────────────────────────────────
+  {
+    id: 'sushi_ono_sz',
+    name: '鳗鱼之家',
+    cuisine: '日料 · 鳗鱼',
+    good_for: ['fish'],
+    area: '南山', city: 'SZ', price_tier: '$$$',
+    signature: '炭烤鳗鱼饭',
+    blurb: '深圳鳗鱼专门店，关西式蒲烧极致。',
+  },
+  {
+    id: 'ichiran_sz',
+    name: '一兰拉面',
+    cuisine: '日式拉面',
+    good_for: ['poultry', 'egg', 'light'],
+    area: '福田', city: 'SZ', price_tier: '$$',
+    signature: '豚骨拉面 · 半熟蛋',
+    blurb: '一兰深圳分号，独立座位安静吃面。',
+  },
+  {
+    id: 'ba_fang_yakiniku',
+    name: '八方烤肉',
+    cuisine: '日式烧肉',
+    good_for: ['meat'],
+    area: '福田', city: 'SZ', price_tier: '$$$',
+    signature: 'A5 和牛 · 牛舌',
+    blurb: '深圳高端日式烧肉，肉质讲究。',
+  },
+  {
+    id: 'putien_sz',
+    name: '莆田餐厅',
+    cuisine: '莆田福建菜',
+    good_for: ['fish', 'shellfish', 'light'],
+    area: '福田', city: 'SZ', price_tier: '$$',
+    signature: '莆田卤面 · 妈祖糕',
+    blurb: '新加坡莆田连锁，福建闽南菜清淡鲜。',
+    link: 'https://www.putien.com/',
+  },
+  {
+    id: 'lao_cai_sz',
+    name: '老蔡西餐厅',
+    cuisine: '西餐 · 老字号',
+    good_for: ['meat', 'dairy', 'banquet'],
+    area: '罗湖', city: 'SZ', price_tier: '$$',
+    signature: '罗宋汤 · 黑椒牛排',
+    blurb: '深圳本土老牌西餐，平价怀旧。',
+  },
+  {
+    id: 'outback_sz',
+    name: 'Outback 澳拜客',
+    cuisine: '澳洲西餐',
+    good_for: ['meat', 'banquet'],
+    area: '南山', city: 'SZ', price_tier: '$$$',
+    signature: '澳洲安格斯牛排',
+    blurb: '美式扒房连锁，红肉补足量。',
+  },
+  {
+    id: 'maliuji',
+    name: '麻六记',
+    cuisine: '川菜 · 网红',
+    good_for: ['meat', 'soy'],
+    area: '福田', city: 'SZ', price_tier: '$$',
+    signature: '酸辣粉 · 麻婆豆腐',
+    blurb: '汪小菲家的川味网红，深圳分店常排队。',
+  },
+  {
+    id: 'wen_he_you_sz',
+    name: '文和友',
+    cuisine: '湘菜 · 怀旧主题',
+    good_for: ['meat', 'shellfish'],
+    area: '罗湖', city: 'SZ', price_tier: '$$',
+    signature: '小龙虾 · 臭豆腐',
+    blurb: '长沙文和友主题餐厅，80 年代怀旧场景沉浸式。',
+  },
+
+  // ── 健康 / 素食 (4) ────────────────────────────────────────
+  {
+    id: 'su_xiao_liu',
+    name: '苏小柳',
+    cuisine: '江南小食 · 健康',
+    good_for: ['light', 'veggie', 'soy'],
+    area: '南山', city: 'SZ', price_tier: '$$',
+    signature: '小笼包 · 时令蔬菜',
+    blurb: '清新江南小食连锁，环境少女心。',
+  },
+  {
+    id: 'jin_wu_yu',
+    name: '净物语素食',
+    cuisine: '素食',
+    good_for: ['veggie', 'soy', 'light'],
+    area: '福田', city: 'SZ', price_tier: '$$',
+    signature: '素小笼 · 时蔬意面',
+    blurb: '深圳精致素食代表，蔬菜不够补这里。',
+  },
+  {
+    id: 'green_common_sz',
+    name: 'Green Common 绿客盟',
+    cuisine: '植物肉 · 健康',
+    good_for: ['veggie', 'soy', 'light'],
+    area: '福田', city: 'SZ', price_tier: '$$',
+    signature: 'Omnipork 植物肉',
+    blurb: '香港绿客盟深圳分号，植物肉精致呈现。',
+  },
+  {
+    id: 'we_wonton',
+    name: '一茶一坐',
+    cuisine: '台式餐厅 · 健康',
+    good_for: ['veggie', 'soy', 'egg'],
+    area: '南山', city: 'SZ', price_tier: '$$',
+    signature: '台式三杯鸡 · 卤肉饭',
+    blurb: '台湾连锁，菜色丰富偏清淡，家庭友好。',
+  },
+
+  // ── 网红 / 茶饮 (5) ────────────────────────────────────────
+  {
+    id: 'heytea_sz',
+    name: '喜茶 HEYTEA',
+    cuisine: '茶饮 · 网红',
+    good_for: ['fruit'],
+    area: '南山', city: 'SZ', price_tier: '$',
+    signature: '芝芝莓莓 · 多肉葡萄',
+    blurb: '深圳起家，鲜果茶补水果维 C 顺手买。',
+    link: 'https://www.heytea.com/',
+  },
+  {
+    id: 'cha_yan_yue_se',
+    name: '茶颜悦色',
+    cuisine: '茶饮 · 国风',
+    good_for: ['fruit', 'dairy'],
+    area: '福田', city: 'SZ', price_tier: '$',
+    signature: '幽兰拿铁 · 声声乌龙',
+    blurb: '湖南茶颜悦色深圳分店，奶茶里加点诗意。',
+  },
+  {
+    id: 'pi_yi_yang_le',
+    name: '凯丰大酒店',
+    cuisine: '粤菜 · 婚宴',
+    good_for: ['banquet'],
+    area: '福田', city: 'SZ', price_tier: '$$$',
+    signature: '婚宴套餐 · 龙虾刺身',
+    blurb: '深圳老牌婚宴酒楼，场面隆重。',
+  },
+  {
+    id: 'ke_jia_wang',
+    name: '客家王',
+    cuisine: '客家菜',
+    good_for: ['poultry', 'meat'],
+    area: '龙岗', city: 'SZ', price_tier: '$$',
+    signature: '客家盐焗鸡 · 酿豆腐',
+    blurb: '龙岗本地客家菜代表，盐焗鸡香嫩。',
+  },
+  {
+    id: 'peng_cheng_bao_hao',
+    name: '鹏城宝豪海鲜大酒店',
+    cuisine: '粤菜 · 海鲜',
+    good_for: ['fish', 'shellfish', 'banquet'],
+    area: '蛇口', city: 'SZ', price_tier: '$$$',
+    signature: '清蒸海鲜 · 龙虾两食',
+    blurb: '蛇口海边海鲜酒楼，望海吃龙虾。',
   },
 ];
 
@@ -780,19 +1337,28 @@ export const HK_RESTAURANTS: HkRestaurant[] = [
  *   1. Number of matching tags (higher = better)
  *   2. Michelin tier (3★ > 2★ > 1★ > Bib > none)
  *
- * Falls back to a "balanced default" when needs is empty — surfaces 2
- * tier-1 venues every HK user recognizes.
+ * Optional `city` filter — used by the weekend layout to fetch 5 HK + 5 SZ.
+ * Balanced default (no needs) returns 2 tier-1 anchors per city.
  */
 const TIER_WEIGHT: Record<string, number> = { '3★': 4, '2★': 3, '1★': 2, 'Bib': 1 };
 
-export function pickRestaurantsForNeeds(needs: DiningTag[], limit = 3): HkRestaurant[] {
-  const pool = HK_RESTAURANTS.filter(r => !r.hidden);
+export function pickRestaurantsForNeeds(
+  needs: DiningTag[],
+  limit = 3,
+  city?: City,
+): HkRestaurant[] {
+  let pool = HK_RESTAURANTS.filter(r => !r.hidden);
+  if (city) pool = pool.filter(r => r.city === city);
+
   if (needs.length === 0) {
-    return [
-      pool.find(r => r.id === 'tim_ho_wan'),
-      pool.find(r => r.id === 'lei_garden'),
-    ].filter(Boolean) as HkRestaurant[];
+    if (city === 'SZ') {
+      return [pool.find(r => r.id === 'ensue'), pool.find(r => r.id === 'haidilao_sz')]
+        .filter(Boolean) as HkRestaurant[];
+    }
+    return [pool.find(r => r.id === 'tim_ho_wan'), pool.find(r => r.id === 'lei_garden')]
+      .filter(Boolean) as HkRestaurant[];
   }
+
   const scored = pool.map(r => ({
     r,
     matches: r.good_for.filter(t => needs.includes(t)).length,
