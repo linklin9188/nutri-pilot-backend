@@ -207,6 +207,35 @@ Concrete codifications:
 是个大工程）。地域大区是当前 DB 粒度下的最优解；未来 DB 细化时可以再
 拆（华南 → 粤 / 闽 / 客家 / 潮汕，西南 → 川 / 湘 / 黔 等）。
 
+## Rule 5.5 — Breakfast pool 是 DB-shape-dependent
+
+DB-side reality (snapshot 2026-05-17):
+
+| origin × meal | breakfast count |
+|---|---|
+| cantonese | 35 |
+| northern | 30 |
+| jiangnan | 16 |
+| **sichuan** | **0** ← gap |
+| western | 25 |
+
+When 川 / 湘 / 黔 / 滇 users (西南 region → sichuan bucket) ask for
+breakfast, the per-origin pool is empty. `pickBreakfastCombo()` now does
+**pool-aware combo rotation**: starting from `eligible[dayIndex %
+eligible.length]`, it walks forward and stops at the first combo whose
+keywords resolve at least one slot. Universal-safe combos (`hometowns:
+['*']`) act as the natural fallback because 豆浆/包子/馒头/油条/茶叶蛋
+are present in DB regardless of regional skew.
+
+End-state for 川 users **today**: they see universal 包子/豆浆/茶叶蛋
+rather than 北方 menu by accident. Long-term fix is to backfill 川菜
+breakfast rows (红油抄手 / 担担面 / 蛋烘糕 / 钟水饺 / 凉面 etc.).
+
+The standalone `scripts/algo-e2e-by-hometown.ts` does NOT use
+`pickBreakfastCombo` — it computes raw scoreDish output, so its
+"家乡占比 0/10" for 川 users reflects DB reality not algorithm bug.
+Real app behavior diverges via the combo template path.
+
 ## Rule 6 — Cache invalidation discipline
 
 Any change to the scoring functions, slot allocator, breakfast template,
@@ -225,6 +254,7 @@ history:
 - v32 → v33: cumulative count + power curve replacing EMA
 - v33 → v34: dinner cook-method variety (-0.30 per repeat)
 - v34 → v35: hometown onboarding 改地域大区 (legacy 八大菜系 兼容)
+- v35 → v36: pool-aware breakfast combo rotation (避免川人撞上空 sichuan combo)
 
 ## Rule 7 — Disagree on the record
 

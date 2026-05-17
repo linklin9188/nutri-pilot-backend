@@ -56,7 +56,7 @@ export interface WeeklyMenu {
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v35'; // Hometown onboarding switched from 八大菜系 to 7 大区 (south/east/north/northeast/northwest/southwest/central/hk_macau_tw) — legacy 八大菜系 ids stay compatible. Cache bump so users coming from v34 re-generate against the new option labels.
+export const ALGO_VERSION = 'v36'; // Pool-aware breakfast combo rotation: skip combos with 0 keyword hits in the breakfast pool (川 users no longer surfaced 北方 breakfast by accident — they now get universal 豆浆/包子/茶叶蛋 fallback instead). Plus v35: hometown 改地域大区, v34: cook-method variety, v33: power curve.
 
 // ── 周末规则 (Weekend rule) — user-confirmed 2026-05-17 ───────────────────────
 // Weekly menu only covers Mon-Fri. Generation skips Sat/Sun; display layers

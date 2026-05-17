@@ -203,26 +203,11 @@ function poolMatchesAvoid(pool: BreakfastPickInput['pool'], avoidIng: string[]):
   return pool.filter(d => !(d.main_ingredient && avoidIng.includes(d.main_ingredient)));
 }
 
-function pickCombo(
-  combos: BreakfastCombo[],
-  hometown: string | null | undefined,
-  avoidTags: string[],
-  dayIndex: number,
-): BreakfastCombo {
-  // 八大菜系 ID → DB bucket fallback. User picked 鲁菜 (shandong) →
-  // breakfast combos tagged 'northern' (饺子/油条/八宝粥) become eligible.
-  // Lazy import to keep this lib treeshake-friendly.
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { hometownToDbBucket } = require('./hometownBuckets') as typeof import('./hometownBuckets');
-  const homeBucket = hometownToDbBucket(hometown);
-  const eligible = combos.filter(c => {
-    if (c.hometowns.length > 0 && !c.hometowns.includes('*') && homeBucket && !c.hometowns.includes(homeBucket)) return false;
-    if (c.avoidTags?.some(t => avoidTags.includes(t))) return false;
-    return true;
-  });
-  if (eligible.length === 0) return combos[combos.length - 1];   // universal-safe
-  return eligible[dayIndex % eligible.length];
-}
+// (pickCombo removed 2026-05-17 — superseded by listEligibleCombos +
+// pool-aware rotation in pickBreakfastCombo. The old version returned a
+// combo without checking whether the pool could resolve any slot, which
+// surfaced 北方 breakfast for 川 users whose preferred combo had zero
+// keyword hits in DB.)
 
 function resolveSlot(
   pool: BreakfastPickInput['pool'],
@@ -241,21 +226,78 @@ function resolveSlot(
  * resolved DB dishes (where matches exist), and a list of missing slots
  * that need backfill.
  */
-export function pickBreakfastCombo(input: BreakfastPickInput): BreakfastPickResult {
-  const { dayIndex, hometown, avoidTags = [], avoidIngredients = [] } = input;
-  const pool = poolMatchesAvoid(input.pool, avoidIngredients);
-  const combo = pickCombo(BREAKFAST_COMBOS, hometown, avoidTags, dayIndex);
+/** Internal: build the eligible-combo list filtered by hometown + avoidTags. */
+function listEligibleCombos(
+  hometown: string | null | undefined,
+  avoidTags: string[],
+): BreakfastCombo[] {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { hometownToDbBucket } = require('./hometownBuckets') as typeof import('./hometownBuckets');
+  const homeBucket = hometownToDbBucket(hometown);
+  return BREAKFAST_COMBOS.filter(c => {
+    if (c.hometowns.length > 0 && !c.hometowns.includes('*') && homeBucket && !c.hometowns.includes(homeBucket)) return false;
+    if (c.avoidTags?.some(t => avoidTags.includes(t))) return false;
+    return true;
+  });
+}
 
+/** Internal: resolve a combo against a dish pool, returning the slots. */
+function resolveCombo(combo: BreakfastCombo, pool: BreakfastPickInput['pool']): ResolvedSlot[] {
   const used = new Set<string>();
-  const slots: ResolvedSlot[] = (['drink', 'staple', 'side'] as const).map(slot => {
+  return (['drink', 'staple', 'side'] as const).map(slot => {
     const keywords = combo[slot];
     const dish = resolveSlot(pool, keywords, used);
     if (dish) used.add(dish.id);
     return { slot, dish, candidates: keywords };
   });
+}
+
+export function pickBreakfastCombo(input: BreakfastPickInput): BreakfastPickResult {
+  const { dayIndex, hometown, avoidTags = [], avoidIngredients = [] } = input;
+  const pool = poolMatchesAvoid(input.pool, avoidIngredients);
+
+  // 2026-05-17 fix: pool-aware combo picking. The old behavior just took
+  // `eligible[dayIndex % len]` regardless of whether that combo had any
+  // matches in the DB. Four 川 users found this out painfully — DB has
+  // **zero** sichuan-tagged breakfast rows, so the sichuan-hot combo
+  // resolved 0 slots, fell through to the legacy bucket template, and
+  // surfaced 北方 breakfast.
+  //
+  // New: rotate through eligible combos starting at `dayIndex`, and
+  // settle on the first one that resolves at least one slot. Universal
+  // ('*'-tagged) combos act as the natural fallback because they always
+  // have wide keyword coverage (豆浆 / 馒头 / 茶叶蛋 ...) which the
+  // breakfast pool can satisfy regardless of regional skew.
+  const eligible = listEligibleCombos(hometown, avoidTags);
+  if (eligible.length === 0) {
+    // Should never happen because universal-safe is always eligible.
+    const fallback = BREAKFAST_COMBOS[BREAKFAST_COMBOS.length - 1];
+    const slots = resolveCombo(fallback, pool);
+    return {
+      combo: fallback, slots,
+      dishes: slots.map(s => s.dish).filter(Boolean) as BreakfastPickInput['pool'],
+      missingSlots: slots.filter(s => !s.dish).map(s => s.slot),
+    };
+  }
+
+  let chosen: BreakfastCombo = eligible[dayIndex % eligible.length];
+  let slots: ResolvedSlot[] = resolveCombo(chosen, pool);
+  if (slots.every(s => !s.dish)) {
+    // Zero hits on the preferred combo — rotate through the rest of
+    // eligible looking for the first one that resolves at least one slot.
+    for (let i = 1; i < eligible.length; i++) {
+      const candidate = eligible[(dayIndex + i) % eligible.length];
+      const candidateSlots = resolveCombo(candidate, pool);
+      if (candidateSlots.some(s => s.dish)) {
+        chosen = candidate;
+        slots = candidateSlots;
+        break;
+      }
+    }
+  }
 
   return {
-    combo,
+    combo: chosen,
     slots,
     dishes: slots.map(s => s.dish).filter(Boolean) as BreakfastPickInput['pool'],
     missingSlots: slots.filter(s => !s.dish).map(s => s.slot),
