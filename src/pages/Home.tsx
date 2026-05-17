@@ -410,6 +410,12 @@ export default function Home() {
       return recommendedDishes.length > 0 ? recommendedDishes : [];
     }
     if (mealTime === "午餐") {
+      // Live recommendations first, weekly menu fallback. Without this
+      // path, switching the 中餐 / 西餐 toggle on Home left lunch frozen
+      // to whatever cuisineMode generated the weekly cache — and a
+      // weekly generated in 中餐 mode would show 0 dishes (or only a
+      // manual addition) when the user switched to 西餐.
+      if (recommendedDishes.length > 0) return recommendedDishes;
       const lunch = weeklyMenu?.days[todayIdx]?.lunchDishes ?? [];
       return lunch.length > 0 ? lunch : [];
     }
