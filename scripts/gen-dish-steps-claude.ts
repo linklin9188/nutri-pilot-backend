@@ -26,6 +26,8 @@ const DRY_RUN   = process.argv.includes('--dry-run');
 const FORCE     = process.argv.includes('--force');
 const LIMIT_ARG = process.argv.find(a => a.startsWith('--limit='));
 const LIMIT     = LIMIT_ARG ? parseInt(LIMIT_ARG.split('=')[1], 10) : Infinity;
+const TITLE_ARG = process.argv.find(a => a.startsWith('--title='));
+const TITLE     = TITLE_ARG ? TITLE_ARG.split('=')[1] : null;
 const BATCH     = 6;     // Claude handles slightly smaller batches for safety
 const PAUSE     = 2000;  // ms between batches
 
@@ -84,42 +86,81 @@ interface ClaudeResult {
 const SYSTEM_PROMPT = `你是专业厨师，同时也是家庭烹饪机器人系统的数据工程师。你的任务是为每道菜生成精确的备菜清单 + 烹饪步骤（依照 Simply Chinese Feasts 四维框架：基本词汇 / 烹饪术语 / 操作序列 / 物性目标）。你必须只返回纯 JSON 数组，不带任何解释文字、markdown 围栏或注释。`;
 
 function buildPrompt(dishes: DishRow[]): string {
-  return `我会给你一批中文菜肴，为每道菜按 Simply Chinese Feasts 四维框架生成三份指令：
+  return `我会给你一批中文菜肴。为每道菜返回结构化 JSON，包含 prep_steps + cook_steps + 可选 cultural_note。
 
-【1】prep_steps（菲佣备菜指令）
-格位规则（严格按照以下分类，不要自创新类别）：
-- A格：主菜食材（主蛋白：肉类/海鲜/豆腐/蛋类等，每种单独列出）
-- B格：配菜（辅助蔬菜：土豆/胡萝卜/莲藕/茄子等，每种单独列出）
-- C格：配料（补充性食材：葱花/香菜/芝麻/花生等点缀类配料）
-- D格：调料（所有调味品：葱姜蒜/生抽/老抽/料酒/糖/盐/酱料等，把需要提前混合的酱汁合并为一条"预混酱汁"）
-- E格：其他（难以归类的食材，尽量少用此类）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【最重要 / 不可违反】prep_steps tray 分类
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-要求：
-- amount_g：精确克数（4 人家庭一道菜的总量；如菜本身就是 2 人份家常菜请按 4 口家折算）
-- action_zh：菲佣能执行的精确操作，必须含切法尺寸（如"切块3cm×3cm"）或处理方式（如"冷水浸泡10分钟去血水"、"切末"、"拍碎"）
-- 每格最多3条，总步骤不超过10条
-- 不要使用F格（已废弃）
-- substitutes_zh / substitutes_en（Suzie's Twist 可选）：当主料/重要配料在普通超市可能找不到时，列出 1-3 个最接近的替代品（如"虎皮椒"→["羊角椒","螺丝椒","二荆条"]、"叉烧"→["烧肉","蜜汁肉脯"]）。简单常见的食材（葱姜蒜、米饭、鸡蛋）不需要 substitutes，留空数组或省略字段。
+每条 prep_step 的 tray 字段只能是 A / B / C / D（极少数 E）：
 
-【2】cook_steps（烹饪机器人 & 家庭厨师执行步骤）
-要求：
-- 8-12步，按顺序执行
-- 每步必须包含：火候（只写大火/中火/小火三档，烤箱/牛排等西式菜写温度如"180°C"）、时长（X分钟或X秒）、引用格位（如"A格鸡肉"）
-- 不要写档位数字（不要"9档"、"level 9"等）
-- 用可观察判断标准（如"变色"、"出香味"、"冒大泡"）
-- 不要写"适量"，所有用量要具体
-- duration_min：该步骤耗时（分钟，可以是0.5=30秒）
-- state_target_zh / state_target_en（物性目标，Simply Chinese Feasts 4D）：该步骤完成时的感官标志，让没有计时器的家庭主厨/菲佣也能判断"这步做完了"。每步都要写一条，长度 6-18 字：
-  · 例：肉变色、汤色奶白、葱花焦香、油起鱼眼泡、蛋液凝固、皮金黄酥脆、汤汁挂勺、静置定色、面糊起鱼眼泡
-  · 焯水/煮汤类：何时关火（"虾红即关火"/"水开 30 秒"）
-  · 翻炒类：何时下一料（"蒜末焦黄前下肉"）
+  A格 = 主蛋白：肉类 / 海鲜 / 豆腐 / 蛋类（每种单独一条）
+  B格 = 配菜蔬菜：土豆 / 胡萝卜 / 莲藕 / 茄子 / 芥兰 / 西兰花 / 节瓜 / 笋（每种单独一条）
+  C格 = 配料/点缀：葱花 / 香菜 / 芝麻 / 花生 / 木耳 / 粉丝 / 香菇 / 干红椒
+  D格 = 调料：生抽 / 老抽 / 料酒 / 糖 / 盐 / 醋 / 蚝油 / 豆瓣酱 / 蒜末 / 姜末 / 葱段 / 食用油
+        ⚠️ 葱姜蒜 进 D 格，不是 C 格
+        ⚠️ 所有需要提前混合的酱料合并为一条 "预混酱汁" 放 D 格
 
-【3】cultural_note（文化背景，可选）
-仅当此菜是节庆 / 地域名菜 / 家庭传承经典 时填写（≤100字中文），交代来源、节日、家庭含义。
-适合写：饺子、年糕、汤圆、粽子、月饼、佛跳墙、宫保鸡丁、麻婆豆腐、回锅肉、白切鸡、东坡肉、生煎、肉夹馍、油泼面 等。
-不适合写：普通炒青菜、家常蒸蛋、白米饭 等日常菜——省略该字段或返回 null。
+约束（违反 = 数据被废弃）：
+  ⛔ 每道菜的 prep_steps 必须横跨 ≥ 2 个不同 tray（例如 A+D，或 A+B+D）
+  ⛔ E 格是 fallback，每道菜不得超过 1 条 E 格
+  ⛔ F 格已废弃，永远不要用
 
-输入（JSON数组）：
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【prep_steps 字段】
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+- tray (必填)：A/B/C/D/E
+- ingredient_zh / ingredient_en
+- amount_g：4 人份总克数（若菜本身是 2 人份家常菜请按 4 口家折算）
+- action_zh：菲佣能执行的具体操作，含切法尺寸（"切块3cm×3cm"）或处理方式（"冷水浸泡10分钟去血水"、"切末"、"拍碎"）
+- action_en
+- substitutes_zh / substitutes_en (条件必填，规则见下)
+- 每格最多 3 条，总步骤 ≤ 10 条
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【何时必须写 substitutes_zh】Suzie's Twist
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+对以下类别的食材，**必须**列 1-3 个替代品（按最接近排序）：
+
+  · 港式烧腊：叉烧→["烧肉","蜜汁排骨"]、烧鹅→["烧鸭","卤鸭"]、烧腊→["卤味","白切鸡"]
+  · 特殊辣椒：螺丝椒→["二荆条","羊角椒"]、虎皮椒→["螺丝椒","二荆条"]、灯笼椒→["红甜椒"]
+  · 发酵酱料：腐乳→["豆瓣酱","面豉酱"]、虾酱→["鱼露+虾米","XO酱"]、普宁豆酱→["豆瓣酱","黄豆酱"]、老干妈→["豆瓣酱+花椒","辣椒酱"]、XO酱→["豆豉酱","海鲜酱"]
+  · 酒类：花雕→["黄酒","料酒"]、玫瑰露→["白酒+蜂蜜","料酒"]、米酒→["清酒","料酒"]
+  · 干货：海参→["花胶","干鲍鱼"]、瑶柱→["虾干","干贝"]、海米→["小虾米","虾皮"]
+  · 区域蔬菜：节瓜→["冬瓜","西葫芦"]、芥菜→["芥兰","菜心"]、白苋菜→["菠菜","小白菜"]
+
+**不写**（这些到处都有）：葱姜蒜、米饭、鸡蛋、猪肉、鸡肉、牛肉、生抽老抽、糖盐醋油、白菜、土豆、胡萝卜、西红柿。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【cook_steps 字段】
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+- step (1-indexed)
+- action_zh：火候 + 时长 + 引用格位（如 "大火 2 分钟，A 格猪肉末炒散变色"）
+  · 火候只写"大火 / 中火 / 小火"，西式菜写温度（"180°C"），不要档位数字
+  · 不要"适量"，所有用量要具体
+- action_en
+- duration_min（可 0.5=30秒）
+- state_target_zh (必填)：该步完成时的感官 checkpoint，6-18 字
+  · 例："肉末变色无粉红"、"油起鱼眼泡"、"汤色奶白"、"葱花焦香"、"皮金黄酥脆"、"汤汁挂勺"、"虾红即关火"
+  · 焯水/煮汤类：何时关火；翻炒类：何时下一料
+- state_target_en
+
+总步骤 8-12 步。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【cultural_note (可选)】
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+仅当此菜是节庆 / 地域名菜 / 家庭传承 时填写（≤100字中文，交代来源、节日、家庭含义）。
+- 适合：饺子、月饼、年糕、汤圆、粽子、宫保鸡丁、麻婆豆腐、回锅肉、白切鸡、东坡肉、生煎、肉夹馍、佛跳墙
+- 不适合：普通炒青菜、家常蒸蛋、白米饭 — 返回 null 或省略字段
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+【输入 JSON】
 ${JSON.stringify(dishes.map(d => ({
   dish_id: d.id,
   name: d.title_zh,
@@ -129,7 +170,7 @@ ${JSON.stringify(dishes.map(d => ({
   cuisine: d.origin_cuisine,
 })), null, 2)}
 
-返回纯JSON数组，每个元素必须有 dish_id / prep_steps / cook_steps 三个字段（cultural_note 可选）。
+返回纯 JSON 数组，元素含 dish_id / prep_steps / cook_steps（cultural_note 可选）。
 不要 markdown 代码围栏，不要前后文字，只返回 JSON 数组。`;
 }
 
@@ -292,7 +333,10 @@ function validate(r: ClaudeResult): { ok: boolean; issues: string[] } {
     if (!VALID_TRAYS.has(p.tray)) issues.push(`invalid tray: ${p.tray}`);
     if (!p.ingredient_zh)         issues.push('missing ingredient_zh');
     if (!p.action_zh)             issues.push('missing prep action_zh');
-    if (p.amount_g <= 0 || p.amount_g > 1000) issues.push(`suspicious amount: ${p.amount_g}g`);
+    // 2000g cap matches the new 4-person prompt: pork shoulder for 蜜汁叉烧
+    // legitimately runs 1200-1500g, 整鸡 1.5-2kg, 整鱼 1kg+. Anything beyond
+    // 2kg is almost certainly a typo (10000g instead of 100g).
+    if (p.amount_g <= 0 || p.amount_g > 2000) issues.push(`suspicious amount: ${p.amount_g}g`);
   }
   for (const s of r.cook_steps ?? []) {
     if (!s.action_zh) issues.push(`step ${s.step} missing action_zh`);
@@ -377,6 +421,7 @@ async function main() {
   let query = sb.from('dishes')
     .select('id, title_zh, description_zh, main_ingredient, course_type, origin_cuisine');
   if (!FORCE) query = query.is('prep_steps_json', null);
+  if (TITLE)  query = query.ilike('title_zh', `%${TITLE}%`);
 
   const { data: allDishes, error } = await query;
   if (error || !allDishes) { console.error('Fetch error:', error); process.exit(1); }
