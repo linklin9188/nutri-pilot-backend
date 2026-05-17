@@ -59,13 +59,30 @@ export function RestaurantCard({ suggestion }: { suggestion: DiningSuggestion })
           border: '1px solid rgba(255,90,31,0.10)',
           boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
         }}>
-        {/* Square thumbnail (~88px) */}
+        {/* Square thumbnail (~88px) — onError fallback chain handles
+            stale Unsplash photo IDs so no restaurant card ever shows a
+            broken image. 1st fallback: generic fine-dining; 2nd: emoji-only. */}
         <div className="relative shrink-0" style={{ width: 88, background: '#f5f0eb' }}>
           <img
             src={resolveRestaurantImage(r)}
             alt={r.name}
             loading="lazy"
             className="absolute inset-0 w-full h-full object-cover"
+            onError={e => {
+              const img = e.target as HTMLImageElement;
+              // Walk through 2 fallback URLs before giving up to emoji.
+              const FALLBACKS = [
+                'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=600&q=80&auto=format&fit=crop',
+                'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=600&q=80&auto=format&fit=crop',
+              ];
+              const step = Number(img.dataset.fallbackStep ?? '0');
+              if (step < FALLBACKS.length) {
+                img.dataset.fallbackStep = String(step + 1);
+                img.src = FALLBACKS[step];
+              } else {
+                img.style.display = 'none';
+              }
+            }}
           />
           <span className="absolute left-1 bottom-1 text-[14px]"
             style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.4))' }}>
