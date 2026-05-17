@@ -16,10 +16,11 @@
  *     (WhatsApp / OpenRice / tel) — same BookingSheet as before but
  *     inline in the detail page.
  */
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { DiningSuggestion } from '../lib/weeklyDiarySummary';
 import { type DiningTag, type HkRestaurant, resolveRestaurantImage } from '../lib/hkRestaurants';
+import { fetchPlaceData, getPlacePhotoUrl, type PlaceData } from '../lib/placesApi';
 
 const TAG_EMOJI: Record<DiningTag, string> = {
   fish: '🐟', shellfish: '🦐', meat: '🥩', poultry: '🍗', egg: '🥚',
@@ -145,7 +146,29 @@ function RestaurantDetailModal({
   const { restaurant: r, reason, tag } = suggestion;
   const [copied, setCopied] = useState(false);
 
-  const hasPhone     = !!r.phone;
+  // ── Places API lazy-fetch (cost-controlled) ─────────────────────────
+  // Only triggers on first modal open per restaurant, then cached 30d in
+  // localStorage. Subsequent opens cost $0. Listing card stays on
+  // Unsplash fallback (free + browser-cached). See src/lib/placesApi.ts
+  // for the budget reasoning.
+  const [places, setPlaces] = useState<PlaceData | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    fetchPlaceData(r.id, r.name, r.city, r.area).then(data => {
+      if (!cancelled) setPlaces(data);
+    });
+    return () => { cancelled = true; };
+  }, [open, r.id, r.name, r.city, r.area]);
+
+  // Prefer Places photo if available (real restaurant shot), else Unsplash
+  // cuisine-category fallback.
+  const heroPhoto = getPlacePhotoUrl(places?.photoName, 1200) ?? resolveRestaurantImage(r);
+  // Prefer Places-verified phone if it exists and differs from our seed
+  // (rare but possible if seed is stale or omitted).
+  const phone = places?.phone ?? r.phone ?? null;
+
+  const hasPhone     = !!phone;
   const hasLink      = !!r.link;
   const linkIsOpenRice = isOpenRice(r.link);
 
@@ -154,9 +177,9 @@ function RestaurantDetailModal({
   };
 
   const handleWhatsApp = () => {
-    if (!r.phone) return;
+    if (!phone) return;
     const msg = buildWhatsAppMessage(r.name);
-    openExternal(`https://wa.me/${digitsOnly(r.phone)}?text=${encodeURIComponent(msg)}`);
+    openExternal(`https://wa.me/${digitsOnly(phone)}?text=${encodeURIComponent(msg)}`);
   };
 
   const handleLink = () => {
@@ -164,11 +187,17 @@ function RestaurantDetailModal({
   };
 
   const handleCall = () => {
-    if (!r.phone) return;
-    navigator.clipboard?.writeText(r.phone).catch(() => {/* offline-tolerant */});
+    if (!phone) return;
+    navigator.clipboard?.writeText(phone).catch(() => {/* offline-tolerant */});
     setCopied(true);
-    window.location.href = `tel:${digitsOnly(r.phone)}`;
+    window.location.href = `tel:${digitsOnly(phone)}`;
     setTimeout(() => setCopied(false), 1500);
+  };
+
+  const handleMaps = () => {
+    if (places?.mapsUrl) {
+      openExternal(places.mapsUrl);
+    }
   };
 
   return (
@@ -189,9 +218,10 @@ function RestaurantDetailModal({
             style={{ maxHeight: '92vh', boxShadow: '0 -8px 32px rgba(0,0,0,0.18)' }}
             onClick={e => e.stopPropagation()}>
 
-            {/* Hero photo (16:9) with close button + Michelin pill */}
+            {/* Hero photo (16:9) — Places real shot when available, else
+                Unsplash cuisine fallback. */}
             <div className="relative w-full shrink-0" style={{ aspectRatio: '16 / 9', background: '#f5f0eb' }}>
-              <img src={resolveRestaurantImage(r)} alt={r.name} className="absolute inset-0 w-full h-full object-cover" />
+              <img src={heroPhoto} alt={r.name} className="absolute inset-0 w-full h-full object-cover" />
               <div className="absolute inset-x-0 bottom-0 h-2/3"
                 style={{ background: 'linear-gradient(to bottom, transparent, rgba(0,0,0,0.6))' }} />
               <button onClick={onClose}
@@ -240,6 +270,42 @@ function RestaurantDetailModal({
               <p className="mt-3 leading-relaxed" style={{ fontSize: 13.5, color: 'rgba(0,0,0,0.78)' }}>
                 {r.blurb}
               </p>
+
+              {/* ── Places-enriched info row ─────────────────────────
+                  Address + rating + map deep-link. Shows only when we
+                  got something back from Places — fully optional so the
+                  detail modal works fine even when Places API is rate-
+                  limited / disabled / not configured. */}
+              {(places?.address || places?.rating) && (
+                <div className="mt-3 px-3 py-2.5 rounded-xl flex items-start gap-3"
+                  style={{ background: 'rgba(0,0,0,0.03)' }}>
+                  <div className="flex-1 min-w-0">
+                    {places.rating && (
+                      <div className="flex items-baseline gap-1 mb-1">
+                        <span style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a' }}>
+                          ⭐ {places.rating.toFixed(1)}
+                        </span>
+                        <span style={{ fontSize: 10, color: 'rgba(0,0,0,0.4)' }}>Google 评价</span>
+                      </div>
+                    )}
+                    {places.address && (
+                      <p className="truncate" style={{ fontSize: 11.5, color: 'rgba(0,0,0,0.55)' }}>
+                        📍 {places.address}
+                      </p>
+                    )}
+                  </div>
+                  {places.mapsUrl && (
+                    <button onClick={handleMaps}
+                      className="shrink-0 px-3 py-1 rounded-full font-bold active:scale-95 transition-all"
+                      style={{
+                        background: 'rgba(66,133,244,0.10)',
+                        color: '#1A73E8', fontSize: 11, letterSpacing: '0.04em',
+                      }}>
+                      导航 →
+                    </button>
+                  )}
+                </div>
+              )}
 
               {reason && (
                 <div className="mt-3 px-3 py-2 rounded-xl"
