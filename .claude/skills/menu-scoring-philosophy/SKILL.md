@@ -192,7 +192,7 @@ Concrete codifications:
 | 东北 (northeast) | northern | 辽 · 吉 · 黑 |
 | 西北 (northwest) | northern | 陕 · 甘 · 宁 · 青 · 新 |
 | 西南 (southwest) | sichuan | 川 · 渝 · 湘 · 黔 · 滇 |
-| 华中 (central) | jiangnan | 鄂 · 赣 · 豫 |
+| 华中 (central) | **northern** | 鄂 · 赣 · 豫（豫占人口主导，口味偏北） |
 | 港澳台 (hk_macau_tw) | cantonese | 港 · 澳 · 台 |
 | 都行 (no_preference) | (null) | (没有家乡偏好) |
 

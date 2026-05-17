@@ -51,7 +51,9 @@ export const HOMETOWN_TO_DB_BUCKETS: Record<HometownId, string[]> = {
   northeast:    ['northern'],
   northwest:    ['northern'],
   southwest:    ['sichuan'],
-  central:      ['jiangnan'],   // 鄂 / 赣 / 豫 偏南方口味
+  central:      ['northern'],   // 鄂 / 赣 / 豫 — 豫占人口主导 (河南 9000 万)，
+                                //  豫菜偏北方面食 + 咸鲜，落 northern 比 jiangnan 准
+                                //  鄂菜虽偏南但靠近 sichuan，northern fallback 也可接受
   hk_macau_tw:  ['cantonese'],
   no_preference:[],
 
