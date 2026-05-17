@@ -289,6 +289,43 @@ history:
 - v35 → v36: pool-aware breakfast combo rotation (避免川人撞上空 sichuan combo)
 - v36 → v37: western high-end bias (欧陆 +0.12 / 美式 fast-casual -0.08)
 
+## Rule 6.5 — No `scoring_rules` config table (YAGNI verdict 2026-05-18)
+
+A parallel session proposed creating a `scoring_rules` DB table to lift
+the 17-axis weights + 5-axis scoreDish constants out of code into
+configurable data, with a `USE_DB_SCORING_RULES` feature flag and
+`UNIQUE (scope, axis_key, version)` for future A/B testing.
+
+**Decided: do NOT build this table.** Reasoning (user-accepted 2026-05-18):
+
+1. **No actual A/B demand**. Every algorithm change in v25→v37 was a
+   single-direction forward bump with cache invalidation. No A/B
+   infrastructure was ever needed and none is planned.
+2. **Double source of truth risk**. Once the table has
+   `hometown_match=0.60` AND the code has `score += 0.60`, future
+   single-side edits cause drift. Rule 5 says "any scoring change must
+   bump ALGO_VERSION" — that workflow is git-based and conflicts with
+   "any config change runs a DB UPDATE".
+3. **LLM agent self-knowledge has cheaper sources**. Composer / Critic
+   prompts that want to reference algorithm axes should read this skill
+   file (`.claude/skills/menu-scoring-philosophy/SKILL.md`) — written
+   by humans, includes the *why*, naturally version-controlled — not
+   a DB table of bare numbers.
+4. **Config changes through SQL migration are slow**. Updating a number
+   in a table requires `019_xxx.sql` + apply script + tracker INSERT +
+   verification; the code-path is `git commit && git push`. Putting
+   high-frequency tunables on the low-speed channel is reverse
+   optimization.
+5. **The proposal's own `USE_DB_SCORING_RULES = false` escape hatch
+   confirmed the table would be dead infrastructure on day one.**
+
+**Reopen this decision** if and only if one of:
+- An actual production A/B test is scheduled (then design might be
+  `experiment_assignments` table, not `scoring_rules` — closer to real
+  need).
+- LLM Composer/Critic ships and proves it needs structured access to
+  axis weights that the SKILL.md narrative can't supply.
+
 ## Rule 7 — Disagree on the record
 
 > 我提出的每次的优化思路，你可以提出反对意见，如果认为我的思路更好，
