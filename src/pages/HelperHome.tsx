@@ -260,7 +260,7 @@ export default function HelperHome() {
   }
 
   function handleInvite() {
-    const url = `${window.location.origin}/signin?role=helper`;
+    const url = `${window.location.origin}/login?role=helper`;
     const text = encodeURIComponent(
       `Hey! I use Aieats to manage cooking for my employer — shopping list, prep steps, voice cooking guide. Join me and earn rewards every Friday! ${url}`
     );
@@ -480,7 +480,7 @@ export default function HelperHome() {
       {/* Switch account */}
       <div className="relative z-10 flex justify-center">
         <button
-          onClick={() => { localStorage.removeItem("nutri_role"); navigate("/signin"); }}
+          onClick={() => { localStorage.removeItem("nutri_role"); navigate("/login"); }}
           style={{ fontSize: 12, color: "rgba(255,255,255,0.18)" }}
         >
           {t3("Switch account", "切换账号", "Lumipat ng account")}

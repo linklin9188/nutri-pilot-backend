@@ -22,8 +22,9 @@ interface Props {
   children: ReactNode;
   /** Where to send unauthenticated visitors. Defaults to /login. */
   redirectTo?: string;
-  /** When true the helper /signin route is used (helpers don't share the
-   *  employer login form). */
+  /** When true, unauthenticated helpers are bounced to /login?role=helper
+   *  so the role chip pre-selects 工人. Both roles share the same /login
+   *  form now — the chip + ?role= param decide post-login routing. */
   helperRole?: boolean;
 }
 
@@ -64,7 +65,7 @@ export default function RequireAuth({ children, redirectTo, helperRole }: Props)
   }
 
   if (state === 'anon') {
-    const target = redirectTo ?? (helperRole ? '/signin?role=helper' : '/login');
+    const target = redirectTo ?? (helperRole ? '/login?role=helper' : '/login');
     // Pass `from` so post-login we can bounce back to where they wanted.
     return <Navigate to={target} state={{ from: location.pathname }} replace />;
   }

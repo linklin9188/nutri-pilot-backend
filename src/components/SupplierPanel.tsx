@@ -53,7 +53,7 @@ export default function SupplierPanel({ ingredient, region = 'hk', compact = fal
             <button
               key={s.id}
               onClick={() => {
-                if (!unlocked) { navigate('/signin'); return; }
+                if (!unlocked) { navigate('/login'); return; }
                 const url = ingredient ? s.searchUrl(ingredient) : s.baseUrl;
                 window.open(url, '_blank', 'noopener,noreferrer');
               }}
@@ -105,7 +105,7 @@ export default function SupplierPanel({ ingredient, region = 'hk', compact = fal
               </div>
               {!userHasTier && (
                 <button
-                  onClick={() => navigate('/signin')}
+                  onClick={() => navigate('/login')}
                   className="text-[11px] px-3 py-1 rounded-full font-semibold"
                   style={{ background: `${cfg.color}22`, color: cfg.color }}
                 >
@@ -147,7 +147,7 @@ export default function SupplierPanel({ ingredient, region = 'hk', compact = fal
             米其林御用食材 · 农场直采 · A5 和牛
           </p>
           <button
-            onClick={() => navigate('/signin')}
+            onClick={() => navigate('/login')}
             className="mt-3 px-5 py-2 rounded-full font-semibold text-[13px]"
             style={{ background: "linear-gradient(135deg, #C9A227, #E8C547)", color: "#1a1400" }}
           >

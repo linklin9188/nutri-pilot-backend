@@ -36,8 +36,13 @@ export default function WeChatCallback() {
     // Tell any listening hooks that prefs / identity changed.
     window.dispatchEvent(new Event('nutri-prefs-changed'));
 
-    // New user → setup; returning → home.
-    navigate(isNew ? '/setup' : '/', { replace: true });
+    // New user → onboarding entry depends on role. Helper has its own
+    // task-card landing (/helper) and skips the QuickSetup taste profile
+    // (those questions are for the family, not the 阿姨). Returning users
+    // always go /, then RootRedirect routes helpers to /helper.
+    const role = localStorage.getItem('nutri_role');
+    const newUserDest = role === 'helper' ? '/helper' : '/setup';
+    navigate(isNew ? newUserDest : '/', { replace: true });
   }, [navigate]);
 
   if (error) {

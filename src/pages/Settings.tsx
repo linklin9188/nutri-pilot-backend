@@ -777,7 +777,7 @@ export default function Settings() {
 
                     <button
                       onClick={() => {
-                        const link = `${window.location.origin}/signin?role=helper`;
+                        const link = `${window.location.origin}/login?role=helper`;
                         // Embed the 6-digit code directly so worker doesn't
                         // have to copy-paste anything. The link still works
                         // when invite_code is missing — the helper just
@@ -800,7 +800,7 @@ export default function Settings() {
             </div>
           </div>
 
-          {/* Role switcher removed — identity is picked once at /signin.
+          {/* Role switcher removed — identity is picked once at /login.
               Keeping it here was confusing (one user shouldn't be both
               employer and helper on the same account). */}
 

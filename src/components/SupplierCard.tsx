@@ -30,9 +30,9 @@ export default function SupplierCard({ supplier, userTier, ingredient, index = 0
       // Locked → prompt upgrade
       if (supplier.tier === 'premium') {
         // show upgrade modal (future: open premium sheet)
-        navigate('/signin');
+        navigate('/login');
       } else {
-        navigate('/signin');
+        navigate('/login');
       }
       return;
     }

@@ -1171,7 +1171,7 @@ export default function Home() {
               <p className="font-semibold" style={{ fontSize: 13, color: "#FF5A1F" }}>登录解锁完整功能</p>
               <p style={{ fontSize: 11, color: "rgba(0,0,0,0.38)" }}>家庭档案 · 工人协作 · 菜单同步</p>
             </div>
-            <button onClick={() => navigate("/signin")}
+            <button onClick={() => navigate("/login")}
               className="px-4 py-2 rounded-xl font-bold text-white shrink-0 active:scale-95"
               style={{ fontSize: 12, background: "#FF5A1F" }}>登录</button>
           </div>

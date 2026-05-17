@@ -18,7 +18,6 @@ import DeliveryTracking from './pages/DeliveryTracking';
 import AIPilot from './pages/AIPilot';
 import Settings from './pages/Settings';
 import WeeklyMenu from './pages/WeeklyMenu';
-import SignIn from './pages/SignIn';
 import Pricing from './pages/Pricing';
 import Banquet from './pages/Banquet';
 import WeekendDining from './pages/WeekendDining';
@@ -41,7 +40,7 @@ import { supabase } from './lib/supabase';
 // choose to attach a real account once social providers come online.
 //
 // Flow:
-//  • Helper role (set via /signin?role=helper) → /helper
+//  • Helper role (set via /login?role=helper) → /helper
 //  • No quickPrefs yet                         → /setup (anonymous onboarding)
 //  • Has quickPrefs                            → Home
 function RootRedirect() {
@@ -91,13 +90,13 @@ function AppShell() {
     <Routes>
       {/* ── Public — no login needed ──────────────────────────────
           / 是匿名访客唯一能看到的页面（只读，无 AI 成本）。Auth 入口
-          (/login /signin /setup /onboarding) 当然也必须公开。WeChat
-          OAuth callback 公开是因为这正是把用户从匿名升到 authed 的
-          关键 step。 */}
+          (/login /setup /onboarding) 当然也必须公开。WeChat OAuth
+          callback 公开是因为这正是把用户从匿名升到 authed 的关键 step。
+          /login 兼任原 /signin —— 角色（雇主/工人）通过 ?role=helper
+          预选，登录按钮包含 微信 / Instagram / Facebook 三个 provider。 */}
       <Route path="/" element={<RootRedirect />} />
       <Route path="/setup" element={<QuickSetup />} />
       <Route path="/login" element={<Login />} />
-      <Route path="/signin" element={<SignIn />} />
       <Route path="/onboarding" element={<Onboarding />} />
       <Route path="/auth/wechat/in"   element={<WeChatIn />} />
       <Route path="/auth/wechat/done" element={<WeChatCallback />} />
@@ -106,7 +105,7 @@ function AppShell() {
       <Route path="/terms" element={<Terms />} />
 
       {/* ── Auth-gated — 所有消耗 AI token 或修改状态的功能 ──────
-          匿名用户访问会被弹回 /login (helper 路径弹回 /signin?role=helper)。
+          匿名用户访问会被弹回 /login (helper 路径弹回 /login?role=helper)。
           这是防恶意 token 消耗的核心闸门 — Gemini Vision (扫冰箱) /
           Claude (周菜单 / 米其林 / 学校营养) / 任何 mutation 都在这一层
           之后。 */}

@@ -1007,7 +1007,7 @@ export default function Community() {
             <p style={{ fontSize: 10, color: "#FF6B35" }}>Earn rewards every Friday 🍳</p>
           )}
         </div>
-        <button onClick={() => navigate(`/signin?role=helper`)}>
+        <button onClick={() => navigate(`/login?role=helper`)}>
           <span className="material-symbols-outlined" style={{ fontSize: 24, color: "#262626" }}>person_add</span>
         </button>
       </div>

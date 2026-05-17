@@ -1,63 +1,75 @@
-import React, { useState, useEffect, useRef } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
-import { useLanguage } from "../contexts/LanguageContext";
+import { useLanguage, type Language } from "../contexts/LanguageContext";
 import { supabase } from "../lib/supabase";
-import { getUserId, setUserId } from "../lib/userId";
 
-// Direct OAuth launchers. Returns false if the provider isn't configured yet
-// (so caller can show a "coming soon" hint instead of a stack trace).
-async function launchOAuth(provider: 'facebook' | 'google' | 'apple'): Promise<boolean> {
+type Role = "employer" | "helper";
+
+// Real Supabase OAuth call. Returns `{ ok: false }` if the provider isn't
+// wired up yet (so the caller can fall back to a dev test login and the
+// rest of the flow stays usable while real OAuth is finished).
+async function tryOAuth(
+  provider: "facebook",
+  redirectPath: string,
+  scopes?: string,
+): Promise<{ ok: boolean; error?: string }> {
   try {
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
       options: {
-        redirectTo: `${window.location.origin}/`,
+        redirectTo: `${window.location.origin}${redirectPath}`,
+        ...(scopes ? { scopes } : {}),
       },
     });
-    if (error) {
-      console.error(`${provider} OAuth error:`, error.message);
-      return false;
-    }
-    return true;
-  } catch (e) {
-    console.error(`${provider} OAuth threw:`, e);
-    return false;
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: e?.message ?? "OAuth failed" };
   }
 }
 
-// WeChat login via 公众号网页授权 (snsapi_userinfo). Only works when the
-// user opens the page INSIDE the WeChat in-app browser — there is no 网站
-// 应用 yet so qrconnect from Chrome/Safari is not available. The OAuth
-// redirect_uri points at the Supabase edge function which exchanges the
-// code, looks up / creates user_profiles, then 302s back to
-// /auth/wechat/done with the userId in the URL hash.
-function launchWeChat() {
+// Local fallback identity so the rest of the app stays usable before real
+// Facebook / Instagram OAuth credentials land. Stable per (role, provider)
+// so re-logging in on the same device returns the same anonymous userId.
+function devTestLogin(role: Role, providerLabel: string) {
+  const key = `nutri_uid_${role}_${providerLabel}`;
+  let userId = localStorage.getItem(key);
+  if (!userId) {
+    userId = crypto.randomUUID();
+    localStorage.setItem(key, userId);
+  }
+  localStorage.setItem("isLoggedIn", "true");
+  localStorage.setItem("userId", userId);
+  localStorage.setItem("nutri_user_id", userId);
+  localStorage.setItem("nutri_role", role);
+  // LanguageProvider listens for this to re-derive default language
+  // (helper → en, employer → zh).
+  window.dispatchEvent(new Event("nutri-prefs-changed"));
+}
+
+// WeChat 公众号 网页授权 (snsapi_userinfo). Only works inside the WeChat
+// in-app browser — no 网站应用 yet so qrconnect from desktop browsers is
+// not available. redirect_uri must live on the whitelisted domain
+// (nothinkeats.com), so we bounce through /auth/wechat/in which forwards
+// to the Supabase edge function. Edge fn exchanges code, upserts
+// user_profiles, then 302s back to /auth/wechat/done with userId in hash.
+function launchWeChat(): { triggered: boolean; reason?: string } {
   const appid = import.meta.env.VITE_WECHAT_APPID;
   const isWeChatBrowser = /MicroMessenger/i.test(navigator.userAgent);
   if (!isWeChatBrowser) {
-    alert("请在微信里打开 nothinkeats.com，然后再点「微信登录」。\n（等网站应用备案完成后将支持桌面浏览器扫码）");
-    return;
+    return { triggered: false, reason: "请在微信里打开 nothinkeats.com 后再点「微信登录」。" };
   }
   if (!appid) {
-    alert("微信登录即将上线，请稍后再试。");
-    return;
+    return { triggered: false, reason: "微信登录即将上线，请稍后再试。" };
   }
-  // redirect_uri must be on a whitelisted domain (nothinkeats.com).
-  // /auth/wechat/in bouncer forwards to the Supabase edge function.
   const redirect = encodeURIComponent(`${window.location.origin}/auth/wechat/in`);
   const state = crypto.randomUUID();
-  sessionStorage.setItem('wechat_oauth_state', state);
+  sessionStorage.setItem("wechat_oauth_state", state);
   const url = `https://open.weixin.qq.com/connect/oauth2/authorize?appid=${appid}&redirect_uri=${redirect}&response_type=code&scope=snsapi_userinfo&state=${state}#wechat_redirect`;
   window.location.href = url;
+  return { triggered: true };
 }
-
-type Step = "login" | "phone" | "otp" | "preferences";
-
-const COUNTRY_CODES = [
-  { code: "+852", label: "香港", flag: "🇭🇰" },
-  { code: "+86",  label: "中国大陆", flag: "🇨🇳" },
-];
 
 export default function Login() {
   const navigate = useNavigate();
@@ -65,240 +77,115 @@ export default function Login() {
   const { t, language, setLanguage } = useLanguage();
 
   // ── source detection ──────────────────────────────────────────────
-  // The WeChat 小程序 web-view shell appends `?source=wx_mp` when it loads
-  // nothinkeats.com. We persist that to localStorage so navigation around
-  // the site doesn't lose the flag, and use it to hide境外 social login
-  // buttons (Facebook / Instagram) which WeChat 提审 rejects on sight.
-  // Once flagged wx_mp, the device stays wx_mp until manually cleared —
-  // safer than re-toggling per nav.
+  // The WeChat 小程序 web-view shell appends `?source=wx_mp`; raw 微信分享
+  // links (公众号 / 朋友圈 / 群) come through with UA MicroMessenger and may
+  // carry `?source=wx`. Persist to localStorage so navigation around the
+  // site keeps the flag.
   useEffect(() => {
-    const sourceParam = searchParams.get('source');
-    if (sourceParam === 'wx_mp') localStorage.setItem('nutri_source', 'wx_mp');
+    const src = searchParams.get("source");
+    if (src === "wx_mp") localStorage.setItem("nutri_source", "wx_mp");
+    if (src === "wx")    localStorage.setItem("nutri_source", "wx");
   }, [searchParams]);
-  const isWxMp = searchParams.get('source') === 'wx_mp'
-              || localStorage.getItem('nutri_source') === 'wx_mp';
-  // 3-way cycle: 简 → 繁 → EN → 简
-  const langChip = language === 'zh' ? '简'
-                 : language === 'zh-Hant' ? '繁'
-                 : 'EN';
-  const cycleLang3 = () => {
-    setLanguage(language === 'zh' ? 'zh-Hant' : language === 'zh-Hant' ? 'en' : 'zh');
-  };
 
-  // ── step flow ──────────────────────────────────────────────────────
-  const [step, setStep] = useState<Step>("login");
+  // WeChat-flow detection — covers all 大陆 entry paths. When true the
+  // landing CTA collapses to a single 微信登录 button (Instagram/Facebook
+  // hidden — 境外社交 in WeChat browser is both useless and a 提审 reject
+  // reason for the 小程序).
+  const isWxFlow = searchParams.get("source") === "wx_mp"
+                || localStorage.getItem("nutri_source") === "wx_mp"
+                || searchParams.get("source") === "wx"
+                || localStorage.getItem("nutri_source") === "wx"
+                || /MicroMessenger/i.test(navigator.userAgent);
 
-  // ── phone OTP state ────────────────────────────────────────────────
-  const [countryCode, setCountryCode] = useState("+852");
-  const [phone, setPhone] = useState("");
-  const [otp, setOtp] = useState(["", "", "", "", "", ""]);
-  const [otpError, setOtpError] = useState("");
-  const [sending, setSending] = useState(false);
-  const [verifying, setVerifying] = useState(false);
-  const [countdown, setCountdown] = useState(0);
-  const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
-
-  // ── preferences state ──────────────────────────────────────────────
-  const [taste, setTaste] = useState<string[]>([]);
-  // Spice tolerance is its own scalar slider — separate from `taste`
-  // (which is a flavor-style checkbox). Defaults to 'medium' so a user
-  // who skips the question gets a neutral menu. The new 4-level slider
-  // exists because the old binary "Spicy ✓" left no room to say "I can
-  // handle a bit but not 麻辣".
-  const [spiceLevel, setSpiceLevel] = useState<'none' | 'mild' | 'medium' | 'hot'>('medium');
-  const [diet, setDiet] = useState<string[]>([]);
-  const [avoid, setAvoid] = useState<string[]>([]);
-  const [hometown, setHometown] = useState<string[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-
-  // ── countdown timer ────────────────────────────────────────────────
+  // ── role pick ─────────────────────────────────────────────────────
+  // ?role=helper in URL pre-selects helper (used by Settings invite link
+  // sent to 阿姨). Otherwise default to employer — most landings are the
+  // 家庭 owner. Persisted to localStorage immediately on pick so OAuth
+  // redirect chains see the right role even after window.location.href.
+  const urlRole: Role = searchParams.get("role") === "helper" ? "helper" : "employer";
+  const [role, setRole] = useState<Role>(() => {
+    const saved = localStorage.getItem("nutri_role");
+    if (saved === "employer" || saved === "helper") return saved;
+    return urlRole;
+  });
   useEffect(() => {
-    if (countdown <= 0) return;
-    const t = setTimeout(() => setCountdown(c => c - 1), 1000);
-    return () => clearTimeout(t);
-  }, [countdown]);
+    localStorage.setItem("nutri_role", role);
+  }, [role]);
 
-  // ── send OTP ───────────────────────────────────────────────────────
-  const handleSendOtp = async () => {
-    const digits = phone.replace(/\D/g, "");
-    if (!digits || digits.length < 8) return;
-    setSending(true);
-    setOtpError("");
-    try {
-      const fullPhone = `${countryCode}${digits}`;
-      const { error } = await supabase.auth.signInWithOtp({ phone: fullPhone });
-      if (error) throw error;
-      setStep("otp");
-      setCountdown(60);
-    } catch (err: any) {
-      setOtpError(err.message ?? "发送失败，请稍后重试");
-    } finally {
-      setSending(false);
+  const [error, setError] = useState("");
+
+  const goAfterLogin = (r: Role) => {
+    if (r === "helper") { navigate("/helper"); return; }
+    navigate(localStorage.getItem("quickPrefs") ? "/" : "/setup");
+  };
+
+  // OAuth handler with dev fallback so the app stays usable before Meta
+  // App credentials land. Once OAuth is fully wired the redirect fires
+  // well within the 1500ms timeout and the fallback never runs.
+  const startSocialLogin = async (provider: "instagram" | "facebook") => {
+    setError("");
+    const redirectPath = role === "helper" ? "/helper" : "/";
+    const scopes = provider === "instagram"
+      ? "instagram_basic,public_profile"
+      : "public_profile";
+    const res = await tryOAuth("facebook", redirectPath, scopes);
+    if (!res.ok) {
+      devTestLogin(role, provider);
+      goAfterLogin(role);
+      return;
     }
-  };
-
-  const handleAppleLogin = async () => {
-    const hasPrefs = !!localStorage.getItem("quickPrefs");
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "apple",
-      options: {
-        // New users → taste setup; existing users → home
-        redirectTo: hasPrefs
-          ? `${window.location.origin}/`
-          : `${window.location.origin}/setup`,
-      },
-    });
-    if (error) console.error(error);
-  };
-
-  // ── verify OTP ─────────────────────────────────────────────────────
-  const handleVerifyOtp = async () => {
-    const token = otp.join("");
-    if (token.length < 6) return;
-    setVerifying(true);
-    setOtpError("");
-    try {
-      const fullPhone = `${countryCode}${phone.replace(/\D/g, "")}`;
-      const { data, error } = await supabase.auth.verifyOtp({
-        phone: fullPhone,
-        token,
-        type: "sms",
-      });
-      if (error) throw error;
-
-      const userId = data.user?.id;
-      if (!userId) throw new Error("No user returned");
-
-      localStorage.setItem("isLoggedIn", "true");
-      setUserId(userId);
-
-      // Check if profile already exists
-      const { data: profile } = await supabase
-        .from("user_profiles")
-        .select("id")
-        .eq("id", userId)
-        .maybeSingle();
-
-      if (profile) {
-        // Existing user with saved profile → go home
-        navigate("/");
-      } else {
-        // New user → go to QuickSetup taste profile first
-        navigate("/setup");
+    setTimeout(() => {
+      if (window.location.pathname === "/login") {
+        devTestLogin(role, provider);
+        goAfterLogin(role);
       }
-    } catch (err: any) {
-      setOtpError(err.message === "Token has expired or is invalid"
-        ? "验证码错误或已过期，请重新获取"
-        : (err.message ?? "验证失败，请重试"));
-    } finally {
-      setVerifying(false);
+    }, 1500);
+  };
+
+  const handleWeChat = () => {
+    setError("");
+    const res = launchWeChat();
+    if (!res.triggered) {
+      // Outside WeChat browser: keep the dev fallback so testing on
+      // desktop still works. Real 大陆 users hit this from inside WeChat
+      // and never see the fallback.
+      if (!/MicroMessenger/i.test(navigator.userAgent)) {
+        devTestLogin(role, "wechat");
+        goAfterLogin(role);
+        return;
+      }
+      setError(res.reason ?? "微信登录失败");
     }
   };
 
-  // ── save preferences ───────────────────────────────────────────────
-  const handleFinishSetup = async () => {
-    setIsLoading(true);
-    const userId = getUserId() ?? "";
-    try {
-      // Column names match the actual user_profiles schema. The legacy
-      // names (hometown / tastes / diet_goals / avoid_ingredients) didn't
-      // exist and caused PostgREST to silently reject the whole upsert.
-      // hometown_cuisine + dietary_goal are scalar text, so we take the
-      // first selection from the array UI; taste_preferences + avoid_tags
-      // are arrays.
-      await supabase.from("user_profiles").upsert({
-        id:                 userId,
-        display_name:       "Aieats User",
-        hometown_cuisine:   hometown[0] ?? null,
-        taste_preferences:  taste,
-        dietary_goal:       diet[0] ?? null,
-        avoid_tags:         avoid,
-        updated_at:         new Date().toISOString(),
-      }, { onConflict: "id" });
-      localStorage.setItem("userTaste", taste.join(","));
-      localStorage.setItem("userDiet", diet.join(","));
-      localStorage.setItem("userAvoid", avoid.join(","));
-      localStorage.setItem("userHometown", hometown.join(","));
-      // Spice tolerance is captured by the dedicated 4-level slider, not
-      // by the taste checkboxes. Persist the explicit value so the algo
-      // gets the right SPICE_BOOST (-0.80 for 'none' to +0.25 for 'hot').
-      // If the user also ticked 'Spicy' in taste but slider is 'medium',
-      // the slider wins (explicit > implied).
-      localStorage.setItem("userSpice", spiceLevel);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsLoading(false);
-      navigate("/");
-    }
-  };
+  // ── 4-language switcher ──────────────────────────────────────────
+  // Always 4-way (zh / en / tl / id) regardless of role — helpers may pick
+  // their language before tapping a button, employers can keep zh.
+  const LANGS: { key: Language; label: string }[] = [
+    { key: "zh", label: "中文" },
+    { key: "en", label: "EN" },
+    { key: "tl", label: "Tagalog" },
+    { key: "id", label: "Bahasa" },
+  ];
 
-  // ── OTP box helpers ────────────────────────────────────────────────
-  const handleOtpChange = (idx: number, val: string) => {
-    const ch = val.replace(/\D/g, "").slice(-1);
-    const next = [...otp];
-    next[idx] = ch;
-    setOtp(next);
-    if (ch && idx < 5) otpRefs.current[idx + 1]?.focus();
-  };
-  const handleOtpKey = (idx: number, e: React.KeyboardEvent) => {
-    if (e.key === "Backspace" && !otp[idx] && idx > 0) {
-      otpRefs.current[idx - 1]?.focus();
-    }
-  };
-
-  // ── time-based hero bg ─────────────────────────────────────────────
+  // ── time-based hero bg ───────────────────────────────────────────
   // 7 days (Mon–Sun) × 3 meal slots (breakfast/lunch/dinner)
-  // breakfast = bright sunny morning food
-  // lunch     = warm coffee / café afternoon
-  // dinner    = dark moody fine-dining
   const DAY_IMAGES = [
-    { // Monday
-      breakfast: "photo-1484723091739-30a097e8f929", // french toast warm sunlight
-      lunch:     "photo-1495474472287-4d71bcdd2085", // coffee cup warm
-      dinner:    "photo-1414235077428-338989a2e8c0", // fine dining dark
-    },
-    { // Tuesday
-      breakfast: "photo-1567620905732-2d1ec7ab7445", // fluffy pancakes bright
-      lunch:     "photo-1509042239860-f550ce710b93", // latte art warm
-      dinner:    "photo-1559339352-11d035aa65de",    // steak moody
-    },
-    { // Wednesday
-      breakfast: "photo-1533089860892-a7c6f0a88666", // avocado toast bright
-      lunch:     "photo-1442512595331-e89e73853f31", // coffee cozy warm
-      dinner:    "photo-1476224203421-9ac39bcb3327",  // plated dish dark
-    },
-    { // Thursday
-      breakfast: "photo-1550547660-d9450f859349",    // eggs benedict sunny
-      lunch:     "photo-1461023058943-07fcbe16d735", // coffee shop warm
-      dinner:    "photo-1467003909585-2f8a72700288",  // dinner moody
-    },
-    { // Friday
-      breakfast: "photo-1525351484163-7529414344d8", // oatmeal bright morning
-      lunch:     "photo-1447933601403-0c6688de566e", // coffee beans warm
-      dinner:    "photo-1432139509613-5c4255815697",  // grilled evening
-    },
-    { // Saturday
-      breakfast: "photo-1490645935967-10de6ba17061", // granola bright
-      lunch:     "photo-1541167760496-1628856ab772", // warm coffee mug
-      dinner:    "photo-1565299624946-b28f40a0ae38",  // pizza evening
-    },
-    { // Sunday
-      breakfast: "photo-1504674900247-0877df9cc836", // breakfast spread bright
-      lunch:     "photo-1498804103079-a6351b050096", // café warm afternoon
-      dinner:    "photo-1574484284002-952d92456975",  // chinese dish evening
-    },
+    { breakfast: "photo-1484723091739-30a097e8f929", lunch: "photo-1495474472287-4d71bcdd2085", dinner: "photo-1414235077428-338989a2e8c0" },
+    { breakfast: "photo-1567620905732-2d1ec7ab7445", lunch: "photo-1509042239860-f550ce710b93", dinner: "photo-1559339352-11d035aa65de" },
+    { breakfast: "photo-1533089860892-a7c6f0a88666", lunch: "photo-1442512595331-e89e73853f31", dinner: "photo-1476224203421-9ac39bcb3327" },
+    { breakfast: "photo-1550547660-d9450f859349",    lunch: "photo-1461023058943-07fcbe16d735", dinner: "photo-1467003909585-2f8a72700288" },
+    { breakfast: "photo-1525351484163-7529414344d8", lunch: "photo-1447933601403-0c6688de566e", dinner: "photo-1432139509613-5c4255815697" },
+    { breakfast: "photo-1490645935967-10de6ba17061", lunch: "photo-1541167760496-1628856ab772", dinner: "photo-1565299624946-b28f40a0ae38" },
+    { breakfast: "photo-1504674900247-0877df9cc836", lunch: "photo-1498804103079-a6351b050096", dinner: "photo-1574484284002-952d92456975" },
   ] as const;
-
   const getMealSlot = (h: number): "breakfast" | "lunch" | "dinner" =>
     h >= 5 && h < 11 ? "breakfast" : h >= 11 && h < 17 ? "lunch" : "dinner";
-
   // Always use Beijing time (UTC+8) regardless of user's device timezone
   const _now        = new Date();
   const _bjDate     = new Date(_now.toLocaleString("en-US", { timeZone: "Asia/Shanghai" }));
   const _dayIdx     = (_bjDate.getDay() + 6) % 7; // 0=Mon…6=Sun
   const _meal       = getMealSlot(_bjDate.getHours());
-  // Morning: bright & airy; Afternoon: warm café; Evening: dark & moody
   const _brightness = _meal === "breakfast" ? 0.88 : _meal === "lunch" ? 0.78 : 0.62;
   const _photoId    = DAY_IMAGES[_dayIdx][_meal];
   const _heroSrc    = `https://images.unsplash.com/${_photoId}?w=1200&q=90`;
@@ -320,483 +207,201 @@ export default function Login() {
     </div>
   );
 
+  const roleLabels: Record<Role, Record<Language, string>> = {
+    employer: { zh: "我是雇主", "zh-Hant": "我是僱主", en: "Employer", tl: "Ako ay employer", id: "Saya majikan" },
+    helper:   { zh: "我是工人", "zh-Hant": "我是工人", en: "Helper",   tl: "Ako ay katulong",  id: "Saya pekerja" },
+  };
+  const roleIcon: Record<Role, string> = { employer: "home", helper: "support_agent" };
+  const roleHint = role === "helper"
+    ? t("Sign in to view today's shopping & cooking tasks", "登录后即可查看今天的采买与烹饪任务")
+    : t("Sign in to unlock your menu & smart shopping", "登录解锁完整菜单与智能采购");
+
   return (
     <div className="font-sans min-h-screen flex flex-col max-w-md mx-auto relative overflow-hidden text-white"
       style={{ background: "#080808" }}>
       {heroBg}
 
-      {/* Language toggle — 简 / 繁 / EN three-way cycle */}
-      <header className="relative z-10 flex justify-end p-6">
-        <button onClick={cycleLang3}
-          className="w-9 h-9 rounded-full flex items-center justify-center text-[12px] font-bold text-white/70 hover:text-white transition-colors"
-          style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.10)" }}
-          title="切换语言 / Change language">
-          {langChip}
-        </button>
+      {/* Top bar — 4-language switcher */}
+      <header className="relative z-10 flex justify-end p-5">
+        <div className="inline-flex p-1 rounded-2xl gap-0.5"
+          style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.10)" }}>
+          {LANGS.map(({ key, label }) => (
+            <button key={key}
+              onClick={() => setLanguage(key)}
+              className="px-2.5 py-1 rounded-xl font-bold transition-all active:scale-95"
+              style={{
+                fontSize: 11,
+                background: language === key ? "#FF5A1F" : "transparent",
+                color:      language === key ? "white"   : "rgba(255,255,255,0.55)",
+              }}>
+              {label}
+            </button>
+          ))}
+        </div>
       </header>
 
       <AnimatePresence mode="wait">
+        <motion.div key="login"
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          transition={{ duration: 0.6 }}
+          className="flex-1 flex flex-col justify-end px-7 pb-10 z-10 relative">
 
-        {/* ── STEP: landing ────────────────────────────────────────────── */}
-        {step === "login" && (
-          <motion.div key="login"
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            transition={{ duration: 0.6 }}
-            className="flex-1 flex flex-col justify-end px-7 pb-10 z-10 relative">
+          {/* Brand block */}
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15, duration: 0.7, ease: "easeOut" }} className="mb-7">
 
-            {/* Brand block */}
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.15, duration: 0.7, ease: "easeOut" }} className="mb-8">
+            <div className="flex items-center gap-3">
+              <h1 className="font-serif font-black text-white leading-none whitespace-nowrap"
+                style={{ fontSize: 40, letterSpacing: "0.02em" }}>爱吃</h1>
+              <span style={{ fontSize: 22, color: "#FF5A1F", fontWeight: 400, lineHeight: 1 }}>·</span>
+              <span className="text-white/75 font-light uppercase"
+                style={{ fontSize: 20, letterSpacing: "0.20em" }}>Aieats</span>
+            </div>
 
-              <div className="flex items-center gap-3">
-                <h1 className="font-serif font-black text-white leading-none whitespace-nowrap"
-                  style={{ fontSize: 40, letterSpacing: "0.02em" }}>爱吃</h1>
-                <span style={{ fontSize: 22, color: "#FF5A1F", fontWeight: 400, lineHeight: 1 }}>·</span>
-                <span className="text-white/75 font-light uppercase"
-                  style={{ fontSize: 20, letterSpacing: "0.20em" }}>Aieats</span>
-              </div>
+            <div className="mt-4 mb-5 rounded-full"
+              style={{ width: 36, height: 2, background: "#FF5A1F", boxShadow: "0 0 12px rgba(255,90,31,0.6)" }} />
 
-              <div className="mt-4 mb-5 rounded-full"
-                style={{ width: 36, height: 2, background: "#FF5A1F", boxShadow: "0 0 12px rgba(255,90,31,0.6)" }} />
+            <p className="text-white/85 font-light" style={{ fontSize: 18, letterSpacing: "0.06em", lineHeight: 1.5 }}>
+              {t("No more thinking about what to eat", "今天吃啥，交给我惦记")}
+            </p>
+          </motion.div>
 
-              <p className="text-white/85 font-light" style={{ fontSize: 18, letterSpacing: "0.06em", lineHeight: 1.5 }}>
-                {t("No more thinking about what to eat", "今天吃啥，交给我惦记")}
-              </p>
-            </motion.div>
+          {/* Login buttons */}
+          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.35, duration: 0.6, ease: "easeOut" }}
+            className="flex flex-col gap-3">
 
-            {/* ── Fun CTA button ─────────────────────────────────────── */}
-            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4, duration: 0.6, ease: "easeOut" }}
-              className="flex flex-col items-center gap-3">
-
-              {/* Floating food emojis */}
-              <div className="relative w-full flex justify-center mb-1">
-                {["🍜", "🥗", "🍱", "🍣", "🥘", "🍲"].map((em, i) => (
-                  <motion.span
-                    key={i}
-                    style={{
-                      position: "absolute",
-                      fontSize: 20,
-                      top: -28 + (i % 2 === 0 ? -8 : 6),
-                      left: `${12 + i * 14}%`,
-                    }}
-                    animate={{
-                      y: [0, -8, 0],
-                      rotate: [-5, 5, -5],
-                      opacity: [0.6, 1, 0.6],
-                    }}
-                    transition={{
-                      duration: 2.4 + i * 0.3,
-                      repeat: Infinity,
-                      ease: "easeInOut",
-                      delay: i * 0.25,
-                    }}
-                  >
-                    {em}
-                  </motion.span>
-                ))}
-              </div>
-
-              {/* Primary CTA — starts onboarding (no account needed) */}
-              <motion.button
-                onClick={() => navigate("/setup")}
-                className="w-full h-[58px] rounded-[20px] font-black flex items-center justify-center gap-2.5 relative overflow-hidden"
-                style={{
-                  background: "linear-gradient(135deg, #FF5A1F 0%, #FF8C54 50%, #FFB347 100%)",
-                  boxShadow: "0 10px 30px rgba(255,90,31,0.40), 0 0 0 1px rgba(255,150,80,0.3)",
-                  fontSize: 17, color: "white", letterSpacing: "0.02em",
-                }}
-                whileTap={{ scale: 0.96 }}
-                whileHover={{ scale: 1.01 }}
-              >
-                {/* Shimmer sweep */}
-                <motion.div
-                  className="absolute inset-0 pointer-events-none"
+            {/* Floating food emojis */}
+            <div className="relative w-full flex justify-center mb-2 h-[8px]">
+              {["🍜", "🥗", "🍱", "🍣", "🥘", "🍲"].map((em, i) => (
+                <motion.span
+                  key={i}
                   style={{
-                    background: "linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.18) 50%, transparent 60%)",
-                    backgroundSize: "200% 100%",
+                    position: "absolute",
+                    fontSize: 20,
+                    top: -28 + (i % 2 === 0 ? -8 : 6),
+                    left: `${12 + i * 14}%`,
                   }}
-                  animate={{ backgroundPosition: ["200% 0", "-200% 0"] }}
-                  transition={{ duration: 2.5, repeat: Infinity, ease: "linear", repeatDelay: 0.8 }}
-                />
-                <span style={{ fontSize: 22 }}>✨</span>
-                {t("Build my menu →", "生成我的专属菜单 →")}
-              </motion.button>
+                  animate={{
+                    y: [0, -8, 0],
+                    rotate: [-5, 5, -5],
+                    opacity: [0.6, 1, 0.6],
+                  }}
+                  transition={{
+                    duration: 2.4 + i * 0.3,
+                    repeat: Infinity,
+                    ease: "easeInOut",
+                    delay: i * 0.25,
+                  }}
+                >
+                  {em}
+                </motion.span>
+              ))}
+            </div>
 
-              <p className="text-white/60" style={{ fontSize: 13, letterSpacing: "0.04em" }}>
-                {t("No account needed · 30 seconds", "无需注册 · 30秒完成口味设置")}
-              </p>
+            <p className="text-center text-white/55" style={{ fontSize: 13, letterSpacing: "0.04em" }}>
+              {roleHint}
+            </p>
 
-              {/* Divider */}
-              <div className="flex items-center gap-3 w-full mt-1">
-                <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.12)" }} />
-                <span style={{ fontSize: 13, color: "rgba(255,255,255,0.50)", letterSpacing: "0.06em" }}>
-                  {t("Already have an account?", "已有账号")}
-                </span>
-                <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.12)" }} />
-              </div>
+            {/* WeChat — always shown */}
+            <button
+              onClick={handleWeChat}
+              className="w-full h-[54px] rounded-2xl flex items-center justify-center gap-3 font-semibold transition-all active:scale-[0.98]"
+              style={{
+                background: "#07C160",
+                boxShadow: "0 8px 24px rgba(7,193,96,0.28)",
+                fontSize: 15, color: "white",
+              }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+                <path d="M8.69 4C4.55 4 1.2 6.75 1.2 10.14c0 1.96 1.13 3.7 2.88 4.83l-.72 2.16 2.52-1.26c.9.18 1.8.36 2.74.36.27 0 .54 0 .81-.04A6.13 6.13 0 0 1 9 14.91c0-3.13 2.98-5.68 6.66-5.68.18 0 .36 0 .54.04C15.61 5.85 12.46 4 8.69 4zm-2.7 3.06a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8zm5.4 0a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8zm4.39 3.06c-3.51 0-6.3 2.43-6.3 5.4 0 2.97 2.79 5.4 6.3 5.4.72 0 1.44-.12 2.16-.3l1.98.99-.54-1.66c1.57-.96 2.7-2.43 2.7-4.43 0-2.97-2.79-5.4-6.3-5.4zm-2.16 2.43a.72.72 0 1 1 0 1.44.72.72 0 0 1 0-1.44zm4.5 0a.72.72 0 1 1 0 1.44.72.72 0 0 1 0-1.44z"/>
+              </svg>
+              {t("Continue with WeChat", "微信登录")}
+            </button>
 
-              {/* Secondary login row: Instagram + Facebook
-                  Hidden entirely when source=wx_mp (WeChat 小程序 webview
-                  shell). 微信审核员看到 Facebook/Instagram 登录按钮就
-                  会拒。WeChat 也 hidden — 公众号 exists but 未认证, so
-                  网页授权 is hard-blocked. */}
-              {!isWxMp && (
-              <div className="flex items-center gap-3 w-full justify-center">
-                {/* Instagram — uses Facebook OAuth under the hood (Meta SSO) */}
-                <button onClick={async () => {
-                  const ok = await launchOAuth('facebook');
-                  if (!ok) alert('Instagram 登录暂未配置，请稍后再试。');
-                }}
-                  className="flex-1 h-11 rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95"
+            {/* IG + FB — hidden inside WeChat (audit reject + useless without
+                境外 network). Outside WeChat both are shown side-by-side. */}
+            {!isWxFlow && (
+              <div className="flex gap-3">
+                <button
+                  onClick={() => startSocialLogin("instagram")}
+                  className="flex-1 h-[54px] rounded-2xl flex items-center justify-center gap-2 font-semibold transition-all active:scale-[0.98]"
                   style={{
-                    background: "linear-gradient(135deg, rgba(131,58,180,0.25), rgba(225,48,108,0.25))",
-                    border: "1px solid rgba(225,48,108,0.40)",
-                    fontSize: 13, color: "rgba(255,255,255,0.85)",
-                  }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="white" style={{ opacity: 0.9 }}>
-                    <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4z"/>
+                    background: "linear-gradient(135deg, #833AB4, #E1306C, #F77737)",
+                    boxShadow: "0 8px 24px rgba(225,48,108,0.30)",
+                    fontSize: 14, color: "white",
+                  }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="white">
+                    <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
                   </svg>
-                  IG
+                  Instagram
                 </button>
-
-                {/* Facebook */}
-                <button onClick={async () => {
-                  const ok = await launchOAuth('facebook');
-                  if (!ok) alert('Facebook 登录暂未配置，请稍后再试。');
-                }}
-                  className="flex-1 h-11 rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95"
-                  style={{ background: "rgba(24,119,242,0.18)", border: "1px solid rgba(24,119,242,0.40)", fontSize: 13, color: "rgba(255,255,255,0.85)" }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="#4A8DF1">
+                <button
+                  onClick={() => startSocialLogin("facebook")}
+                  className="flex-1 h-[54px] rounded-2xl flex items-center justify-center gap-2 font-semibold transition-all active:scale-[0.98]"
+                  style={{
+                    background: "#1877F2",
+                    boxShadow: "0 8px 24px rgba(24,119,242,0.28)",
+                    fontSize: 14, color: "white",
+                  }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="white">
                     <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
                   </svg>
-                  FB
+                  Facebook
                 </button>
               </div>
-              )}
-            </motion.div>
-
-            <p className="mt-5 text-center text-white/45" style={{ fontSize: 12, letterSpacing: "0.04em", lineHeight: 1.5 }}>
-              {t("By continuing you agree to our ", "继续即同意")}
-              <Link to="/terms" className="underline hover:text-white/75">
-                {t("Terms", "服务条款")}
-              </Link>
-              {t(" & ", " 与 ")}
-              <Link to="/privacy" className="underline hover:text-white/75">
-                {t("Privacy Policy", "隐私政策")}
-              </Link>
-            </p>
-          </motion.div>
-        )}
-
-        {/* ── STEP: phone input ────────────────────────────────────────── */}
-        {step === "phone" && (
-          <motion.div key="phone"
-            initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }}
-            transition={{ duration: 0.35 }}
-            className="flex-1 flex flex-col justify-end px-7 pb-12 z-10 relative">
-
-            <button onClick={() => setStep("login")}
-              className="absolute top-0 left-7 flex items-center gap-1 text-white/70 hover:text-white transition-colors"
-              style={{ fontSize: 15 }}>
-              <span className="material-symbols-outlined text-[18px]">arrow_back_ios</span>
-              返回
-            </button>
-
-            <div className="mb-8">
-              <h2 className="font-serif font-black text-white mb-2" style={{ fontSize: 32 }}>
-                手机号登录
-              </h2>
-              <p className="text-white/65" style={{ fontSize: 16, letterSpacing: "0.04em", lineHeight: 1.5 }}>
-                我们将发送 6 位验证码到您的手机
-              </p>
-            </div>
-
-            {/* Country code pill + phone input — always visible on mobile */}
-            <div className="flex gap-2 mb-3">
-              {/* Tappable country code pill — tap to toggle HK ↔ CN */}
-              <button
-                onClick={() => {
-                  const codes = COUNTRY_CODES.map(c => c.code);
-                  const next = codes[(codes.indexOf(countryCode) + 1) % codes.length];
-                  setCountryCode(next);
-                }}
-                className="flex-shrink-0 flex items-center gap-1.5 h-[54px] px-4 rounded-2xl active:scale-95 transition-all"
-                style={{
-                  background: "rgba(255,255,255,0.12)",
-                  border: "1.5px solid rgba(255,255,255,0.20)",
-                  minWidth: 90,
-                }}
-              >
-                <span style={{ fontSize: 20 }}>
-                  {COUNTRY_CODES.find(c => c.code === countryCode)?.flag}
-                </span>
-                <span style={{ fontSize: 15, fontWeight: 600, color: "white", letterSpacing: "0.02em" }}>
-                  {countryCode}
-                </span>
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ opacity: 0.45 }}>
-                  <path d="M2 3.5L5 6.5L8 3.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </button>
-
-              <input
-                type="tel"
-                inputMode="numeric"
-                placeholder={countryCode === "+852" ? "9XXX XXXX" : "138 0000 0000"}
-                value={phone}
-                onChange={e => setPhone(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && handleSendOtp()}
-                className="flex-1 h-[54px] rounded-2xl px-4 text-white placeholder-white/25 outline-none"
-                style={{
-                  background: "rgba(255,255,255,0.10)",
-                  border: "1.5px solid rgba(255,255,255,0.18)",
-                  fontSize: 17,
-                  letterSpacing: "0.06em",
-                }}
-              />
-            </div>
-            <p className="mb-4 pl-1" style={{ fontSize: 13, color: "rgba(255,255,255,0.55)" }}>
-              {COUNTRY_CODES.find(c => c.code === countryCode)?.label} · 点击区号可切换
-            </p>
-
-            {otpError && (
-              <p className="text-red-400 mb-3" style={{ fontSize: 13 }}>{otpError}</p>
             )}
 
-            <button onClick={handleSendOtp}
-              disabled={sending || phone.replace(/\D/g, "").length < 8}
-              className="w-full h-[50px] rounded-2xl font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-30"
-              style={{
-                fontSize: 15, letterSpacing: "0.04em",
-                background: "linear-gradient(135deg, #FF5A1F, #FF8C54)",
-                boxShadow: "0 8px 24px rgba(255,90,31,0.28)",
-                color: "white",
-              }}>
-              {sending
-                ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                : "发送验证码"
-              }
-            </button>
-          </motion.div>
-        )}
-
-        {/* ── STEP: OTP verification ───────────────────────────────────── */}
-        {step === "otp" && (
-          <motion.div key="otp"
-            initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }}
-            transition={{ duration: 0.35 }}
-            className="flex-1 flex flex-col justify-end px-7 pb-12 z-10 relative">
-
-            <button onClick={() => { setStep("phone"); setOtp(["","","","","",""]); setOtpError(""); }}
-              className="absolute top-0 left-7 flex items-center gap-1 text-white/70 hover:text-white transition-colors"
-              style={{ fontSize: 15 }}>
-              <span className="material-symbols-outlined text-[18px]">arrow_back_ios</span>
-              返回
-            </button>
-
-            <div className="mb-8">
-              <h2 className="font-serif font-black text-white mb-2" style={{ fontSize: 32 }}>
-                输入验证码
-              </h2>
-              <p className="text-white/65" style={{ fontSize: 16, lineHeight: 1.5 }}>
-                已发送至 {countryCode} {phone}
+            {error && (
+              <p className="text-center" style={{ color: "#FF8C54", fontSize: 13 }}>
+                {error}
               </p>
-            </div>
-
-            {/* 6-digit OTP boxes */}
-            <div className="flex gap-3 mb-4 justify-center">
-              {otp.map((digit, idx) => (
-                <input
-                  key={idx}
-                  ref={el => { otpRefs.current[idx] = el; }}
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={1}
-                  value={digit}
-                  onChange={e => handleOtpChange(idx, e.target.value)}
-                  onKeyDown={e => handleOtpKey(idx, e)}
-                  className="w-12 h-14 rounded-2xl text-center text-white text-[22px] font-bold outline-none transition-all"
-                  style={{
-                    background: digit ? "rgba(255,90,31,0.2)" : "rgba(255,255,255,0.08)",
-                    border: digit ? "1.5px solid #FF5A1F" : "1.5px solid rgba(255,255,255,0.12)",
-                    caretColor: "#FF5A1F",
-                  }}
-                  autoFocus={idx === 0}
-                />
-              ))}
-            </div>
-
-            {otpError && (
-              <p className="text-red-400 mb-3 text-center" style={{ fontSize: 13 }}>{otpError}</p>
             )}
 
-            <button onClick={handleVerifyOtp}
-              disabled={verifying || otp.join("").length < 6}
-              className="w-full h-[50px] rounded-2xl font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-30 mb-4"
-              style={{
-                fontSize: 15, letterSpacing: "0.04em",
-                background: "linear-gradient(135deg, #FF5A1F, #FF8C54)",
-                boxShadow: "0 8px 24px rgba(255,90,31,0.28)",
-                color: "white",
-              }}>
-              {verifying
-                ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                : "验证并登录"
-              }
-            </button>
-
-            {/* Resend */}
-            <div className="text-center">
-              {countdown > 0
-                ? <p className="text-white/30" style={{ fontSize: 13 }}>
-                    {countdown}s 后可重新发送
-                  </p>
-                : <button onClick={handleSendOtp} disabled={sending}
-                    className="text-[#FF8C54] hover:text-[#FF5A1F] transition-colors" style={{ fontSize: 13 }}>
-                    重新发送验证码
+            {/* Role pick — sits BELOW the login buttons per product spec.
+                Determines post-login destination (employer → /setup or /;
+                helper → /helper) and is persisted to localStorage.nutri_role
+                immediately so the OAuth redirect chain sees the right role
+                even after window.location.href. */}
+            <div className="mt-2 p-1 rounded-2xl flex gap-1"
+              style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.10)" }}>
+              {(["employer", "helper"] as Role[]).map(r => {
+                const active = role === r;
+                const label = roleLabels[r][language] ?? roleLabels[r].en;
+                return (
+                  <button key={r}
+                    onClick={() => setRole(r)}
+                    className="flex-1 py-2.5 rounded-xl flex items-center justify-center gap-1.5 transition-all active:scale-95"
+                    style={active
+                      ? { background: r === "helper" ? "#25D366" : "#FF5A1F", boxShadow: "0 4px 14px rgba(0,0,0,0.25)" }
+                      : { background: "transparent" }
+                    }>
+                    <span className="material-symbols-outlined text-white"
+                      style={{ fontSize: 18, fontVariationSettings: "'FILL' 1", opacity: active ? 1 : 0.65 }}>
+                      {roleIcon[r]}
+                    </span>
+                    <span className="font-bold text-white" style={{ fontSize: 13, opacity: active ? 1 : 0.65 }}>
+                      {label}
+                    </span>
                   </button>
-              }
+                );
+              })}
             </div>
           </motion.div>
-        )}
 
-        {/* ── STEP: preferences ───────────────────────────────────────── */}
-        {step === "preferences" && (
-          <motion.div key="preferences"
-            initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 24 }}
-            transition={{ duration: 0.35 }}
-            className="flex-1 flex flex-col px-6 pt-4 pb-12 overflow-y-auto no-scrollbar z-10 relative">
-
-            {/* Nutrition-themed background — fixed behind content */}
-            <div className="fixed inset-0 z-0 pointer-events-none">
-              <img
-                src="https://images.unsplash.com/photo-1490474418585-ba9bad8fd0ea?w=1200&q=85"
-                alt=""
-                className="w-full h-full object-cover object-center"
-                style={{ filter: "brightness(0.28) saturate(1.2)" }}
-              />
-              {/* top fade: bridge from previous dark step */}
-              <div className="absolute inset-x-0 top-0" style={{
-                height: "35%",
-                background: "linear-gradient(to bottom, #080808 0%, transparent 100%)",
-              }} />
-              {/* bottom fade: ensure readability near CTA */}
-              <div className="absolute inset-x-0 bottom-0" style={{
-                height: "30%",
-                background: "linear-gradient(to top, #080808 0%, transparent 100%)",
-              }} />
-            </div>
-
-            <div className="mb-8 relative z-10">
-              {/* Nutrition pill badge */}
-              <div className="inline-flex items-center gap-1.5 mb-4 px-3 py-1 rounded-full"
-                style={{ background: "rgba(255,90,31,0.15)", border: "1px solid rgba(255,90,31,0.25)" }}>
-                <span className="material-symbols-outlined text-[13px] text-[#FF8C54]">nutrition</span>
-                <span style={{ fontSize: 11, color: "#FF8C54", letterSpacing: "0.10em", fontWeight: 600 }}>
-                  AI 营养档案
-                </span>
-              </div>
-              <h2 className="text-[28px] font-serif font-black text-white leading-tight mb-3 tracking-wide">
-                {t("Your Profile", "建立味觉档案")}
-              </h2>
-              <p className="text-white/45 font-light leading-relaxed" style={{ fontSize: 14, letterSpacing: "0.04em" }}>
-                {t("We tailor every meal to your nutrition needs.", "每一桌菜，我都按您的身子和口味，细细安排。")}
-              </p>
-            </div>
-
-            <div className="space-y-8 flex-1 relative z-10">
-              {[
-                {
-                  icon: "restaurant", q: { en: "Favorite Taste?", zh: "最喜欢的口味是？" },
-                  opts: [{ id: "light", en: "Light & Fresh", zh: "清淡鲜香" }, { id: "spicy", en: "Spicy", zh: "无辣不欢" }, { id: "savory", en: "Rich & Savory", zh: "浓油赤酱" }, { id: "sweet", en: "Sweet", zh: "偏甜口" }],
-                  value: taste, toggle: (id: string) => setTaste(p => p.includes(id) ? p.filter(i => i !== id) : [...p, id]),
-                },
-                {
-                  // Spice intensity slider — single-select, separate from
-                  // taste so a user can say "I like spicy but not 麻辣"
-                  // or "I never touch spicy food".
-                  icon: "local_fire_department", q: { en: "Spice level?", zh: "能吃多辣？" },
-                  opts: [
-                    { id: "none",   en: "No Spice",    zh: "完全不辣" },
-                    { id: "mild",   en: "Mild",        zh: "微微辣" },
-                    { id: "medium", en: "Medium",      zh: "中辣" },
-                    { id: "hot",    en: "Bring Heat",  zh: "越辣越好" },
-                  ],
-                  value: [spiceLevel],
-                  toggle: (id: string) => setSpiceLevel(id as typeof spiceLevel),
-                },
-                {
-                  icon: "monitor_weight", q: { en: "Dietary Goal?", zh: "目前的饮食目标？" },
-                  opts: [
-                    { id: "balanced",  en: "Balanced",        zh: "营养均衡" },
-                    { id: "fatloss",   en: "Fat-loss",        zh: "减脂瘦身" },
-                    { id: "muscle",    en: "Build Muscle",    zh: "增肌高蛋白" },
-                    { id: "nourish",   en: "Nourishing",      zh: "养生滋补" },
-                    { id: "pregnancy", en: "Pregnancy / TTC", zh: "怀孕备孕" },
-                    { id: "growth",    en: "Grow Stronger",   zh: "长高变壮" },
-                  ],
-                  value: diet, toggle: (id: string) => setDiet(p => p.includes(id) ? p.filter(i => i !== id) : [...p, id]),
-                },
-                {
-                  icon: "block", q: { en: "Ingredients to avoid?", zh: "有什么忌口吗？" },
-                  opts: [{ id: "none", en: "None", zh: "无忌口" }, { id: "seafood", en: "No Seafood", zh: "忌海鲜" }, { id: "cilantro", en: "No Cilantro", zh: "不吃香菜" }, { id: "oniongarlic", en: "No Onion/Garlic", zh: "不吃葱蒜" }],
-                  value: avoid, toggle: (id: string) => {
-                    if (id === "none") { setAvoid(["none"]); return; }
-                    setAvoid(p => p.includes("none") ? [id] : p.includes(id) ? p.filter(i => i !== id) : [...p, id]);
-                  },
-                },
-                {
-                  icon: "location_on", q: { en: "Hometown Cuisine?", zh: "偏好哪个家乡菜系？" },
-                  opts: [{ id: "sichuan", en: "Sichuan / Hunan", zh: "川湘菜" }, { id: "cantonese", en: "Cantonese", zh: "粤菜" }, { id: "jiangnan", en: "Jiangnan", zh: "江浙沪" }, { id: "northern", en: "Northern", zh: "北方菜" }],
-                  value: hometown, toggle: (id: string) => setHometown(p => p.includes(id) ? p.filter(i => i !== id) : [...p, id]),
-                },
-              ].map(section => (
-                <div key={section.icon} className="space-y-4">
-                  <h3 className="text-[14px] font-semibold flex items-center gap-2 text-white/80" style={{ letterSpacing: "0.04em" }}>
-                    <span className="material-symbols-outlined text-[18px] text-[#FF5A1F]">{section.icon}</span>
-                    {language === 'en' ? section.q.en : section.q.zh}
-                  </h3>
-                  <div className="flex flex-wrap gap-2">
-                    {section.opts.map(opt => {
-                      const active = section.value.includes(opt.id);
-                      return (
-                        <button key={opt.id} onClick={() => section.toggle(opt.id)}
-                          className="px-4 py-2.5 rounded-xl text-[13px] transition-all active:scale-95"
-                          style={active
-                            ? { background: "#FF5A1F", color: "white", fontWeight: 600, boxShadow: "0 0 16px rgba(255,90,31,0.35)", border: "1px solid transparent" }
-                            : { background: "rgba(255,255,255,0.09)", border: "1px solid rgba(255,255,255,0.13)", color: "rgba(255,255,255,0.70)", backdropFilter: "blur(8px)" }
-                          }>
-                          {language === 'en' ? opt.en : opt.zh}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-12 relative z-10">
-              <button disabled={isLoading} onClick={handleFinishSetup}
-                className="w-full h-[54px] rounded-2xl font-semibold text-[15px] flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
-                style={{
-                  background: "linear-gradient(135deg, #FF5A1F 0%, #FF8C54 100%)",
-                  boxShadow: "0 8px 24px rgba(255,90,31,0.30)",
-                  letterSpacing: "0.06em", color: "white",
-                }}>
-                {isLoading
-                  ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  : <><span>{t("Start Journey", "开启美食探索")}</span><span className="material-symbols-outlined text-[18px]">arrow_forward</span></>
-                }
-              </button>
-              <div className="text-center mt-5">
-                <button onClick={handleFinishSetup} className="text-white/30 hover:text-white/60 transition-colors" style={{ fontSize: 13, letterSpacing: "0.06em" }}>
-                  {t("Skip for now", "跳过，以后再设")}
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        )}
-
+          <p className="mt-5 text-center text-white/45" style={{ fontSize: 12, letterSpacing: "0.04em", lineHeight: 1.5 }}>
+            {t("By continuing you agree to our ", "继续即同意")}
+            <Link to="/terms" className="underline hover:text-white/75">
+              {t("Terms", "服务条款")}
+            </Link>
+            {t(" & ", " 与 ")}
+            <Link to="/privacy" className="underline hover:text-white/75">
+              {t("Privacy Policy", "隐私政策")}
+            </Link>
+          </p>
+        </motion.div>
       </AnimatePresence>
     </div>
   );

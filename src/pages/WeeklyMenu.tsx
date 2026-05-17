@@ -544,7 +544,7 @@ export default function WeeklyMenu() {
 
   function handleShoppingList() {
     if (!isLoggedIn) {
-      navigate('/signin');
+      navigate('/login');
       return;
     }
     // Write all weekly dishes to localStorage so VerifyIngredients can read them
@@ -881,7 +881,7 @@ export default function WeeklyMenu() {
       {/* ── Content area: show meals OR lock card ─────────────────── */}
       {isDayLocked(selectedDay) ? (
         <div className="relative z-10 flex-1">
-          <LockedDayCard onUnlock={() => navigate('/signin')} />
+          <LockedDayCard onUnlock={() => navigate('/login')} />
         </div>
       ) : (
         <>
@@ -973,7 +973,7 @@ export default function WeeklyMenu() {
                       {/* Free-tier locked days hint */}
                       {!isLoggedIn && (
                         <div className="mx-5 mt-2">
-                          <LockedDayCard onUnlock={() => navigate('/signin')} />
+                          <LockedDayCard onUnlock={() => navigate('/login')} />
                         </div>
                       )}
                     </div>
