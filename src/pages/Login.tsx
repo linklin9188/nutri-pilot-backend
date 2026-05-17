@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { useLanguage } from "../contexts/LanguageContext";
 import { supabase } from "../lib/supabase";
 import { getUserId, setUserId } from "../lib/userId";
@@ -60,7 +60,22 @@ const COUNTRY_CODES = [
 
 export default function Login() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { t, language, setLanguage } = useLanguage();
+
+  // ── source detection ──────────────────────────────────────────────
+  // The WeChat 小程序 web-view shell appends `?source=wx_mp` when it loads
+  // nothinkeats.com. We persist that to localStorage so navigation around
+  // the site doesn't lose the flag, and use it to hide境外 social login
+  // buttons (Facebook / Instagram) which WeChat 提审 rejects on sight.
+  // Once flagged wx_mp, the device stays wx_mp until manually cleared —
+  // safer than re-toggling per nav.
+  useEffect(() => {
+    const sourceParam = searchParams.get('source');
+    if (sourceParam === 'wx_mp') localStorage.setItem('nutri_source', 'wx_mp');
+  }, [searchParams]);
+  const isWxMp = searchParams.get('source') === 'wx_mp'
+              || localStorage.getItem('nutri_source') === 'wx_mp';
   // 3-way cycle: 简 → 繁 → EN → 简
   const langChip = language === 'zh' ? '简'
                  : language === 'zh-Hant' ? '繁'
@@ -421,9 +436,11 @@ export default function Login() {
               </div>
 
               {/* Secondary login row: Instagram + Facebook
-                  (WeChat hidden — 公众号 exists but 未认证, so 网页授权
-                  is hard-blocked by WeChat. Re-enable after 微信认证
-                  goes through.) */}
+                  Hidden entirely when source=wx_mp (WeChat 小程序 webview
+                  shell). 微信审核员看到 Facebook/Instagram 登录按钮就
+                  会拒。WeChat 也 hidden — 公众号 exists but 未认证, so
+                  网页授权 is hard-blocked. */}
+              {!isWxMp && (
               <div className="flex items-center gap-3 w-full justify-center">
                 {/* Instagram — uses Facebook OAuth under the hood (Meta SSO) */}
                 <button onClick={async () => {
@@ -455,10 +472,18 @@ export default function Login() {
                   FB
                 </button>
               </div>
+              )}
             </motion.div>
 
             <p className="mt-5 text-center text-white/45" style={{ fontSize: 12, letterSpacing: "0.04em", lineHeight: 1.5 }}>
-              {t("By continuing you agree to our Terms & Privacy Policy", "继续即同意服务条款与隐私政策")}
+              {t("By continuing you agree to our ", "继续即同意")}
+              <Link to="/terms" className="underline hover:text-white/75">
+                {t("Terms", "服务条款")}
+              </Link>
+              {t(" & ", " 与 ")}
+              <Link to="/privacy" className="underline hover:text-white/75">
+                {t("Privacy Policy", "隐私政策")}
+              </Link>
             </p>
           </motion.div>
         )}

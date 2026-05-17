@@ -25,6 +25,8 @@ import ProWellness from './pages/ProWellness';
 import ProSchoolBalance from './pages/ProSchoolBalance';
 import Favorites from './pages/Favorites';
 import WeChatCallback from './pages/WeChatCallback';
+import Privacy from './pages/Privacy';
+import Terms from './pages/Terms';
 import RequireAuth from './components/RequireAuth';
 import { syncFavoritesFromCloud } from './lib/favorites';
 import { LanguageProvider } from './contexts/LanguageContext';
@@ -97,6 +99,8 @@ function AppShell() {
       <Route path="/onboarding" element={<Onboarding />} />
       <Route path="/auth/wechat/done" element={<WeChatCallback />} />
       <Route path="/pricing" element={<Pricing />} />
+      <Route path="/privacy" element={<Privacy />} />
+      <Route path="/terms" element={<Terms />} />
 
       {/* ── Auth-gated — 所有消耗 AI token 或修改状态的功能 ──────
           匿名用户访问会被弹回 /login (helper 路径弹回 /signin?role=helper)。
