@@ -7,7 +7,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useRecommendDishes, fetchSwapOptions, type SupabaseDish } from "../hooks/useSupabaseMenu";
-import { useWeeklyMenu, isWeekend } from "../hooks/useWeeklyMenu";
+import { useWeeklyMenu, isWeekend, todayDayIndex } from "../hooks/useWeeklyMenu";
 import WeekendDiningReport from "../components/WeekendDiningReport";
 import NextWeekMenuPreview from "../components/NextWeekMenuPreview";
 import {
@@ -415,8 +415,10 @@ export default function Home() {
     if (kids) setTodayKids(Number(kids));
   }, []);
 
-  // Today index (Mon=0…Sun=6)
-  const todayIdx = (() => { const d = new Date().getDay(); return d === 0 ? 6 : d - 1; })();
+  // Today index (Mon=0…Sun=6). Use the shared helper so 20:00 cutoff
+  // (= "tonight starts tomorrow") stays consistent with isWeekend() and
+  // daysFromTodayOnward().
+  const todayIdx = todayDayIndex();
 
   // Build display menu per meal tab
   const storedMenuRaw: any[] = (() => {

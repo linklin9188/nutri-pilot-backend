@@ -63,9 +63,18 @@ export const ALGO_VERSION = 'v30'; // cuisine filter 4-way (chinese/hk-style/wes
 // filter past days so the user opening on Wednesday sees Wed-Thu-Fri (3 days
 // remaining). Saturday + Sunday show the "外食营养报告" report instead.
 
-/** 0=Mon ... 4=Fri, 5=Sat, 6=Sun (matches WeeklyDayMenu.dayIndex). */
+/** 0=Mon ... 4=Fri, 5=Sat, 6=Sun (matches WeeklyDayMenu.dayIndex).
+ *
+ *  After 20:00 we treat "today" as tomorrow — users opening the app at
+ *  night are mentally planning for the next day, not the one that's
+ *  ending. Concretely: Sun 21:00 lands on Mon's menu (workday flow),
+ *  Fri 21:00 lands on Sat (weekend dining flow), Sat/Sun 21:00 just
+ *  stay in the weekend bucket. Product call 2026-05-17. */
 export function todayDayIndex(): number {
-  const d = new Date().getDay(); // 0=Sun, 1=Mon, ...
+  const now = new Date();
+  const eff = new Date(now);
+  if (now.getHours() >= 20) eff.setDate(eff.getDate() + 1);
+  const d = eff.getDay(); // 0=Sun, 1=Mon, ...
   return d === 0 ? 6 : d - 1;
 }
 

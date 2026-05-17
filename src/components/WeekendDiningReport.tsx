@@ -92,16 +92,15 @@ export default function WeekendDiningReport() {
           style={{ boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}>
           <p className="text-[13px]" style={{ color: 'rgba(0,0,0,0.4)' }}>正在整理本周饭桌…</p>
         </div>
-      ) : !summary || summary.totalDishes === 0 ? (
-        <div className="rounded-3xl bg-white px-5 py-8 text-center"
-          style={{ boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}>
-          <span className="text-[40px]">🍃</span>
-          <p className="font-serif mt-2" style={{ fontSize: 14, color: 'rgba(0,0,0,0.55)' }}>
-            本周还没有菜单数据。今天先按心情挑家馆子吧。
-          </p>
-        </div>
       ) : (
         <>
+          {/* "本周饭桌" only renders when there IS something to summarize.
+              When the user opens 周日 on a fresh device with no cached
+              weekly menu, we skip this block and go straight to restaurant
+              suggestions — buildDiningSuggestions has a fallback path that
+              always returns 10 picks (5 HK + 5 SZ) so the user never lands
+              on an empty page. */}
+          {summary && summary.totalDishes > 0 && (<>
           {/* 本周饭桌 — 10 类食材轮值 grid + 一句话提示。
               用户 2026-05-17：分类好（鱼/红肉/白肉/蛋/蔬菜/豆/菌/奶/主食/水果），
               灰色 chip = 缺，色彩 chip = 上桌过；文字描述跟 grid 放一起。*/}
@@ -151,6 +150,7 @@ export default function WeekendDiningReport() {
               <Stat value={summary.distinctFoods} label="种食材" />
             </div>
           </section>
+          </>)}
 
           {/* 外食建议 — real HK restaurants tied to this week's gaps.
               Each card: restaurant name + cuisine pill + area + 招牌菜 + the

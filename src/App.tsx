@@ -50,23 +50,29 @@ function RootRedirect() {
   return hasPrefs ? <Home /> : <Navigate to="/setup" replace />;
 }
 
-// AppShell restores Supabase auth session on startup and listens for auth changes.
+// AppShell bootstraps cross-cutting side effects (favorites sync, Supabase
+// session sync FOR THE REAL-OAUTH PATH ONLY).
+//
+// Custom-auth invariant (CLAUDE.md): the source of truth for "who is logged
+// in" is localStorage `userId` / `nutri_user_id` / `isLoggedIn`, written
+// by WeChatCallback (real 网页授权) or Login dev fallback. We must NEVER
+// blow these keys away on a stray Supabase SIGNED_OUT event — Supabase
+// has no session of its own for these users, and a SIGNED_OUT fires
+// routinely when token refresh fails or storage events propagate across
+// tabs. The previous implementation cleared these keys on SIGNED_OUT and
+// dumped freshly-logged-in 微信 users straight back to /login on the
+// next tab click.
 function AppShell() {
   useEffect(() => {
-    // Restore session from Supabase (handles token refresh automatically)
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        localStorage.setItem('isLoggedIn', 'true');
-        localStorage.setItem('userId', session.user.id);
-        localStorage.setItem('nutri_user_id', session.user.id);
-      }
-    });
-
     // Pull cloud-saved favorites into the local cache on boot. Anonymous
     // users (no userId yet) get a no-op; once they finish QuickSetup the
     // anon userId triggers a sync on the next event tick.
     syncFavoritesFromCloud().catch(() => {/* offline-tolerant */});
 
+    // Only sync IN — i.e. if a real Supabase OAuth session ever materializes
+    // (currently none; Facebook/Google/Apple all run through Login's dev
+    // fallback path). We do not clear localStorage on SIGNED_OUT because
+    // for custom-auth users that key is the only handle on identity.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (session?.user) {
         localStorage.setItem('isLoggedIn', 'true');
@@ -75,10 +81,6 @@ function AppShell() {
         if (event === 'SIGNED_IN') {
           window.dispatchEvent(new Event('nutri-prefs-changed'));
         }
-      } else if (event === 'SIGNED_OUT') {
-        localStorage.removeItem('isLoggedIn');
-        localStorage.removeItem('userId');
-        localStorage.removeItem('nutri_user_id');
       }
     });
 
