@@ -175,7 +175,7 @@ export default function WeekendDiningReport() {
                 今天的推薦
               </p>
               <p className="text-[10px] font-bold" style={{ color: '#FF5A1F', letterSpacing: '0.06em' }}>
-                香港 · 5 間挑選
+                香港 · 米其林 / 必比登
               </p>
             </div>
             <div className="flex flex-col gap-3">
@@ -247,18 +247,35 @@ function RestaurantCard({ suggestion }: { suggestion: DiningSuggestion }) {
         border: '1px solid rgba(255,90,31,0.10)',
         boxShadow: '0 2px 8px rgba(0,0,0,0.03)',
       }}>
-      {/* Top row — avatar + name + cuisine + area */}
+      {/* Top row — avatar + name + Michelin pill + price + cuisine + area */}
       <div className="flex items-start gap-3">
         <div className="shrink-0 w-11 h-11 rounded-xl flex items-center justify-center text-[22px]"
           style={{ background: 'rgba(255,90,31,0.10)' }}>
           {tagEmoji[tag] ?? '🍽'}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="flex items-baseline gap-2">
-            <p className="font-serif font-black truncate" style={{ fontSize: 16, color: '#1a1a1a', letterSpacing: '-0.005em' }}>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <p className="font-serif font-black" style={{ fontSize: 16, color: '#1a1a1a', letterSpacing: '-0.005em' }}>
               {r.name}
             </p>
-            <span className="shrink-0 text-[10px] font-bold tabular-nums"
+            {/* Michelin tier pill — surfaces 3★/2★/1★/Bib so users can
+                eyeball the prestige level next to the name. Color tier:
+                red gradient for stars, yellow tint for 必比登 (lower-budget
+                but quality). */}
+            {r.michelin && (
+              <span
+                className="px-1.5 py-0.5 rounded-md font-bold tabular-nums"
+                style={{
+                  fontSize: 9.5, letterSpacing: '0.04em',
+                  background: r.michelin === 'Bib'
+                    ? 'linear-gradient(135deg, #FFF1C7, #FFE49A)'
+                    : 'linear-gradient(135deg, #B91C1C, #DC2626)',
+                  color: r.michelin === 'Bib' ? '#7A5800' : 'white',
+                }}>
+                {r.michelin === 'Bib' ? 'BIB' : `MICHELIN ${r.michelin}`}
+              </span>
+            )}
+            <span className="shrink-0 text-[10px] font-bold tabular-nums ml-auto"
               style={{ color: 'rgba(0,0,0,0.4)', letterSpacing: '0.08em' }}>
               {r.price_tier}
             </span>
