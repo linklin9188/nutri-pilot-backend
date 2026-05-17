@@ -20,7 +20,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { DiningSuggestion } from '../lib/weeklyDiarySummary';
 import { type DiningTag, type HkRestaurant, resolveRestaurantImage } from '../lib/hkRestaurants';
-import { fetchPlaceData, getPlacePhotoUrl, type PlaceData } from '../lib/placesApi';
+import { fetchPlaceData, type PlaceData } from '../lib/placesApi';
 
 const TAG_EMOJI: Record<DiningTag, string> = {
   fish: '🐟', shellfish: '🦐', meat: '🥩', poultry: '🍗', egg: '🥚',
@@ -146,24 +146,23 @@ function RestaurantDetailModal({
   const { restaurant: r, reason, tag } = suggestion;
   const [copied, setCopied] = useState(false);
 
-  // ── Places API lazy-fetch (cost-controlled) ─────────────────────────
-  // Only triggers on first modal open per restaurant, then cached 30d in
-  // localStorage. Subsequent opens cost $0. Listing card stays on
-  // Unsplash fallback (free + browser-cached). See src/lib/placesApi.ts
-  // for the budget reasoning.
+  // ── Pre-enriched Places data (DB read) ──────────────────────────────
+  // The Places API key was used ONCE locally to enrich into the
+  // restaurant_places table + storage bucket. Frontend never calls
+  // Google — it reads our DB row by restaurant_id. See src/lib/placesApi.
   const [places, setPlaces] = useState<PlaceData | null>(null);
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    fetchPlaceData(r.id, r.name, r.city, r.area).then(data => {
+    fetchPlaceData(r.id).then(data => {
       if (!cancelled) setPlaces(data);
     });
     return () => { cancelled = true; };
-  }, [open, r.id, r.name, r.city, r.area]);
+  }, [open, r.id]);
 
-  // Prefer Places photo if available (real restaurant shot), else Unsplash
-  // cuisine-category fallback.
-  const heroPhoto = getPlacePhotoUrl(places?.photoName, 1200) ?? resolveRestaurantImage(r);
+  // Prefer Places real-restaurant photo (Supabase Storage URL) when
+  // available, else Unsplash cuisine-category fallback.
+  const heroPhoto = places?.imageUrl ?? resolveRestaurantImage(r);
   // Prefer Places-verified phone if it exists and differs from our seed
   // (rare but possible if seed is stale or omitted).
   const phone = places?.phone ?? r.phone ?? null;
