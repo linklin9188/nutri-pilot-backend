@@ -56,7 +56,7 @@ export interface WeeklyMenu {
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v32'; // 平等的家乡基础分 (per-user originBaseFor) + seasonal_tag in-season bonus + 快餐感降权 + dinner 烹饪法多样性 + 早餐 hometown fallback + 首次推荐 profile×1.3 + popularity boost
+export const ALGO_VERSION = 'v33'; // Usage data uses cumulative count + power curve (cnt^1.5 × scale) — replaces EMA. 5 次川菜 → +0.56 bonus, 10 次 → +1.58, 20 次 → +4.47 (dominates hometown). Plus v32: equal per-hometown base, seasonal, 快餐感 damp.
 
 // ── 周末规则 (Weekend rule) — user-confirmed 2026-05-17 ───────────────────────
 // Weekly menu only covers Mon-Fri. Generation skips Sat/Sun; display layers
@@ -384,6 +384,34 @@ function originBaseFor(dishOrigin: string, userBucket: string | null): number {
   return 0;
 }
 
+/**
+ * usagePower(n) — convert a cumulative usage count into a score bonus,
+ * super-linear in |n|. The product spec (user direction 2026-05-17):
+ *
+ *   "用户看某个菜的次数，成幂次方上涨。不是指数平均。一开始是家乡，
+ *    后续主要看用户使用数据。比如用户广东人，看川菜 5 次，那么说明他
+ *    更喜欢吃辣。"
+ *
+ * Returns sign(n) * |n|^1.5 * 0.05, so:
+ *
+ *    n = 0   →  0
+ *    n = 1   →  0.05   (single signal, barely a nudge)
+ *    n = 5   →  0.56   (≈ hometown match strength — "5 次川菜" 持平家乡)
+ *    n = 10  →  1.58   (surpasses hometown)
+ *    n = 20  →  4.47   (usage data dominates)
+ *    n = 25 (cap) → 6.25  (final ceiling)
+ *
+ * The caller multiplies by an axis-specific scale (cuisine ×1.0, flavor /
+ * health ×0.6) so cuisine is the loudest signal — sustained 川菜 usage
+ * should pull a 粤 user toward 川 dishes much more than a sustained
+ * 'spicy' tag should pull a 'light' user toward 'spicy' dishes.
+ */
+function usagePower(n: number): number {
+  if (!n) return 0;
+  const sign = n >= 0 ? 1 : -1;
+  return sign * Math.pow(Math.abs(n), 1.5) * 0.05;
+}
+
 // Premium-positioning damp: titles that feel like 快餐 / 便当 get a small
 // negative at lunch/dinner mains. Doesn't disqualify, just nudges down a
 // tier so 厨房做出的炒菜+汤+饭 layout wins over a 盖饭. Breakfast is
@@ -518,17 +546,23 @@ function scoreForWeek({
   const tasteScore = profile.taste_pref && flavorTags.includes(profile.taste_pref) ? 0.25 : 0.0;
   score += tasteScore;
 
-  // ── 4. Feedback EMA layer ─────────────────────────────────────────────────
+  // ── 4. Usage-data layer — power curve (2026-05-17, user direction) ───────
+  // 用户使用数据成幂次方增长，不是 EMA。每次"keep / engage / cook"行为
+  // 给对应 tag +1.0 (cumulative)，scoring 时套用 cnt^1.5 × scale 的幂曲线，
+  // 让大量同向信号超越画像（家乡 / 五轴）。
+  // 数值校准：广东人看川菜 5 次后，cuisine_sichuan ≈ 5 → power(5) × 0.05
+  // = 0.56，跟家乡的 +0.60 持平；10 次 → 1.58，超过家乡；20 次 → 4.47，
+  // 完全主导。
   for (const tag of flavorTags) {
     const col = FLAVOR_COL[tag];
-    if (col && prefScores[col]) score += prefScores[col] * 0.08;
+    if (col && prefScores[col]) score += usagePower(prefScores[col]) * 0.6;
   }
   for (const tag of healthTags) {
     const col = HEALTH_COL[tag];
-    if (col && prefScores[col]) score += prefScores[col] * 0.08;
+    if (col && prefScores[col]) score += usagePower(prefScores[col]) * 0.6;
   }
   const cuisineCol = CUISINE_COL[origin];
-  if (cuisineCol && prefScores[cuisineCol]) score += prefScores[cuisineCol] * 0.10;
+  if (cuisineCol && prefScores[cuisineCol]) score += usagePower(prefScores[cuisineCol]) * 1.0;
 
   // ── 5. Spice preference ───────────────────────────────────────────────────
   if (spiceBoost !== 0 && flavorTags.includes('spicy')) {

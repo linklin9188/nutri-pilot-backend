@@ -52,19 +52,29 @@ async function updateEMAScores(userId: string, dish: {
 
   const scores: Record<string, number> = (current as any) ?? {};
 
-  // EMA update for each tag
+  // Cumulative count update for each tag (no EMA decay). One engagement
+  // event (e.g. tapping into /prep — "actually about to cook") contributes
+  // +1.0 to every tag the dish carries. Scoring layer applies a power
+  // curve later so a flavor / cuisine the user has hit 5+ times begins
+  // to dominate the hometown bias.
+  const COUNTER_CAP = 25;
+  const STEP = 1.0;
   const updates: Record<string, number> = { user_id: userId as any };
+  const bump = (col: string) => {
+    const next = Math.max(-COUNTER_CAP, Math.min(COUNTER_CAP, (scores[col] ?? 0) + STEP));
+    updates[col] = next;
+  };
 
   for (const tag of (dish.flavor_tags ?? [])) {
     const col = FLAVOR_COL[tag];
-    if (col) updates[col] = ((scores[col] ?? 0) * 0.85) + 0.15;
+    if (col) bump(col);
   }
   for (const tag of (dish.health_benefit_tags ?? [])) {
     const col = HEALTH_COL[tag];
-    if (col) updates[col] = ((scores[col] ?? 0) * 0.85) + 0.15;
+    if (col) bump(col);
   }
   const cuisineCol = CUISINE_COL[dish.origin_cuisine ?? ''];
-  if (cuisineCol) updates[cuisineCol] = ((scores[cuisineCol] ?? 0) * 0.85) + 0.15;
+  if (cuisineCol) bump(cuisineCol);
 
   if (Object.keys(updates).length > 1) {
     await supabase

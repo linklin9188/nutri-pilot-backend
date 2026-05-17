@@ -631,6 +631,17 @@ function hardFilter(
 //   ⑤ Solar term    +0.12~+0.35  (culture / season)
 //   ⑥ Feedback EMA  ±0.40 cap    (learned preferences — strongest recent signal)
 
+/**
+ * usagePowerUSM(n) — same power curve as useWeeklyMenu.usagePower, kept
+ * inline here to avoid a circular import. Cumulative count → super-linear
+ * bonus so sustained usage dominates the cold-start profile.
+ */
+function usagePowerUSM(n: number): number {
+  if (!n) return 0;
+  const sign = n >= 0 ? 1 : -1;
+  return sign * Math.pow(Math.abs(n), 1.5) * 0.05;
+}
+
 function applyFeedbackScore(
   score: number,
   dish: any,
@@ -640,22 +651,26 @@ function applyFeedbackScore(
   const healthTags: string[] = dish.health_benefit_tags ?? [];
   const origin: string       = dish.origin_cuisine ?? '';
 
+  // Power-curve usage layer (2026-05-17 user direction). The old linear
+  // ±0.40 cap throttled long-term users — once prefScores plateaued at
+  // 0.667 (the EMA saturation point) every dish saw the same +0.08
+  // feedback regardless of how many 川菜 the user had kept. New: each
+  // axis maps `usagePowerUSM(cnt)` to a bonus, so 5 川菜 kept ≈ +0.56,
+  // 10 → +1.58, 20 → +4.47. NO outer cap — the dish-level power curve
+  // already plateaus at the counter cap (25 → +6.25).
   let feedback = 0;
-
-  // Accumulate pref scores for matching tags (each contributes proportionally)
   for (const tag of flavorTags) {
     const col = FLAVOR_COL[tag];
-    if (col && prefScores[col]) feedback += prefScores[col] * 0.12;
+    if (col && prefScores[col]) feedback += usagePowerUSM(prefScores[col]) * 0.6;
   }
   for (const tag of healthTags) {
     const col = HEALTH_COL[tag];
-    if (col && prefScores[col]) feedback += prefScores[col] * 0.12;
+    if (col && prefScores[col]) feedback += usagePowerUSM(prefScores[col]) * 0.6;
   }
   const cuisineCol = CUISINE_COL[origin];
-  if (cuisineCol && prefScores[cuisineCol]) feedback += prefScores[cuisineCol] * 0.12;
+  if (cuisineCol && prefScores[cuisineCol]) feedback += usagePowerUSM(prefScores[cuisineCol]) * 1.0;
 
-  // Cap at ±0.40 so feedback never fully overrides the 5D profile
-  return score + Math.max(-0.40, Math.min(0.40, feedback));
+  return score + feedback;
 }
 
 // Light-bias regex: dishes whose flavor profile reads as 重口 — these get

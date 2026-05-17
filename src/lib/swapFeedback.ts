@@ -1,35 +1,34 @@
 /**
- * swapFeedback.ts — record swap events and update preference EMA.
+ * swapFeedback.ts — record swap events and update preference counters.
  *
- * Called from 3 entry points:
- *   - Home `handleSwapAll` (whole meal re-roll) — source='home_swap_all'
- *   - Home per-dish sync_alt button (single swap)  — source='home_per_dish'
- *   - WeeklyMenu swapDish (single swap from /weekly) — source='weekly_swap'
+ * Storage model rewrite (2026-05-17, user direction): the old EMA layer
+ * (`prev * 0.85 + delta`) saturated at ≈0.67, so "user kept 川菜 10 times"
+ * had identical influence as "kept 川菜 100 times". That's wrong for the
+ * product intent — we want sustained usage to override the cold-start
+ * profile. The new model is a **cumulative count** with no decay, and
+ * the scoring layer applies a **power curve** so each additional signal
+ * super-linearly increases the dish's bonus.
  *
- * On each call we:
- *   1. INSERT a row into `user_swap_events` (audit log of preferences).
- *   2. Apply negative EMA to the REJECTED dish's tags
- *      (user explicitly said 'not this one' — stronger signal than view).
- *   3. Apply positive EMA to the REPLACEMENT dish's tags
- *      (user kept this one over the alternative — implicit endorsement).
+ * Steps:
+ *   POSITIVE_STEP = +1.0   (one "kept this dish" = one count)
+ *   NEGATIVE_STEP = -0.5   (rejection counts as half a reverse signal —
+ *                           dropping a dish is a weaker preference than
+ *                           positively choosing it)
  *
- * EMA constants:
- *   POSITIVE_STEP = +0.10  (smaller than recordEngagement's +0.15 — that's
- *                           triggered by going into /prep which is a stronger
- *                           "actually cooking" commitment)
- *   NEGATIVE_STEP = -0.15  (rejection is a strong signal — we want it to
- *                           pull down more aggressively than passive +0.15)
+ * Caps remain at ±25 (≈25 sustained signals) so a runaway-bot account
+ * can't push origin scores into absurd territory.
  *
- * Anonymous users still get the localStorage keyword tracking via the
- * shared TITLE_KEYWORDS list, mirroring useFeedbackEngine.
+ * Anonymous users still get localStorage keyword tracking — those don't
+ * write to Supabase.
  */
 
 import { supabase } from './supabase';
 import { getUserId } from './userId';
 import { FLAVOR_COL, HEALTH_COL, CUISINE_COL } from '../hooks/preferenceColMap';
 
-const POSITIVE_STEP = 0.10;
-const NEGATIVE_STEP = -0.15;
+const POSITIVE_STEP = 1.0;
+const NEGATIVE_STEP = -0.5;
+const COUNTER_CAP   = 25;
 
 const TITLE_KEYWORDS = [
   '排骨', '鸡腿', '鸡翅', '鸡胸', '全鸡', '烤鸡',
@@ -85,11 +84,14 @@ async function applyEMA(userId: string, dish: SwapDish, delta: number) {
 
   const updates: Record<string, any> = { user_id: userId };
 
-  // EMA: new = old * 0.85 + delta — same decay constant as recordEngagement
-  // so positive and negative signals balance over time.
+  // Cumulative count, no decay. 25 sustained 信号 hits the cap; the
+  // scoring layer then applies a power curve (cnt^1.5 × 0.05) so each
+  // additional count super-linearly boosts the dish — making "5 次川菜"
+  // a meaningfully stronger signal than "1 次川菜", which the old EMA
+  // couldn't express (it saturated at 0.667).
   const apply = (col: string) => {
     const prev = Number(scores[col] ?? 0);
-    const next = Math.max(-10, Math.min(10, prev * 0.85 + delta));
+    const next = Math.max(-COUNTER_CAP, Math.min(COUNTER_CAP, prev + delta));
     updates[col] = next;
   };
 
