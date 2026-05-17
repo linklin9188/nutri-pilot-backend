@@ -63,7 +63,7 @@ export interface HkRestaurant {
 // rotation) so the photos won't 404 in the future.
 
 const CUISINE_HERO_MAP: { keywords: string[]; photoId: string; tint: string }[] = [
-  { keywords: ['飲茶', '点心'],          photoId: 'photo-1582450871972-2a4b9f6a8a82', tint: 'dim sum' },
+  { keywords: ['飲茶', '点心'],          photoId: 'photo-1535473895227-bdecb20fb157', tint: 'dim sum' },
   { keywords: ['燒鵝', '燒臘', '叉燒'],   photoId: 'photo-1568736333610-eae6e0ab9206', tint: 'roast goose' },
   { keywords: ['现代粤', '大班樓', 'Mott', '卅二'], photoId: 'photo-1583394838336-acd977736f90', tint: 'modern Cantonese' },
   { keywords: ['粤菜', '广府', '港式'],   photoId: 'photo-1563245372-f21724e3856d', tint: 'traditional Cantonese' },
@@ -75,15 +75,15 @@ const CUISINE_HERO_MAP: { keywords: string[]; photoId: string; tint: string }[] 
   { keywords: ['懷石', '柏屋'],            photoId: 'photo-1611143669185-af224c5e3252', tint: 'kaiseki' },
   { keywords: ['日料', '日式', '日本'],     photoId: 'photo-1611143669185-af224c5e3252', tint: 'Japanese' },
   { keywords: ['火鍋', '海底撈'],          photoId: 'photo-1518983546435-91f8b87fe561', tint: 'hot pot' },
-  { keywords: ['川菜', '川式'],            photoId: 'photo-1552566090-a99b21d50fb1', tint: 'Sichuan' },
+  { keywords: ['川菜', '川式'],            photoId: 'photo-1518983546435-91f8b87fe561', tint: 'Sichuan' },
   { keywords: ['美式扒', '牛排', 'steak'], photoId: 'photo-1558030006-450675393462', tint: 'steakhouse' },
   { keywords: ['燒肉', '日式燒'],           photoId: 'photo-1529193591184-b1d58069ecdd', tint: 'yakiniku' },
   { keywords: ['江浙', '小籠'],            photoId: 'photo-1496116218417-1a781b1c416c', tint: 'xiaolongbao' },
   { keywords: ['西北', '雜糧', '莜麵'],     photoId: 'photo-1551183053-bf91a1d81141', tint: 'northern noodles' },
   { keywords: ['雲吞麵', '雲吞'],          photoId: 'photo-1612929633738-8fe44f7ec841', tint: 'wonton' },
-  { keywords: ['煲仔'],                   photoId: 'photo-1604908554049-01408eb8d6fd', tint: 'claypot rice' },
+  { keywords: ['煲仔'],                   photoId: 'photo-1603133872878-684f208fb84b', tint: 'claypot rice' },
   { keywords: ['清湯腩', '牛腩'],          photoId: 'photo-1547928576-b822bc410bdf', tint: 'beef brisket' },
-  { keywords: ['茶餐廳'],                  photoId: 'photo-1606852680812-aae90f47ea38', tint: 'HK cafe' },
+  { keywords: ['茶餐廳'],                  photoId: 'photo-1495474472287-4d71bcdd2085', tint: 'HK cafe' },
   { keywords: ['素食', '沙拉', '素菜'],     photoId: 'photo-1546069901-ba9599a7e63c', tint: 'salad' },
   { keywords: ['海鮮', '蝦蟹'],            photoId: 'photo-1559339352-11d035aa65de', tint: 'seafood' },
   { keywords: ['印度', 'Punjab'],          photoId: 'photo-1585937421612-70a008356fbe', tint: 'curry' },
