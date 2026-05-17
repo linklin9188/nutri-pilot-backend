@@ -158,22 +158,55 @@ export default function WeekendDiningReport() {
               stub right now — opens OpenRice / homepage, copies the phone,
               or just shows 即將上線. Future: real booking integration with
               revenue share. */}
-          <section className="rounded-3xl bg-white px-5 py-5"
-            style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }}>
-            <div className="flex items-baseline justify-between mb-3">
-              <p className="text-[11px] font-bold text-secondary/60 uppercase tracking-wider">
-                今天的推薦
-              </p>
-              <p className="text-[10px] font-bold" style={{ color: '#FF5A1F', letterSpacing: '0.06em' }}>
-                香港 · 米其林 / 必比登
-              </p>
-            </div>
-            <div className="flex flex-col gap-3">
-              {suggestions.map((s, i) => (
-                <RestaurantCard key={s.restaurant.id + i} suggestion={s} />
-              ))}
-            </div>
-          </section>
+          {/* 香港 + 深圳 分组 — buildDiningSuggestions 保证前 5 = 港、
+              后 5 = 深，省得在 render 里再次过滤。两组用 section header
+              分开，10 张卡片一眼看穿是「先看香港有什么、再看深圳有什么」。 */}
+          {(() => {
+            const hk = suggestions.filter(s => s.restaurant.city === 'HK');
+            const sz = suggestions.filter(s => s.restaurant.city === 'SZ');
+            const today = new Date().getDay() === 0 ? '周日' : '周六';
+            return (
+              <>
+                {hk.length > 0 && (
+                  <section className="rounded-3xl bg-white px-5 py-5"
+                    style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }}>
+                    <div className="flex items-baseline justify-between mb-3">
+                      <p className="font-serif font-black" style={{ fontSize: 17, color: '#1a1a1a', letterSpacing: '-0.005em' }}>
+                        香港 <span className="font-sans" style={{ fontSize: 12, color: '#FF5A1F', fontWeight: 700, marginLeft: 4 }}>{today}{hk.length}选</span>
+                      </p>
+                      <p className="text-[10px] font-bold" style={{ color: 'rgba(0,0,0,0.4)', letterSpacing: '0.06em' }}>
+                        米其林 / 必比登 / 老字号
+                      </p>
+                    </div>
+                    <div className="flex flex-col gap-2.5">
+                      {hk.map((s, i) => (
+                        <RestaurantCard key={s.restaurant.id + i} suggestion={s} />
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {sz.length > 0 && (
+                  <section className="rounded-3xl bg-white px-5 py-5"
+                    style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }}>
+                    <div className="flex items-baseline justify-between mb-3">
+                      <p className="font-serif font-black" style={{ fontSize: 17, color: '#1a1a1a', letterSpacing: '-0.005em' }}>
+                        深圳 <span className="font-sans" style={{ fontSize: 12, color: '#1b7e3f', fontWeight: 700, marginLeft: 4 }}>{today}{sz.length}选</span>
+                      </p>
+                      <p className="text-[10px] font-bold" style={{ color: 'rgba(0,0,0,0.4)', letterSpacing: '0.06em' }}>
+                        米其林 / 排队店 / 老字号
+                      </p>
+                    </div>
+                    <div className="flex flex-col gap-2.5">
+                      {sz.map((s, i) => (
+                        <RestaurantCard key={s.restaurant.id + i} suggestion={s} />
+                      ))}
+                    </div>
+                  </section>
+                )}
+              </>
+            );
+          })()}
 
           {/* Soft footer */}
           <p className="text-center font-serif italic px-6 pt-1"
