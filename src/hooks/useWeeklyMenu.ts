@@ -56,7 +56,7 @@ export interface WeeklyMenu {
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v33'; // Usage data uses cumulative count + power curve (cnt^1.5 × scale) — replaces EMA. 5 次川菜 → +0.56 bonus, 10 次 → +1.58, 20 次 → +4.47 (dominates hometown). Plus v32: equal per-hometown base, seasonal, 快餐感 damp.
+export const ALGO_VERSION = 'v34'; // Dinner cook-method variety (-0.30 per repeat) + v33: cumulative count + power curve replacing EMA + v32: equal per-hometown base + seasonal + 快餐感 damp + 早餐 hometown fallback.
 
 // ── 周末规则 (Weekend rule) — user-confirmed 2026-05-17 ───────────────────────
 // Weekly menu only covers Mon-Fri. Generation skips Sat/Sun; display layers
@@ -1042,6 +1042,15 @@ function generateWeekPlan(
           const sameCatInDay = dayIngredients.filter(i => ingCategory(i) === cat).length;
           score -= sameCatInDay * 0.45;
 
+          // Same cook-method-in-same-day damp (high-end chef positioning).
+          // "四道炒太单调" — when today already has stir-fry/braise/etc, the
+          // next slot should prefer a different technique. Soup slot is
+          // exempt because all soups are 'boil' / 'stew' by definition.
+          if (!isSoupSlot && d.cook_method && dayCookMethods.includes(d.cook_method)) {
+            const sameMethodCount = dayCookMethods.filter(m => m === d.cook_method).length;
+            score -= sameMethodCount * 0.30;
+          }
+
           // ── Same-protein soup block ───────────────────────────────────────
           // If slot 0 already picked a protein (pork/beef/poultry/seafood),
           // strongly penalise soups that share the same protein category.
@@ -1069,6 +1078,7 @@ function generateWeekPlan(
       dayDishes.push(picked);
       dayIngredients.push(picked.main_ingredient ?? 'other');
       usedIds.add(picked.id);
+      if (picked.cook_method) dayCookMethods.push(picked.cook_method);
 
       // Track level-3 count for helper mode hard cap
       if (helperMode && (picked.execution_level ?? 2) === 3) level3CountToday++;
