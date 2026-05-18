@@ -289,15 +289,29 @@ function bucketOf(dish: SupabaseDish): BanquetCourse['key'] | null {
 // keywords / flavor tags as a heuristic until we add a dedicated column.
 // '酱' was previously here and caused false positives like 炸酱面 (a hot staple)
 // and 芝麻酱扁豆 — dropped. '皮蛋豆腐'/'凉粉' kept as specific cold-dish names.
-const COLD_TITLE_KEYWORDS = ['凉拌', '凉菜', '泡椒', '醉', '麻辣', '口水鸡', '夫妻肺片', '皮蛋', '凉粉', '蒜泥'];
+// '沙拉/前菜/冷盘' added for western/SE-Asian salads. The English keywords
+// catch dishes named only in English (Caesar, Coleslaw, Carpaccio, etc.).
+const COLD_TITLE_KEYWORDS_ZH = [
+  '凉拌', '凉菜', '泡椒', '醉', '麻辣', '口水鸡', '夫妻肺片',
+  '皮蛋', '凉粉', '蒜泥', '沙拉', '前菜', '冷盘', '冷碟',
+];
+const COLD_TITLE_KEYWORDS_EN = [
+  'salad', 'caesar', 'coleslaw', 'caprese', 'carpaccio',
+  'antipasti', 'hummus', 'tartare',
+];
 function isCold(dish: SupabaseDish): boolean {
-  const title = ((dish as any).title_zh ?? '') as string;
+  const titleZh = (((dish as any).title_zh ?? '') as string);
+  const titleEn = (((dish as any).title_en ?? '') as string).toLowerCase();
   const flavorTags = ((dish as any).flavor_tags ?? []) as string[];
+  // Explicit cold tag (data-layer override) wins over the staple/soup guard
+  // so that genuinely-cold dishes mis-categorised as staple (e.g. Potato
+  // Salad) can still be brought into the cold bucket via DB backfill.
   if (flavorTags.includes('cold')) return true;
   // Hot staples like 炸酱面 / 拌面 should not be cold even if name matches.
   const courseType = ((dish as any).course_type ?? '') as string;
   if (courseType === 'staple' || courseType === 'soup') return false;
-  return COLD_TITLE_KEYWORDS.some(k => title.includes(k));
+  return COLD_TITLE_KEYWORDS_ZH.some(k => titleZh.includes(k))
+      || COLD_TITLE_KEYWORDS_EN.some(k => titleEn.includes(k));
 }
 
 // ── Scoring ──────────────────────────────────────────────────────────────────
