@@ -14,6 +14,8 @@
  * cultural ruleset.
  */
 
+import { hometownToDbBucket } from './hometownBuckets';
+
 export interface BreakfastCombo {
   id: string;
   name: string;
@@ -231,8 +233,6 @@ function listEligibleCombos(
   hometown: string | null | undefined,
   avoidTags: string[],
 ): BreakfastCombo[] {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { hometownToDbBucket } = require('./hometownBuckets') as typeof import('./hometownBuckets');
   const homeBucket = hometownToDbBucket(hometown);
   return BREAKFAST_COMBOS.filter(c => {
     if (c.hometowns.length > 0 && !c.hometowns.includes('*') && homeBucket && !c.hometowns.includes(homeBucket)) return false;

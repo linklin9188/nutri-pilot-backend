@@ -6,6 +6,7 @@ import { getUserPrefs } from '../lib/userPrefs';
 import { getUserId } from '../lib/userId';
 import { applyCuisineFilter, type CuisineMode } from '../lib/cuisineFilter';
 import { DISH_FIELDS } from '../lib/dishFields';
+import { pickBreakfastCombo } from '../lib/breakfastCombos';
 import { hometownMatches, hometownToDbBucket } from '../lib/hometownBuckets';
 import { isNewUserSession } from '../lib/userLifecycle';
 
@@ -1192,10 +1193,6 @@ function applyBreakfastTemplate(sorted: any[], target: number): any[] {
   // hometown to filter to the right regional set. See
   // .claude/skills/chinese-breakfast/SKILL.md for the cultural ruleset.
   try {
-    // Lazy import — avoid pulling combo data into hot scoring path until
-    // the breakfast branch fires.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { pickBreakfastCombo } = require('../lib/breakfastCombos');
     const hometown = (typeof localStorage !== 'undefined' && localStorage.getItem('userHometown'))
                       ? localStorage.getItem('userHometown')!.split(',')[0] : null;
     const today = new Date();
@@ -1220,7 +1217,6 @@ function applyBreakfastTemplate(sorted: any[], target: number): any[] {
   // hometown set. We now prefer dishes whose origin_cuisine matches the
   // user's hometown bucket, falling through to the global pool only if
   // the regional pool is empty.
-  const { hometownToDbBucket } = require('../lib/hometownBuckets') as typeof import('../lib/hometownBuckets');
   const userHometown = (typeof localStorage !== 'undefined' && localStorage.getItem('userHometown'))
                         ? (localStorage.getItem('userHometown') ?? '').split(',')[0]
                         : null;
