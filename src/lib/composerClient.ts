@@ -35,6 +35,7 @@ export interface DishSummary {
   id:               string;
   title_zh:         string;
   origin_cuisine?:  string | null;
+  western_subtype?: string | null;
   main_ingredient?: string | null;
   flavor_tags?:     string[] | null;
   cook_method?:     string | null;
@@ -64,6 +65,7 @@ export function toSummary(d: SupabaseDish): DishSummary {
     id:               x.id,
     title_zh:         x.title_zh,
     origin_cuisine:   x.origin_cuisine,
+    western_subtype:  x.western_subtype,
     main_ingredient:  x.main_ingredient,
     flavor_tags:      x.flavor_tags,
     cook_method:      x.cook_method,

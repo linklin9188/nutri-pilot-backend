@@ -82,6 +82,7 @@ interface DishSummary {
   id:               string;
   title_zh:         string;
   origin_cuisine?:  string | null;
+  western_subtype?: string | null;
   main_ingredient?: string | null;
   flavor_tags?:     string[] | null;
   cook_method?:     string | null;
@@ -126,6 +127,7 @@ const SYSTEM_PROMPT = `你是"爱吃 Aieats"的家宴菜单编排师。你的工
 【挑选时综合考虑】
 - 头数构成：kids 多 → 偏温和不辣易咀嚼；elders 多 → 偏软糯滋补少油炸；adults 主导且无小孩长辈 → 偏分享性强 / 人气菜
 - cuisine_style：风格内部一致，避免奇怪混搭（除非 cuisine_style='mixed'）
+- 当 cuisine_style='western' 时，看候选菜的 western_subtype (french/italian/spanish/american/american_fine/british/german/other_western)，**整桌优先选同一个 subtype**（例如同桌都 italian 风格，或都 american 风格），避免一桌 4 道主菜 french/italian/british/american 各自一道这种混乱编排
 - special_needs：'growth' → 主菜偏高蛋白高钙食材；'pregnancy' → 偏叶酸/铁/钙食材
 - 同桌多样性：避免 main 桶里 4 道菜主料全是猪肉 / 烹法全是炒
 - 平衡：辣度、油重度、烹饪方式都要分布合理
@@ -168,6 +170,7 @@ function buildUserPrompt(req: ComposerRequest): string {
     rows.map(r =>
       `${r.id} | ${r.title_zh}` +
       ` | 菜系=${r.origin_cuisine ?? "-"}` +
+      (r.western_subtype ? ` | 西餐子类=${r.western_subtype}` : "") +
       ` | 主料=${r.main_ingredient ?? "-"}` +
       ` | 风味=${(r.flavor_tags ?? []).join(",") || "-"}` +
       ` | 烹法=${r.cook_method ?? "-"}` +
