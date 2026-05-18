@@ -1449,14 +1449,28 @@ export function useRecommendDishes(
   const [error, setError]     = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // Cache-key builder: must include every input that legitimately changes
-  // the menu (mealTime + cuisine + headcount + vegan). User_id and date
-  // make it per-user-per-day; switching meal tabs reads the OTHER meal's
-  // cache instead of regenerating.
+  // Cache-key builder: includes every input that legitimately changes the
+  // menu — mealTime + cuisine + headcount + vegan + a *prefsHash* of
+  // userPrefs (avoidTags / avoidIngredients / vegetarianOnly / spiceBoost).
+  // The prefsHash means settings changes naturally invalidate without
+  // having to globally wipe home_menu_* cache — and it lets the
+  // nutri-prefs-changed event listener avoid touching cache, so superset
+  // dispatchers (cuisine toggle, login, swap-quota writes) don't
+  // accidentally invalidate unrelated meals' caches.
   const buildCacheKey = (meal: typeof mealTime): string => {
     const userId = getUserId() ?? 'anon';
     const today  = new Date().toISOString().slice(0, 10);
-    return `home_menu_${userId}_${today}_${meal}_${cuisineMode}_${adults}_${kids}_${veganOnly ? 'v' : 'n'}`;
+    const p = getUserPrefs();
+    const sig = [
+      (p.avoidTags ?? []).slice().sort().join(','),
+      (p.avoidIngredients ?? []).slice().sort().join(','),
+      p.vegetarianOnly ? 'v' : 'n',
+      String(p.spiceBoost ?? 0),
+    ].join('|');
+    let h = 5381;
+    for (let i = 0; i < sig.length; i++) h = ((h << 5) + h + sig.charCodeAt(i)) | 0;
+    const prefsHash = (h >>> 0).toString(36);
+    return `home_menu_${userId}_${today}_${meal}_${cuisineMode}_${adults}_${kids}_${veganOnly ? 'v' : 'n'}_${prefsHash}`;
   };
 
   const refresh = useCallback(() => {
@@ -1470,21 +1484,15 @@ export function useRecommendDishes(
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mealTime, cuisineMode, adults, kids, veganOnly]);
 
-  // Re-run when user updates preferences (from Settings or QuickSetup).
-  // Drop ALL home_menu_* cache for this user — settings change affects every
-  // mealTime, not just the current one.
+  // nutri-prefs-changed is an overloaded event-bus (~20 dispatchers across
+  // Home cuisine toggle / Settings / QuickSetup / Login / Family edits…).
+  // We just bump refreshKey so the hook re-evaluates, but DO NOT wipe cache:
+  // the prefsHash in buildCacheKey will naturally produce a different key
+  // when prefs actually changed, falling through to fresh-generate. When the
+  // event fires for unrelated reasons (e.g. cuisine toggle, which is already
+  // a useEffect dep), cache hit on the existing key keeps the menu stable.
   useEffect(() => {
-    const handler = () => {
-      try {
-        const uid = getUserId() ?? 'anon';
-        const today = new Date().toISOString().slice(0, 10);
-        const prefix = `home_menu_${uid}_${today}_`;
-        Object.keys(localStorage)
-          .filter(k => k.startsWith(prefix))
-          .forEach(k => localStorage.removeItem(k));
-      } catch { /* private mode */ }
-      setRefreshKey(k => k + 1);
-    };
+    const handler = () => setRefreshKey(k => k + 1);
     window.addEventListener('nutri-prefs-changed', handler);
     return () => window.removeEventListener('nutri-prefs-changed', handler);
   }, []);
