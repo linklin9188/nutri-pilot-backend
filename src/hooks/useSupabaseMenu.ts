@@ -1449,11 +1449,42 @@ export function useRecommendDishes(
   const [error, setError]     = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const refresh = useCallback(() => setRefreshKey(k => k + 1), []);
+  // Cache-key builder: must include every input that legitimately changes
+  // the menu (mealTime + cuisine + headcount + vegan). User_id and date
+  // make it per-user-per-day; switching meal tabs reads the OTHER meal's
+  // cache instead of regenerating.
+  const buildCacheKey = (meal: typeof mealTime): string => {
+    const userId = getUserId() ?? 'anon';
+    const today  = new Date().toISOString().slice(0, 10);
+    return `home_menu_${userId}_${today}_${meal}_${cuisineMode}_${adults}_${kids}_${veganOnly ? 'v' : 'n'}`;
+  };
 
-  // Re-run when user updates preferences (from Settings or QuickSetup)
+  const refresh = useCallback(() => {
+    // 换菜按钮 — drop ONLY the current mealTime's cache so the next run
+    // regenerates *this* meal. Don't touch the other meals' caches: the
+    // user only paid swap quota for this one.
+    try {
+      localStorage.removeItem(buildCacheKey(mealTime));
+    } catch { /* private mode */ }
+    setRefreshKey(k => k + 1);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mealTime, cuisineMode, adults, kids, veganOnly]);
+
+  // Re-run when user updates preferences (from Settings or QuickSetup).
+  // Drop ALL home_menu_* cache for this user — settings change affects every
+  // mealTime, not just the current one.
   useEffect(() => {
-    const handler = () => setRefreshKey(k => k + 1);
+    const handler = () => {
+      try {
+        const uid = getUserId() ?? 'anon';
+        const today = new Date().toISOString().slice(0, 10);
+        const prefix = `home_menu_${uid}_${today}_`;
+        Object.keys(localStorage)
+          .filter(k => k.startsWith(prefix))
+          .forEach(k => localStorage.removeItem(k));
+      } catch { /* private mode */ }
+      setRefreshKey(k => k + 1);
+    };
     window.addEventListener('nutri-prefs-changed', handler);
     return () => window.removeEventListener('nutri-prefs-changed', handler);
   }, []);
@@ -1476,6 +1507,29 @@ export function useRecommendDishes(
     async function run() {
       try {
         setLoading(true);
+
+        // Cache hit short-circuit: if we already generated a menu for this
+        // exact (user, date, mealTime, cuisine, headcount, vegan) tuple in
+        // this calendar day, return it. This makes switching 午餐/晚餐 tabs
+        // a no-op render and prevents the weighted-random pick from
+        // re-rolling each time. Cache is invalidated by refresh() (换菜
+        // button), settings change (nutri-prefs-changed event), or midnight
+        // (date in the key changes).
+        const cacheKey = buildCacheKey(mealTime);
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+          try {
+            const parsed = JSON.parse(cached) as SupabaseDish[];
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              if (!cancelled) {
+                setRecommendedDishes(parsed);
+                setCurrentSolarTerm(getCurrentSolarTerm());
+                setLoading(false);
+              }
+              return;
+            }
+          } catch { /* corrupt cache, fall through to regenerate */ }
+        }
 
         const humidity  = parseFloat(localStorage.getItem('current_humidity') ?? '75');
         const solarTerm = getCurrentSolarTerm();
@@ -1623,9 +1677,17 @@ export function useRecommendDishes(
           localStorage.setItem(crossMealKey, JSON.stringify(merged));
         } catch { /* storage full / private mode — non-critical */ }
 
+        const enriched = balanced.map((d, i) => enrichDish(d, i === 0));
+
+        // Persist the enriched menu under the per-meal cache key so future
+        // tab-switches into this meal hit the short-circuit above.
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify(enriched));
+        } catch { /* storage full / private mode — non-critical */ }
+
         setCurrentSolarTerm(solarTerm);
         setPrefScores(scores);
-        setRecommendedDishes(balanced.map((d, i) => enrichDish(d, i === 0)));
+        setRecommendedDishes(enriched);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to fetch dishes');
       } finally {
