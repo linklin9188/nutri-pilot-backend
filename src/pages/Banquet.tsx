@@ -13,7 +13,7 @@ import { useNavigate, Navigate } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
 import {
   CUISINES, AVOID_LABELS, SPECIAL_NEED_LABELS,
-  planBanquet, swapBanquetDish,
+  planBanquet, swapBanquetDish, updateEvalOutcome,
   type CuisineStyle, type BanquetMenu, type BanquetCourse,
   type BanquetAvoidId, type BanquetSpecialNeed,
 } from "../lib/banquet";
@@ -61,6 +61,9 @@ export default function Banquet() {
   async function handleGenerate() {
     setGenerating(true);
     try {
+      // planBanquet has a Composer→local fallback chain, so a thrown error
+      // here would mean both branches failed (which only happens on a hard
+      // DB error). Log to console; no user-facing alert per Rule 8.4.
       const result = await planBanquet({
         adults, kids, elders, cuisineStyle: cuisine,
         extraAvoid:   avoidIds,
@@ -69,8 +72,7 @@ export default function Banquet() {
       setMenu(result);
       setStep("result");
     } catch (e) {
-      console.error("planBanquet failed:", e);
-      alert("生成失败，请重试");
+      console.error("planBanquet failed (both Composer and local branch):", e);
     } finally {
       setGenerating(false);
     }
@@ -94,6 +96,10 @@ export default function Banquet() {
           }
         ),
       });
+      // Composer eval outcome: user swapped at least one dish.
+      if (menu.eval_id) {
+        void updateEvalOutcome(menu.eval_id, 'revised');
+      }
     } finally {
       setSwapping(null);
     }
@@ -132,7 +138,13 @@ export default function Banquet() {
               menu={menu}
               swapping={swapping}
               onSwap={handleSwap}
-              onRestart={() => { setMenu(null); setStep("occasion"); }} />
+              onRestart={() => {
+                if (menu.eval_id) {
+                  void updateEvalOutcome(menu.eval_id, 'rejected');
+                }
+                setMenu(null);
+                setStep("headcount");
+              }} />
           )}
         </AnimatePresence>
       </main>
@@ -523,6 +535,9 @@ function ResultStep({
           onClick={() => {
             // Persist the banquet menu so /verify can aggregate ingredients
             // sized for the actual headcount (not the weekly menu's family).
+            // composer_run_id + eval_id ride along so a later /verify-side
+            // outcome refinement (e.g. "user actually cooked from this") can
+            // still find the menu_evals row.
             localStorage.setItem(
               "banquet_menu_current",
               JSON.stringify({
@@ -533,9 +548,14 @@ function ResultStep({
                 specialNeeds: menu.options.specialNeeds ?? [],
                 extraAvoid:   menu.options.extraAvoid ?? [],
                 dishes: menu.courses.flatMap(c => c.dishes),
+                composer_run_id: menu.composer_run_id,
+                eval_id:         menu.eval_id,
                 createdAt: Date.now(),
               })
             );
+            if (menu.eval_id) {
+              void updateEvalOutcome(menu.eval_id, 'user_accepted');
+            }
             window.location.href = "/verify?from=banquet";
           }}
           className="w-full h-12 rounded-2xl font-bold text-[14px] text-white flex items-center justify-center gap-2 active:scale-95"

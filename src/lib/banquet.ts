@@ -15,7 +15,26 @@
 
 import { supabase } from './supabase';
 import { getUserPrefs } from './userPrefs';
+import { getUserId } from './userId';
+import { callComposer, toSummary, type BucketKey, type ComposerResult } from './composerClient';
+import { ALGO_VERSION } from '../hooks/useWeeklyMenu';
 import type { SupabaseDish } from '../hooks/useSupabaseMenu';
+
+// Composer Agent v1 — see .claude/skills/menu-scoring-philosophy/SKILL.md
+// Rule 8 for the design contract this implementation honors.
+const COMPOSER_PROMPT_VERSION = 'composer_v1.0';
+
+/** v1 segment inference: cantonese-hometown users get 'B', everyone else 'A'.
+ *  Real A/B segmentation arrives later; this is a placeholder so the column
+ *  is populated for future analytics. */
+function inferSegment(): 'A' | 'B' {
+  try {
+    const h = localStorage.getItem('userHometown');
+    return h === 'cantonese' ? 'B' : 'A';
+  } catch {
+    return 'A';
+  }
+}
 
 // ── Public types ─────────────────────────────────────────────────────────────
 
@@ -157,6 +176,16 @@ export interface BanquetMenu {
   headcount:    number;
   totalDishes:  number;
   courses:      BanquetCourse[];
+  /** Composer Agent v1 fields. Present only when LLM branch succeeded;
+   *  local-fallback paths leave them undefined. UI does NOT render
+   *  narrative/tradeoffs in v1 (per Rule 8 — observe quality in
+   *  menu_evals first); they're persisted so future v1.1 can light them up. */
+  composer_run_id?: string;
+  narrative?:       string;
+  tradeoffs?:       string[];
+  /** Eval row id from menu_evals — used by ResultStep callbacks to
+   *  UPDATE outcome when the user swaps / accepts / replans. */
+  eval_id?:         string;
 }
 
 // ── Dynamic tag bonuses driven by who's at the table ─────────────────────────
@@ -380,8 +409,7 @@ export async function planBanquet(opts: BanquetOptions): Promise<BanquetMenu> {
     allocated += n;
   });
 
-  // Fetch a generous dish pool. Hard filters: global userPrefs + per-banquet
-  // avoids picked in the wizard.
+  // ── Step ① Hard filters: global userPrefs + per-banquet avoids + pregnancy.
   const prefs = getUserPrefs();
   const extraAvoid = opts.extraAvoid ?? [];
   const { data: rawPool } = await supabase
@@ -402,9 +430,8 @@ export async function planBanquet(opts: BanquetOptions): Promise<BanquetMenu> {
   });
 
   const hasKids = opts.kids > 0;
-  const used = new Set<string>();
 
-  // Bucket the pool by course
+  // ── Step ② Bucket the pool by course type.
   const byCourse: Record<BanquetCourse['key'], SupabaseDish[]> = {
     cold: [], main: [], staple: [], soup: [], dessert: [],
   };
@@ -414,40 +441,115 @@ export async function planBanquet(opts: BanquetOptions): Promise<BanquetMenu> {
     if (bucket) byCourse[bucket].push(dish);
   }
 
-  // Score & sample per course
-  const courses: BanquetCourse[] = [];
-  for (const t of COURSE_TEMPLATE) {
-    const targetCount = counts[t.key];
-    const candidates = byCourse[t.key]
-      .filter(d => !used.has(d.id))
-      .map(d => ({ value: d, score: scoreDish(d, opts, hasKids) }));
+  // ── Step ④ Composer branch (LLM-driven selection). On any failure we
+  //          silently fall back to the local scoreDish + weightedSample
+  //          path below — per Rule 8.4 the user is never told.
+  let courses: BanquetCourse[] | null = null;
+  let composerRunId: string | undefined;
+  let narrative:     string | undefined;
+  let tradeoffs:     string[] | undefined;
+  let evalId:        string | undefined;
 
-    const picked = weightedSample(candidates, targetCount);
-    picked.forEach(d => used.add(d.id));
+  try {
+    const composerResult = await callComposer({
+      scenario: 'banquet',
+      user_context: {
+        headcount: { adults: opts.adults, kids: opts.kids, elders: opts.elders },
+        cuisine_style: opts.cuisineStyle,
+        extra_avoid:   extraAvoid,
+        special_needs: opts.specialNeeds ?? [],
+        global_prefs: {
+          avoid_tags:        prefs.avoidTags ?? [],
+          avoid_ingredients: prefs.avoidIngredients ?? [],
+          vegetarian_only:   !!prefs.vegetarianOnly,
+        },
+      },
+      buckets: {
+        cold:    byCourse.cold.map(toSummary),
+        main:    byCourse.main.map(toSummary),
+        staple:  byCourse.staple.map(toSummary),
+        soup:    byCourse.soup.map(toSummary),
+        dessert: byCourse.dessert.map(toSummary),
+      },
+      bucket_targets: {
+        cold:    counts.cold,
+        main:    counts.main,
+        staple:  counts.staple,
+        soup:    counts.soup,
+        dessert: counts.dessert,
+      },
+      algo_version: ALGO_VERSION,
+    });
 
-    // Mark up to 2 dishes as kid-friendly in the main course when kids present
-    const enriched: BanquetDish[] = picked.map(d => ({ ...d }));
-    if (hasKids && t.key === 'main') {
-      let marked = 0;
-      for (const d of enriched) {
-        if (marked >= Math.min(2, Math.ceil(opts.kids / 4))) break;
-        const ft = ((d as any).flavor_tags ?? []) as string[];
-        if (!ft.includes('spicy') && !ft.includes('very_spicy') && !ft.includes('bitter')) {
-          (d as BanquetDish).kidFriendly = true;
-          marked++;
+    courses = assembleCoursesFromComposer(composerResult, byCourse, opts);
+    composerRunId = crypto.randomUUID();
+    narrative     = composerResult.theme_narrative;
+    tradeoffs     = composerResult.tradeoffs;
+
+    // Write success row to menu_evals (outcome=null, updated by UI events).
+    evalId = await writeComposerEval({
+      composer_run_id: composerRunId,
+      output: composerResult,
+      courses,
+      success: true,
+    });
+  } catch (e) {
+    console.warn('Composer failed, fallback to local algo:', e);
+    // Write failure row so fallback rate is observable; outcome stays null.
+    try {
+      await writeComposerEval({
+        composer_run_id: undefined,
+        output: null,
+        courses: null,
+        success: false,
+        fallback_reason: e instanceof Error ? e.message : String(e),
+      });
+    } catch (logErr) {
+      console.warn('menu_evals fallback write also failed:', logErr);
+    }
+  }
+
+  // ── Step ④ (fallback) Local scoreDish + weightedSample.
+  if (!courses) {
+    const used = new Set<string>();
+    const built: BanquetCourse[] = [];
+    for (const t of COURSE_TEMPLATE) {
+      const targetCount = counts[t.key];
+      const candidates = byCourse[t.key]
+        .filter(d => !used.has(d.id))
+        .map(d => ({ value: d, score: scoreDish(d, opts, hasKids) }));
+
+      const picked = weightedSample(candidates, targetCount);
+      picked.forEach(d => used.add(d.id));
+
+      const enriched: BanquetDish[] = picked.map(d => ({ ...d }));
+      if (hasKids && t.key === 'main') {
+        let marked = 0;
+        for (const d of enriched) {
+          if (marked >= Math.min(2, Math.ceil(opts.kids / 4))) break;
+          const ft = ((d as any).flavor_tags ?? []) as string[];
+          if (!ft.includes('spicy') && !ft.includes('very_spicy') && !ft.includes('bitter')) {
+            (d as BanquetDish).kidFriendly = true;
+            marked++;
+          }
         }
       }
-    }
 
-    courses.push({
-      key:   t.key,
-      label: COURSE_LABELS[t.key].label,
-      emoji: COURSE_LABELS[t.key].emoji,
-      dishes: enriched,
-    });
+      built.push({
+        key:   t.key,
+        label: COURSE_LABELS[t.key].label,
+        emoji: COURSE_LABELS[t.key].emoji,
+        dishes: enriched,
+      });
+    }
+    courses = built;
   }
 
   return {
+    composer_run_id: composerRunId,
+    narrative,
+    tradeoffs,
+    eval_id: evalId,
     options:     opts,
     headcount,
     totalDishes: courses.reduce((s, c) => s + c.dishes.length, 0),
@@ -498,4 +600,115 @@ export async function swapBanquetDish(
     value: d, score: scoreDish(d, menu.options, hasKids),
   }));
   return weightedSample(scored, 1)[0] as BanquetDish ?? null;
+}
+
+// ── Composer integration helpers ─────────────────────────────────────────────
+
+/** Resolve Composer's id-only output back into BanquetCourse[] using the
+ *  bucketed pool the caller passed to the Composer. Skips ids missing from
+ *  the pool defensively even though the edge function already validated. */
+function assembleCoursesFromComposer(
+  result:   ComposerResult,
+  byCourse: Record<BanquetCourse['key'], SupabaseDish[]>,
+  opts:     BanquetOptions,
+): BanquetCourse[] {
+  const courses: BanquetCourse[] = [];
+  const hasKids = opts.kids > 0;
+  for (const t of COURSE_TEMPLATE) {
+    const k = t.key as BucketKey;
+    const idMap = new Map(byCourse[t.key].map(d => [d.id, d]));
+    const dishes: BanquetDish[] = [];
+    for (const id of (result.selected_dishes[k] ?? [])) {
+      const d = idMap.get(id);
+      if (d) dishes.push({ ...d });
+    }
+    if (hasKids && t.key === 'main') {
+      let marked = 0;
+      for (const d of dishes) {
+        if (marked >= Math.min(2, Math.ceil(opts.kids / 4))) break;
+        const ft = ((d as any).flavor_tags ?? []) as string[];
+        if (!ft.includes('spicy') && !ft.includes('very_spicy') && !ft.includes('bitter')) {
+          (d as BanquetDish).kidFriendly = true;
+          marked++;
+        }
+      }
+    }
+    courses.push({
+      key:   t.key,
+      label: COURSE_LABELS[t.key].label,
+      emoji: COURSE_LABELS[t.key].emoji,
+      dishes,
+    });
+  }
+  return courses;
+}
+
+interface WriteEvalArgs {
+  composer_run_id: string | undefined;
+  output:          ComposerResult | null;
+  courses:         BanquetCourse[] | null;
+  success:         boolean;
+  fallback_reason?: string;
+}
+
+/** Insert one menu_evals row for this Composer run.
+ *  - success=true:  the LLM branch ran cleanly. outcome stays null until
+ *                   a UI event (swap/replan/verify) calls updateEvalOutcome().
+ *  - success=false: silent fallback path was taken; eval_metrics records
+ *                   fallback_used / fallback_reason for ops telemetry. */
+async function writeComposerEval(args: WriteEvalArgs): Promise<string | undefined> {
+  const userId = getUserId();
+  if (!userId) return undefined;
+
+  const dishIds = args.courses
+    ? args.courses.flatMap(c => c.dishes.map(d => d.id))
+    : [];
+
+  const row: Record<string, unknown> = {
+    agent:                 'composer',
+    scenario:              'banquet',
+    user_id:               userId,
+    segment:               inferSegment(),
+    algo_version_consumed: ALGO_VERSION,
+    prompt_version:        COMPOSER_PROMPT_VERSION,
+    dish_ids:              dishIds,
+    output_json:           args.output,
+    outcome:               null,
+  };
+  if (args.composer_run_id) row.composer_run_id = args.composer_run_id;
+  if (!args.success) {
+    row.eval_metrics = {
+      fallback_used:   true,
+      fallback_reason: args.fallback_reason ?? 'unknown',
+    };
+  } else if (args.output) {
+    row.eval_metrics = { theme_narrative: args.output.theme_narrative };
+    row.tradeoffs    = args.output.tradeoffs ?? [];
+  }
+
+  const { data, error } = await supabase
+    .from('menu_evals')
+    .insert(row)
+    .select('id')
+    .single();
+  if (error) {
+    console.warn('menu_evals insert error:', error);
+    return undefined;
+  }
+  return (data as { id: string } | null)?.id;
+}
+
+/** Patch a menu_evals row when the user takes an action on the result screen.
+ *  Used by Banquet.tsx ResultStep callbacks (swap / accept / replan). */
+export async function updateEvalOutcome(
+  evalId: string,
+  outcome: 'revised' | 'rejected' | 'user_accepted',
+): Promise<void> {
+  if (!evalId) return;
+  const patch: Record<string, unknown> = { outcome };
+  if (outcome === 'user_accepted') {
+    patch.resolved_at = new Date().toISOString();
+  }
+  const { error } = await supabase.from('menu_evals').update(patch).eq('id', evalId);
+  if (error) console.warn('menu_evals outcome update failed:', error);
 }

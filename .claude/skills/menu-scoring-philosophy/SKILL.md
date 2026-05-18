@@ -19,6 +19,13 @@ triggers:
   - "幂次方"
   - "使用数据"
   - "ALGO_VERSION"
+  - "Composer"
+  - "Critic"
+  - "menu_evals"
+  - "banquet"
+  - "planBanquet"
+  - "composer_run_id"
+  - "theme_narrative"
 ---
 
 # Menu-Scoring 算法哲学
@@ -325,6 +332,172 @@ configurable data, with a `USE_DB_SCORING_RULES` feature flag and
   need).
 - LLM Composer/Critic ships and proves it needs structured access to
   axis weights that the SKILL.md narrative can't supply.
+
+## Rule 8 — Composer Agent v1 接入 /banquet（2026-05-18）
+
+第一次让 LLM 进入菜单编排链路，落点选在 `/banquet`（Pro feature, 低
+QPS, 单次生成 5–15s 可接受）。本规则的 4 个子节固化 v1 阶段的产品 +
+工程决议；v2 阶段任何反向决定必须在此显式覆写。
+
+### 8.1 — 包装 planBanquet，不替换
+
+planBanquet 的现有 5 步流程：
+
+```
+① 硬过滤 (pregnancy + global prefs + extraAvoid)
+② 桶分类 (course_type → cold/main/staple/soup/dessert)
+③ totalDishes 计算 (headcount 公式 + 比例分配)
+④ scoreDish + weighted random sample        ← Composer 替换这里
+⑤ 组装 BanquetMenu 输出
+```
+
+**Composer 只替换 ④**。①②③⑤ 留在 banquet.ts 本地实现，理由分别：
+
+| 步骤 | 为什么不让 LLM 碰 |
+|---|---|
+| ① 硬过滤 | 法律/医学风险 — 孕妇黑名单、过敏忌口不能让 LLM 自由判断 |
+| ② 桶分类 | `dishes.course_type` 已是确定值，LLM 再做一次是 token 浪费 |
+| ③ totalDishes | `round(1.1×(adults + kids×0.5 + elders×0.8))` 是确定性映射 |
+| ⑤ 组装 | 类型对齐 + localStorage banquet_menu_current 契约稳定，下游 VerifyIngredients 已消费 |
+
+落点：`planBanquet()` 在原"Score & sample per course"循环位置注入
+`if (canUseComposer()) try composerSelect else fallback`。原 `scoreDish`
++ `weightedSample` 函数**不删**，做 fallback 用。
+
+`composerSelect` 失败时 throw → catch → fallback 到原 ④。Schema 校验
+严格（picks 数量必须 = counts、id 必须在对应桶池子里），任一不满足直接
+throw。**不做** truncate / pad / 相似度纠错——v1 加宽容度等于 v2 永远
+不知道 prompt 哪里有问题。
+
+### 8.2 — 不收 theme 输入，由 LLM 反推 narrative
+
+> 不要。... cuisineStyle + specialNeeds + kids/elders 比例 已经被三个维度
+> 等价覆盖——LLM 完全可以从这三个推断"这是个什么类型的宴席"。
+> ... 给 Composer v1 prompt 的指示：从 cuisineStyle + specialNeeds +
+> kids/elders 比例 自己推断场合，然后在 theme_narrative 字段里用一句话
+> 写出来。 — user, 2026-05-18
+
+**输入契约不加 theme 字段**，向导步数不变（保持 3 步：headcount →
+cuisine → result）。**输出契约加 `theme_narrative: string`**，由 LLM
+从已显式收集的信号反推一句中文叙事。
+
+**Prompt 必须带负向约束**："Do not infer holidays, birthdays, or specific
+occasions. Only describe the table based on who's present and the
+dietary signals provided."
+
+- ✓ `kids=3, specialNeeds=['growth']` → "为成长期孩子设计的家常宴"
+- ✓ `kids=0, elders=2, specialNeeds=[]` → "陪长辈的清润家宴"
+- ✗ 任何"中秋/春节/生日/寿宴"措辞（v1 不允许，v2 上 theme 输入后再放开）
+
+**Reopen this decision** 当且仅当：v2 阶段、看完 v1 输出质量后，产品
+决定真要做"中秋宴/孩子生日"等节日叙事场景。届时新加 `theme` 输入字段，
+向导加一步或把 `specialNeeds` 升级成 `theme/scenario` 多选。
+
+### 8.3 — v1 不接 Critic，但 menu_evals 必写
+
+> v1 不接 Critic（C 选项）。... 儿童安全已经被 ①硬过滤 + pregnancy
+> 黑名单覆盖，Composer 在第 ④ 步只是"挑哪几道"，挑出来的菜不可能违反
+> 硬约束 ... v1 阶段应该先验证 Composer 输出质量本身，Critic 等 menu_evals
+> 有真实数据后再做。但 menu_evals 这次必须写。 — user, 2026-05-18
+
+Critic 在 banquet 的核心价值（儿童安全 / 主题漂移审计）在我们这套架构
+里被 ① 已经覆盖，剩下的"挑选质量"价值（多样性 / 主料平衡 / narrative
+一致性）必须等真实样本观测后才能针对性设计。同步 Critic 又让单次生成
+多 5–15s LLM 往返，UX 不可接受。
+
+**Composer 成功时写入 menu_evals（v1 至少落这些字段）**：
+
+| 字段 | v1 值 |
+|---|---|
+| `agent` | `'composer'` |
+| `composer_run_id` | client-side `crypto.randomUUID()`，**LLM 调用前**生成 |
+| `user_id` | `getUserId()` — 不直接读 localStorage（custom_auth） |
+| `scenario` | `'banquet'` |
+| `segment` | `inferSegment(opts)` — A/B 推断字符串 |
+| `algo_version_consumed` | `'v37'`（不 bump，见下） |
+| `prompt_version` | `'composer_v1.0'` |
+| `dish_ids` | `uuid[]` — flattenDishIds(menu)，cast `::uuid[]` |
+| `output_json` | `{theme_narrative, selected_dishes, tradeoffs, fallback_used:false}` |
+| `eval_metrics` | `{theme_narrative}` (取 narrative 提到顶层做查询用) |
+| `outcome` | `'accepted'`（占位，下面的事件埋点 UPDATE） |
+
+**composer_run_id 流转**：LLM 调用前 client 生成 uuid → 回写 BanquetMenu
+（新加 `composer_run_id?: string` 字段）→ 持久化到 `localStorage.
+banquet_menu_current` → 后续 3 个 UI 事件 UPDATE menu_evals 的 outcome。
+
+**outcome 4 个埋点位置**：
+
+| 用户行为 | outcome 值 | 写入位置 |
+|---|---|---|
+| 点 swap 换菜 | `'revised'` | `Banquet.tsx:handleSwap` |
+| 点「一键生成采购清单」 | `'user_accepted'` | 采购按钮 onClick |
+| 点「重新规划」 | `'rejected'` | `Banquet.tsx:onRestart` |
+| 24h 无动作 | `'user_abandoned'` | cron（024，等真实流量上） |
+
+注：`revised` 和 `rejected` 在 `menu_evals.outcome` enum 里原本是给
+Critic agent 用的语义（"Critic 让 Composer 修一次" / "Critic blocked"）。
+v1 阶段没有 Critic，用户决议把这两个 enum 值复用到用户行为埋点上
+（— user, 2026-05-18）。未来真上 Critic 时要通过 `agent` 字段区分：
+`agent='composer'` 行的 `revised/rejected` = 用户手动行为；
+`agent='critic'` 行的 `revised/rejected` = Critic 审计结果。
+
+### 8.4 — Fallback 悄悄做，但 menu_evals 必留 telemetry
+
+> 不明示。悄悄 fallback。... 用户不关心"是 LLM 还是本地算法"
+> ... 必须在 menu_evals 里记 output_json.fallback_used: true 配
+> eval_metrics: { fallback_reason: 'composer_timeout' } ... UI 唯一
+> 要变的是移除 alert("生成失败")，既然有本地算法兜底根本不会失败，
+> 那个 alert 该删。 — user, 2026-05-18
+
+Composer 失败的真实原因通常是 Gemini 限流 / 网络 / quota——这是运维
+问题，不该让用户感知"今天给你的是降级版"。但**统计数据不能造假**：
+fallback 路径必须留痕，否则 Composer 真实成功率会被高估，未来 Critic
+也认不出"这条本该 Composer 处理但塌了"。
+
+**Catch 块行为**：
+
+1. `console.warn('Composer failed, fallback to local:', e)`
+2. 写一行 menu_evals：
+   ```ts
+   { agent: 'composer', scenario: 'banquet',
+     user_id: getUserId(),
+     prompt_version: 'composer_v1.0',
+     algo_version_consumed: 'v37',
+     eval_metrics: { fallback_used: true, fallback_reason: String(e) },
+     outcome: null }
+   ```
+3. 继续走原 `scoreDish` + `weightedSample`，BanquetMenu 照样返回
+
+**UI 变更**：移除 `Banquet.tsx:handleGenerate` 里的 `alert("生成失败")`
+——有本地兜底之后此 alert 永远不该触发。
+
+**反例（v1 拒绝的"温和兜底"）**：truncate picks 到 counts 长度 / pad
+picks 到目标数 / cosine 找相似 id 替换幻觉 id。任一 schema 不满足都
+直接 throw → fallback，不在 Composer 路径内修补——v1 加宽容度等于 v2
+永远不知道 prompt 哪里有问题。
+
+### 工程边界 (022_composer_banquet_v1)
+
+- 不是 migration，是 feature commit
+- 新文件：`supabase/functions/composer/index.ts`、`src/lib/composerClient.ts`
+- 改文件：`src/lib/banquet.ts`、`src/pages/Banquet.tsx`
+- 不动：`useWeeklyMenu.ts`（17 轴算法零变化）、`cuisineFilter.ts`、其他 pages
+- **ALGO_VERSION 保持 v37 不 bump**：Composer 是新分支，主菜单 v37 路径未动
+- Edge function 入参的 `buckets` 字段直接给 SupabaseDish 全量数组（v1 不做
+  embedding 召回——720 行池过滤后塞 prompt 吃得下）；出参 `selected_dishes`
+  **只回 uuid**，前端从输入 buckets 查回完整对象（节省 80% 返回 token）
+- Edge function 模式：独立 `supabase/functions/composer/index.ts`（**不**
+  走 `gemini-proxy`），跟 `parse-intent` 同样的"专属 endpoint + 单独
+  rate limit"模式。原因：composer 入参 schema (`buckets` 含 5 桶
+  SupabaseDish 数组) 不适合塞进 gemini-proxy 的通用 `contents` 字段；
+  Composer prompt 也是结构化生成（responseMimeType: application/json），
+  跟 parse-intent 体例一致。配额建议 Pro 用户 8/day（在 composer edge
+  function 内自己管，写 `api_usage_daily` 表 endpoint='composer'）
+
+**Reopen 8.3 Critic 决议** 当且仅当：menu_evals 累计 ≥ N 条真实 outcome
+样本（具体 N 由产品观察决定），且发现 Composer 输出在某类场景有可改进
+模式（如"主菜全是猪肉"/"narrative 与实际挑选脱钩"）。届时 Critic 的
+设计就有针对性了，不再是凭空假设儿童安全有漏洞。
 
 ## Rule 7 — Disagree on the record
 
