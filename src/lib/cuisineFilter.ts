@@ -12,6 +12,13 @@ export type CuisineMode = 'chinese' | 'hk-style' | 'western' | 'all';
 
 const HK_STYLE_KEYWORDS = ['港式', '茶餐厅', '茶餐廳', '菠萝包', '菠蘿包', '丝袜奶茶', '絲襪奶茶', '蛋挞', '蛋撻', '凉茶', '涼茶', '车仔面', '車仔麵', '云吞面', '雲吞麵', '叉烧饭', '叉燒飯', '烧腊', '燒臘'];
 
+// 中餐 tab 实际涵盖的 origin_cuisine 值（基于 DB 729 道菜的实际分布,2026-05-18）。
+// 旧实现用黑名单 NOT IN (western, cantonese) 误把 southeast_asian (74 道) /
+// japanese_korean (55 道) / null (15 道) / all-season/balanced (1 道) 共 145 道
+// (20% 整库) 算进"中餐" — 用户晚餐 NO.01 出现"越式鸡肉沙拉" (origin=southeast_asian)
+// 就因此。改为白名单:中式 = sichuan + jiangnan + northern (粤菜归 hk-style 专属)。
+const CHINESE_ORIGINS: readonly string[] = ['sichuan', 'jiangnan', 'northern'];
+
 /** Read the saved Home cuisine mode. "全部" was retired 2026-05-17 — the
  *  picker now forces a specific cuisine, so legacy 'all' values from
  *  localStorage are coerced to '中餐' on read. CuisineMode type still
@@ -32,15 +39,17 @@ export function loadCuisineMode(): CuisineMode {
  * 茶餐厅 etc.) without origin='cantonese' get caught by matchesCuisine
  * at the in-memory scoring pass.
  */
-export function applyCuisineFilter<T extends { eq: any; neq: any; not: any }>(
+export function applyCuisineFilter<T extends { eq: any; neq: any; not: any; in: any }>(
   query: T,
   mode: CuisineMode,
 ): T {
   if (mode === 'all') return query;
   if (mode === 'western')   return query.eq('origin_cuisine', 'western');
   if (mode === 'hk-style')  return query.eq('origin_cuisine', 'cantonese');
-  // chinese — NOT western AND NOT cantonese (the everything-else middle)
-  return query.not('origin_cuisine', 'in', '(western,cantonese)');
+  // chinese — whitelist (see CHINESE_ORIGINS comment). DO NOT regress to
+  // .not('in', '(western,cantonese)') — that blacklist let southeast_asian /
+  // japanese_korean / null leak in (145 道 ≈ 20% 整库).
+  return query.in('origin_cuisine', [...CHINESE_ORIGINS]);
 }
 
 /** In-memory filter (for client-side scoring loops that already have rows). */
@@ -61,8 +70,8 @@ export function matchesCuisine(
     if (origin === 'cantonese') return true;
     return HK_STYLE_KEYWORDS.some(k => title.includes(k));
   }
-  // chinese — neither western nor cantonese (and not a port-keyword dish)
-  if (origin === 'western' || origin === 'cantonese') return false;
+  // chinese — whitelist of 中式 regional cuisines (sichuan/jiangnan/northern).
+  // Same fix as applyCuisineFilter — blacklist leaked southeast_asian/japanese_korean.
   if (HK_STYLE_KEYWORDS.some(k => title.includes(k))) return false;
-  return true;
+  return CHINESE_ORIGINS.includes(origin);
 }
