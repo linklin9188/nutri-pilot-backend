@@ -538,21 +538,50 @@ function ResultStep({
             // composer_run_id + eval_id ride along so a later /verify-side
             // outcome refinement (e.g. "user actually cooked from this") can
             // still find the menu_evals row.
-            localStorage.setItem(
-              "banquet_menu_current",
-              JSON.stringify({
-                adults: menu.options.adults,
-                kids:   menu.options.kids,
-                elders: menu.options.elders,
-                cuisineStyle: menu.options.cuisineStyle,
-                specialNeeds: menu.options.specialNeeds ?? [],
-                extraAvoid:   menu.options.extraAvoid ?? [],
-                dishes: menu.courses.flatMap(c => c.dishes),
-                composer_run_id: menu.composer_run_id,
-                eval_id:         menu.eval_id,
-                createdAt: Date.now(),
-              })
-            );
+            //
+            // Slim each dish to the fields VerifyIngredients + dishToIngredients
+            // actually consume. Critically drop `embedding` (vector(768) — ~8KB
+            // per dish stringified), `cook_steps_json` (Verify only uses prep
+            // steps), `description_*`, `cultural_note`, and the 7 quality-eval
+            // columns (Composer-only). hydratePrepSteps() on the Verify side
+            // self-heals prep_steps_json from DB by id when missing, so we can
+            // even drop that if it bloats — keep it here when small to avoid
+            // an extra DB round-trip on the /verify shopping list render.
+            const slimDish = (d: any) => ({
+              id:               d.id,
+              title_zh:         d.title_zh,
+              title_en:         d.title_en,
+              course_type:      d.course_type,
+              main_ingredient:  d.main_ingredient,
+              origin_cuisine:   d.origin_cuisine,
+              image_url:        d.image_url,
+              cook_time_min:    d.cook_time_min,
+              prep_steps_json:  d.prep_steps_json,
+              flavor_tags:      d.flavor_tags,
+              health_benefit_tags: d.health_benefit_tags,
+              kidFriendly:      d.kidFriendly,
+            });
+            try {
+              localStorage.setItem(
+                "banquet_menu_current",
+                JSON.stringify({
+                  adults: menu.options.adults,
+                  kids:   menu.options.kids,
+                  elders: menu.options.elders,
+                  cuisineStyle: menu.options.cuisineStyle,
+                  specialNeeds: menu.options.specialNeeds ?? [],
+                  extraAvoid:   menu.options.extraAvoid ?? [],
+                  dishes: menu.courses.flatMap(c => c.dishes).map(slimDish),
+                  composer_run_id: menu.composer_run_id,
+                  eval_id:         menu.eval_id,
+                  createdAt: Date.now(),
+                })
+              );
+            } catch (e) {
+              // Storage quota or serialization failure — log and continue;
+              // /verify will fall back to its own loader logic (weekly menu).
+              console.warn('banquet_menu_current setItem failed:', e);
+            }
             if (menu.eval_id) {
               void updateEvalOutcome(menu.eval_id, 'user_accepted');
             }
