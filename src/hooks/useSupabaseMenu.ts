@@ -576,6 +576,34 @@ function enrichDish(dish: any, highlight: boolean): SupabaseDish {
 // is tagged main_ingredient='fish' but flavor_tags doesn't include 'seafood'.
 // Allergen safety can't be probabilistic — we explicitly map each allergy
 // keyword to all the underlying main_ingredient values that contain it.
+
+// Weighted random sampling — mirrors the shape used in useWeeklyMenu.ts:245
+// (kept inline here rather than exported because cross-importing the hooks
+// risks a cycle through SupabaseDish). Higher-scored items have higher
+// probability of being picked but lower-scored items can still win — this
+// is what stops Home from showing the literal same top-N on every refresh.
+function weightedRandom<T extends { score: number }>(
+  candidates: T[],
+  count: number,
+): T[] {
+  const result: T[] = [];
+  const pool = [...candidates];
+  for (let i = 0; i < count && pool.length > 0; i++) {
+    const min = Math.min(...pool.map(c => c.score));
+    const shifted = pool.map(c => ({ ...c, w: Math.max(0, c.score - min + 0.1) }));
+    const total = shifted.reduce((s, c) => s + c.w, 0);
+    let r = Math.random() * total;
+    let idx = 0;
+    for (let j = 0; j < shifted.length; j++) {
+      r -= shifted[j].w;
+      if (r <= 0) { idx = j; break; }
+    }
+    result.push(pool[idx]);
+    pool.splice(idx, 1);
+  }
+  return result;
+}
+
 const ALLERGEN_TO_INGREDIENTS: Record<string, Set<string>> = {
   seafood: new Set([
     'seafood','fish','shrimp','crab','shellfish','squid','scallop',
@@ -1487,25 +1515,65 @@ export function useRecommendDishes(
         if (fetchErr) throw fetchErr;
 
         const localPrefs = profile._prefs;
-        const filtered = hardFilter(
+
+        // P2 — cross-meal dedup: read what the OTHER meal already picked
+        // for this user TODAY. The set lives in localStorage under a
+        // date-stamped key so it auto-expires at midnight. Hook is a single-
+        // meal hook (mealTime is one of 早/午/晚), so 午餐 instance and 晚餐
+        // instance run independently and can't see each other's React state
+        // — localStorage is the cheapest cross-instance channel.
+        const today = new Date().toISOString().slice(0, 10);
+        const crossMealKey = `home_menu_picks_${userId ?? 'anon'}_${today}`;
+        let otherMealPicks: string[] = [];
+        try {
+          otherMealPicks = JSON.parse(localStorage.getItem(crossMealKey) ?? '[]');
+        } catch { /* corrupt — ignore */ }
+        const otherMealSet = new Set(otherMealPicks);
+
+        const filteredBase = hardFilter(
           allDishes ?? [],
           profile.avoid_tags,
           localPrefs.avoidIngredients,
           localPrefs.vegetarianOnly,
         );
 
+        // P1 — strip 粥/稀饭 from lunch + dinner pools (mirrors useWeeklyMenu.ts:812).
+        // Breakfast intentionally keeps them — 皮蛋瘦肉粥/八宝粥/etc. are
+        // legitimate 早餐 staples.
+        const filteredNoCongee = mealTime === '早餐'
+          ? filteredBase
+          : filteredBase.filter(d => {
+              const t = (d.title_zh ?? (d as any).title ?? '') as string;
+              return !t.includes('粥') && !t.includes('稀饭');
+            });
+
+        // P2 (cont.) — apply cross-meal dedup; fall back to full pool if
+        // dedup would shrink it below dishCount * 2 (template needs headroom).
+        const deduped = filteredNoCongee.filter(d => !otherMealSet.has(d.id));
+        const filtered = deduped.length >= dishCount * 2 ? deduped : filteredNoCongee;
+
         // "我有小美料理机" toggle — read at scoring time so toggling the
         // switch in Settings affects the next menu refresh without a
         // hook remount.
         const hasXiaomei = localStorage.getItem('has_xiaomei_robot') === 'true';
 
-        const sorted = filtered
+        // P0 — score, then weighted-random pick from top-25 so two
+        // consecutive refreshes don't return identical top-N. Was a pure
+        // sort before, which made the menu fully deterministic for a given
+        // (profile, prefScores, pool, solarTerm) tuple — user saw the same
+        // dishes literal-identically across refreshes.
+        const scored = filtered
           .map(dish => ({
             dish,
             score: scoreDish(dish, profile, humidity, solarTerm, scores, localPrefs.spiceBoost, hasXiaomei, mealTime),
           }))
-          .sort((a, b) => b.score - a.score)
-          .map(s => s.dish);
+          .sort((a, b) => b.score - a.score);
+        // Pull dishCount*4 from top-25 candidates so the downstream
+        // template (applyLunchTemplate / applyDinnerTemplate) has enough
+        // ordered choices but each refresh permutes the order.
+        const topPool   = scored.slice(0, Math.max(25, dishCount * 4));
+        const drawCount = Math.min(topPool.length, dishCount * 4);
+        const sorted    = weightedRandom(topPool, drawCount).map(s => s.dish);
 
         // Each meal type now has its own structural template — straight
         // 70/30 meat/veggie balanceMenu was 营养主厨-blind (没汤、没绿叶、
@@ -1544,6 +1612,16 @@ export function useRecommendDishes(
         }
 
         if (cancelled) return;
+
+        // P2 (cont.) — write this meal's picks back so the OTHER meal
+        // (午→晚 or 晚→午 navigation within the same day) can see them.
+        // We union with the existing set rather than overwrite, because
+        // the user might toggle back-and-forth between meals.
+        try {
+          const newPickIds = balanced.map(d => d.id);
+          const merged = Array.from(new Set([...otherMealPicks, ...newPickIds]));
+          localStorage.setItem(crossMealKey, JSON.stringify(merged));
+        } catch { /* storage full / private mode — non-critical */ }
 
         setCurrentSolarTerm(solarTerm);
         setPrefScores(scores);
