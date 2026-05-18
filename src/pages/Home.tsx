@@ -212,7 +212,7 @@ export default function Home() {
   const { recommendedDishes, loading: dishesLoading, refresh: refreshRecommended } = useRecommendDishes(
     mealTime, veganOnly, todayAdults, todayKids, cuisineMode,
   );
-  const { weeklyMenu } = useWeeklyMenu();
+  const { weeklyMenu, loading: weeklyLoading } = useWeeklyMenu();
 
   // ── Language + cuisine prefs ─────────────────────────────────────
   const { language, cycleLanguage, isChinese } = useLanguage();
@@ -478,27 +478,46 @@ export default function Home() {
     try { return JSON.parse(localStorage.getItem("generatedMenu") || "[]"); } catch { return []; }
   })();
 
+  // The fruit-of-the-day slot lives in useRecommendDishes' output regardless
+  // of which source we pick for the main menu. We append it to whatever
+  // baseMenu we end up choosing so the "餐后水果·时令" row keeps showing.
+  const fruitFromRecommend = recommendedDishes.find(d => (d as any).course_type === 'fruit');
+
   const baseMenu: any[] = (() => {
     if (mealTime === "早餐") {
-      // Breakfast now goes through the same scoring pipeline as 午/晚餐, so
-      // it respects headcount (calcDishCount), user profile, learned prefs,
-      // and intent bias — the four algorithm dimensions.
+      // Breakfast doesn't exist in useWeeklyMenu (generateWeekPlan only
+      // produces lunch + dinner), so 早餐 always uses useRecommendDishes.
       return recommendedDishes.length > 0 ? recommendedDishes : [];
     }
+    // 午餐 / 晚餐 — prefer weeklyMenu so "today's menu on Home" matches
+    // "Mon row in WeeklyMenu page" exactly (user expectation: weekly plan
+    // IS the daily plan). Three fallback gates:
+    //   1. weekly is still loading → recommend (avoid flash of empty)
+    //   2. today is Sat/Sun → weekly doesn't generate weekend rows
+    //   3. weekly returned no row for today's index → recommend
+    // cuisine toggle path: Home dispatches 'nutri-prefs-changed' on
+    // cuisineMode change → useWeeklyMenu listener refreshes; lsKey cache
+    // already includes cuisineMode (getCacheKey line 195-196), so DB cache
+    // is auto-invalidated and a fresh weekly menu is generated for the
+    // new cuisine.
+    const useWeekly = !weeklyLoading && !isWeekend();
     if (mealTime === "午餐") {
-      // Live recommendations first, weekly menu fallback. Without this
-      // path, switching the 中餐 / 西餐 toggle on Home left lunch frozen
-      // to whatever cuisineMode generated the weekly cache — and a
-      // weekly generated in 中餐 mode would show 0 dishes (or only a
-      // manual addition) when the user switched to 西餐.
-      if (recommendedDishes.length > 0) return recommendedDishes;
-      const lunch = weeklyMenu?.days[todayIdx]?.lunchDishes ?? [];
-      return lunch.length > 0 ? lunch : [];
+      if (useWeekly) {
+        const lunch = weeklyMenu?.days[todayIdx]?.lunchDishes ?? [];
+        if (lunch.length > 0) {
+          return fruitFromRecommend ? [...lunch, fruitFromRecommend] : lunch;
+        }
+      }
+      return recommendedDishes;
     }
-    // 晚餐: live recommendations → weeklyMenu → localStorage fallback
-    if (recommendedDishes.length > 0) return recommendedDishes;
-    const dinner = weeklyMenu?.days[todayIdx]?.dishes ?? [];
-    return dinner.length > 0 ? dinner : storedMenuRaw;
+    // 晚餐
+    if (useWeekly) {
+      const dinner = weeklyMenu?.days[todayIdx]?.dishes ?? [];
+      if (dinner.length > 0) {
+        return fruitFromRecommend ? [...dinner, fruitFromRecommend] : dinner;
+      }
+    }
+    return recommendedDishes.length > 0 ? recommendedDishes : storedMenuRaw;
   })();
 
   // Manual additions from /favorites "+ 菜单" — keyed by date + mealTime so
