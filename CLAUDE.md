@@ -123,3 +123,55 @@ Don't kill the user's background scripts without asking — instruction interlea
 - Don't use emoji in code or output unless the user explicitly does first.
 - Don't refactor adjacent code while fixing a bug. Surgical edits only.
 - Always respond to the user in Simplified Chinese; code / paths / commit messages stay English.
+
+---
+
+## Known Architectural Smells (待整理)
+
+Bugs we tripped over 2026-05-18. Not proposing fixes here — just so the
+next session doesn't burn time re-deriving them.
+
+### Smell 1 — Home and WeeklyMenu run two independent menu algorithms
+
+Home renders via `useRecommendDishes` (in `src/hooks/useSupabaseMenu.ts`),
+WeeklyMenu page renders via `useWeeklyMenu/generateWeekPlan` (in
+`src/hooks/useWeeklyMenu.ts`). Different scoring functions
+(`scoreDish` vs `scoreForWeek`), different sampling (sort-then-template
+vs weightedRandom), different cache layers, different 粥 strip behavior.
+Today we papered over it by having Home prefer `weeklyMenu.days[todayIdx]`
+when present, but the two algorithms still both run and the smell is
+intact. Symptom: any rule we add to one side silently differs from the
+other side until somebody compares screenshots.
+
+### Smell 2 — User profile stored in two places with no sync layer
+
+localStorage: `userHometown` (values like `east` / `southwest` from the
+new 地域大区 ids, or legacy `guangdong` / `sichuan`); `dietaryGoal`
+(`growth` / `muscle` / etc. — see `userPrefs.ts`); `taste_pref` /
+`quickPrefs.taste`. DB `user_profiles`: `hometown_cuisine` (DB-bucket
+values like `jiangnan` / `cantonese`), `dietary_goal` (`muscle_gain` /
+etc.), `taste_pref` (`light` / `spicy`). Mapping happens at read time
+via `HOMETOWN_TO_DB_BUCKETS` but writes don't symmetrically propagate.
+Result: hometown shown in UI ≠ hometown used in scoring on edge cases,
+and any new field added to one side won't reach the other.
+
+### Smell 3 — `households` table schema doesn't match how the frontend reads it
+
+DB schema: `id / employer_id / name / invite_code / created_at`. No
+`user_id` column. Frontend queries `WHERE user_id = ?` → PostgREST 400.
+`household_members` is `id / household_id / helper_id / status / ...` —
+also no `user_id`. The frontend treats `households` as "user owns a
+family" but the DB models it as "employer hires helper(s)". Every Home
+page mount logs 2-4 of these errors. Tolerated but noisy.
+
+### Smell 4 — weekly_menu cache has no algo_version column
+
+`user_weekly_menus` table schema: `id / user_id / week_start / day_index
+/ meal_type / dish_ids / swapped_dish_ids / created_at`. No version
+field. Frontend tracks algo version via two localStorage sentinels
+(`weekly_menu_algo_ver` + `weekly_menu_db_cache_key`); if those get
+out of sync with reality (e.g. user clears one but not the other, or
+their bundle is an old version that wrote them) the DB cache serves
+stale rows forever. Today we DELETEed 10 stale rows manually to bust
+a cache; a `algo_version text` column would make this self-healing.
+

@@ -1345,7 +1345,12 @@ function isPadAllowed(d: any, result: any[]): boolean {
   return true;
 }
 
-function applyLunchTemplate(sorted: any[], target: number, cuisineMode: CuisineMode = 'chinese'): any[] {
+function applyLunchTemplate(
+  sorted: any[],
+  target: number,
+  cuisineMode: CuisineMode = 'chinese',
+  fallbackPool: any[] = [],
+): any[] {
   if (target <= 0 || sorted.length === 0) return [];
   const used = new Set<string>();
   const usedMethods = new Set<string>();
@@ -1373,7 +1378,17 @@ function applyLunchTemplate(sorted: any[], target: number, cuisineMode: CuisineM
 
   // 中餐午餐 — staple + main_protein + veggie_dish + 按分数补，但不超出
   // 1 staple / 1 soup（isPadAllowed 守护）。
-  if (target >= 1) take(pickWithMethodVariety(sorted, d => d.course_type === 'staple',       used, usedMethods));
+  if (target >= 1) {
+    let staple = pickWithMethodVariety(sorted, d => d.course_type === 'staple', used, usedMethods);
+    if (!staple && fallbackPool.length > 0) {
+      staple = fallbackPool.find(d => d.course_type === 'staple' && !used.has(d.id));
+      if (staple && process.env.NODE_ENV !== 'production') {
+        // eslint-disable-next-line no-console
+        console.warn('[lunchTemplate] staple not in top-25 — fell back to broader pool');
+      }
+    }
+    take(staple);
+  }
   if (target >= 2) take(pickWithMethodVariety(sorted, d => d.course_type === 'main_protein', used, usedMethods));
   if (target >= 3) take(pickWithMethodVariety(sorted, d => d.course_type === 'veggie_dish',  used, usedMethods));
   while (result.length < target) {
@@ -1396,7 +1411,12 @@ function applyLunchTemplate(sorted: any[], target: number, cuisineMode: CuisineM
  * 汤强制：如果池子里 soup 一道都没有，就只能 fallback，但记 console 警示，
  * 让上层知道该补 soup 数据。
  */
-function applyDinnerTemplate(sorted: any[], target: number, _cuisineMode: CuisineMode = 'chinese'): any[] {
+function applyDinnerTemplate(
+  sorted: any[],
+  target: number,
+  _cuisineMode: CuisineMode = 'chinese',
+  fallbackPool: any[] = [],
+): any[] {
   if (target <= 0 || sorted.length === 0) return [];
   const used = new Set<string>();
   const usedMethods = new Set<string>();
@@ -1409,7 +1429,20 @@ function applyDinnerTemplate(sorted: any[], target: number, _cuisineMode: Cuisin
     }
   };
 
-  if (target >= 1) take(pickWithMethodVariety(sorted, d => d.course_type === 'staple',       used, usedMethods));
+  if (target >= 1) {
+    let staple = pickWithMethodVariety(sorted, d => d.course_type === 'staple', used, usedMethods);
+    if (!staple && fallbackPool.length > 0) {
+      // jiangnan 晚餐 staple pool 在 P1 strip 粥后只剩 ~3 道,scoreDish line 919
+      // 的 staple boost 只在 '午餐' → 晚餐 staple 排名进不了 top-25 → silent skip
+      // → slot 空。这里 fall back 到更广的全 pool,保证 staple slot 不空。
+      staple = fallbackPool.find(d => d.course_type === 'staple' && !used.has(d.id));
+      if (staple && process.env.NODE_ENV !== 'production') {
+        // eslint-disable-next-line no-console
+        console.warn('[dinnerTemplate] staple not in top-25 — fell back to broader pool');
+      }
+    }
+    take(staple);
+  }
   if (target >= 2) take(pickWithMethodVariety(sorted, d => d.course_type === 'main_protein', used, usedMethods));
   if (target >= 3) {
     const leafy = pickWithMethodVariety(sorted, isLeafyVeggie, used, usedMethods);
@@ -1417,11 +1450,18 @@ function applyDinnerTemplate(sorted: any[], target: number, _cuisineMode: Cuisin
     else take(pickWithMethodVariety(sorted, d => d.course_type === 'veggie_dish', used, usedMethods));
   }
   if (target >= 4) {
-    const soup = pickWithMethodVariety(sorted, d => d.course_type === 'soup', used, usedMethods);
+    let soup = pickWithMethodVariety(sorted, d => d.course_type === 'soup', used, usedMethods);
+    if (!soup && fallbackPool.length > 0) {
+      soup = fallbackPool.find(d => d.course_type === 'soup' && !used.has(d.id));
+      if (soup && process.env.NODE_ENV !== 'production') {
+        // eslint-disable-next-line no-console
+        console.warn('[dinnerTemplate] soup not in top-25 — fell back to broader pool');
+      }
+    }
     if (soup) take(soup);
     else if (process.env.NODE_ENV !== 'production') {
       // eslint-disable-next-line no-console
-      console.warn('[dinnerTemplate] no soup in pool — dinner without 汤 violates the 营养主厨 rule');
+      console.warn('[dinnerTemplate] no soup even in broader pool — dinner without 汤 violates the 营养主厨 rule');
     }
   }
   // Pad — 守护 staple / soup 最多各 1（isPadAllowed），否则西餐池 73 staple
@@ -1641,9 +1681,11 @@ export function useRecommendDishes(
         // 70/30 meat/veggie balanceMenu was 营养主厨-blind (没汤、没绿叶、
         // 没主食保证). Templates enforce: 早餐 dry+wet+side, 午餐
         // staple+protein+veggie, 晚餐 staple+protein+leafy+soup.
+        const fallbackPool = scored.map(s => s.dish);
+
         const balanced = mealTime === '早餐' ? applyBreakfastTemplate(sorted, dishCount)
-                       : mealTime === '午餐' ? applyLunchTemplate(sorted, dishCount, cuisineMode)
-                       :                       applyDinnerTemplate(sorted, dishCount, cuisineMode);
+                       : mealTime === '午餐' ? applyLunchTemplate(sorted, dishCount, cuisineMode, fallbackPool)
+                       :                       applyDinnerTemplate(sorted, dishCount, cuisineMode, fallbackPool);
 
         // ── 餐后水果 slot ─────────────────────────────────────────────
         // 午餐 / 晚餐 各挂一份时令水果。不受 cuisine filter (水果中西通用)，
