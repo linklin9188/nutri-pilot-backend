@@ -32,6 +32,8 @@ import { loadFamilyMembers } from "../lib/familyPrefs";
 import { HeartButton } from "../components/HeartButton";
 import DailyNutritionStrip from "../components/DailyNutritionStrip";
 import { toggleEaten, getEatenToday } from "../lib/eatingDiary";
+import { pickBreakfastCombo } from "../lib/breakfastCombos";
+import { DISH_FIELDS } from "../lib/dishFields";
 
 // ── Solar term (节气) calculator ─────────────────────────────────────────────
 
@@ -478,6 +480,44 @@ export default function Home() {
     try { return JSON.parse(localStorage.getItem("generatedMenu") || "[]"); } catch { return []; }
   })();
 
+  // ── Breakfast pool + picker — mirrors WeeklyMenu page (src/pages/WeeklyMenu.tsx
+  // line 70-88) so 早餐 on Home matches 早餐 on the weekly view exactly.
+  // useRecommendDishes' breakfast branch goes through scoreDish + cuisineFilter
+  // on a MIXED pool (breakfast+lunch+dinner+all), so its pickBreakfastCombo
+  // resolves slot candidates against a different ordering than WeeklyMenu page's
+  // dedicated breakfast pool. We bypass that here.
+  const [breakfastPool, setBreakfastPool] = useState<any[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from('dishes')
+        .select(DISH_FIELDS)
+        .eq('meal_type', 'breakfast');
+      if (!cancelled && data) setBreakfastPool(data);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+  const userHometownForBreakfast = (() => {
+    try {
+      const raw = localStorage.getItem('userHometown');
+      return raw ? raw.split(',')[0] : null;
+    } catch { return null; }
+  })();
+  const breakfastDishesFromCombo: any[] = (() => {
+    if (mealTime !== '早餐' || breakfastPool.length === 0) return [];
+    try {
+      const result = pickBreakfastCombo({
+        pool: breakfastPool as any,
+        dayIndex: todayIdx,
+        hometown: userHometownForBreakfast,
+        avoidIngredients: [],
+        avoidTags: [],
+      });
+      return result.dishes as any[];
+    } catch { return []; }
+  })();
+
   // The fruit-of-the-day slot lives in useRecommendDishes' output regardless
   // of which source we pick for the main menu. We append it to whatever
   // baseMenu we end up choosing so the "餐后水果·时令" row keeps showing.
@@ -485,8 +525,11 @@ export default function Home() {
 
   const baseMenu: any[] = (() => {
     if (mealTime === "早餐") {
-      // Breakfast doesn't exist in useWeeklyMenu (generateWeekPlan only
-      // produces lunch + dinner), so 早餐 always uses useRecommendDishes.
+      // Breakfast: use the same dedicated breakfast pool + pickBreakfastCombo
+      // that WeeklyMenu page uses. This guarantees Home's 早餐 matches the
+      // weekly view's 周一/周二/... 早餐 row dish-for-dish. Falls back to
+      // useRecommendDishes only if the dedicated pool hasn't loaded yet.
+      if (breakfastDishesFromCombo.length > 0) return breakfastDishesFromCombo;
       return recommendedDishes.length > 0 ? recommendedDishes : [];
     }
     // 午餐 / 晚餐 — prefer weeklyMenu so "today's menu on Home" matches
