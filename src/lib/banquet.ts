@@ -18,6 +18,7 @@ import { getUserPrefs } from './userPrefs';
 import { getUserId } from './userId';
 import { callComposer, toSummary, type BucketKey, type ComposerResult } from './composerClient';
 import { ALGO_VERSION } from '../hooks/useWeeklyMenu';
+import { DISH_FIELDS } from './dishFields';
 import type { SupabaseDish } from '../hooks/useSupabaseMenu';
 
 // Composer Agent v1 — see .claude/skills/menu-scoring-philosophy/SKILL.md
@@ -428,7 +429,7 @@ export async function planBanquet(opts: BanquetOptions): Promise<BanquetMenu> {
   const extraAvoid = opts.extraAvoid ?? [];
   const { data: rawPool } = await supabase
     .from('dishes')
-    .select('*')
+    .select(DISH_FIELDS)
     .limit(600);
   const pool: SupabaseDish[] = (rawPool ?? []).filter(d => {
     const allTags = [
@@ -581,7 +582,7 @@ export async function swapBanquetDish(
   oldId:   string,
 ): Promise<BanquetDish | null> {
   const prefs = getUserPrefs();
-  const { data: rawPool } = await supabase.from('dishes').select('*').limit(600);
+  const { data: rawPool } = await supabase.from('dishes').select(DISH_FIELDS).limit(600);
   if (!rawPool) return null;
 
   const usedIds = new Set<string>(

@@ -5,6 +5,7 @@ import { getFallbackImage } from '../lib/dishImageFallback';
 import { getUserPrefs } from '../lib/userPrefs';
 import { getUserId } from '../lib/userId';
 import { applyCuisineFilter, type CuisineMode } from '../lib/cuisineFilter';
+import { DISH_FIELDS } from '../lib/dishFields';
 import { hometownMatches, hometownToDbBucket } from '../lib/hometownBuckets';
 import { isNewUserSession } from '../lib/userLifecycle';
 
@@ -1066,7 +1067,7 @@ export async function fetchSwapOptions(
 
   let query = supabase
     .from('dishes')
-    .select('*')
+    .select(DISH_FIELDS)
     .neq('id', currentDish.id)
     .limit(count * 12); // fetch extra so hardFilter has room to survive
 
@@ -1472,7 +1473,7 @@ export function useRecommendDishes(
         // We use 'in' + include NULL via OR filter.
         let dishQuery = supabase
           .from('dishes')
-          .select('*')
+          .select(DISH_FIELDS)
           .or(`meal_type.in.(${allowedMealTypes.join(',')}),meal_type.is.null`)
           .limit(400);
 
@@ -1526,7 +1527,7 @@ export function useRecommendDishes(
           try {
             const { data: fruitRows } = await supabase
               .from('dishes')
-              .select('*')
+              .select(DISH_FIELDS)
               .eq('course_type', 'fruit')
               .limit(30);
             const fruits = (fruitRows ?? []).filter(f => {

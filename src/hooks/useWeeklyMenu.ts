@@ -27,6 +27,7 @@ import { loadIntentBias, applyIntentBias, getIntentHash } from '../lib/intentBia
 import { applyPregnancyAdjustments } from '../lib/pregnancy';
 import { getUserId } from '../lib/userId';
 import { applyCuisineFilter, loadCuisineMode } from '../lib/cuisineFilter';
+import { DISH_FIELDS } from '../lib/dishFields';
 import { hometownMatches, hometownToDbBucket } from '../lib/hometownBuckets';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -1373,7 +1374,7 @@ async function loadFromDB(userId: string, weekStart: string): Promise<WeeklyMenu
     ...dinnerRes.data.flatMap(r => (r.swapped_dish_ids ?? r.dish_ids) as string[]),
     ...(lunchRes.data ?? []).flatMap(r => r.dish_ids as string[]),
   ];
-  const { data: dishRows } = await supabase.from('dishes').select('*').in('id', allIds);
+  const { data: dishRows } = await supabase.from('dishes').select(DISH_FIELDS).in('id', allIds);
   if (!dishRows) return null;
 
   const dishMap = new Map(dishRows.map(d => [d.id, d]));
@@ -1540,10 +1541,11 @@ export function useWeeklyMenu(weekOffset: number = 0) {
           vegetarianOnly:   basePrefs.vegetarianOnly || extraVegetarian,
         };
 
-        // Fetch dish pool (dinner + all-type, limit 400)
+        // Fetch dish pool (dinner + all-type, limit 400).
+        // Explicit column list excludes embedding (vector(768) ≈ 8KB/row).
         let poolQuery = supabase
           .from('dishes')
-          .select('*')
+          .select(DISH_FIELDS)
           .or('meal_type.in.(lunch,dinner,all),meal_type.is.null')
           .limit(400);
 
