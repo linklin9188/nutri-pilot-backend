@@ -40,6 +40,10 @@ const forceAll = args.includes('--all');
 const veganOnly = args.includes('--vegan');
 const limitArg = args.find(a => a.startsWith('--limit='))?.split('=')[1];
 const LIMIT    = limitArg ? parseInt(limitArg) : 10;
+// Scope to dishes seeded by a specific batch (matches dishes.source column).
+// Useful for targeting "the 9 dishes I just inserted" without touching the
+// 200+ dishes that have been image-NULL since the start of the project.
+const sourceArg = args.find(a => a.startsWith('--source='))?.split('=')[1];
 
 // ── Prompt builder ────────────────────────────────────────────────────────────
 function buildPrompt(dish: {
@@ -131,6 +135,7 @@ async function main() {
   const conditions: string[] = [];
   if (!forceAll) conditions.push(`(image_url IS NULL OR image_url = '')`);
   if (veganOnly) conditions.push(`is_vegan = true`);
+  if (sourceArg) conditions.push(`source = '${sourceArg.replace(/'/g, "''")}'`);
 
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
