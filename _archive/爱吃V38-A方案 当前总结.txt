@@ -1,0 +1,199 @@
+爱吃 Aieats v38 A 方案 · 项目当前状态总结
+
+▎ 文档生成时间：2026-05-18
+▎ 主分支：main · HEAD 848e568 · 工作树 clean
+
+---
+1. 项目当前状态
+
+┌────────────────┬───────────────────────────────────────────────────────────────────────────────────────────────┐
+│       项       │                                              值                                               │
+├────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────┤
+│ 产品名         │ 爱吃 Aieats（nothinkeats.com）                                                                │
+├────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────┤
+│ 方案           │ A 方案 · 多 Agent 编排（Composer / Critic / Orchestrator）走向 v38                            │
+├────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────┤
+│ 当前           │ v37（生产 + 仓库一致）                                                                        │
+│ ALGO_VERSION   │                                                                                               │
+├────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────┤
+│ 下一次 bump    │ v38（仅当 scoreDish / scoreForWeek 真正开始消费 018+020 新列时）                              │
+│ 目标           │                                                                                               │
+├────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────┤
+│ 目标用户       │ 大陆港漂带孩子家庭、雇有菲佣 / 印佣的港式中产                                                 │
+├────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────┤
+│ 技术栈         │ React 18 + Vite + TS · Supabase Postgres + Edge Functions (Deno) · Gemini 2.5 Flash +         │
+│                │ Vector(768) · Stripe live HKD · Railway 部署 · 微信 OAuth                                     │
+├────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────┤
+│ 用户身份       │ Custom auth（userId 在 localStorage，auth.users 表空）                                        │
+└────────────────┴───────────────────────────────────────────────────────────────────────────────────────────────┘
+
+---
+2. Migration 进度
+
+已上线（生产 + tracker 全过）
+
+编号: 001–017
+文件名: 历史一系列
+关键内容: 见 docs/HANDOFF.md。3 个"repo 有 / tracker 没"的重复编号文件（004 / 006 / 008），状态已知
+────────────────────────────────────────
+编号: 018
+文件名: 018_dishes_quality_columns.sql
+关键内容: dishes 表加 7 列质量评估字段：kid_acceptance_score / hk_availability_score / helper_friendly_score（0–1
+  numeric）· average_cost_hkd · western_subtype（含
+  french/italian/spanish/american/american_fine/british/german/other_western 枚举）· embedding bytea 占位 ·
+  last_backfilled_at。新增 2 个 partial index。720 行 dishes 安全填默认值。ALGO_VERSION 未 bump
+────────────────────────────────────────
+编号: 019
+文件名: (跳过)
+关键内容: scoring_rules 配置表提案 —— YAGNI 拒绝，详见决议 Rule 6.5
+────────────────────────────────────────
+编号: 020
+文件名: 020_menu_evals_and_vector.sql + .DOWN.sql
+关键内容: 三件事一个事务里搞定：① CREATE EXTENSION vector 0.8.0 WITH SCHEMA extensions；② Sentinel guard 验证 018 的
+  MIGRATION_005_PLACEHOLDER 注释仍在 → DROP COLUMN embedding (bytea) → ADD COLUMN embedding vector(768)；③ 新建
+  menu_evals 表（17 列、jsonb-heavy、Composer/Critic 输出 + 用户行为追踪），5 partial index，RLS anon-insert +
+  anon-select
+
+supabase_migrations.schema_migrations tracker
+
+version='018' ✓ 已记 · version='020' ✓ 已记（write 模式：apply-XXX.ts 用 pg.Client 直接 INSERT (version, name)，statements 列留 NULL，跟 CLI 模式兼容）
+
+当前 dishes 表
+
+- 720 行（含我前晚补的 7 道川菜早餐 + 3 道升级 meal_type='all'）
+- 41 + 7 = 48 列
+- dishes.embedding 为 vector(768) 全 NULL → 等 backfill
+- dishes.last_backfilled_at 为 NULL → backfill cron 的 work queue
+
+menu_evals 表
+
+- 17 列空表
+- 6 个 index（pkey + 5 named）
+- 2 个 RLS policy（anon read/insert 都开放，update/delete 仅 service_role）
+- 等 Composer/Critic 写入
+
+---
+3. 重要决策记录
+
+算法决策（已固化到 .claude/skills/menu-scoring-philosophy/SKILL.md）
+
+Rule 0 · 算法必须公平 —— 同样性质的信号在不同用户身上产生同样强度的偏好。固定 origin 加分表（粤 0.15 / 川 0.10）已弃用。
+
+Rule 1 · 家乡权重显著大于其他 —— hometownMatches() match 给 +0.60；非家乡其他中餐 +0.04。设了家乡的用户家乡菜 net = +0.60，差距 0.56。没设家乡的用户走平等模式（四大中餐 +0.08 一律）。
+
+Rule 2 · 使用数据走累积计数 + 幂次方曲线 ——
+- 存储：user_preference_scores 表里所有 pref_* 列改为累积计数（每次 keep +1，每次 swap −0.5），cap ±25
+- 评分：usagePower(n) = sign(n) × |n|^1.5 × 0.05
+- 标定：5 次川菜 → +0.56 ≈ 家乡 +0.60 持平；10 次 → 完全超过；20 次 → 主导。
+- 替换了旧的 EMA（0.85 衰减 + 0.667 饱和模型）
+
+Rule 3 · 首次推荐特别重要 —— isNewUserSession() 为 true 时：profile-match 每命中 +0.15、social-popularity (health_score / times_kept_in_menu) +0.10/+0.08。返回用户走 prefScores 累积 + 幂次方。
+
+Rule 4 · 高端中餐 chef framing —— 季节性 +0.08（seasonal_tag 命中当前月）；盖饭/便当/炒饭/烩饭 −0.15；粥/稀饭 lunch+dinner 池前 strip；同日 cook_method 重复 −0.30。
+
+Rule 4.5 · 西餐高端 HK premium —— origin='western' 内部二级 bias：意/法/西班牙/地中海/普罗旺斯/摩洛哥/土耳其 等 +0.12；三明治/汉堡/玉米饼/牧羊人派 等 −0.08。
+
+Rule 4.6 · 试用期满锁 Home 菜单 —— !isPro && !isWithinTrial() → <TrialExpiredCard/> 替代菜单。试用期 7 天，从首次登录起算。
+
+Rule 5 · 家乡选项 = 地域大区（2026-05-17 改版）—— 旧八大菜系覆盖率仅 ≈ 60% 大陆人口。新选项 9 chip：华南/华东/华北/东北/西北/西南/华中/港澳台 + 都行 / 没偏好。华中 → northern（河南占人口主导）。Legacy 八大菜系 id 保留兼容。
+
+Rule 5.5 · 早餐 pool 是 DB-shape-dependent —— pickBreakfastCombo pool-aware rotation：当前 combo 在 pool 中 0 命中时自动 rotate 到 universal '*' combo。修了 sichuan × breakfast = 0 的 DB gap（已补 7 道川菜早餐 + 3 道升级 meal_type='all'）。
+
+Rule 6.5 · 拒绝 scoring_rules 配置表（2026-05-18）—— YAGNI + 双源真相风险 + LLM agent self-knowledge 应读 skill 文件不读 DB + 配置变更走 SQL 比 git 慢 + 提案自带的 USE_DB_SCORING_RULES=false escape hatch 证明这是 dead infrastructure。重启条件：实际 A/B 实验调度或 Composer/Critic 真的需要结构化访问。
+
+Rule 6 · Cache invalidation 纪律 —— 改算法必须 bump ALGO_VERSION。v25 → v37 完整历史在 skill。
+
+Rule 7 · Disagree on the record —— 收到产品方提案时先说反对意见再实现；决议结果固化到 skill 留 paper trail。Rule 6.5 就是这条流程的产物。
+
+用户群体细分
+
+┌────────┬───────────┬────────────────────────────────┐
+│  大区  │ DB bucket │            覆盖省份            │
+├────────┼───────────┼────────────────────────────────┤
+│ 华南   │ cantonese │ 粤·闽·桂·琼                    │
+├────────┼───────────┼────────────────────────────────┤
+│ 华东   │ jiangnan  │ 沪·苏·浙·皖                    │
+├────────┼───────────┼────────────────────────────────┤
+│ 华北   │ northern  │ 京·津·冀·晋·蒙                 │
+├────────┼───────────┼────────────────────────────────┤
+│ 东北   │ northern  │ 辽·吉·黑                       │
+├────────┼───────────┼────────────────────────────────┤
+│ 西北   │ northern  │ 陕·甘·宁·青·新                 │
+├────────┼───────────┼────────────────────────────────┤
+│ 西南   │ sichuan   │ 川·渝·湘·黔·滇                 │
+├────────┼───────────┼────────────────────────────────┤
+│ 华中   │ northern  │ 鄂·赣·豫（豫主导，偏北方面食） │
+├────────┼───────────┼────────────────────────────────┤
+│ 港澳台 │ cantonese │ 港·澳·台                       │
+└────────┴───────────┴────────────────────────────────┘
+
+---
+4. 下一步计划
+
+即将执行的 migration / 工作
+
+┌───────┬─────────────────────────────────────────────────────────────────────────────────────────┬──────────────┐
+│ 序号  │                                          内容                                           │     状态     │
+├───────┼─────────────────────────────────────────────────────────────────────────────────────────┼──────────────┤
+│ 021 / │ Embedding backfill 脚本 —— 调 Gemini text-embedding-004 给 720 行 dishes 生成 768d      │              │
+│  TBD  │ 向量，写入 dishes.embedding，更新 last_backfilled_at。批量 50/批，幂等 WHERE embedding  │ 待写脚本     │
+│       │ IS NULL OR last_backfilled_at IS NULL。不算 migration，是 backfill job                  │              │
+├───────┼─────────────────────────────────────────────────────────────────────────────────────────┼──────────────┤
+│ 022 / │ Composer Agent 接入 —— 第一个写 menu_evals 的 client。agent='composer' + scenario +     │ 等 prompt    │
+│  TBD  │ output_json。Prompt 从 .claude/skills/menu-scoring-philosophy/SKILL.md 读 17 轴定义     │ 设计         │
+├───────┼─────────────────────────────────────────────────────────────────────────────────────────┼──────────────┤
+│ 023 / │ Critic Agent 接入 —— agent='critic' + composer_run_id link 回 Composer · outcome ∈      │ 等 Composer  │
+│  TBD  │ {accepted, revised, revised_2, rejected} + critic_issues jsonb                          │ 跑起来       │
+├───────┼─────────────────────────────────────────────────────────────────────────────────────────┼──────────────┤
+│ 024 / │ Outcome 后台 job —— Cron 扫 menu_evals_pending_outcome_idx，> 24h 无 outcome 的标       │ 等真实流量   │
+│  TBD  │ user_abandoned                                                                          │              │
+├───────┼─────────────────────────────────────────────────────────────────────────────────────────┼──────────────┤
+│ 025+  │ ALGO_VERSION bump v37 → v38 —— 仅当 scoreDish / scoreForWeek 真正开始读 018/020         │ 跟 Composer  │
+│ / TBD │ 新列（kid_acceptance_score / hk_availability_score / embedding 等）时才发生             │ 接入合并     │
+└───────┴─────────────────────────────────────────────────────────────────────────────────────────┴──────────────┘
+
+仍欠的小事
+
+┌──────────────────────────────────────────────────────────────┬─────────────────────────────────────────────────┐
+│                              项                              │                      影响                       │
+├──────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────┤
+│ 验证 11（浏览器层）—— https://nothinkeats.com Console +      │ 020 收尾                                        │
+│ localStorage 正常                                            │                                                 │
+├──────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────┤
+│ dishes.kid_acceptance_score / hk_availability_score /        │ 还在 0.50 默认；Composer 用 0.50 等于无信号     │
+│ helper_friendly_score 的真实数据回填                         │                                                 │
+├──────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────┤
+│ average_cost_hkd 数据回填                                    │ 还全 NULL                                       │
+├──────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────┤
+│ western_subtype 数据回填                                     │ 26 行 western 菜全 NULL                         │
+├──────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────┤
+│ 川菜早餐 dish-seed pipeline 补齐（steps / nutrition / 小美   │ 当前菜数据骨架完整，但 prep_steps_json /        │
+│ ABCD / 图像）                                                │ cook_steps_json / image_url 还空                │
+├──────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────┤
+│ RequireAuth 真实生产测试 —— 多次报"点 tab                    │ 用户上次报过                                    │
+│ 跳回登录"已修，仍需用户实测确认                              │                                                 │
+├──────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────┤
+│ 4D backfill 残留 19%                                         │ 113 道菜 cook_steps 残缺                        │
+└──────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────┘
+
+---
+5. 风险与注意事项
+
+高风险
+
+1. menu_evals RLS anon-insert 风险 —— WITH CHECK (true) 意味着匿名用户能伪造 user_id 注入垃圾数据。当前是 user_feedback / user_preference_scores 的同款模式（CLAUDE.md anonymous-auth 固有妥协）。v1 接受，v2 上线前应改为 service_role-only INSERT 走 edge function。
+2. vector(768) 维度锁死 = Gemini text-embedding-004 —— 一旦 backfill 开始就不能换 embedding 模型（Voyage / OpenAI 维度不同），换的话要重做 020 类型迁移。
+3. DB 720 行远不足以撑 7 天 × 4 人家庭一年的菜单不重样 —— recency_decay < 7d -0.60 / < 14d -0.30 / < 30d -0.15 已经在防重复，但池子小 + 家乡过滤后实际可用菜更少。中长期需扩到 2000+ 道。
+4. scoring_rules 决议是单向的 —— Rule 6.5 已写"重启条件"。如果未来真要做 A/B test，新表名建议是 experiment_assignments 而不是 scoring_rules，更贴近真实需求。
+
+中风险
+
+5. CLAUDE.md / SKILL.md / 代码 三处都描述算法 —— SKILL.md 是最新的真相源。下次大改算法时同步三处避免 drift。
+6. menu_evals.composer_run_id 是 uuid 但无 FK —— Critic 行 link 回 Composer 行靠 app 层维护。如果 app 写错 id，孤立 row 不会自动报错。建 partial index 已经能让查询效率 OK，但数据完整性靠 app 层。
+7. user_preference_scores 累积计数 cap ±25 —— 一个 spam 账号在 25 步内能把 prefScores 推到 cap，cap 之后无效但仍能阻止其他用户的影响进入。这是 power curve 的 sanity bound，不是 abuse 防御。abuse 防御要在 swapFeedback 写入层做（per-user rate limit）。
+
+低风险（仅记录）
+
+8. uuid-ossp / pgcrypto 已装在 extensions schema —— vector 跟它们一致。未来如果要改 search_path，记得 extensions 必须保留。
+9. apply-XXX.ts 模式跟 Supabase CLI 共存 —— 我们走 pg.Client 直接 INSERT tracker，CLI 也能识别（看 version 列）。但 CLI 自己跑会填 statements 列，我们的不填。未来切回 CLI 模式时，已有的 018 / 020 行可能要手动补 statements，或者放弃这两条让 CLI 重跑（DB 已有列会触发 IF NOT EXISTS 跳过，安全）。
+10. docs/HANDOFF.md 提到的 3 个"repo 有 / tracker 没"重复编号文件（004_stripe / 006_household_drop_auth_fk / 008_user_favorite_dishes）—— 它们的内容已通过 node + pg.Client 应用过，DB 状态正确，仅 tracker 没收录。不影响 018 / 020 / 后续工作。

@@ -7,3 +7,12 @@ supabase/.temp/
 
 # Local Claude Code session locks
 .claude/scheduled_tasks.lock
+
+# Telepot file-bridge (Cowork ↔ CLI relay, never commit)
+_bridge/
+
+# macOS junk
+.DS_Store
+
+# Claude Code local settings
+.claude/settings.local.json
