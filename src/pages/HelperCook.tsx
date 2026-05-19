@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { type CookStep } from "../hooks/useSupabaseMenu";
 import { useLanguage } from "../contexts/LanguageContext";
+import { getUserId } from "../lib/userId";
 
 interface DishWithCook {
   id: string;
@@ -183,7 +184,7 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
   onBack: () => void;
   onNextDish: (dish: DishWithCook) => void;
 }) {
-  const { t4, isChinese } = useLanguage();
+  const { t4, isChinese, language } = useLanguage();
   // Same single-language picker as DishListScreen — used in header, completion
   // banner, and the "next dish" CTA so the toggle reaches every label.
   const dishTitle = (d: DishWithCook) =>
@@ -193,6 +194,30 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
   const [completed, setCompleted] = useState<Set<number>>(new Set());
   const [timers, setTimers] = useState<Record<number, TimerState>>({});
   const activeTimerRef = useRef<number | null>(null);
+
+  // Helper feedback ✓ acks per current step (keys: "<stepIdx>-<type>").
+  // Cleared after 3s so the button returns to normal — feedback is fire-and-forget,
+  // the silent retry below makes failures invisible to the helper.
+  const [feedbackAck, setFeedbackAck] = useState<Set<string>>(new Set());
+  async function sendStepFeedback(type: 'cant_understand' | 'too_hard' | 'missing_ingredient') {
+    const ackKey = `${currentIdx}-${type}`;
+    setFeedbackAck(prev => { const s = new Set(prev); s.add(ackKey); return s; });
+    setTimeout(() => {
+      setFeedbackAck(prev => { const s = new Set(prev); s.delete(ackKey); return s; });
+    }, 3000);
+    const payload = {
+      user_id: getUserId() ?? 'anonymous',
+      dish_id: dish.id,
+      step_index: currentIdx,
+      feedback_type: type,
+      locale: language,
+    };
+    const attempt = () => supabase.from('user_feedback').insert(payload);
+    try {
+      const { error } = await attempt();
+      if (error) await attempt(); // silent retry once (table-missing / transient)
+    } catch { /* silent — helper should never see an error */ }
+  }
 
   const step = steps[currentIdx];
   const isFirst = currentIdx === 0;
@@ -421,6 +446,47 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
             </div>
           )}
         </div>
+
+        {/* Helper feedback buttons — 3 zero-cognition-load 1-taps for the
+            person actually cooking. Drives the B 数据飞轮: every tap goes
+            to user_feedback with step_index so we know WHICH step in WHICH
+            dish is unclear / too hard / missing materials. Posts silently
+            (with one retry) so a failure never surfaces to the helper. */}
+        {(() => {
+          const FB_BUTTONS: Array<{
+            type: 'cant_understand' | 'too_hard' | 'missing_ingredient';
+            emoji: string;
+            label: { en: string; zh: string; tl: string; id: string };
+          }> = [
+            { type: 'cant_understand',     emoji: '❓', label: { en: "Don't get it", zh: '看不懂',  tl: 'Hindi maintindihan', id: 'Tidak paham' } },
+            { type: 'too_hard',            emoji: '🥵', label: { en: 'Too hard',     zh: '太难了',  tl: 'Masyadong mahirap',  id: 'Terlalu sulit' } },
+            { type: 'missing_ingredient', emoji: '🛒', label: { en: 'Missing item', zh: '没材料',  tl: 'Walang sangkap',     id: 'Bahan tidak ada' } },
+          ];
+          return (
+            <div className="grid grid-cols-3 gap-2">
+              {FB_BUTTONS.map(({ type, emoji, label }) => {
+                const acked = feedbackAck.has(`${currentIdx}-${type}`);
+                return (
+                  <button key={type} onClick={() => sendStepFeedback(type)}
+                    className="rounded-2xl py-2.5 px-2 flex flex-col items-center gap-1 active:scale-95 transition-transform"
+                    style={{
+                      background: acked ? 'rgba(37,211,102,0.16)' : 'rgba(255,255,255,0.05)',
+                      border: `1px solid ${acked ? 'rgba(37,211,102,0.35)' : 'rgba(255,255,255,0.10)'}`,
+                    }}>
+                    <span style={{ fontSize: 20, lineHeight: 1 }}>{acked ? '✓' : emoji}</span>
+                    <span style={{
+                      fontSize: 11, fontWeight: 600,
+                      color: acked ? '#25D366' : 'rgba(255,255,255,0.65)',
+                      lineHeight: 1.2, textAlign: 'center',
+                    }}>
+                      {t4(label.en, label.zh, label.tl, label.id)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          );
+        })()}
 
         {/* Timer */}
         {hasTimer && (
