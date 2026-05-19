@@ -63,7 +63,8 @@ Adding a SKU: confirm the price exists in **live** Stripe (test-mode IDs = silen
 ## DB conventions
 
 - `dish_ids` columns are **`uuid[]`**, NOT `text[]`. Manual SQL must cast `::uuid[]`.
-- `user_profiles.display_name` is **required** — many sites assume non-null.
+- `user_profiles.display_name` —— 应用层假设非空 (many sites read it directly without null-check)，**但生产 DB 实际是 nullable**（Database 部门 2026-05-19 P3 核查证实 `information_schema.columns` is_nullable=YES）。这是 schema 与代码假设的偏离，未来要么把 DB 改成 `NOT NULL` 配 default、要么前端全面 null-safe。本轮（Smell 4 + Smell 1 阶段 1）不动它，遇到 NULL 行会 fallback 到 `userId.slice(0,8)` 之类的兜底。
+- `user_profiles` 主键叫 **`id text`**（**text 不是 uuid**；Database 2026-05-19 P3 实查 `information_schema` 证实）。**没有单独的 `user_id` 列**——`getUserId()` 返回的 string 就直接对应 `user_profiles.id`。FK 目标必须写 `user_profiles(id)`，不要写 `user_profiles(user_id)`（不存在）。注意：`household_members.helper_id` 是 `uuid` 类型，要 JOIN `user_profiles.id` 需要 cast：`hm.helper_id::text = up.id`。这一不一致也意味着 B-1 migration 在加 FK 前必须先把 `helper_id` `ALTER COLUMN TYPE text USING helper_id::text`。
 - Health-tag boolean columns: `is_low_sodium` / `is_low_sugar` / `is_low_purine` / `is_blood_tonic` / `is_sleep_aid` / `is_yin_nourish` / `is_qi_tonic` / `is_mood_boost` / `is_anti_aging` / `is_beauty` / `is_anti_inflammation` / `is_eye_care`.
 - Apply migrations to remote with `supabase db push` (the user uses production Supabase; local DB is rarely truth).
 - Don't run destructive DB operations (`db reset`, dropping columns, `truncate`) without explicit ack.
@@ -196,15 +197,20 @@ DB schema 重申（无变化）：
 - 业务模型是"雇主雇佣保姆"，不是"用户拥有家庭"。前端代码层面已经按这个模型查，
   问题在 DB 的 FK + RLS 两个补丁没跟上。
 
-**修复方向 B**（推荐，见 `docs/DIAG_smell3_households.md` §3）：
-- B-1（DB 部门）：给 `household_members.helper_id` 加 FK→`user_profiles(user_id)`
-  （**不是** `auth.users`，保持符合本节顶部硬性不变量 #1）；
-  把两张表的 RLS 全改成 `USING (true)`（匿名 Auth 模型靠 client 端 userId 隔离）。
-- B-2（Backend 部门）：`Home.tsx:425` 嵌入语法加 `!helper_id` hint；3 处 INSERT 加
-  error 兜底（不要 try/catch 吞错，让 PostgREST 真相露出）。
+**修复方向 B**（推荐，见 `docs/DIAG_smell3_households.md` §3 + Database 2026-05-19 P3 核查）：
+- **B-1 前置**：先把 `household_members.helper_id` 从 `uuid` 改成 `text`：
+  `ALTER TABLE household_members ALTER COLUMN helper_id TYPE text USING helper_id::text;`
+  （因为 `user_profiles.id` 是 `text`，类型不匹配不能直接加 FK）
+- **B-1 主体**（DB 部门）：
+  1. 先清洗孤儿数据：`DELETE FROM household_members WHERE helper_id::text NOT IN (SELECT id FROM user_profiles);`
+     （Database P3 实查发现 2 行 household_members 中 1 行 helper_id 无对应 user_profile，50% 孤儿率）
+  2. 加 FK：`ALTER TABLE household_members ADD CONSTRAINT household_members_helper_id_fkey FOREIGN KEY (helper_id) REFERENCES user_profiles(id) ON DELETE CASCADE;`
+     **FK 目标是 `user_profiles(id)`**（不是 `user_id`——该列不存在；也不是 `auth.users`——硬性不变量 #1）
+  3. DROP 5 条原 RLS policy（全部依赖 auth.uid()），CREATE 5 条 anon-first policy（`USING (true)` 或基于 application userId 应用层过滤）
+  4. 特别注意：原 migration 001 中 "helper can read household by invite code" 是 `USING (true)`，等于 households 全表对匿名读者开放——B-1 必须收紧（按 invite_code 或 helper_id 过滤）
+- **B-2**（Backend 部门）：`Home.tsx:425` 嵌入语法加 `!helper_id` hint；3 处 INSERT 加 error 兜底（不要 try/catch 吞错，让 PostgREST 真相露出）
 
-落地前置：DB 部门必须先用 `DIAG §2.3` 的 `pg_policies` / `information_schema` SQL
-核对生产真实 RLS / FK 状态（生产可能被 dashboard 改过），再决定 B-1 的具体迁移内容。
+⚠️ 这套 B-1 SQL 草案已经吸收了 Database 2026-05-19 P3 实查发现的 §A 主键名 / §C 类型迁移 / §D 全开 RLS 三处偏离。落地前 Architect 还要做一次复审拍板。
 
 ### Smell 4 — weekly_menu cache has no algo_version column (RESOLVED 2026-05-19)
 

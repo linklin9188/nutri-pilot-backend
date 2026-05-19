@@ -74,9 +74,13 @@
 ARRAY['...']::uuid[]
 ```
 
-### 3. user_profiles.display_name 非空
+### 3. user_profiles.display_name 应用假设非空，但生产实际 nullable
 
-`display_name` 列有业务代码假设非空。新增行必须填充，迁移时注意 NOT NULL 约束处理。
+⚠️ **生产 schema 与应用假设偏离**（Database 2026-05-19 P3 实查 `information_schema.columns` 证实 `is_nullable=YES`）。
+
+业务代码（多处 `user_profiles.display_name` 直接读，未 null-check）假设非空，但 DB 实际允许 NULL。后果：行 INSERT 不带 display_name 时不会 reject，前端读到 NULL 可能崩。
+
+**未来要做**（P5 候选，本轮 Smell 4 + Smell 1 阶段 1 不动它）：要么把 DB 改成 `NOT NULL DEFAULT ''`（先 backfill NULL 行）、要么前端全面 null-safe（推荐后者，符合"DB schema = source of truth"原则）。
 
 ### 4. 禁止破坏性操作
 
@@ -98,12 +102,14 @@ is_anti_aging / is_beauty / is_anti_inflammation / is_eye_care
 ```
 
 ### user_profiles
-关键列：`user_id text`（非 FK）、`display_name text NOT NULL`、`hometown_cuisine text`（取值：`jiangnan` / `cantonese` / …DB bucket 值）、`dietary_goal text`、`taste_pref text`
+⚠️ **2026-05-19 P3 订正**：表主键是 `id text`（不是 `user_id`，不存在 `user_id` 列）；`display_name` 实际 nullable。
 
-### user_weekly_menus（已知 smell）
-当前列：`id / user_id / week_start / day_index / meal_type / dish_ids uuid[] / swapped_dish_ids uuid[] / created_at`
-**缺失**：`algo_version text` 列 → 导致缓存无法自愈，手动 DELETE 是临时方案。
-**待做 migration**：加 `algo_version text` 列。
+关键列：`id text` PK（**等于 `getUserId()` 返回值，无独立 user_id 列**）、`display_name text` **nullable**、`hometown_cuisine text`（取值：`jiangnan` / `cantonese` / …DB bucket 值）、`dietary_goal text`、`taste_pref text`
+
+### user_weekly_menus（Smell 4 已修复 2026-05-19）
+当前列：`id / user_id / week_start / day_index / meal_type / dish_ids uuid[] / swapped_dish_ids uuid[] / created_at / algo_version text / cache_key text`
+
+migration `024_add_algo_version.sql` 加了 `algo_version` + `cache_key` 两列（均 nullable），前端用它们做缓存失效判断，替代了原 localStorage sentinel 方案。详 `docs/SPEC_algo_version_migration.md`。
 
 ### households（已知 smell）
 当前列：`id / employer_id / name / invite_code / created_at`
