@@ -1348,18 +1348,18 @@ function generateWeekPlan(
 
 // ── Supabase persistence ──────────────────────────────────────────────────────
 
-async function loadFromDB(userId: string, weekStart: string): Promise<WeeklyMenu | null> {
+async function loadFromDB(userId: string, weekStart: string, lsKey: string): Promise<WeeklyMenu | null> {
   const [dinnerRes, lunchRes] = await Promise.all([
     supabase
       .from('user_weekly_menus')
-      .select('day_index, dish_ids, swapped_dish_ids')
+      .select('day_index, dish_ids, swapped_dish_ids, algo_version, cache_key')
       .eq('user_id', userId)
       .eq('week_start', weekStart)
       .eq('meal_type', 'dinner')
       .order('day_index'),
     supabase
       .from('user_weekly_menus')
-      .select('day_index, dish_ids')
+      .select('day_index, dish_ids, algo_version, cache_key')
       .eq('user_id', userId)
       .eq('week_start', weekStart)
       .eq('meal_type', 'lunch')
@@ -1369,6 +1369,15 @@ async function loadFromDB(userId: string, weekStart: string): Promise<WeeklyMenu
   if (dinnerRes.error || !dinnerRes.data || dinnerRes.data.length < 7) return null;
   // Force regeneration if lunch rows are missing (e.g. saved before lunch was implemented)
   if (!lunchRes.data || lunchRes.data.length === 0) return null;
+
+  // Stale check (SPEC §3.1): any row mismatching ALGO_VERSION or current lsKey →
+  // regenerate. Catches algo upgrades AND non-algo dimension changes (cuisine /
+  // headcount / eating / intent) that are encoded into lsKey but not into the
+  // (user_id, week_start, day_index, meal_type) DB primary key.
+  const stale = (row: any) =>
+    row.algo_version !== ALGO_VERSION || row.cache_key !== lsKey;
+  if (dinnerRes.data.some(stale)) return null;
+  if (lunchRes.data.some(stale)) return null;
 
   const allIds = [
     ...dinnerRes.data.flatMap(r => (r.swapped_dish_ids ?? r.dish_ids) as string[]),
@@ -1400,21 +1409,25 @@ async function loadFromDB(userId: string, weekStart: string): Promise<WeeklyMenu
   return { weekStart, days };
 }
 
-async function saveToDB(userId: string, menu: WeeklyMenu): Promise<void> {
+async function saveToDB(userId: string, menu: WeeklyMenu, lsKey: string): Promise<void> {
   const rows = menu.days.flatMap(day => [
     {
-      user_id:    userId,
-      week_start: menu.weekStart,
-      day_index:  day.dayIndex,
-      meal_type:  'dinner',
-      dish_ids:   day.dishes.map(d => d.id),
+      user_id:      userId,
+      week_start:   menu.weekStart,
+      day_index:    day.dayIndex,
+      meal_type:    'dinner',
+      dish_ids:     day.dishes.map(d => d.id),
+      algo_version: ALGO_VERSION,
+      cache_key:    lsKey,
     },
     ...(day.lunchDishes.length > 0 ? [{
-      user_id:    userId,
-      week_start: menu.weekStart,
-      day_index:  day.dayIndex,
-      meal_type:  'lunch',
-      dish_ids:   day.lunchDishes.map(d => d.id),
+      user_id:      userId,
+      week_start:   menu.weekStart,
+      day_index:    day.dayIndex,
+      meal_type:    'lunch',
+      dish_ids:     day.lunchDishes.map(d => d.id),
+      algo_version: ALGO_VERSION,
+      cache_key:    lsKey,
     }] : []),
   ]);
 
@@ -1477,25 +1490,18 @@ export function useWeeklyMenu(weekOffset: number = 0) {
       const weekStart = getWeekStartISO(weekOffset);
       const userId    = getUserId() ?? 'anonymous';
 
-      // 1. Try DB cache first — but SKIP if algo version has changed since last save.
-      // The key "weekly_menu_algo_ver" tracks which version generated the DB rows.
-      // If it differs from ALGO_VERSION, the stored rows are stale and must be regenerated.
-      // Also SKIP if the local cache key has changed since last DB save — this
-      // catches cuisine/headcount/eating/intent toggles that the DB schema
-      // (keyed only by user_id + week_start + meal_type) can't distinguish.
-      const savedAlgoVer = localStorage.getItem('weekly_menu_algo_ver');
-      const savedDbCacheKey = localStorage.getItem('weekly_menu_db_cache_key');
+      // 1. Try DB cache first — DB columns (algo_version, cache_key) are the
+      // sole stale signal. loadFromDB returns null when any row mismatches the
+      // current ALGO_VERSION or current lsKey (cuisine/headcount/eating/intent
+      // dimensions are encoded into lsKey via getCacheKey).
       const { dishesPerDay, kidSlots, adults: hcAdults, kids: hcKids } = calcDishesForToday();
       const lsKey = getCacheKey(weekStart);
-      const dbCacheValid = savedAlgoVer === ALGO_VERSION && savedDbCacheKey === lsKey;
 
-      if (dbCacheValid) {
-        const cached = await loadFromDB(userId, weekStart);
-        if (cached && !cancelled) {
-          setWeeklyMenu(cached);
-          setLoading(false);
-          return;
-        }
+      const cached = await loadFromDB(userId, weekStart, lsKey);
+      if (cached && !cancelled) {
+        setWeeklyMenu(cached);
+        setLoading(false);
+        return;
       }
 
       // 2. Try localStorage cache — key includes headcount + eating selection
@@ -1646,12 +1652,10 @@ export function useWeeklyMenu(weekOffset: number = 0) {
 
         if (cancelled) return;
 
-        // Persist — mark which algo version generated this menu so DB cache
-        // can be invalidated on next algo upgrade (see weekly_menu_algo_ver check above)
+        // Persist — algo_version + cache_key are written into the DB row by
+        // saveToDB so the next loadFromDB can detect stale data on its own.
         localStorage.setItem(lsKey, JSON.stringify(menu));
-        localStorage.setItem('weekly_menu_algo_ver', ALGO_VERSION); // tracks version for DB cache validity
-        localStorage.setItem('weekly_menu_db_cache_key', lsKey);   // cache key the DB rows were generated for
-        saveToDB(userId, menu).catch(() => {});
+        saveToDB(userId, menu, lsKey).catch(() => {});
         saveToHistory(userId, menu).catch(() => {});
 
         setWeeklyMenu(menu);
@@ -1697,6 +1701,8 @@ export function useWeeklyMenu(weekOffset: number = 0) {
       meal_type:        'dinner',
       dish_ids:         weeklyMenu.days[dayIndex].dishes.map(d => d.id),
       swapped_dish_ids: day.dishes.map(d => d.id),
+      algo_version:     ALGO_VERSION,
+      cache_key:        lsKey,
     }, { onConflict: 'user_id,week_start,day_index,meal_type' });
   }
 
