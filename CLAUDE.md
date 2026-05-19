@@ -30,7 +30,7 @@ Frontend bundle has NO Gemini key. `VITE_GEMINI_API_KEY` is removed.
 - New Gemini call site → add a new `endpoint` to `supabase/functions/gemini-proxy/index.ts`, never reintroduce direct frontend calls.
 
 ### `ALGO_VERSION` cache busting
-Constant in `src/hooks/useWeeklyMenu.ts`. Currently **`v26`**.
+Constant in `src/hooks/useWeeklyMenu.ts`. Currently **`v37`** (last bumped pre-2026-05-19; Smell 4 fix shipped 2026-05-19 retired the two localStorage sentinels in favor of DB columns `user_weekly_menus.algo_version` + `cache_key`).
 
 - ANY change to scoring / scaling / filter / breakfast template / slot allocation → **bump** it.
 - Downstream cache readers (`VerifyIngredients.tsx` for procurement etc.) MUST `import { ALGO_VERSION }`, never hardcode the version string.
@@ -138,10 +138,30 @@ WeeklyMenu page renders via `useWeeklyMenu/generateWeekPlan` (in
 `src/hooks/useWeeklyMenu.ts`). Different scoring functions
 (`scoreDish` vs `scoreForWeek`), different sampling (sort-then-template
 vs weightedRandom), different cache layers, different 粥 strip behavior.
-Today we papered over it by having Home prefer `weeklyMenu.days[todayIdx]`
-when present, but the two algorithms still both run and the smell is
-intact. Symptom: any rule we add to one side silently differs from the
-other side until somebody compares screenshots.
+
+**Phase 1 fix shipped 2026-05-19** (see `docs/DIAG_smell1_two_algos.md`,
+direction A phase 1): Home 午/晚 tab now permanently renders
+`weeklyMenu.days[todayIdx]` with skeleton during load — no longer falls back to
+`useRecommendDishes`. The fallback hook is retained for fruit slot + breakfast
+path only. Two scoring pipelines still both run; **phase 2** (merge `scoreDish`
+into `scoreForWeek`, drop `useRecommendDishes` entirely, bump ALGO_VERSION to
+v40) is the root fix and is pending CEO scheduling.
+
+**3 hidden dimensions** not in the original write-up (discovered by Algorithm
+2026-05-19, see `docs/DIAG_smell1_two_algos.md` §1):
+
+1. **Same-day title-keyword hard dedup** lives only in `useWeeklyMenu`
+   (`dayTitleKeywords` + `extractTitleKeyword` at `useWeeklyMenu.ts:870-916`).
+   `useSupabaseMenu` only has cross-meal ID dedup — different dedup dimension
+   entirely. Rules touching one don't reach the other.
+2. **Fruit fallback slot** lives only in `useRecommendDishes`
+   (`useSupabaseMenu.ts:1690-1716`). WeeklyMenu's `day.dishes` carries no fruit
+   — Home stitches it back from `recommendedDishes` (`Home.tsx:524, 551, 560`)
+   even when reading from `weeklyMenu`.
+3. **Breakfast is a third independent path**: page-level
+   `src/pages/WeeklyMenu.tsx:70-88` and `src/pages/Home.tsx:489-519` both run
+   their own `pickBreakfastCombo` directly — not via either hook. So Smell 1
+   is actually "three menus, not two" for breakfast specifically.
 
 ### Smell 2 — User profile stored in two places with no sync layer
 
@@ -155,23 +175,52 @@ via `HOMETOWN_TO_DB_BUCKETS` but writes don't symmetrically propagate.
 Result: hometown shown in UI ≠ hometown used in scoring on edge cases,
 and any new field added to one side won't reach the other.
 
-### Smell 3 — `households` table schema doesn't match how the frontend reads it
+### Smell 3 — `households`/`household_members` 嵌入查询与 RLS 与匿名 Auth 三方冲突
 
-DB schema: `id / employer_id / name / invite_code / created_at`. No
-`user_id` column. Frontend queries `WHERE user_id = ?` → PostgREST 400.
-`household_members` is `id / household_id / helper_id / status / ...` —
-also no `user_id`. The frontend treats `households` as "user owns a
-family" but the DB models it as "employer hires helper(s)". Every Home
-page mount logs 2-4 of these errors. Tolerated but noisy.
+⚠️ **原描述（"前端用 `WHERE user_id = ?` 查 → PostgREST 400"）不准确**。
+Backend 2026-05-19 全量 grep 验证：前端从未对 `households` / `household_members`
+用 `user_id` 查。所有查询用的都是 `employer_id` 或 `helper_id`，字段名与
+DB 对齐（见 `docs/DIAG_smell3_households.md` §1）。
 
-### Smell 4 — weekly_menu cache has no algo_version column
+每次 Home mount 报 2-4 条 PostgREST 400 的真正根因有两个：
 
-`user_weekly_menus` table schema: `id / user_id / week_start / day_index
-/ meal_type / dish_ids / swapped_dish_ids / created_at`. No version
-field. Frontend tracks algo version via two localStorage sentinels
-(`weekly_menu_algo_ver` + `weekly_menu_db_cache_key`); if those get
-out of sync with reality (e.g. user clears one but not the other, or
-their bundle is an old version that wrote them) the DB cache serves
-stale rows forever. Today we DELETEed 10 stale rows manually to bust
-a cache; a `algo_version text` column would make this self-healing.
+(a) **嵌入资源关系不存在** — `Home.tsx:425` 用 PostgREST 嵌入语法依赖
+    `household_members.helper_id → user_profiles` 的 FK，但此 FK **从未存在**
+    (migration 006 drop 了 `auth.users` FK，但 `user_profiles` FK 也没补上)。
+(b) **RLS 策略仍依赖 `auth.uid()`** — migration 001 给两张表的 RLS 全部是
+    `USING (auth.uid() = ...)`，与本项目的匿名 Auth 模型直接冲突，INSERT 静默失败。
+
+DB schema 重申（无变化）：
+- `households` = `id / employer_id / name / invite_code / created_at`（employer 拥有家庭）
+- `household_members` = `id / household_id / helper_id / status / ...`（保姆与家庭的关联）
+- 业务模型是"雇主雇佣保姆"，不是"用户拥有家庭"。前端代码层面已经按这个模型查，
+  问题在 DB 的 FK + RLS 两个补丁没跟上。
+
+**修复方向 B**（推荐，见 `docs/DIAG_smell3_households.md` §3）：
+- B-1（DB 部门）：给 `household_members.helper_id` 加 FK→`user_profiles(user_id)`
+  （**不是** `auth.users`，保持符合本节顶部硬性不变量 #1）；
+  把两张表的 RLS 全改成 `USING (true)`（匿名 Auth 模型靠 client 端 userId 隔离）。
+- B-2（Backend 部门）：`Home.tsx:425` 嵌入语法加 `!helper_id` hint；3 处 INSERT 加
+  error 兜底（不要 try/catch 吞错，让 PostgREST 真相露出）。
+
+落地前置：DB 部门必须先用 `DIAG §2.3` 的 `pg_policies` / `information_schema` SQL
+核对生产真实 RLS / FK 状态（生产可能被 dashboard 改过），再决定 B-1 的具体迁移内容。
+
+### Smell 4 — weekly_menu cache has no algo_version column (RESOLVED 2026-05-19)
+
+**已修复 2026-05-19**。migration `024_add_algo_version.sql` 给
+`user_weekly_menus` 加了两列 `algo_version text` + `cache_key text`（均 nullable）。
+前端 `useWeeklyMenu.ts` 改为：
+
+- SELECT 取回这两列，任一 ≠ 当前 bundle 的 ALGO_VERSION / lsKey → 判 stale，重新生成；
+- INSERT / UPSERT / swapDish 时同时写入这两列；
+- 两个 localStorage sentinel（`weekly_menu_algo_ver` + `weekly_menu_db_cache_key`）
+  路径已彻底删除，`grep -rn` 在 `src/` 下零残留。
+
+**为什么是两列而非一列**：`algo_version` 解决算法版本失步（原 Smell 4 主因），
+`cache_key` 解决 cuisine / eating / intent / dpd 等非算法维度变动时旧菜单仍被命中
+的副作用（UI 实施 SPEC 时发现的 R3 漏洞）。两列同表、同 nullable text、同
+"缓存失效信号"语义，物理上一起加更简洁，回滚也整体回滚。
+
+详 `docs/SPEC_algo_version_migration.md` + Architect 26 项复审通过记录。
 
