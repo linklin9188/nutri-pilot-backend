@@ -109,18 +109,37 @@ export default function DailyNutritionStrip({ meals, kcalTarget }: Props) {
             {snap.kcal.total} / {snap.kcal.target} kcal
           </span>
         </div>
-        {/* Visual energy bar split into 3 segments by meal */}
+        {/* Visual energy bar split into 3 segments by meal. Each segment
+            uses a linear-gradient that ends in the next meal's color so the
+            boundary blends instead of cutting hard — when all three meals
+            share a status the bar reads as one smooth color; when they
+            differ (good → warn → over) the eye sees a smooth transition
+            instead of three blocks. */}
         <div className="flex h-2 rounded-full overflow-hidden mb-2" style={{ background: 'rgba(0,0,0,0.06)' }}>
-          {snap.kcal.total > 0 && (
-            <>
-              <div title={`早餐 ${snap.kcal.splitPct.breakfast}% (目标 30%)`}
-                style={{ width: `${snap.kcal.splitPct.breakfast}%`, background: tint(splitStat.breakfast) }} />
-              <div title={`午餐 ${snap.kcal.splitPct.lunch}% (目标 40%)`}
-                style={{ width: `${snap.kcal.splitPct.lunch}%`,     background: tint(splitStat.lunch) }} />
-              <div title={`晚餐 ${snap.kcal.splitPct.dinner}% (目标 30%)`}
-                style={{ width: `${snap.kcal.splitPct.dinner}%`,    background: tint(splitStat.dinner) }} />
-            </>
-          )}
+          {snap.kcal.total > 0 && (() => {
+            const cBreak  = tint(splitStat.breakfast);
+            const cLunch  = tint(splitStat.lunch);
+            const cDinner = tint(splitStat.dinner);
+            return (
+              <>
+                <div title={`早餐 ${snap.kcal.splitPct.breakfast}% (目标 30%)`}
+                  style={{
+                    width: `${snap.kcal.splitPct.breakfast}%`,
+                    background: `linear-gradient(90deg, ${cBreak} 0%, ${cBreak} 55%, ${cLunch} 100%)`,
+                  }} />
+                <div title={`午餐 ${snap.kcal.splitPct.lunch}% (目标 40%)`}
+                  style={{
+                    width: `${snap.kcal.splitPct.lunch}%`,
+                    background: `linear-gradient(90deg, ${cLunch} 0%, ${cLunch} 55%, ${cDinner} 100%)`,
+                  }} />
+                <div title={`晚餐 ${snap.kcal.splitPct.dinner}% (目标 30%)`}
+                  style={{
+                    width: `${snap.kcal.splitPct.dinner}%`,
+                    background: cDinner,
+                  }} />
+              </>
+            );
+          })()}
         </div>
 
         {/* ── Row 2 · 必现 5 蛋白 ──────────────────────── */}
