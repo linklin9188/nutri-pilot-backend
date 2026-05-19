@@ -572,23 +572,29 @@ function scoreForWeek({
   const tasteScore = profile.taste_pref && flavorTags.includes(profile.taste_pref) ? 0.25 : 0.0;
   score += tasteScore;
 
-  // ── 4. Usage-data layer — power curve (2026-05-17, user direction) ───────
-  // 用户使用数据成幂次方增长，不是 EMA。每次"keep / engage / cook"行为
-  // 给对应 tag +1.0 (cumulative)，scoring 时套用 cnt^1.5 × scale 的幂曲线，
-  // 让大量同向信号超越画像（家乡 / 五轴）。
+  // ── 4. Usage-data layer — power curve × sigmoid 学习权重 ────────────────
+  // 用户使用数据成幂次方增长 (v33 power curve)。每次"keep / engage / cook"
+  // 行为给对应 tag +1.0 (cumulative)，scoring 时套用 cnt^1.5 × scale。
   // 数值校准：广东人看川菜 5 次后，cuisine_sichuan ≈ 5 → power(5) × 0.05
-  // = 0.56，跟家乡的 +0.60 持平；10 次 → 1.58，超过家乡；20 次 → 4.47，
-  // 完全主导。
+  // = 0.56，跟家乡的 +0.60 持平；10 次 → 1.58，超过家乡；20 次 → 4.47。
+  //
+  // §B (Smell 1 阶段 2 配套，2026-05-19 CEO 决策)：叠加 sigmoid 学习权重
+  // 让冷启动期 (n=0) power curve 衰减 65%，老用户 (n≥30) 略放大到 1.34。
+  // weight = 0.35 + 1.15 * (1 - exp(-n/15))，n = 用户已有非零 prefScores
+  // 信号的 distinct tag 数。15 信号 → 1.07，30 信号 → 1.34，∞ → 1.50。
+  const learnedSignals = Object.values(prefScores)
+    .filter(v => typeof v === 'number' && v !== 0).length;
+  const sigmoidWeight = 0.35 + 1.15 * (1 - Math.exp(-learnedSignals / 15));
   for (const tag of flavorTags) {
     const col = FLAVOR_COL[tag];
-    if (col && prefScores[col]) score += usagePower(prefScores[col]) * 0.6;
+    if (col && prefScores[col]) score += usagePower(prefScores[col]) * 0.6 * sigmoidWeight;
   }
   for (const tag of healthTags) {
     const col = HEALTH_COL[tag];
-    if (col && prefScores[col]) score += usagePower(prefScores[col]) * 0.6;
+    if (col && prefScores[col]) score += usagePower(prefScores[col]) * 0.6 * sigmoidWeight;
   }
   const cuisineCol = CUISINE_COL[origin];
-  if (cuisineCol && prefScores[cuisineCol]) score += usagePower(prefScores[cuisineCol]) * 1.0;
+  if (cuisineCol && prefScores[cuisineCol]) score += usagePower(prefScores[cuisineCol]) * 1.0 * sigmoidWeight;
 
   // ── 5. Spice preference ───────────────────────────────────────────────────
   if (spiceBoost !== 0 && flavorTags.includes('spicy')) {
