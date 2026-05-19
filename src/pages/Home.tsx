@@ -532,35 +532,18 @@ export default function Home() {
       if (breakfastDishesFromCombo.length > 0) return breakfastDishesFromCombo;
       return recommendedDishes.length > 0 ? recommendedDishes : [];
     }
-    // 午餐 / 晚餐 — prefer weeklyMenu so "today's menu on Home" matches
-    // "Mon row in WeeklyMenu page" exactly (user expectation: weekly plan
-    // IS the daily plan). Three fallback gates:
-    //   1. weekly is still loading → recommend (avoid flash of empty)
-    //   2. today is Sat/Sun → weekly doesn't generate weekend rows
-    //   3. weekly returned no row for today's index → recommend
-    // cuisine toggle path: Home dispatches 'nutri-prefs-changed' on
-    // cuisineMode change → useWeeklyMenu listener refreshes; lsKey cache
-    // already includes cuisineMode (getCacheKey line 195-196), so DB cache
-    // is auto-invalidated and a fresh weekly menu is generated for the
-    // new cuisine.
-    const useWeekly = !weeklyLoading && !isWeekend();
+    // 午餐 / 晚餐 — Smell 1 阶段 1：永远从 weeklyMenu 读，不再回退到
+    // useRecommendDishes。weeklyMenu loading / 未就绪 / 周末无行 → 返回
+    // 空数组，由上层渲染 skeleton 或空态 CTA。
     if (mealTime === "午餐") {
-      if (useWeekly) {
-        const lunch = weeklyMenu?.days[todayIdx]?.lunchDishes ?? [];
-        if (lunch.length > 0) {
-          return fruitFromRecommend ? [...lunch, fruitFromRecommend] : lunch;
-        }
-      }
-      return recommendedDishes;
+      const lunch = weeklyMenu?.days[todayIdx]?.lunchDishes ?? [];
+      if (lunch.length === 0) return [];
+      return fruitFromRecommend ? [...lunch, fruitFromRecommend] : lunch;
     }
     // 晚餐
-    if (useWeekly) {
-      const dinner = weeklyMenu?.days[todayIdx]?.dishes ?? [];
-      if (dinner.length > 0) {
-        return fruitFromRecommend ? [...dinner, fruitFromRecommend] : dinner;
-      }
-    }
-    return recommendedDishes.length > 0 ? recommendedDishes : storedMenuRaw;
+    const dinner = weeklyMenu?.days[todayIdx]?.dishes ?? [];
+    if (dinner.length === 0) return [];
+    return fruitFromRecommend ? [...dinner, fruitFromRecommend] : dinner;
   })();
 
   // Manual additions from /favorites "+ 菜单" — keyed by date + mealTime so
@@ -987,9 +970,11 @@ export default function Home() {
             {/* Thin divider — subtle, paper-like */}
             <div className="h-px mx-5" style={{ background: "rgba(0,0,0,0.05)" }} />
 
-            {/* Dish list — bigger photos, editorial typography */}
+            {/* Dish list — bigger photos, editorial typography.
+                Smell 1 阶段 1：午餐 / 晚餐区的 loading 跟随 weeklyMenu
+                hook，早餐仍跟随 useRecommendDishes（早餐池独立加载）。 */}
             <div className="px-5 pt-2 pb-1">
-              {dishesLoading ? (
+              {(mealTime === '早餐' ? dishesLoading : weeklyLoading) ? (
                 <div className="flex flex-col gap-4 py-3">
                   {[1, 2, 3].map(i => (
                     <div key={i} className="flex items-center gap-4 animate-pulse">
