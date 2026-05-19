@@ -96,6 +96,50 @@ function getPrepTimeMin(dish: any): number | null {
   return null;
 }
 
+// Build a 1-line "为什么推荐" hint for a swap candidate vs the dish being
+// replaced. Returns up to 2 axes that differ (cook method / oil-salt level /
+// time / cuisine) so the user can pick on signal, not on the photo alone.
+const COOK_METHOD_LABEL: Record<string, string> = {
+  stir_fry: '炒', steam: '蒸', boil: '煮', stew: '炖', pan_fry: '煎',
+  deep_fry: '炸', grill: '烤', roast: '烤', bake: '焗', mix_cold: '凉拌',
+  raw: '生食', blanch: '焯', braise: '焖',
+};
+const LEVEL_RANK: Record<string, number> = { low: 0, mid: 1, high: 2 };
+function getSwapReasonHint(rejected: any, candidate: any): string {
+  const hints: string[] = [];
+  // 1. Cook method differs — strong visual + health signal
+  const rm = rejected?.cook_method;
+  const cm = candidate?.cook_method;
+  if (rm && cm && rm !== cm && COOK_METHOD_LABEL[cm]) {
+    hints.push(`换成${COOK_METHOD_LABEL[cm]}的做法`);
+  }
+  // 2. Oil level downgrade (high → mid/low or mid → low) reads as healthier
+  const ro = rejected?.oil_level;
+  const co = candidate?.oil_level;
+  if (ro && co && LEVEL_RANK[co] < LEVEL_RANK[ro]) {
+    hints.push(co === 'low' ? '更少油' : '油量下降');
+  } else {
+    // 3. Salt downgrade — second-priority health signal
+    const rs = rejected?.salt_level;
+    const cs = candidate?.salt_level;
+    if (rs && cs && LEVEL_RANK[cs] < LEVEL_RANK[rs]) {
+      hints.push(cs === 'low' ? '更清淡' : '盐量下降');
+    }
+  }
+  // 4. Time delta (>=10min)
+  const rt = getPrepTimeMin(rejected);
+  const ct = getPrepTimeMin(candidate);
+  if (rt && ct && Math.abs(rt - ct) >= 10 && hints.length < 2) {
+    hints.push(ct < rt ? `快 ${rt - ct}min` : `慢 ${ct - rt}min`);
+  }
+  // 5. Cuisine differs — last-resort axis if nothing else surfaced
+  if (hints.length === 0 && rejected?.origin_cuisine && candidate?.origin_cuisine
+      && rejected.origin_cuisine !== candidate.origin_cuisine) {
+    hints.push('换个菜系试试');
+  }
+  return hints.slice(0, 2).join(' · ');
+}
+
 // ── Weather tip overlay (weather code + humidity + temp → dietary nudge) ──────
 
 const WEATHER_CODE_LABEL: Record<number, string> = {
@@ -1440,7 +1484,10 @@ export default function Home() {
                 <p className="text-center py-6" style={{ fontSize: 13, color: "rgba(0,0,0,0.38)" }}>
                   暂无同食材菜品可换
                 </p>
-              ) : swapOptions.map(opt => (
+              ) : swapOptions.map(opt => {
+                const rejected = swappingDishIndex !== null ? displayMenu[swappingDishIndex] : null;
+                const reason = rejected ? getSwapReasonHint(rejected, opt) : '';
+                return (
                 <label key={opt.id}
                   className="flex items-center p-3 rounded-2xl border-2 cursor-pointer transition-all"
                   style={{
@@ -1455,12 +1502,22 @@ export default function Home() {
                           "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=120&h=120&fit=crop";
                       }} />
                   </div>
-                  <div className="flex-1">
-                    <p className="font-semibold" style={{ fontSize: 15 }}>{dishTitle(opt)}</p>
-                    <span className="inline-block mt-1 px-2 py-0.5 rounded-md font-bold"
-                      style={{ fontSize: 10, background: "rgba(0,0,0,0.06)", color: "rgba(0,0,0,0.4)" }}>
-                      {opt.type}
-                    </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold truncate" style={{ fontSize: 15 }}>{dishTitle(opt)}</p>
+                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                      <span className="inline-block px-2 py-0.5 rounded-md font-bold"
+                        style={{ fontSize: 10, background: "rgba(0,0,0,0.06)", color: "rgba(0,0,0,0.4)" }}>
+                        {opt.type}
+                      </span>
+                      {reason && (
+                        <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md font-bold"
+                          style={{ fontSize: 10, background: "rgba(255,90,31,0.10)", color: "#FF5A1F" }}
+                          title="为什么推荐这道">
+                          <span className="material-symbols-outlined" style={{ fontSize: 11 }}>auto_awesome</span>
+                          {reason}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="w-6 h-6 rounded-full border-2 flex items-center justify-center ml-2 shrink-0"
                     style={{ borderColor: "#FF5A1F" }}>
@@ -1471,7 +1528,8 @@ export default function Home() {
                   <input type="radio" name="swap" className="hidden"
                     checked={selectedSwap === opt.id} onChange={() => setSelectedSwap(opt.id)} />
                 </label>
-              ))}
+                );
+              })}
             </div>
             <button
               className="w-full h-14 rounded-2xl font-bold text-white shadow-lg active:scale-[0.98] disabled:opacity-40"
