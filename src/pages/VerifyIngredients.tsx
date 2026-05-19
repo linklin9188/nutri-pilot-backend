@@ -8,6 +8,7 @@ import { getHKAlias } from "../lib/hkNames";
 import { ALGO_VERSION as WEEKLY_ALGO_VERSION } from "../hooks/useWeeklyMenu";
 import { supabase } from "../lib/supabase";
 import { useSubscription } from "../lib/subscription";
+import { getUserId } from "../lib/userId";
 
 // ── Hydrate dishes with prep_steps_json from DB ──────────────────────────
 // Generated weekly menus persisted to localStorage often DON'T include the
@@ -436,8 +437,25 @@ export default function VerifyIngredients() {
   const [ingredients, setIngredients] = useState<AggregatedIngredient[]>([]);
   const [dishCount, setDishCount] = useState(0);
   const [banquetHeads, setBanquetHeads] = useState(0);
+
+  // 我家有 toggle is persisted per-user per-day so the user doesn't lose
+  // checks when they navigate away (e.g. open Home, come back). Key is
+  // home_inventory_<userId>_<YYYY-MM-DD>; map values are bool — true = 已有.
+  const homeInventoryKey = `home_inventory_${getUserId() ?? 'anon'}_${new Date().toISOString().slice(0, 10)}`;
+  const loadHomeInventory = (): Record<string, boolean> => {
+    try {
+      const raw = localStorage.getItem(homeInventoryKey);
+      return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+    } catch { return {}; }
+  };
+  const persistHomeInventory = (map: Record<string, boolean>) => {
+    // Only keep truthy entries — false / undefined are noise.
+    const pruned: Record<string, boolean> = {};
+    for (const k of Object.keys(map)) if (map[k]) pruned[k] = true;
+    try { localStorage.setItem(homeInventoryKey, JSON.stringify(pruned)); } catch { /* quota */ }
+  };
   // true = "已有"，false = "需要买"
-  const [haveIt, setHaveIt] = useState<Record<string, boolean>>({});
+  const [haveIt, setHaveIt] = useState<Record<string, boolean>>(() => loadHomeInventory());
   const [copied, setCopied] = useState(false);
   const [weightUnit, setWeightUnit] = useState<WeightUnit>(() =>
     (localStorage.getItem('nutri_weight_unit') as WeightUnit) || 'metric'
@@ -482,7 +500,7 @@ export default function VerifyIngredients() {
           dishToIngredients(dish, banquetAdultEquivalent, 0)
         );
         setIngredients(aggregateIngredients(allRaw));
-        setHaveIt({});
+        setHaveIt(loadHomeInventory());
         return;
       }
 
@@ -511,7 +529,7 @@ export default function VerifyIngredients() {
         }
         setDishCount(total);
         setIngredients(aggregateIngredients(allRaw));
-        setHaveIt({});
+        setHaveIt(loadHomeInventory());
         return;
       }
 
@@ -524,7 +542,7 @@ export default function VerifyIngredients() {
       const allRaw = dishes.flatMap(dish => dishToIngredients(dish, adults, kids));
       const aggregated = aggregateIngredients(allRaw);
       setIngredients(aggregated);
-      setHaveIt({}); // reset checks when mode changes
+      setHaveIt(loadHomeInventory()); // rehydrate per-day persisted checks
     }
 
     run();
@@ -532,7 +550,11 @@ export default function VerifyIngredients() {
   }, [mode]);
 
   const toggleHave = (nameZh: string) => {
-    setHaveIt(prev => ({ ...prev, [nameZh]: !prev[nameZh] }));
+    setHaveIt(prev => {
+      const next = { ...prev, [nameZh]: !prev[nameZh] };
+      persistHomeInventory(next);
+      return next;
+    });
   };
 
   // Group by category
@@ -789,6 +811,19 @@ export default function VerifyIngredients() {
                         {item.nameZh}
                       </p>
                     </div>
+                    {/* 我家有 chip — visual toggle on the row right side. Not
+                        an independent button (the whole row is already a
+                        button; nested buttons are invalid HTML). Clicks
+                        anywhere on the row, including this chip, bubble to
+                        the parent onClick and call toggleHave. */}
+                    <span
+                      className="text-[10px] font-bold px-2 py-0.5 rounded-full transition-colors"
+                      style={{
+                        background: have ? 'rgba(37,211,102,0.18)' : 'rgba(0,0,0,0.06)',
+                        color:      have ? '#16A34A' : 'rgba(0,0,0,0.45)',
+                      }}>
+                      {have ? '✓ 我家有' : '我家有？'}
+                    </span>
                     <span className="text-[13px] font-bold"
                       style={{ color: have ? '#ef4444' : '#1a1a1a', textDecoration: have ? 'line-through' : 'none' }}>
                       {formatWeight(item, weightUnit)}
@@ -888,8 +923,13 @@ export default function VerifyIngredients() {
                       >
                         {formatWeight(item, weightUnit)}
                       </span>
-                      <span className="text-[10px] font-semibold" style={{ color: have ? '#ef4444' : 'rgba(0,0,0,0.3)' }}>
-                        {have ? '已有 ✓' : '需购买'}
+                      <span
+                        className="text-[10px] font-bold px-2 py-0.5 rounded-full transition-colors"
+                        style={{
+                          background: have ? 'rgba(37,211,102,0.18)' : 'rgba(0,0,0,0.06)',
+                          color:      have ? '#16A34A' : 'rgba(0,0,0,0.45)',
+                        }}>
+                        {have ? '✓ 我家有' : '我家有？'}
                       </span>
                     </div>
                   </button>
