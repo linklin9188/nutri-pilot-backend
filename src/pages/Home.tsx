@@ -405,6 +405,34 @@ export default function Home() {
 
   const MEMBER_COLORS = ['bg-orange-400','bg-blue-400','bg-emerald-400','bg-violet-400','bg-rose-400','bg-amber-400'];
 
+  // Dish ratings (1-tap 好吃 / 一般 / 不喜欢) — caches today's rated dish ids
+  // in localStorage so the widget hides after the first tap per dish/day.
+  // Backed by user_feedback (Database migration 027). Errors are swallowed.
+  const ratingsTodayKey = `dish_rated_${getUserId() ?? 'anon'}_${new Date().toISOString().slice(0, 10)}`;
+  const [ratedDishIds, setRatedDishIds] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem(ratingsTodayKey);
+      return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+    } catch { return new Set(); }
+  });
+  async function sendDishRating(dishId: string, rating: 'good' | 'okay' | 'bad') {
+    setRatedDishIds(prev => {
+      const next = new Set(prev); next.add(dishId);
+      try { localStorage.setItem(ratingsTodayKey, JSON.stringify([...next])); } catch { /* quota — ignore */ }
+      return next;
+    });
+    const payload = {
+      user_id:       getUserId() ?? 'anonymous',
+      dish_id:       dishId,
+      feedback_type: rating === 'good' ? 'rating_good' : rating === 'okay' ? 'rating_okay' : 'rating_bad',
+      locale:        language,
+    };
+    try {
+      const { error } = await supabase.from('user_feedback').insert(payload);
+      if (error) await supabase.from('user_feedback').insert(payload); // silent retry once
+    } catch { /* silent fail — owner shouldn't see infra errors */ }
+  }
+
   const [menuSwaps, setMenuSwaps] = useState<Record<number, any>>({});
   const [isSwapOpen, setIsSwapOpen] = useState(false);
   const [swappingDishIndex, setSwappingDishIndex] = useState<number | null>(null);
@@ -1099,6 +1127,33 @@ export default function Home() {
                             ) : null;
                           })()}
                         </div>
+                        {/* Owner 1-tap rating — 午晚 only. Drives B 数据飞轮:
+                            three emoji buttons fade into "已记录" after one tap
+                            per dish per day (localStorage-cached, idempotent).
+                            POST silently to user_feedback (Database 027). */}
+                        {mealTime !== '早餐' && dish.id && (
+                          <div className="flex items-center justify-end gap-1 mt-1.5">
+                            {ratedDishIds.has(dish.id) ? (
+                              <span style={{ fontSize: 10.5, color: 'rgba(0,0,0,0.32)', fontStyle: 'italic' }}>已记录</span>
+                            ) : (
+                              <>
+                                {([
+                                  { v: 'good' as const, e: '😋', t: '好吃' },
+                                  { v: 'okay' as const, e: '😐', t: '一般' },
+                                  { v: 'bad'  as const, e: '😞', t: '不喜欢' },
+                                ]).map(({ v, e, t }) => (
+                                  <button key={v}
+                                    onClick={() => sendDishRating(dish.id, v)}
+                                    title={t}
+                                    className="w-6 h-6 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+                                    style={{ background: 'rgba(0,0,0,0.04)', fontSize: 13, lineHeight: 1 }}>
+                                    {e}
+                                  </button>
+                                ))}
+                              </>
+                            )}
+                          </div>
+                        )}
                       </div>
                       {/* Top-right action cluster — hoisted out of the inline
                           flow so the title can use the full row width. Compact
