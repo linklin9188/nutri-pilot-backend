@@ -60,32 +60,9 @@ function getDayNutrition(dishes: SupabaseDish[]) {
   );
 }
 
-// Pick a breakfast COMBO (culturally-paired set, not 3 random bucket picks).
-// See .claude/skills/chinese-breakfast/SKILL.md for the cultural ruleset
-// and src/lib/breakfastCombos.ts for the canonical combo definitions.
-//
-// Why combo > slots: 豆浆+油条+茶叶蛋 is a coherent set; 豆浆+菠萝包+
-// 凉拌海带 is 3 different regions thrown together. Slot picker would
-// happily produce the second.
-import { pickBreakfastCombo } from "../lib/breakfastCombos";
-
-function pickBreakfast(pool: SupabaseDish[], dayIndex: number, hometown?: string | null): SupabaseDish[] {
-  if (pool.length === 0) return [];
-  const result = pickBreakfastCombo({
-    pool: pool as any,
-    dayIndex,
-    hometown,
-    avoidIngredients: [],
-    avoidTags: [],
-  });
-  if (result.missingSlots.length > 0 && process.env.NODE_ENV !== 'production') {
-    // eslint-disable-next-line no-console
-    console.warn(`[pickBreakfast] combo "${result.combo.name}" missing slot(s):`,
-      result.missingSlots, '— need DB backfill of:',
-      result.slots.filter(s => !s.dish).map(s => `${s.slot}=[${s.candidates.join('/')}]`));
-  }
-  return result.dishes as SupabaseDish[];
-}
+// Smell 1 阶段 2 (v40): pickBreakfastCombo / breakfast pool 已移入
+// useWeeklyMenu.ts → generateWeekPlan，统一通过 weeklyMenu.days[i].breakfastDishes
+// 读取。WeeklyMenu page 仅做渲染，不再独立 fetch + 调用 picker。
 
 // ── DishCard ──────────────────────────────────────────────────────────────────
 
@@ -398,7 +375,6 @@ export default function WeeklyMenu() {
   const realTodayIdx = todayDayIndex();
   const todayIdx = realTodayIdx >= 5 ? 0 : realTodayIdx;
   const [selectedDay, setSelectedDay] = useState(todayIdx);
-  const [breakfastPool, setBreakfastPool] = useState<SupabaseDish[]>([]);
 
   // Michelin-mode toggle. The toggle exists for everyone, but only Pro users
   // can actually activate it; free users tapping it land on /pricing.
@@ -452,18 +428,6 @@ export default function WeeklyMenu() {
     });
   }
 
-  // Fetch real breakfast dishes from DB once
-  useEffect(() => {
-    supabase
-      .from('dishes')
-      .select('*')
-      .eq('meal_type', 'breakfast')
-      .limit(30)
-      .then(({ data }) => {
-        if (data && data.length > 0) setBreakfastPool(data as SupabaseDish[]);
-      });
-  }, []);
-
   // Non-members can preview today's column only — every other day on the
   // 7-day view is locked behind the membership upgrade. Today's column
   // matches what they already see on Home, so it acts as a familiar
@@ -474,11 +438,9 @@ export default function WeeklyMenu() {
   const dayMenu  = weeklyMenu?.days[effectiveDay];
   const dinner   = dayMenu?.dishes ?? [];
   const lunch    = dayMenu?.lunchDishes ?? [];
-  // Hometown drives which combo set the breakfast picker filters to
-  // (粤式 / 北方 / 江南 / 川式 / 港式茶餐厅 …). Multi-value localStorage
-  // is comma-separated; take the first as the primary preference.
-  const userHometown = (localStorage.getItem('userHometown') ?? '').split(',')[0] || null;
-  const breakfast = pickBreakfast(breakfastPool, effectiveDay, userHometown);
+  // Smell 1 阶段 2 (v40): breakfast 来自 generateWeekPlan 输出（hometown
+  // 旋转 / pickBreakfastCombo 已经在 hook 层完成）。
+  const breakfast = dayMenu?.breakfastDishes ?? [];
   const nutrition = getDayNutrition([...lunch, ...dinner]);
 
   // Avoid-ingredients union for the household (only members at home today).
@@ -916,7 +878,7 @@ export default function WeeklyMenu() {
                   ) : (
                     <div className="flex flex-col">
                       {weeklyMenu?.days.map((day, i) => {
-                        const dayBreakfast = pickBreakfast(breakfastPool, i, userHometown);
+                        const dayBreakfast = day.breakfastDishes ?? [];
                         const dayLunch  = day.lunchDishes ?? [];
                         const dayDinner = day.dishes ?? [];
                         const locked = isDayLocked(i);

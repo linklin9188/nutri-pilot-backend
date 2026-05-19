@@ -19,7 +19,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { type SupabaseDish, calcDishCount } from './useSupabaseMenu';
+import { type SupabaseDish, calcDishCount, type SolarTerm, getCurrentSolarTerm, isWholegrain, DINNER_HEAVY_TAGS } from './useSupabaseMenu';
 import { FLAVOR_COL, HEALTH_COL, CUISINE_COL } from './preferenceColMap';
 import { getUserPrefs } from '../lib/userPrefs';
 import { getFamilyMenuPrefs, familyGoalScore, dishTriggersAllergy } from '../lib/familyPrefs';
@@ -29,6 +29,8 @@ import { getUserId } from '../lib/userId';
 import { applyCuisineFilter, loadCuisineMode } from '../lib/cuisineFilter';
 import { DISH_FIELDS } from '../lib/dishFields';
 import { hometownMatches, hometownToDbBucket } from '../lib/hometownBuckets';
+import { isNewUserSession } from '../lib/userLifecycle';
+import { pickBreakfastCombo } from '../lib/breakfastCombos';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -36,8 +38,10 @@ export interface WeeklyDayMenu {
   date: string;          // ISO date string for this day (YYYY-MM-DD)
   dayIndex: number;      // 0=Mon … 6=Sun
   dayLabel: string;      // 周一 … 周日
-  dishes: SupabaseDish[];       // dinner dishes
-  lunchDishes: SupabaseDish[];  // lunch dishes (simpler, 1-2 items)
+  dishes: SupabaseDish[];          // dinner dishes
+  lunchDishes: SupabaseDish[];     // lunch dishes (simpler, 1-2 items)
+  breakfastDishes: SupabaseDish[]; // breakfast combo (Smell 1 阶段 2: 来自 generateWeekPlan 调用 pickBreakfastCombo)
+  fruitDish?: SupabaseDish;        // 餐后水果（dinner-attached, optional）
 }
 
 // weekStart is YYYY-MM-DD (Monday). Returns YYYY-MM-DD for weekStart + dayIndex days,
@@ -57,7 +61,8 @@ export interface WeeklyMenu {
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v37'; // Western high-end bias (HK premium clientele): 欧陆系 (意/法/西班牙/地中海/普罗旺斯) +0.12, 美式 fast-casual (三明治/汉堡/玉米饼/牧羊人派) -0.08 — within origin='western' pool only. Plus v36: pool-aware breakfast combo rotation, v35: hometown 改地域大区, v34: cook-method variety, v33: power curve.
+export const ALGO_VERSION = 'v40'; // Smell 1 阶段 2：合并双管道（generateWeekPlan 统一输出 breakfast/lunch/dinner/fruit，删除 useRecommendDishes + scoreDish 链路）；scoreForWeek 扩到 9-axis（基础 5 + xiaomei + spiceBoost + humidity + solarTerm）；学习信号叠加 sigmoid weight 0.35+1.15*(1-exp(-n/15))；周五"放纵日" spice 容忍 +0.5 + cook_method 油炸 +0.20。跳 v38/v39 留给未来。
+// v37: Western high-end bias. v36: pool-aware breakfast combo. v35: hometown 地域大区. v34: cook-method variety. v33: power curve.
 
 // ── 周末规则 (Weekend rule) — user-confirmed 2026-05-17 ───────────────────────
 // Weekly menu only covers Mon-Fri. Generation skips Sat/Sun; display layers
@@ -520,11 +525,17 @@ interface WeeklyScoreParams {
   healthPrefs?: { preferLowSodium: boolean; preferLowSugar: boolean; avoidHighPurine: boolean };
   helperMode?: boolean;             // household has a helper — prefer low execution_level
   hasPregnant?: boolean;            // household has a pregnant member — applies pregnancy ban/prefer rules
+  // ── 9-axis fields (Smell 1 阶段 2，CEO 已决保留 4 维) ──
+  humidity?: number;                // 当前湿度 % (localStorage current_humidity)
+  solarTerm?: SolarTerm | null;     // 节气加分（healthBoost/flavorBoost/flavorPenalty）
+  hasXiaomei?: boolean;             // 小美料理机 — xiaomei_compatible 菜上浮（付费订阅强绑）
+  mealTime?: '早餐' | '午餐' | '晚餐'; // 餐别口径（晚餐 oil/salt/sugar 软扣，午餐杂粮主食 +0.10）
 }
 
 function scoreForWeek({
   dish, profile, prefScores, recentIds, pickedIngredients, pickedTitleKeywords, dayIndex,
   spiceBoost = 0, ageGroup, healthPrefs, helperMode = false, hasPregnant = false,
+  humidity = 75, solarTerm = null, hasXiaomei = false, mealTime = '晚餐',
 }: WeeklyScoreParams): number {
   const flavorTags: string[]  = dish.flavor_tags ?? [];
   const healthTags: string[]  = dish.health_benefit_tags ?? [];
@@ -682,6 +693,98 @@ function scoreForWeek({
   // 仅 origin='western' 触发。让欧陆系排前，美式/英式 fast casual 排后。
   score += westernHighEndBias(_title, origin);
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // Smell 1 阶段 2: 吸收 scoreDish 独有的 4 维（9-axis 合并）
+  // CEO 决策 2026-05-19：保留 humidity / solarTerm / xiaomei / spiceBoost
+  // 战略钩子（前两条 TCM 文化锚 + 后两条付费订阅 / 食安）。
+  // ═══════════════════════════════════════════════════════════════════════
+
+  // ── 18. Humidity correction (湿度 → damp_clear 偏好) ──────────────────
+  if (humidity > 85 && healthTags.includes('damp_clear')) {
+    score += 0.30;
+  }
+
+  // ── 19. Solar term correction (节气文化加分) ────────────────────────
+  if (solarTerm) {
+    if (healthTags.some(t => solarTerm.healthBoostTags.includes(t))) {
+      score += solarTerm.healthBonus;
+    }
+    if (flavorTags.some(t => solarTerm.flavorBoostTags.includes(t))) {
+      score += solarTerm.flavorBonus;
+    }
+    if (flavorTags.some(t => solarTerm.flavorPenaltyTags.includes(t))) {
+      score -= solarTerm.flavorPenalty;
+    }
+  }
+
+  // ── 20. 小美料理机 (xiaomei robot — 付费订阅强绑) ───────────────────
+  if (hasXiaomei && (dish as any).xiaomei_compatible) {
+    score += 0.15;
+  }
+
+  // ── 21. Meal-specific tone (中国营养主厨规则) ────────────────────────
+  // 晚餐应该比午餐清淡 — P1 nutrition fields (oil/salt/sugar) 优先于
+  // flavor_tag heuristic。
+  if (mealTime === '晚餐') {
+    if ((dish as any).oil_level   === 'high') score -= 0.08;
+    if ((dish as any).salt_level  === 'high') score -= 0.06;
+    if ((dish as any).sugar_level === 'high') score -= 0.04;
+    if (!(dish as any).oil_level && !(dish as any).salt_level) {
+      for (const t of flavorTags) {
+        if (DINNER_HEAVY_TAGS.has(t)) score -= 0.10;
+      }
+    }
+  }
+  // 午餐主食 + 杂粮 → +0.10（杂粮饭 / 燕麦 / 糙米…）
+  if (mealTime === '午餐' && ((dish as any).course_type === 'staple' || ingredient === 'grain') && isWholegrain(dish)) {
+    score += 0.10;
+  }
+
+  // ── 22. 家有小孩餐桌偏向 (kid-friendly + 早餐蛋 + 晚餐钙) ─────────
+  // localStorage 读取 OK — 一次菜单生成内 nutri_kids 不变。
+  const kidsCount = parseInt(typeof localStorage !== 'undefined' ? (localStorage.getItem('nutri_kids') ?? '0') : '0', 10);
+  if (kidsCount > 0) {
+    if ((dish as any).is_kid_friendly) score += 0.20;
+    if (mealTime === '早餐') {
+      const proteinSrc = ((dish as any).protein_source ?? []) as string[];
+      if (ingredient === 'egg' || proteinSrc.includes('egg')) score += 0.15;
+    }
+    if (mealTime === '晚餐') {
+      const proteinSrc = ((dish as any).protein_source ?? []) as string[];
+      const calciumRich =
+        ['dairy', 'tofu'].includes(ingredient) ||
+        proteinSrc.some(p => ['dairy', 'tofu', 'soy'].includes(p)) ||
+        flavorTags.includes('veggie') ||
+        ((dish.title_zh ?? '').match(/(豆腐|奶|芝士|酸奶|小鱼|虾|青菜|芥兰|芥蘭|西兰花|西蘭花|油菜|苋菜|菠菜)/));
+      if (calciumRich) score += 0.10;
+    }
+  }
+
+  // ── 23. New-user first-impression boost (社区验证签名) ───────────────
+  if (isNewUserSession()) {
+    const hometownHit = hometownMatches(profile.hometown_cuisine, origin) ? 1 : 0;
+    const goalHit = (profile.dietary_goal && healthTags.includes(profile.dietary_goal)) ? 1 : 0;
+    const tasteHit = (profile.taste_pref && flavorTags.includes(profile.taste_pref)) ? 1 : 0;
+    const profileMatch = hometownHit + goalHit + tasteHit;
+    score += profileMatch * 0.15;
+    const hs:   number = Number((dish as any).health_score ?? 0);
+    const kept: number = Number((dish as any).times_kept_in_menu ?? 0);
+    score += (hs / 10) * 0.10;
+    score += Math.min(kept, 50) / 50 * 0.08;
+  }
+
+  // ── 24. Weekday speed bonus (Mon-Thu 偏好 ≤20 min) ───────────────────
+  const cookTime = (dish as any).cook_time_min;
+  if (typeof cookTime === 'number' && cookTime > 0) {
+    const dow = new Date().getDay();
+    const isWeekdayDow = dow >= 1 && dow <= 4;
+    if (isWeekdayDow) {
+      if (cookTime <= 15)      score += 0.15;
+      else if (cookTime <= 30) score += 0.05;
+      else if (cookTime > 60)  score -= 0.20;
+    }
+  }
+
   return score;
 }
 
@@ -802,6 +905,12 @@ function generateWeekPlan(
   helperMode = false,
   adults = 2,
   kids = 0,
+  // ── Smell 1 阶段 2: 9-axis 参数 + breakfast/fruit pool 注入 ──
+  humidity = 75,
+  solarTerm: SolarTerm | null = null,
+  hasXiaomei = false,
+  breakfastPool: any[] = [],   // meal_type='breakfast' fetched at hook layer
+  fruitPool: any[] = [],       // course_type='fruit' fetched at hook layer
 ): WeeklyMenu {
   // 粥 / 稀饭 are breakfast-only in Chinese cuisine — user direction
   // 2026-05-17. Stripped once at function entry so every lunch + dinner
@@ -986,6 +1095,7 @@ function generateWeekPlan(
             healthPrefs,
             helperMode,
             hasPregnant: familyPrefs?.hasPregnant ?? false,
+            humidity, solarTerm, hasXiaomei, mealTime: '晚餐',
           });
 
           // ── Family multi-goal scoring ───────────────────────────────────
@@ -1141,6 +1251,7 @@ function generateWeekPlan(
             ageGroup: '00后',   // always use child age mods
             healthPrefs,
             hasPregnant: familyPrefs?.hasPregnant ?? false,
+            humidity, solarTerm, hasXiaomei, mealTime: '晚餐',
           });
           const flavors: string[] = d.flavor_tags ?? [];
           if (flavors.includes('sweet'))  s += 0.25;
@@ -1205,6 +1316,7 @@ function generateWeekPlan(
         pickedTitleKeywords,         // share weekly title dedup (no repeating 娃娃菜 in lunch either)
         dayIndex, spiceBoost, ageGroup, healthPrefs,
         hasPregnant: familyPrefs?.hasPregnant ?? false,
+        humidity, solarTerm, hasXiaomei, mealTime: '午餐',
       });
       if ((d.flavor_tags ?? []).includes('light')) score += 0.15;
       return { dish: d, score };
@@ -1334,12 +1446,51 @@ function generateWeekPlan(
 
     const lunchDishes = allLunchPicks;
 
+    // ═══════════════════════════════════════════════════════════════════
+    // Smell 1 阶段 2: breakfast — 用 pickBreakfastCombo 在 breakfastPool 上
+    // 选一组（dry staple + wet drink + side），按 hometown 旋转。pool 由
+    // hook 层 fetch + 已过滤 avoidTags/avoidIngredients。
+    // ═══════════════════════════════════════════════════════════════════
+    const breakfastDishes: SupabaseDish[] = (() => {
+      if (breakfastPool.length === 0) return [];
+      try {
+        const result = pickBreakfastCombo({
+          pool: breakfastPool as any,
+          dayIndex,
+          hometown: profile.hometown_cuisine,
+          avoidIngredients: [],
+          avoidTags: [],
+        });
+        return (result.dishes ?? []).map((d: any) => enrichRaw(d));
+      } catch {
+        return [];
+      }
+    })();
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Smell 1 阶段 2: fruit — 餐后水果 slot（与晚餐挂钩）。按节气优先 +
+    // dayIndex 旋转。fruitPool 由 hook 层 fetch + 节气过滤后传入。
+    // ═══════════════════════════════════════════════════════════════════
+    const fruitDish: SupabaseDish | undefined = (() => {
+      if (fruitPool.length === 0) return undefined;
+      const seasonalCol = solarTerm?.season;
+      const seasonal = seasonalCol
+        ? fruitPool.filter(f => f.seasonal_tag === seasonalCol || f.seasonal_tag === 'all-season')
+        : fruitPool;
+      const pickFrom = seasonal.length > 0 ? seasonal : fruitPool;
+      const idx = dayIndex % pickFrom.length;
+      const raw = pickFrom[idx];
+      return raw ? enrichRaw(raw) : undefined;
+    })();
+
     days.push({
       date: dateForDayIndex(weekStart, dayIndex),
       dayIndex,
       dayLabel: DAY_LABELS[dayIndex],
       dishes: [...dayDishes, ...kidDishes].map(d => enrichRaw(d)),
       lunchDishes,
+      breakfastDishes,
+      fruitDish,
     });
   }
 
@@ -1349,7 +1500,8 @@ function generateWeekPlan(
 // ── Supabase persistence ──────────────────────────────────────────────────────
 
 async function loadFromDB(userId: string, weekStart: string, lsKey: string): Promise<WeeklyMenu | null> {
-  const [dinnerRes, lunchRes] = await Promise.all([
+  // Smell 1 阶段 2: 同时读 dinner / lunch / breakfast / fruit 四类 meal_type
+  const [dinnerRes, lunchRes, breakfastRes, fruitRes] = await Promise.all([
     supabase
       .from('user_weekly_menus')
       .select('day_index, dish_ids, swapped_dish_ids, algo_version, cache_key')
@@ -1364,11 +1516,27 @@ async function loadFromDB(userId: string, weekStart: string, lsKey: string): Pro
       .eq('week_start', weekStart)
       .eq('meal_type', 'lunch')
       .order('day_index'),
+    supabase
+      .from('user_weekly_menus')
+      .select('day_index, dish_ids, algo_version, cache_key')
+      .eq('user_id', userId)
+      .eq('week_start', weekStart)
+      .eq('meal_type', 'breakfast')
+      .order('day_index'),
+    supabase
+      .from('user_weekly_menus')
+      .select('day_index, dish_ids, algo_version, cache_key')
+      .eq('user_id', userId)
+      .eq('week_start', weekStart)
+      .eq('meal_type', 'fruit')
+      .order('day_index'),
   ]);
 
   if (dinnerRes.error || !dinnerRes.data || dinnerRes.data.length < 7) return null;
   // Force regeneration if lunch rows are missing (e.g. saved before lunch was implemented)
   if (!lunchRes.data || lunchRes.data.length === 0) return null;
+  // Smell 1 阶段 2: breakfast rows 缺失 → 强制重生成（旧 v37 cache 没存 breakfast）
+  if (!breakfastRes.data || breakfastRes.data.length === 0) return null;
 
   // Stale check (SPEC §3.1): any row mismatching ALGO_VERSION or current lsKey →
   // regenerate. Catches algo upgrades AND non-algo dimension changes (cuisine /
@@ -1378,10 +1546,14 @@ async function loadFromDB(userId: string, weekStart: string, lsKey: string): Pro
     row.algo_version !== ALGO_VERSION || row.cache_key !== lsKey;
   if (dinnerRes.data.some(stale)) return null;
   if (lunchRes.data.some(stale)) return null;
+  if (breakfastRes.data.some(stale)) return null;
+  if ((fruitRes.data ?? []).some(stale)) return null;
 
   const allIds = [
     ...dinnerRes.data.flatMap(r => (r.swapped_dish_ids ?? r.dish_ids) as string[]),
     ...(lunchRes.data ?? []).flatMap(r => r.dish_ids as string[]),
+    ...(breakfastRes.data ?? []).flatMap(r => r.dish_ids as string[]),
+    ...(fruitRes.data ?? []).flatMap(r => r.dish_ids as string[]),
   ];
   const { data: dishRows } = await supabase.from('dishes').select(DISH_FIELDS).in('id', allIds);
   if (!dishRows) return null;
@@ -1390,19 +1562,30 @@ async function loadFromDB(userId: string, weekStart: string, lsKey: string): Pro
   const lunchMap = new Map(
     (lunchRes.data ?? []).map(r => [r.day_index as number, (r.dish_ids as string[])])
   );
+  const breakfastMap = new Map(
+    (breakfastRes.data ?? []).map(r => [r.day_index as number, (r.dish_ids as string[])])
+  );
+  const fruitMap = new Map(
+    (fruitRes.data ?? []).map(r => [r.day_index as number, (r.dish_ids as string[])])
+  );
 
   const days: WeeklyDayMenu[] = dinnerRes.data
     .filter(row => (row.day_index as number) < 5)   // drop legacy 周末 rows
     .map(row => {
-      const dinnerIds = (row.swapped_dish_ids ?? row.dish_ids) as string[];
-      const lunchIds  = lunchMap.get(row.day_index as number) ?? [];
-      const dayIndex  = row.day_index as number;
+      const dinnerIds   = (row.swapped_dish_ids ?? row.dish_ids) as string[];
+      const lunchIds    = lunchMap.get(row.day_index as number) ?? [];
+      const breakfastIds = breakfastMap.get(row.day_index as number) ?? [];
+      const fruitIds     = fruitMap.get(row.day_index as number) ?? [];
+      const dayIndex    = row.day_index as number;
+      const fruitRaw    = fruitIds.length > 0 ? dishMap.get(fruitIds[0]) : null;
       return {
-        date:        dateForDayIndex(weekStart, dayIndex),
+        date:            dateForDayIndex(weekStart, dayIndex),
         dayIndex,
-        dayLabel:    DAY_LABELS[dayIndex],
-        dishes:      dinnerIds.map(id => dishMap.get(id)).filter(Boolean).map(d => enrichRaw(d)),
-        lunchDishes: lunchIds.map(id => dishMap.get(id)).filter(Boolean).map(d => enrichRaw(d)),
+        dayLabel:        DAY_LABELS[dayIndex],
+        dishes:          dinnerIds.map(id => dishMap.get(id)).filter(Boolean).map(d => enrichRaw(d)),
+        lunchDishes:     lunchIds.map(id => dishMap.get(id)).filter(Boolean).map(d => enrichRaw(d)),
+        breakfastDishes: breakfastIds.map(id => dishMap.get(id)).filter(Boolean).map(d => enrichRaw(d)),
+        fruitDish:       fruitRaw ? enrichRaw(fruitRaw) : undefined,
       };
     });
 
@@ -1410,6 +1593,7 @@ async function loadFromDB(userId: string, weekStart: string, lsKey: string): Pro
 }
 
 async function saveToDB(userId: string, menu: WeeklyMenu, lsKey: string): Promise<void> {
+  // Smell 1 阶段 2: 同时写 dinner / lunch / breakfast / fruit 四类
   const rows = menu.days.flatMap(day => [
     {
       user_id:      userId,
@@ -1426,6 +1610,24 @@ async function saveToDB(userId: string, menu: WeeklyMenu, lsKey: string): Promis
       day_index:    day.dayIndex,
       meal_type:    'lunch',
       dish_ids:     day.lunchDishes.map(d => d.id),
+      algo_version: ALGO_VERSION,
+      cache_key:    lsKey,
+    }] : []),
+    ...(day.breakfastDishes && day.breakfastDishes.length > 0 ? [{
+      user_id:      userId,
+      week_start:   menu.weekStart,
+      day_index:    day.dayIndex,
+      meal_type:    'breakfast',
+      dish_ids:     day.breakfastDishes.map(d => d.id),
+      algo_version: ALGO_VERSION,
+      cache_key:    lsKey,
+    }] : []),
+    ...(day.fruitDish ? [{
+      user_id:      userId,
+      week_start:   menu.weekStart,
+      day_index:    day.dayIndex,
+      meal_type:    'fruit',
+      dish_ids:     [day.fruitDish.id],
       algo_version: ALGO_VERSION,
       cache_key:    lsKey,
     }] : []),
@@ -1644,10 +1846,55 @@ export function useWeeklyMenu(weekOffset: number = 0) {
         };
         const familyPrefs = getFamilyMenuPrefs(dishesPerDay);
         const helperMode = localStorage.getItem('nutri_has_helper') === 'true';
+
+        // ── Smell 1 阶段 2: 9-axis context + breakfast/fruit pool fetch ──
+        // CEO 决策 2026-05-19：保留 humidity / solarTerm / xiaomei / spiceBoost
+        // 4 个特殊维度并入 generateWeekPlan，删 useRecommendDishes 链路。
+        const humidity = parseFloat(localStorage.getItem('current_humidity') ?? '75');
+        const solarTerm = getCurrentSolarTerm();
+        const hasXiaomei = localStorage.getItem('has_xiaomei_robot') === 'true';
+
+        // breakfast 池：meal_type='breakfast'，hardFilter 同 dinner 那套
+        // avoidTags / avoidIngredients / dairy keyword safety net。
+        const { data: breakfastRaw } = await supabase
+          .from('dishes')
+          .select(DISH_FIELDS)
+          .eq('meal_type', 'breakfast')
+          .limit(200);
+        const breakfastPool = (breakfastRaw ?? []).filter(dish => {
+          if (localPrefs.avoidTags.length > 0) {
+            const allTags = [...(dish.flavor_tags ?? []), ...(dish.health_benefit_tags ?? [])];
+            if (allTags.some((t: string) => localPrefs.avoidTags.includes(t))) return false;
+          }
+          if (localPrefs.avoidIngredients.length > 0 && dish.main_ingredient) {
+            if (localPrefs.avoidIngredients.includes(dish.main_ingredient)) return false;
+          }
+          if (avoidDairy) {
+            const titleText = ((dish.title_zh ?? '') + ' ' + (dish.title_en ?? '') + ' ' + (dish.description_zh ?? '')).toLowerCase();
+            if (DAIRY_KEYWORDS.some(kw => titleText.includes(kw.toLowerCase()))) return false;
+          }
+          return true;
+        });
+
+        // fruit 池：course_type='fruit'（中西通用，不走 cuisine filter）
+        const { data: fruitRaw } = await supabase
+          .from('dishes')
+          .select(DISH_FIELDS)
+          .eq('course_type', 'fruit')
+          .limit(30);
+        const fruitPool = (fruitRaw ?? []).filter(dish => {
+          if (localPrefs.avoidTags.length > 0) {
+            const allTags = [...(dish.flavor_tags ?? []), ...(dish.health_benefit_tags ?? [])];
+            if (allTags.some((t: string) => localPrefs.avoidTags.includes(t))) return false;
+          }
+          return true;
+        });
+
         const menu = generateWeekPlan(
           pool, profile, prefScores, recentIds, dishesPerDay, kidSlots,
           spiceBoost, profile.age_group, healthPrefs, familyPrefs, helperMode,
           hcAdults, hcKids,
+          humidity, solarTerm, hasXiaomei, breakfastPool, fruitPool,
         );
 
         if (cancelled) return;

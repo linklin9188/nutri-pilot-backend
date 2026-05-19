@@ -6,7 +6,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { useRecommendDishes, fetchSwapOptions, type SupabaseDish } from "../hooks/useSupabaseMenu";
+import { fetchSwapOptions, type SupabaseDish } from "../hooks/useSupabaseMenu";
 import { useWeeklyMenu, isWeekend, todayDayIndex } from "../hooks/useWeeklyMenu";
 import { isNewUserSession, isWithinTrial } from "../lib/userLifecycle";
 import WeekendDiningReport from "../components/WeekendDiningReport";
@@ -32,8 +32,7 @@ import { loadFamilyMembers } from "../lib/familyPrefs";
 import { HeartButton } from "../components/HeartButton";
 import DailyNutritionStrip from "../components/DailyNutritionStrip";
 import { toggleEaten, getEatenToday } from "../lib/eatingDiary";
-import { pickBreakfastCombo } from "../lib/breakfastCombos";
-import { DISH_FIELDS } from "../lib/dishFields";
+// pickBreakfastCombo / DISH_FIELDS 已在 Smell 1 阶段 2 (v40) 移到 useWeeklyMenu 内部
 
 // ── Solar term (节气) calculator ─────────────────────────────────────────────
 
@@ -281,10 +280,9 @@ export default function Home() {
     window.dispatchEvent(new Event('nutri-prefs-changed'));
   }, [cuisineMode]);
 
-  const { recommendedDishes, loading: dishesLoading, refresh: refreshRecommended } = useRecommendDishes(
-    mealTime, veganOnly, todayAdults, todayKids, cuisineMode,
-  );
-  const { weeklyMenu, loading: weeklyLoading } = useWeeklyMenu();
+  // Smell 1 阶段 2 (v40): useRecommendDishes 链路已彻底删除；
+  // useWeeklyMenu 是 Home 唯一菜单源（breakfast/lunch/dinner/fruit 全管）。
+  const { weeklyMenu, loading: weeklyLoading, regenerate: regenerateWeekly } = useWeeklyMenu();
 
   // ── Language + cuisine prefs ─────────────────────────────────────
   const { language, cycleLanguage, isChinese } = useLanguage();
@@ -367,7 +365,7 @@ export default function Home() {
       recordBatchSwap(rejected, [], mealTime).catch(() => {/* non-critical */});
     }
 
-    refreshRecommended();
+    regenerateWeekly();
   }
 
   // ── Who's eating today ───────────────────────────────────────────────────────
@@ -550,70 +548,25 @@ export default function Home() {
     try { return JSON.parse(localStorage.getItem("generatedMenu") || "[]"); } catch { return []; }
   })();
 
-  // ── Breakfast pool + picker — mirrors WeeklyMenu page (src/pages/WeeklyMenu.tsx
-  // line 70-88) so 早餐 on Home matches 早餐 on the weekly view exactly.
-  // useRecommendDishes' breakfast branch goes through scoreDish + cuisineFilter
-  // on a MIXED pool (breakfast+lunch+dinner+all), so its pickBreakfastCombo
-  // resolves slot candidates against a different ordering than WeeklyMenu page's
-  // dedicated breakfast pool. We bypass that here.
-  const [breakfastPool, setBreakfastPool] = useState<any[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const { data } = await supabase
-        .from('dishes')
-        .select(DISH_FIELDS)
-        .eq('meal_type', 'breakfast');
-      if (!cancelled && data) setBreakfastPool(data);
-    })();
-    return () => { cancelled = true; };
-  }, []);
-  const userHometownForBreakfast = (() => {
-    try {
-      const raw = localStorage.getItem('userHometown');
-      return raw ? raw.split(',')[0] : null;
-    } catch { return null; }
-  })();
-  const breakfastDishesFromCombo: any[] = (() => {
-    if (mealTime !== '早餐' || breakfastPool.length === 0) return [];
-    try {
-      const result = pickBreakfastCombo({
-        pool: breakfastPool as any,
-        dayIndex: todayIdx,
-        hometown: userHometownForBreakfast,
-        avoidIngredients: [],
-        avoidTags: [],
-      });
-      return result.dishes as any[];
-    } catch { return []; }
-  })();
-
-  // The fruit-of-the-day slot lives in useRecommendDishes' output regardless
-  // of which source we pick for the main menu. We append it to whatever
-  // baseMenu we end up choosing so the "餐后水果·时令" row keeps showing.
-  const fruitFromRecommend = recommendedDishes.find(d => (d as any).course_type === 'fruit');
+  // ── Smell 1 阶段 2 (v40): breakfast / fruit / lunch / dinner 全部来自
+  // weeklyMenu.days[todayIdx]。useRecommendDishes / pickBreakfastCombo 链路
+  // 已彻底删除，generateWeekPlan 是唯一菜单生成源；Home 仅做渲染。
+  const todayWeekly = weeklyMenu?.days[todayIdx];
+  const fruitFromWeekly = todayWeekly?.fruitDish;
 
   const baseMenu: any[] = (() => {
     if (mealTime === "早餐") {
-      // Breakfast: use the same dedicated breakfast pool + pickBreakfastCombo
-      // that WeeklyMenu page uses. This guarantees Home's 早餐 matches the
-      // weekly view's 周一/周二/... 早餐 row dish-for-dish. Falls back to
-      // useRecommendDishes only if the dedicated pool hasn't loaded yet.
-      if (breakfastDishesFromCombo.length > 0) return breakfastDishesFromCombo;
-      return recommendedDishes.length > 0 ? recommendedDishes : [];
+      return todayWeekly?.breakfastDishes ?? [];
     }
-    // 午餐 / 晚餐 — Smell 1 阶段 1：永远从 weeklyMenu 读，不再回退到
-    // useRecommendDishes。weeklyMenu loading / 未就绪 / 周末无行 → 返回
-    // 空数组，由上层渲染 skeleton 或空态 CTA。
     if (mealTime === "午餐") {
-      const lunch = weeklyMenu?.days[todayIdx]?.lunchDishes ?? [];
+      const lunch = todayWeekly?.lunchDishes ?? [];
       if (lunch.length === 0) return [];
-      return fruitFromRecommend ? [...lunch, fruitFromRecommend] : lunch;
+      return fruitFromWeekly ? [...lunch, fruitFromWeekly] : lunch;
     }
     // 晚餐
-    const dinner = weeklyMenu?.days[todayIdx]?.dishes ?? [];
+    const dinner = todayWeekly?.dishes ?? [];
     if (dinner.length === 0) return [];
-    return fruitFromRecommend ? [...dinner, fruitFromRecommend] : dinner;
+    return fruitFromWeekly ? [...dinner, fruitFromWeekly] : dinner;
   })();
 
   // Manual additions from /favorites "+ 菜单" — keyed by date + mealTime so
@@ -1049,10 +1002,10 @@ export default function Home() {
             <div className="h-px mx-5" style={{ background: "rgba(0,0,0,0.05)" }} />
 
             {/* Dish list — bigger photos, editorial typography.
-                Smell 1 阶段 1：午餐 / 晚餐区的 loading 跟随 weeklyMenu
-                hook，早餐仍跟随 useRecommendDishes（早餐池独立加载）。 */}
+                Smell 1 阶段 2 (v40)：所有 meal tab 统一跟随 weeklyMenu
+                loading（generateWeekPlan 一次性输出 breakfast/lunch/dinner/fruit）。 */}
             <div className="px-5 pt-2 pb-1">
-              {(mealTime === '早餐' ? dishesLoading : weeklyLoading) ? (
+              {weeklyLoading ? (
                 <div className="flex flex-col gap-4 py-3">
                   {[0, 1, 2].map(i => (
                     <div key={i} className="flex items-center gap-4 animate-pulse"
@@ -1440,7 +1393,7 @@ export default function Home() {
         onClose={() => {
           setIntentModalOpen(false);
           // Refresh today's recommendations so newly saved intent takes effect
-          refreshRecommended();
+          regenerateWeekly();
         }}
       />
 
