@@ -362,12 +362,16 @@ export default function Settings() {
         .limit(1);
       let code = (data?.[0] as any)?.invite_code as string | undefined;
       if (!code) {
-        // Trigger BEFORE INSERT generates a fresh 6-digit code.
-        const { data: newRow } = await supabase
+        // Trigger BEFORE INSERT generates a fresh 6-digit code. Surface insert
+        // errors instead of silently dropping (B-2 §A2): if RLS or a constraint
+        // rejects the row, the user sees a blank invite-code field but we
+        // leave a console trail for triage.
+        const { data: newRow, error: insertErr } = await supabase
           .from("households")
           .insert({ employer_id: userId })
           .select("invite_code")
           .single();
+        if (insertErr) console.error("households insert failed", insertErr);
         code = (newRow as any)?.invite_code;
       }
       if (!cancelled && code) setInviteCode(code);

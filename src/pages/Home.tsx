@@ -518,7 +518,7 @@ export default function Home() {
       // The newest household is the canonical one.
       supabase
         .from("households")
-        .select("id, invite_code, household_members(helper_id, user_profiles(display_name))")
+        .select("id, invite_code, household_members(helper_id, user_profiles!helper_id(display_name))")
         .eq("employer_id", userId)
         .order("created_at", { ascending: false })
         .limit(1)
@@ -531,13 +531,18 @@ export default function Home() {
             const active = members.find((m: any) => m.user_profiles?.display_name);
             if (active) setHelperName(active.user_profiles.display_name);
           } else {
-            // First time — create household
-            const { data: created } = await supabase
+            // First time — create household. Surface insert errors instead of
+            // silently dropping (B-2 §A2): RLS or constraint failures should
+            // not be hidden — the user-facing helper-name / invite-code area
+            // will stay blank but the error reaches devtools for triage.
+            const { data: created, error } = await supabase
               .from("households")
               .insert({ employer_id: userId })
               .select("id, invite_code")
               .single();
-            if (created) {
+            if (error) {
+              console.error("households insert failed", error);
+            } else if (created) {
               setHouseholdId(created.id);
               setInviteCode(created.invite_code ?? "");
             }
