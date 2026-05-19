@@ -791,6 +791,16 @@ function scoreForWeek({
     }
   }
 
+  // ── 25. §C 周五"放纵日" (2026-05-19 工单)  ──────────────────────────
+  // dayIndex===4 (周五) 是工作周最后一天 = 放纵日：
+  //   · spice 容忍 +0.5 (不辣用户也能尝到周五辣味)
+  //   · cook_method=deep_fry 软加 +0.20 (炸物概率上浮)
+  // 周一-周四与原口径一致，不动；周六/周日由 generateWeekPlan 整体 skip。
+  if (dayIndex === 4) {
+    if (flavorTags.includes('spicy')) score += 0.5;
+    if ((dish as any).cook_method === 'deep_fry') score += 0.20;
+  }
+
   return score;
 }
 
