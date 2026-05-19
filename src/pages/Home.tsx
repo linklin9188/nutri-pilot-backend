@@ -1010,8 +1010,9 @@ export default function Home() {
             <div className="px-5 pt-2 pb-1">
               {(mealTime === '早餐' ? dishesLoading : weeklyLoading) ? (
                 <div className="flex flex-col gap-4 py-3">
-                  {[1, 2, 3].map(i => (
-                    <div key={i} className="flex items-center gap-4 animate-pulse">
+                  {[0, 1, 2].map(i => (
+                    <div key={i} className="flex items-center gap-4 animate-pulse"
+                      style={{ animationDelay: `${i * 100}ms` }}>
                       <div className="w-[78px] h-[78px] rounded-2xl shrink-0" style={{ background: "rgba(0,0,0,0.05)" }} />
                       <div className="flex-1 space-y-2">
                         <div className="h-4 rounded-full w-2/3" style={{ background: "rgba(0,0,0,0.05)" }} />
