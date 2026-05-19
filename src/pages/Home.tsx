@@ -219,6 +219,16 @@ export default function Home() {
   // Default '中' so users who type 中餐 mentally don't get pasta in their list.
   // Declared before useRecommendDishes so the hook receives the right mode.
   const [cuisineMode, setCuisineMode] = useState<CuisineMode>(() => loadCuisineMode());
+  // Lightweight feedback when the user taps a cuisine pill — disables the
+  // group for 200ms (anti double-tap) and shows a 500ms loading shimmer so
+  // the transition reads as "switching" instead of an instant pop.
+  const [cuisineSwitching, setCuisineSwitching] = useState(false);
+  function handleCuisineSwitch(key: CuisineMode) {
+    if (cuisineSwitching || key === cuisineMode) return;
+    setCuisineSwitching(true);
+    setCuisineMode(key);
+    setTimeout(() => setCuisineSwitching(false), 500);
+  }
   useEffect(() => {
     localStorage.setItem('home_cuisine_mode', cuisineMode);
     // Tell useWeeklyMenu to re-run with the new cuisine. The cache key
@@ -824,18 +834,26 @@ export default function Home() {
                 { key: 'chinese',  label: '中餐' },
                 { key: 'hk-style', label: '港式' },
                 { key: 'western',  label: '西餐' },
-              ] as const).map(({ key, label }) => (
-                <button key={key} onClick={() => setCuisineMode(key)}
-                  className="px-2.5 py-1 rounded-xl font-bold transition-all active:scale-95"
-                  style={{
-                    fontSize: 11.5,
-                    background: cuisineMode === key ? "white" : "transparent",
-                    color: cuisineMode === key ? "#1a1a1a" : "rgba(0,0,0,0.42)",
-                    boxShadow: cuisineMode === key ? "0 2px 8px rgba(0,0,0,0.08)" : "none",
-                  }}>
-                  {label}
-                </button>
-              ))}
+              ] as const).map(({ key, label }) => {
+                const active = cuisineMode === key;
+                const loading = cuisineSwitching && active;
+                return (
+                  <button key={key} onClick={() => handleCuisineSwitch(key)}
+                    disabled={cuisineSwitching}
+                    className="px-2.5 py-1 rounded-xl font-bold transition-all active:scale-95 disabled:opacity-60 inline-flex items-center gap-1"
+                    style={{
+                      fontSize: 11.5,
+                      background: active ? "white" : "transparent",
+                      color: active ? "#1a1a1a" : "rgba(0,0,0,0.42)",
+                      boxShadow: active ? "0 2px 8px rgba(0,0,0,0.08)" : "none",
+                    }}>
+                    {loading && (
+                      <span className="inline-block w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" />
+                    )}
+                    {label}
+                  </button>
+                );
+              })}
             </div>
 
             {/* 今日用餐人数 chip — tap to expand the +/- stepper popover.
