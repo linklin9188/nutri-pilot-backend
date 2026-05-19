@@ -80,6 +80,22 @@ function getCurrentSolarTerm(): typeof SOLAR_TERMS[0] {
   return current;
 }
 
+// 12 traditional Chinese 时辰 (each spans 2 modern hours, 子时 23-1)
+const CHINESE_HOURS = ['子时','丑时','寅时','卯时','辰时','巳时','午时','未时','申时','酉时','戌时','亥时'];
+function getChineseHour(): string {
+  const h = new Date().getHours();
+  return CHINESE_HOURS[Math.floor(((h + 1) % 24) / 2)];
+}
+
+// Estimate cooking minutes for a dish badge. Prefers DB-provided cook_time_min,
+// falls back to (prep_steps + cook_steps) × ~3min, hides when nothing known.
+function getPrepTimeMin(dish: any): number | null {
+  if (typeof dish?.cook_time_min === 'number' && dish.cook_time_min > 0) return dish.cook_time_min;
+  const steps = (dish?.prep_steps_json?.length ?? 0) + (dish?.cook_steps_json?.length ?? 0);
+  if (steps > 0) return Math.max(5, steps * 3);
+  return null;
+}
+
 // ── Weather tip overlay (weather code + humidity + temp → dietary nudge) ──────
 
 const WEATHER_CODE_LABEL: Record<number, string> = {
@@ -1045,11 +1061,28 @@ export default function Home() {
                             </span>
                           )}
                         </p>
-                        {/* Cuisine label — full row width since it sits below
-                            the absolute action cluster's vertical extent. */}
-                        <p className="truncate mt-0.5" style={{ fontSize: 11.5, color: "rgba(0,0,0,0.42)" }}>
-                          {cuisineLabel(dish)}
-                        </p>
+                        {/* Cuisine label + prep-time badge — full row width
+                            since this row sits below the absolute action
+                            cluster. Badge hides when neither cook_time_min nor
+                            steps JSON give a usable estimate. */}
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className="truncate" style={{ fontSize: 11.5, color: "rgba(0,0,0,0.42)" }}>
+                            {cuisineLabel(dish)}
+                          </span>
+                          {(() => {
+                            const t = getPrepTimeMin(dish);
+                            return t ? (
+                              <span
+                                className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 font-bold shrink-0"
+                                style={{ fontSize: 9.5, background: 'rgba(0,0,0,0.04)', color: 'rgba(0,0,0,0.45)' }}
+                                title="备餐预估时间"
+                              >
+                                <span className="material-symbols-outlined" style={{ fontSize: 11 }}>schedule</span>
+                                {t}min
+                              </span>
+                            ) : null;
+                          })()}
+                        </div>
                       </div>
                       {/* Top-right action cluster — hoisted out of the inline
                           flow so the title can use the full row width. Compact
@@ -1104,6 +1137,19 @@ export default function Home() {
 
           </div>
         </section>
+
+        {/* Seasonal + 时辰 mini-label — sits above the nutrition card so the
+            user reads "今日时令" first, then their actual nutrition state. */}
+        <div className="flex items-center justify-center gap-1.5 mb-1"
+          style={{ fontSize: 10.5, color: 'rgba(0,0,0,0.45)', fontWeight: 600, letterSpacing: '0.04em' }}>
+          <span style={{ color: '#FF5A1F' }}>{solarTerm.icon} {solarTerm.name}</span>
+          <span style={{ color: 'rgba(0,0,0,0.18)' }}>·</span>
+          <span>{getChineseHour()}</span>
+          {weather && (<>
+            <span style={{ color: 'rgba(0,0,0,0.18)' }}>·</span>
+            <span>{weather.label}</span>
+          </>)}
+        </div>
 
         {/* 今日营养 strip — 中国营养主厨 daily scorecard.
             Pulls today's lunch+dinner from weeklyMenu, falls back to the
