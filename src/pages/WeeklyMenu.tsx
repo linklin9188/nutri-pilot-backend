@@ -450,11 +450,10 @@ export default function WeeklyMenu() {
     });
   }
 
-  // Non-members can preview today's column only — every other day on the
-  // 7-day view is locked behind the membership upgrade. Today's column
-  // matches what they already see on Home, so it acts as a familiar
-  // anchor rather than a teaser they can't act on.
-  const isDayLocked = (i: number) => !isPro && i !== todayIdx;
+  // TICKET-074 §D — freemium day window：非 Pro 用户免费看「今天 + 明天」
+  // 两天菜单，第 3-5 天（周内剩余天）显示 blur preview + 升级 CTA。今+明
+  // 给「即时可用」的体验，3-5 天作为「提前采购备料」卖点引导升级。
+  const isDayLocked = (i: number) => !isPro && i > todayIdx + 1;
   const effectiveDay = isDayLocked(selectedDay) ? todayIdx : selectedDay;
 
   const dayMenu  = weeklyMenu?.days[effectiveDay];
@@ -871,16 +870,12 @@ export default function WeeklyMenu() {
         );
       })()}
 
-      {/* ── Content area: show meals OR lock card ─────────────────── */}
-      {isDayLocked(selectedDay) ? (
-        <div className="relative z-10 flex-1">
-          <LockedDayCard onUnlock={() => navigate('/pricing')} />
-        </div>
-      ) : (
-        <>
-          {/* ── 7-day overview: every day's 3 meals at a glance ───── */}
-          <div className="relative z-10 flex-1">
-            <AnimatePresence mode="wait">
+      {/* TICKET-074 §D — 删除"整页 LockedDayCard 切换"。改为 per-day 渲染：
+          今+明 显示完整 meals，3-5 天 显示 ProGatePreview 占位卡。底部
+          统一 LockedDayCard CTA 引导升级（line ~967）。 */}
+      {/* ── 7-day overview: every day's 3 meals at a glance ───── */}
+      <div className="relative z-10 flex-1">
+        <AnimatePresence mode="wait">
               {loading ? (
                 <motion.div key="skeleton"
                   initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
@@ -904,11 +899,44 @@ export default function WeeklyMenu() {
                         const dayLunch  = day.lunchDishes ?? [];
                         const dayDinner = day.dishes ?? [];
                         const locked = isDayLocked(i);
-                        if (locked) return null;
                         // 周末规则：周一-周五为本周菜单，今天之前的日子隐藏
                         // 避免用户星期三还看到周一周二的"昨日菜"。
                         if (day.dayIndex < todayIdx) return null;
                         if (day.dayIndex >= 5)       return null;  // safety: never show 周末
+                        // TICKET-074 §D — 非 Pro 用户 day > today+1 时不显示完整菜单，
+                        // 改渲染 mini ProGatePreview（日期 header + blur 占位行 +
+                        // 「Pro 解锁」简短提示）。底部 LockedDayCard 大 CTA 仍保留。
+                        if (locked) {
+                          return (
+                            <div key={i} id={`day-${i}`} className="mb-3">
+                              <div className="px-5 flex items-baseline justify-between mb-2 opacity-60">
+                                <p className="font-serif font-black text-white" style={{ fontSize: 18, letterSpacing: "-0.005em" }}>
+                                  {DAYS[i]}
+                                </p>
+                                <p className="text-white/30" style={{ fontSize: 11, letterSpacing: "0.04em" }}>
+                                  {(() => {
+                                    if (!weeklyMenu) return '';
+                                    const [y,m,d] = weeklyMenu.weekStart.split('-').map(Number);
+                                    const dt = new Date(y, m-1, d + i);
+                                    return `${dt.getMonth()+1}/${dt.getDate()}`;
+                                  })()}
+                                </p>
+                              </div>
+                              <div className="mx-5 rounded-2xl px-4 py-3 flex items-center gap-3"
+                                style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
+                                <span className="material-symbols-outlined" style={{ fontSize: 18, color: "rgba(255,90,31,0.70)" }}>lock</span>
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-bold text-white/80" style={{ fontSize: 12 }}>
+                                    🌟 升级 Pro 解锁本日菜单
+                                  </p>
+                                  <p className="text-white/40 mt-0.5" style={{ fontSize: 10 }}>
+                                    提早 3-5 天看到全周排菜，从容采购备料
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        }
                         return (
                           <div key={i} id={`day-${i}`} className="mb-5">
                             <div className="px-5 flex items-baseline justify-between mb-2">
@@ -975,12 +1003,10 @@ export default function WeeklyMenu() {
                   {/* Removed the bottom mini-strip: the whole week is already
                       rendered above; mini strip was a leftover from the old
                       single-day detail layout. */}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        </>
-      )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
 
       {/* ── Bottom CTA ───────────────────────────────────────────── */}
       {/* ── Shopping list CTA (above tab bar) ─────────────────── */}
