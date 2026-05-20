@@ -145,13 +145,66 @@ QuickSetup 选中后底部安全提示：
 
 | commit | 部门 | 内容 |
 |--------|------|------|
-| C1 | Database | migration N: ALTER user_profiles CHECK + dishes 3 列 + 3 部分 INDEX |
+| C1 | Database | migration 037: ALTER user_profiles CHECK + dishes 3 列 + 3 部分 INDEX |
 | C2 | Algorithm | DISH_FIELDS 加 is_prenatal/lactation/elderly_friendly + axis 29 |
 | C3 | Algorithm | lib/lactation.ts + lib/elderly.ts 避忌 catalog + scoreForWeek hard/soft penalty 接入 |
 | C4 | UI | QuickSetup + Settings 3 个 dietary_goal 卡 + 配套提示 |
 | C5 | Backend | scripts/backfill-special-health-flags.ts 用 Claude/Gemini 批量回填 dishes.is_*_friendly |
 
 **实施顺序**：C1 → C2 → C3 → C5（backfill）→ C4（最后启用 UI 避免用户选了功能无菜单数据匹配）
+
+### §6.1 migration 037 SQL ready-to-execute（TICKET-20260520-046 §A）
+
+把 §3.1 + §3.2 schema 改动具化为 Database 部门可直接落地的 migration。
+**不属于 Algorithm 范围**（不变量 #4 + 工单硬约束 "不动 supabase/migrations"），
+本节起草供 Database 下一棒派单实施。
+
+```sql
+-- supabase/migrations/037_dishes_special_health_columns.sql
+-- 配套 SPEC_special_health_goals.md §3 — 妊娠/哺乳/老人 health-goal 维度扩展
+-- Database 部门负责执行；Algorithm axis 29 (TICKET-20260520-046 §B) 用
+-- schema-check forward-compat，037 落地前 dish.is_*_friendly === undefined
+-- 自动跳过该子 axis（不报错）。
+
+BEGIN;
+
+-- (1) user_profiles.dietary_goal CHECK 扩 3 新枚举值
+ALTER TABLE user_profiles
+  DROP CONSTRAINT IF EXISTS user_profiles_dietary_goal_check;
+ALTER TABLE user_profiles
+  ADD CONSTRAINT user_profiles_dietary_goal_check
+  CHECK (
+    dietary_goal IS NULL
+    OR dietary_goal IN (
+      'growth', 'muscle_gain', 'lose_weight', 'maintain', 'detox',
+      'pregnancy',                            -- legacy 兼容
+      'prenatal', 'lactation', 'elderly'      -- 新 3 类 (SPEC §2)
+    )
+  );
+
+-- (2) dishes 加 3 boolean 列 (DEFAULT false 不影响老菜推荐)
+ALTER TABLE dishes ADD COLUMN IF NOT EXISTS is_prenatal_friendly  boolean DEFAULT false;
+ALTER TABLE dishes ADD COLUMN IF NOT EXISTS is_lactation_friendly boolean DEFAULT false;
+ALTER TABLE dishes ADD COLUMN IF NOT EXISTS is_elderly_friendly   boolean DEFAULT false;
+
+-- (3) 3 个部分 INDEX (WHERE = true) — 减空间 + 加速 axis 29 命中查询
+--     backfill 后预期 5-15% dish 各自命中，部分索引适合稀疏标记列
+CREATE INDEX IF NOT EXISTS idx_dishes_prenatal
+  ON dishes (is_prenatal_friendly)  WHERE is_prenatal_friendly  = true;
+CREATE INDEX IF NOT EXISTS idx_dishes_lactation
+  ON dishes (is_lactation_friendly) WHERE is_lactation_friendly = true;
+CREATE INDEX IF NOT EXISTS idx_dishes_elderly
+  ON dishes (is_elderly_friendly)   WHERE is_elderly_friendly   = true;
+
+COMMIT;
+```
+
+**Database 部门落地后**：
+1. Algorithm 同 commit 加 `'is_prenatal_friendly', 'is_lactation_friendly', 'is_elderly_friendly'` 到 `src/lib/dishFields.ts DISH_FIELDS`（否则 SELECT 拉不到，axis 29 永远命不中 — 同 TICKET-025 §A skill "dish-fields-shadow-axis-prep"）
+2. Backend C5 跑 backfill 把 5-15% dish 标 true
+3. UI C4 最后启用 3 张 goal 卡
+
+**回滚方案**：DROP CONSTRAINT + DROP 3 列 + DROP 3 INDEX；ALTER COLUMN 加 column 是非破坏性，本 migration 可逆。
 
 ---
 
