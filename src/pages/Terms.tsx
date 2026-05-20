@@ -4,8 +4,8 @@ import { useLanguage } from "../contexts/LanguageContext";
 
 // Static terms of service page. Required for WeChat 小程序 提审 + Apple
 // + Stripe (any subscription product needs visible refund / billing rules).
-// TICKET-066 §B — 公司邮箱 JS 拼接（防爬虫 grep 字面值）
-const SUPPORT_EMAIL = "support@nothinkeats.com";
+// TICKET-066 §B — 公司邮箱 JS 拼接（防爬虫 grep 字面 @nothinkeats.com）
+const SUPPORT_EMAIL = ["support", "nothinkeats.com"].join("@");
 
 export default function Terms() {
   const navigate = useNavigate();

@@ -433,7 +433,8 @@ export default function Settings() {
   const [supportSheetOpen, setSupportSheetOpen] = useState(false);
   const [wxCopied, setWxCopied] = useState(false);
   const SUPPORT_WX = "jianjiaolin9";
-  const SUPPORT_EMAIL = "support@nothinkeats.com";
+  // TICKET-066 §B — JS 拼接防爬虫 grep 字面 @nothinkeats.com
+  const SUPPORT_EMAIL = ["support", "nothinkeats.com"].join("@");
 
   // TICKET-063 §A — 个人头像 + 昵称 + role + 家庭成员卡
   const myRole = (typeof window !== "undefined" ? localStorage.getItem("nutri_role") : null) || "employer";
@@ -1220,7 +1221,7 @@ export default function Settings() {
             <p className="text-[12px] text-gray-500 mb-4">用 app 遇到问题？告诉我们，我们 24h 内回复你。</p>
 
             <a
-              href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("Aieats 反馈")}`}
+              href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("[Aieats β 反馈]")}&body=${encodeURIComponent("用户ID: " + (getUserId()?.slice(0, 8) ?? "unknown") + "\n\n问题描述：\n")}`}
               className="w-full bg-gray-50 border border-black/5 rounded-[16px] p-4 flex items-center gap-3 active:scale-[0.98] transition-all mb-2.5"
             >
               <span className="text-[22px]">📧</span>
@@ -1257,7 +1258,7 @@ export default function Settings() {
             </button>
 
             <a
-              href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("Aieats Bug")}`}
+              href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("[Aieats β Bug]")}&body=${encodeURIComponent("用户ID: " + (getUserId()?.slice(0, 8) ?? "unknown") + "\n\nbug 复现步骤：\n1. \n2. \n3. \n\n期望行为：\n\n实际行为：\n\n截图：\n")}`}
               className="w-full bg-gray-50 border border-black/5 rounded-[16px] p-4 flex items-center gap-3 active:scale-[0.98] transition-all mb-4"
             >
               <span className="text-[22px]">🐛</span>

@@ -6,8 +6,8 @@ import { useLanguage } from "../contexts/LanguageContext";
 // App Store review + GDPR-ish baseline. Content is intentionally
 // declarative (matches what the app actually does today) rather than
 // boilerplate copy-paste — reviewers compare against runtime behavior.
-// TICKET-066 §B — 公司邮箱 JS 拼接（防爬虫 grep 字面值）
-const SUPPORT_EMAIL = "support@nothinkeats.com";
+// TICKET-066 §B — 公司邮箱 JS 拼接（防爬虫 grep 字面 @nothinkeats.com）
+const SUPPORT_EMAIL = ["support", "nothinkeats.com"].join("@");
 
 export default function Privacy() {
   const navigate = useNavigate();
