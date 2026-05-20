@@ -161,10 +161,15 @@ export default function ChatAgent() {
   const [draft, setDraft] = useState('');
   const scrollAnchorRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to the latest message on every append.
+  // Auto-scroll to the latest message on every append AND every streamed
+  // token (TICKET-030 §D fix): appendStreamToken grows the last message in
+  // place without changing messages.length, so a length-only dep missed
+  // mid-stream growth and long replies fell out of view. Including
+  // session.updated_at (bumps on every token) restores follow-along. 'auto'
+  // behavior avoids queueing 60ms smooth-scroll animations.
   useEffect(() => {
-    scrollAnchorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [session.messages.length]);
+    scrollAnchorRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
+  }, [session.messages.length, session.updated_at]);
 
   async function handleSend() {
     const text = draft.trim();
