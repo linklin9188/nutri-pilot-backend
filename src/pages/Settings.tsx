@@ -327,6 +327,7 @@ export default function Settings() {
   // because their account never went through the legacy create path).
   const [inviteCode, setInviteCode] = useState<string>("");
   const [codeCopied, setCodeCopied] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -997,13 +998,16 @@ export default function Settings() {
                 </p>
               </div>
 
-              {/* Row 5 — WhatsApp 邀请按钮 */}
+              {/* Row 5 — WhatsApp 邀请按钮 (TICKET-068 §D — link 升级为
+                  ?invite= 闭环，菲佣点 link → /login?invite=XXX 自动 helper
+                  tab + 预填邀请码框) */}
               <button
                 onClick={() => {
-                  const link = `${window.location.origin}/login?role=helper`;
-                  const codeLine = inviteCode ? `\n\n加入码 / Code: *${inviteCode}*` : "";
+                  const link = inviteCode
+                    ? `${window.location.origin}/login?invite=${inviteCode}`
+                    : `${window.location.origin}/login?role=helper`;
                   const text = encodeURIComponent(
-                    `Hi ${helperName}! 我用爱吃 Aieats 管理家里的菜单，你可以直接在上面查看今天的采购和备菜任务。${codeLine}\n\n${link}`
+                    `Hi ${helperName}! I'm using Aieats to plan our family meals — tap this link to join (no Facebook needed):\n\n${link}\n\n你好 ${helperName}！我用爱吃 Aieats 管理家里的菜单，点这个链接直接进入。`
                   );
                   window.open(`https://wa.me/?text=${text}`, "_blank");
                 }}
@@ -1011,7 +1015,28 @@ export default function Settings() {
                 style={{ background: "linear-gradient(135deg, #25D366, #128C7E)", color: "white" }}
               >
                 <span style={{ fontSize: 16 }}>📲</span>
-                邀请 {helperName || "工人姐姐"} 加入
+                发给 {helperName || "工人姐姐"} / Send to helper
+              </button>
+
+              {/* TICKET-068 §D — 复制链接兜底按钮（WhatsApp 跳转失败时用） */}
+              <button
+                onClick={async () => {
+                  const link = inviteCode
+                    ? `${window.location.origin}/login?invite=${inviteCode}`
+                    : `${window.location.origin}/login?role=helper`;
+                  try {
+                    await navigator.clipboard.writeText(link);
+                    setLinkCopied(true);
+                    setTimeout(() => setLinkCopied(false), 1800);
+                  } catch { /* clipboard blocked */ }
+                }}
+                className="w-full py-2 rounded-[12px] text-[13px] font-semibold active:scale-[0.98] transition-all flex items-center justify-center gap-1.5"
+                style={{ background: "rgba(0,0,0,0.04)", color: "#333" }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
+                  {linkCopied ? "check_circle" : "link"}
+                </span>
+                {linkCopied ? "已复制 / Copied" : "复制链接 / Copy link"}
               </button>
 
               {/* TICKET-067 §C — 小美料理机 toggle 并入做饭辅助卡（原独立 card 已删）*/}
