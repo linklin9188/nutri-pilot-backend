@@ -4,7 +4,7 @@
  * Two channels:
  *   1. recordEngagement(dish): "user starts prepping / cooking" → +1.0 to each tag
  *      column on user_preference_scores (cumulative count, COUNTER_CAP=25).
- *   2. consumeRatings(): pulls last-30-days user_feedback WHERE feedback_type IN
+ *   2. consumeRatings(): pulls last-30-days user_feedback_helper WHERE feedback_type IN
  *      ('rating_good','rating_okay','rating_bad'), aggregates by dish_id, fans
  *      out to tag columns with weights (good +1.0 / okay 0 / bad -0.5), upserts
  *      into user_preference_scores; ≥10 new feedback rows → INSERT a
@@ -14,7 +14,7 @@
  * of these raw counts (see useWeeklyMenu.ts §4 learned-data layer); this hook
  * only writes finer-grained data, scoreForWeek not touched.
  *
- * NOTE: consumeRatings depends on `user_feedback` + `prefscores_training_log`
+ * NOTE: consumeRatings depends on `user_feedback_helper` + `prefscores_training_log`
  * tables (Database migration 027 / TICKET-012). Until those land, SELECT will
  * return [] (empty result, no error) and INSERT will silently fail via
  * .then(_, _) — same anon-first error swallow pattern as recordEngagement.
@@ -95,7 +95,7 @@ async function updateEMAScores(userId: string, dish: {
   }
 }
 
-// ── §A (TICKET-015): consume user_feedback ratings → prefScores + training log ──
+// ── §A (TICKET-015 + TICKET-019 表名跟随): consume user_feedback_helper ratings → prefScores + training log ──
 //
 // Rating weights — confirmed in CEO 工单 TELEPOT-20260520-015 §A：
 //   rating_good +1.0 / rating_okay 0 / rating_bad -0.5
@@ -116,7 +116,7 @@ async function consumeRatingFeedback(userId: string) {
 
   // 1. Pull last 30 days of rating feedback
   const { data: feedbacks } = await supabase
-    .from('user_feedback')
+    .from('user_feedback_helper')
     .select('dish_id, feedback_type, created_at')
     .eq('user_id', userId)
     .in('feedback_type', ['rating_good', 'rating_okay', 'rating_bad'])

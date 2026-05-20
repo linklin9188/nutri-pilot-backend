@@ -1976,7 +1976,7 @@ export function useWeeklyMenu(weekOffset: number = 0) {
         // 取今日 localStorage `home_inventory_<userId>_<date>` 的 true keys
         // ∩ 剔除 7 日内被标记 missing_ingredient 的食材集合（菲佣实测"以为
         // 家里有"但其实没有的负反馈）。本轮不接 user_pantry_items DB 表
-        // （Day 3+）；仅 localStorage + user_feedback 信号。
+        // （Day 3+）；仅 localStorage + user_feedback_helper 信号。
         const todayIso = new Date().toISOString().slice(0, 10);
         const inventoryKey = `home_inventory_${userId}_${todayIso}`;
         const inventorySet = new Set<string>();
@@ -1994,7 +1994,7 @@ export function useWeeklyMenu(weekOffset: number = 0) {
           sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
           try {
             const { data: missing } = await supabase
-              .from('user_feedback')
+              .from('user_feedback_helper')
               .select('meta, dish_id, created_at')
               .eq('user_id', userId)
               .eq('feedback_type', 'missing_ingredient')
@@ -2004,7 +2004,7 @@ export function useWeeklyMenu(weekOffset: number = 0) {
               const ing = (row as any)?.meta?.ingredient as string | undefined;
               if (ing) inventorySet.delete(ing);
             }
-          } catch { /* user_feedback 表未上线（migration 027 前）→ 跳过反向剔除 */ }
+          } catch { /* user_feedback_helper 表未上线（Database 016/027 前）→ 跳过反向剔除 */ }
         }
         const homeInventoryItems = inventorySet.size > 0 ? inventorySet : undefined;
 
