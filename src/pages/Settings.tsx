@@ -6,6 +6,7 @@ import MembershipBenefits from "../components/MembershipBenefits";
 import { useSubscription } from "../lib/subscription";
 import { useLanguage, LANGUAGE_LABEL, type Language } from "../contexts/LanguageContext";
 import { getUserId } from "../lib/userId";
+import { syncProfileToDB } from "../lib/profileSync";
 
 // 4-language picker (简 / 繁 / EN / Tagalog).
 function LanguageCard() {
@@ -311,6 +312,10 @@ function writeQuickPref(key: string, value: string) {
   if (key === "goal")     localStorage.setItem("userDiet",  value);
   if (key === "hometown") localStorage.setItem("userHometown", value);
   window.dispatchEvent(new Event("nutri-prefs-changed"));
+  // §A (TICKET-036 Smell 2) — profile 改完同步到 DB user_profiles，让
+  // 算法侧 SELECT 的 hometown_cuisine / dietary_goal / taste_pref 跟随 UI。
+  // fire-and-forget；匿名 / 失败静默吞掉，不阻断主流程。
+  syncProfileToDB(getUserId()).catch(() => {});
 }
 
 export default function Settings() {

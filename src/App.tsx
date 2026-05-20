@@ -31,6 +31,8 @@ import Privacy from './pages/Privacy';
 import Terms from './pages/Terms';
 import RequireAuth from './components/RequireAuth';
 import { syncFavoritesFromCloud } from './lib/favorites';
+import { syncProfileFromDB } from './lib/profileSync';
+import { getUserId } from './lib/userId';
 import { LanguageProvider } from './contexts/LanguageContext';
 import { supabase } from './lib/supabase';
 import { maybeAttemptSilent } from './lib/wechatSilentLogin';
@@ -85,6 +87,12 @@ function AppShell() {
     // users (no userId yet) get a no-op; once they finish QuickSetup the
     // anon userId triggers a sync on the next event tick.
     syncFavoritesFromCloud().catch(() => {/* offline-tolerant */});
+
+    // §A (TICKET-036 Smell 2) — DB → localStorage profile 同步：跨设备登录
+    // 时把 user_profiles 的 hometown_cuisine / dietary_goal / taste_pref 拉
+    // 进 localStorage，让 UI 显示与算法读到的 profile 一致。anon / network
+    // 失败静默吞掉，不阻塞启动。
+    syncProfileFromDB(getUserId()).catch(() => {/* offline-tolerant */});
 
     // Only sync IN — i.e. if a real Supabase OAuth session ever materializes
     // (currently none; Facebook/Google/Apple all run through Login's dev
