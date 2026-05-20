@@ -2000,6 +2000,25 @@ function generateWeekPlan(
       return raw ? enrichRaw(raw) : undefined;
     })();
 
+    // §B (TICKET-055) 为每道选中的菜跑 explainScore 填充 explanations map
+    // (key by dish.id)。UI 可选消费 — 不消费也不影响显示。
+    const explanations: Record<string, ScoreExplanation> = {};
+    const explainCtx: ExplainContext = {
+      profile, prefScores, dayIndex, today: new Date(),
+      solarTerm, humidity, hasXiaomei, homeInventoryItems, spiceBoost,
+    };
+    const allDayDishes = [...dayDishes, ...kidDishes];
+    for (const d of allDayDishes) {
+      if (d?.id) explanations[d.id] = explainScore(d, { ...explainCtx, mealTime: '晚餐' });
+    }
+    for (const d of lunchDishes) {
+      if ((d as any)?.id) explanations[(d as any).id] = explainScore(d, { ...explainCtx, mealTime: '午餐' });
+    }
+    for (const d of breakfastDishes) {
+      if ((d as any)?.id) explanations[(d as any).id] = explainScore(d, { ...explainCtx, mealTime: '早餐' });
+    }
+    if (fruitDish?.id) explanations[fruitDish.id] = explainScore(fruitDish, explainCtx);
+
     days.push({
       date: dateForDayIndex(weekStart, dayIndex),
       dayIndex,
@@ -2008,6 +2027,7 @@ function generateWeekPlan(
       lunchDishes,
       breakfastDishes,
       fruitDish,
+      explanations,
     });
   }
 
