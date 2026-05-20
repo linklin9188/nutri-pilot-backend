@@ -39,6 +39,59 @@ export default function ChatAgent() {
   const { t4 } = useLanguage();
 
   const { session, appendMessage, appendStreamToken, chooseProposal, notFound } = useChatSession(mode, sessionId);
+
+  // TICKET-044 §C — recent-sessions sidebar. Fetched on demand so the user's
+  // first chat doesn't pay the DB roundtrip. Forward-compatible: silent skip
+  // if chat_sessions table isn't there yet.
+  interface SessionPreview {
+    id: string;
+    mode: ChatMode;
+    preview: string;     // first user message, truncated to 20 chars
+    updated_at: number;  // ms epoch
+  }
+  const [sidebarOpen, setSidebarOpen]   = useState(false);
+  const [recentSessions, setRecentSessions] = useState<SessionPreview[]>([]);
+  const [recentLoading, setRecentLoading]   = useState(false);
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    let cancelled = false;
+    setRecentLoading(true);
+    (async () => {
+      try {
+        const uid = getUserId();
+        if (!uid) return;
+        const { data, error } = await supabase
+          .from('chat_sessions')
+          .select('id, mode, messages, updated_at')
+          .eq('user_id', uid)
+          .order('updated_at', { ascending: false })
+          .limit(10);
+        if (cancelled) return;
+        if (error || !data) return;
+        const items: SessionPreview[] = (data as any[]).map(row => {
+          const msgs = (row.messages ?? []) as { role: string; content: string }[];
+          const firstUser = msgs.find(m => m.role === 'user');
+          const preview = (firstUser?.content ?? '(空对话)').slice(0, 20);
+          const ts = typeof row.updated_at === 'string' ? Date.parse(row.updated_at) : Number(row.updated_at) || Date.now();
+          return { id: row.id, mode: row.mode as ChatMode, preview, updated_at: ts };
+        });
+        setRecentSessions(items);
+      } catch { /* silent — sidebar shows "暂无历史" */ }
+      finally { if (!cancelled) setRecentLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [sidebarOpen]);
+  function relativeTime(ms: number): string {
+    const diff = Math.max(0, Date.now() - ms);
+    const m = Math.floor(diff / 60000);
+    if (m < 1)   return '刚刚';
+    if (m < 60)  return `${m} 分钟前`;
+    const h = Math.floor(m / 60);
+    if (h < 24)  return `${h} 小时前`;
+    const d = Math.floor(h / 24);
+    if (d < 30)  return `${d} 天前`;
+    return new Date(ms).toISOString().slice(0, 10);
+  }
   const { weeklyMenu } = useWeeklyMenu(0);
   const [streaming, setStreaming] = useState(false);
 
@@ -229,6 +282,13 @@ export default function ChatAgent() {
             style={{ background: 'rgba(0,0,0,0.05)' }}>
             <span className="material-symbols-outlined" style={{ fontSize: 20 }}>arrow_back</span>
           </button>
+          {/* TICKET-044 §C — hamburger toggle for the recent-sessions sidebar */}
+          <button onClick={() => setSidebarOpen(true)}
+            className="w-9 h-9 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+            style={{ background: 'rgba(0,0,0,0.05)' }}
+            title="历史会话">
+            <span className="material-symbols-outlined" style={{ fontSize: 20 }}>history</span>
+          </button>
           <div className="flex-1 min-w-0">
             <h1 className="font-black truncate" style={{ fontSize: 17 }}>
               {t4('AI Nutrition Buddy', 'AI 营养小助手', 'AI Tagapayo sa Nutrisyon', 'AI Pakar Nutrisi')}
@@ -395,6 +455,77 @@ export default function ChatAgent() {
           </button>
         </div>
       </div>
+
+      {/* TICKET-044 §C — Recent-sessions sidebar (left slide-in). Backdrop
+          dismisses; row click navigates to that session id. "新对话" button
+          mints a fresh session by stripping the ?session= URL param. */}
+      {sidebarOpen && (
+        <>
+          <div className="fixed inset-0 z-[80]" onClick={() => setSidebarOpen(false)}
+            style={{ background: 'rgba(0,0,0,0.40)' }} />
+          <aside className="fixed top-0 bottom-0 left-0 z-[81] w-[80%] max-w-[320px] bg-white flex flex-col shadow-2xl"
+            style={{ paddingTop: 'env(safe-area-inset-top, 24px)' }}>
+            <div className="px-4 pt-4 pb-3 border-b border-black/[0.06] flex items-center justify-between">
+              <p style={{ fontSize: 15, fontWeight: 700 }}>最近会话</p>
+              <button onClick={() => setSidebarOpen(false)} className="w-8 h-8 rounded-full flex items-center justify-center active:scale-90"
+                style={{ background: 'rgba(0,0,0,0.05)' }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 17 }}>close</span>
+              </button>
+            </div>
+            {/* New chat */}
+            <button onClick={() => {
+                setSidebarOpen(false);
+                // Strip ?session= so RootRedirect (or useChatSession 自动写) mints a fresh id.
+                const url = new URL(window.location.href);
+                url.searchParams.delete('session');
+                window.location.href = url.toString();
+              }}
+              className="mx-3 mt-3 mb-1 rounded-2xl py-2.5 flex items-center justify-center gap-1.5 font-bold text-white active:scale-[0.98]"
+              style={{ background: '#FF5A1F', fontSize: 13 }}>
+              <span className="material-symbols-outlined" style={{ fontSize: 16 }}>add_comment</span>
+              新对话
+            </button>
+            {/* Sessions list */}
+            <div className="flex-1 overflow-y-auto px-3 py-2 flex flex-col gap-1.5">
+              {recentLoading && (
+                <p className="text-center py-6" style={{ fontSize: 11.5, color: 'rgba(0,0,0,0.40)' }}>加载中…</p>
+              )}
+              {!recentLoading && recentSessions.length === 0 && (
+                <p className="text-center py-6" style={{ fontSize: 11.5, color: 'rgba(0,0,0,0.40)' }}>暂无历史会话</p>
+              )}
+              {recentSessions.map(s => {
+                const active = s.id === session.id;
+                const modeIcon = s.mode === 'week' ? 'calendar_month'
+                              : s.mode === 'preference' ? 'tune'
+                              : 'today';
+                return (
+                  <button key={s.id} onClick={() => {
+                      setSidebarOpen(false);
+                      navigate(`/chat?mode=${s.mode}&session=${encodeURIComponent(s.id)}`);
+                    }}
+                    className="rounded-xl px-3 py-2 flex items-start gap-2 text-left active:scale-[0.99] transition-all"
+                    style={{
+                      background: active ? 'rgba(255,90,31,0.08)' : 'transparent',
+                      border:     active ? '1px solid rgba(255,90,31,0.20)' : '1px solid transparent',
+                    }}>
+                    <span className="material-symbols-outlined mt-0.5" style={{ fontSize: 16, color: active ? '#FF5A1F' : 'rgba(0,0,0,0.45)' }}>
+                      {modeIcon}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="truncate" style={{ fontSize: 12.5, fontWeight: active ? 700 : 500, color: '#1a1a1a' }}>
+                        {s.preview || '(空对话)'}
+                      </p>
+                      <p className="truncate" style={{ fontSize: 10.5, color: 'rgba(0,0,0,0.45)', marginTop: 1 }}>
+                        {relativeTime(s.updated_at)}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </aside>
+        </>
+      )}
 
       <BottomTabBar />
     </div>
