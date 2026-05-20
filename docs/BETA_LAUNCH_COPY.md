@@ -5,20 +5,42 @@
 
 ---
 
-## 朋友圈文案（一段，280 字内）
+## 朋友圈文案（妈妈圈中文 + 菲佣群英文，双套）
+
+**妈妈圈版 / 中文 / 朋友圈 + 微信群转发**
 
 ```
-忙活了几个月，终于把它做出来了 — 「爱吃 Aieats」🍳
+帮我看看这个 ⬇️
 
-一个 AI 给全家定制一周菜单的 app。
-午餐、晚餐、采购清单、营养搭配、节气节庆全自动。
-香港双职工 + 菲佣家庭的福音。
+「妈妈们的智能菜单～」
+按节气推应季菜，学校吃过的今天不再上～
 
-今天开 β 内测，前 100 个朋友免费用。
-试用码：AIEATS_BETA
-👉 nothinkeats.com
+AI 自动给一家人排 21 顿饭，按口味 + 健康目标 + 当季食材。
+前 100 个朋友免费试一年（用 promo code: AIEATS_BETA）
 
-用 24 小时，给我提意见，骂我也行。
+👉 https://nothinkeats.com
+
+用了帮我吐槽下哪里不顺手 🙏
+```
+
+---
+
+**菲佣群版 / English / WhatsApp / Facebook helper group**
+
+```
+Hi friends 👋
+
+I'm trying out an AI menu app for the family I cook for — it plans 21 meals
+a week (Chinese / Cantonese / Filipino mix), in Tagalog / English / Indonesian.
+
+Your employer enters your helper code (ask them for it in Settings), then
+you log in with that code — no Facebook needed.
+
+First 100 helpers get free Pro for a year 🎁 (promo: AIEATS_BETA)
+
+👉 https://nothinkeats.com
+
+Tell me if anything feels weird 🙏
 ```
 
 ---
