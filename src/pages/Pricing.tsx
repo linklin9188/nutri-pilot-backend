@@ -368,7 +368,160 @@ export default function Pricing() {
         </div>
       )}
 
+      {/* TICKET-047 §C — 横向对比矩阵 + FAQ。Visible to both free + paid users
+          so paid users see what they have and free users see what they unlock.
+          Sits between the plan selector / portal CTA and the bottom tab bar. */}
+      <CompareMatrix currentPlan={currentPlan} />
+
       <BottomTabBar />
     </div>
+  );
+}
+
+// ── TICKET-047 §C — Pricing compare matrix + FAQ accordion ────────────────
+type PlanId = 'free' | 'pro_monthly' | 'pro_halfyear' | 'pro_yearly';
+
+interface FeatureRow {
+  label:    string;
+  // 1 = ✓, 0 = ✗; per-plan boolean. Order: free / monthly / halfyear / yearly.
+  free:     0 | 1;
+  monthly:  0 | 1;
+  halfyear: 0 | 1;
+  yearly:   0 | 1;
+}
+
+const FEATURES: FeatureRow[] = [
+  { label: '整周菜单生成',              free: 1, monthly: 1, halfyear: 1, yearly: 1 },
+  { label: '一键采购清单',              free: 1, monthly: 1, halfyear: 1, yearly: 1 },
+  { label: '米其林菜单',               free: 0, monthly: 1, halfyear: 1, yearly: 1 },
+  { label: '学校营养均衡',             free: 0, monthly: 1, halfyear: 1, yearly: 1 },
+  { label: '节庆推荐 (7 节庆)',         free: 0, monthly: 1, halfyear: 1, yearly: 1 },
+  { label: 'ChatAgent AI 对话',         free: 0, monthly: 1, halfyear: 1, yearly: 1 },
+  { label: 'Pantry 持久化（我家有）',    free: 0, monthly: 1, halfyear: 1, yearly: 1 },
+  { label: '家宴菜单（10–20 人）',      free: 0, monthly: 0, halfyear: 1, yearly: 1 },
+  { label: '港式祛湿调理',              free: 0, monthly: 0, halfyear: 1, yearly: 1 },
+  { label: '大厨上门预约',              free: 0, monthly: 0, halfyear: 0, yearly: 1 },
+];
+
+interface FAQ {
+  q: string;
+  a: string;
+}
+const FAQS: FAQ[] = [
+  {
+    q: '什么时候选 HK$66 月度？',
+    a: '想先试一两个月看 AI 推荐能不能跟你家口味、再决定要不要长期续。月度灵活，随时退订。',
+  },
+  {
+    q: '什么时候选 HK$199 半年？',
+    a: '已经决定用爱吃当主要菜单工具的家庭，半年付平均月费降到 HK$33，多解锁家宴 / 港式祛湿两个 Pro 工具。',
+  },
+  {
+    q: '什么时候升 HK$365 年？',
+    a: '有"找大厨上门"需求（节庆 / 寿宴 / 月子餐）的家庭，年付才解锁这一项；同时月费降到 HK$30，全年最低单价。',
+  },
+  {
+    q: '中途升级 / 降级会怎样？',
+    a: '随时可以在 "管理订阅" 里调整套餐。Stripe 按比例自动退差价 / 补差价，不会重复扣费。',
+  },
+];
+
+function CompareMatrix({ currentPlan }: { currentPlan: PlanId }) {
+  const [openIdx, setOpenIdx] = useState<number | null>(null);
+  const cellOk = '✓';
+  const cellNo = '–';
+  const PLANS_HEADER: { key: 'free' | 'monthly' | 'halfyear' | 'yearly'; label: string; price: string }[] = [
+    { key: 'free',     label: '免费',  price: 'HK$0'   },
+    { key: 'monthly',  label: '月度',  price: 'HK$66'  },
+    { key: 'halfyear', label: '半年',  price: 'HK$199' },
+    { key: 'yearly',   label: '年度',  price: 'HK$365' },
+  ];
+  const isCurrent = (k: typeof PLANS_HEADER[number]['key']) =>
+    (k === 'free'     && currentPlan === 'free') ||
+    (k === 'monthly'  && currentPlan === 'pro_monthly')  ||
+    (k === 'halfyear' && currentPlan === 'pro_halfyear') ||
+    (k === 'yearly'   && currentPlan === 'pro_yearly');
+
+  return (
+    <section className="bg-white rounded-3xl p-4 shadow-sm space-y-3 mt-2 mb-8">
+      <h3 className="font-bold" style={{ fontSize: 15 }}>套餐对比</h3>
+
+      {/* Matrix table */}
+      <div className="rounded-2xl overflow-hidden border border-black/[0.06]">
+        {/* Header row */}
+        <div className="grid grid-cols-[1.4fr_repeat(4,1fr)] text-center" style={{ background: 'rgba(0,0,0,0.03)' }}>
+          <div className="px-3 py-2 text-left" style={{ fontSize: 11, fontWeight: 700, color: 'rgba(0,0,0,0.50)' }}>
+            功能
+          </div>
+          {PLANS_HEADER.map(p => {
+            const active = isCurrent(p.key);
+            return (
+              <div key={p.key} className="px-1 py-2"
+                style={{ background: active ? 'rgba(255,90,31,0.10)' : 'transparent' }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: active ? '#FF5A1F' : '#1a1a1a' }}>
+                  {p.label}
+                </p>
+                <p style={{ fontSize: 9.5, color: active ? '#FF5A1F' : 'rgba(0,0,0,0.45)', fontWeight: 600 }}>
+                  {p.price}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+        {/* Feature rows */}
+        {FEATURES.map((row, i) => (
+          <div key={i} className="grid grid-cols-[1.4fr_repeat(4,1fr)] text-center"
+            style={{ borderTop: '1px solid rgba(0,0,0,0.04)' }}>
+            <div className="px-3 py-2 text-left" style={{ fontSize: 11.5, color: '#1a1a1a' }}>
+              {row.label}
+            </div>
+            {(['free', 'monthly', 'halfyear', 'yearly'] as const).map(k => {
+              const has = row[k] === 1;
+              const active = isCurrent(k);
+              return (
+                <div key={k} className="px-1 py-2"
+                  style={{
+                    background: active ? 'rgba(255,90,31,0.04)' : 'transparent',
+                    fontSize: 12.5,
+                    color: has ? (active ? '#FF5A1F' : '#16A34A') : 'rgba(0,0,0,0.22)',
+                    fontWeight: has ? 700 : 500,
+                  }}>
+                  {has ? cellOk : cellNo}
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+
+      {/* FAQ accordion */}
+      <h3 className="font-bold pt-1" style={{ fontSize: 15 }}>常见问题</h3>
+      <div className="rounded-2xl overflow-hidden border border-black/[0.06]">
+        {FAQS.map((faq, i) => {
+          const open = openIdx === i;
+          return (
+            <div key={i} style={{ borderTop: i === 0 ? 'none' : '1px solid rgba(0,0,0,0.04)' }}>
+              <button onClick={() => setOpenIdx(open ? null : i)}
+                className="w-full px-3 py-2.5 flex items-center justify-between gap-2 text-left active:bg-black/[0.02]">
+                <span style={{ fontSize: 12.5, fontWeight: 600, color: '#1a1a1a' }}>{faq.q}</span>
+                <span className="material-symbols-outlined shrink-0"
+                  style={{
+                    fontSize: 16, color: 'rgba(0,0,0,0.45)',
+                    transition: 'transform 0.2s',
+                    transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
+                  }}>
+                  expand_more
+                </span>
+              </button>
+              {open && (
+                <p className="px-3 pb-3" style={{ fontSize: 11.5, color: 'rgba(0,0,0,0.62)', lineHeight: 1.6 }}>
+                  {faq.a}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
