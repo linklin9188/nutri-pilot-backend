@@ -13,6 +13,7 @@
  */
 import { useState } from 'react';
 import type { WeekPlan, ProposalChoice } from '../hooks/useChatSession';
+import { VARIANT_META, type ProposalVariant } from '../lib/proposalEngine';
 
 interface Props {
   proposals: WeekPlan[];
@@ -21,6 +22,11 @@ interface Props {
   /** Parent-controlled disable (e.g. while another adopt is in flight).
    *  ORs with the internal isAdopted-derived disable; default false. */
   disabled?: boolean;
+  /** TICKET-034 §A — semantic labels per proposal (A/B/C) so the user
+   *  reads "均衡推荐 / 应季应景 / 投你所好" instead of "方案 1 / 2 / 3
+   *  with no apparent difference". Optional + parallel to proposals[];
+   *  omit for backward compatibility with skeleton callers. */
+  variants?: readonly ProposalVariant[];
 }
 
 const TABS: ProposalChoice[] = ['A', 'B', 'C'];
@@ -35,7 +41,7 @@ function summarizeProposal(plan: WeekPlan): string {
   return titles.join(' · ');
 }
 
-export default function MenuProposal({ proposals, chosen, onAdopt, disabled = false }: Props) {
+export default function MenuProposal({ proposals, chosen, onAdopt, disabled = false, variants }: Props) {
   const [activeIdx, setActiveIdx] = useState<number>(
     chosen ? TABS.indexOf(chosen) : 0
   );
@@ -48,23 +54,33 @@ export default function MenuProposal({ proposals, chosen, onAdopt, disabled = fa
 
   return (
     <div className="rounded-2xl bg-white border border-black/[0.06] overflow-hidden shadow-sm">
-      {/* Tabs */}
+      {/* Tabs — each shows label + (optional) variant chip on a 2-row stack */}
       <div className="flex" style={{ background: 'rgba(0,0,0,0.03)' }}>
         {TABS.slice(0, proposals.length).map((label, idx) => {
           const isActive = idx === activeIdx;
           const isThisChosen = chosen === label;
+          const variantMeta = variants && variants[idx] ? VARIANT_META[variants[idx]] : null;
           return (
             <button key={label} onClick={() => setActiveIdx(idx)}
-              className="flex-1 py-2.5 font-bold transition-all active:scale-95"
+              className="flex-1 py-2 px-1 font-bold transition-all active:scale-95 flex flex-col items-center gap-0.5"
               style={{
-                fontSize: 13,
                 background: isActive ? 'white' : 'transparent',
                 color:      isActive ? '#FF5A1F' : 'rgba(0,0,0,0.45)',
                 borderBottom: isActive ? '2px solid #FF5A1F' : '2px solid transparent',
               }}>
-              方案 {label}
-              {isThisChosen && (
-                <span className="ml-1" style={{ fontSize: 11 }}>✓</span>
+              <span style={{ fontSize: 13, lineHeight: 1.1 }}>
+                方案 {label}
+                {isThisChosen && <span className="ml-1" style={{ fontSize: 11 }}>✓</span>}
+              </span>
+              {variantMeta && (
+                <span style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  color: isActive ? '#FF5A1F' : 'rgba(0,0,0,0.40)',
+                  letterSpacing: '0.02em',
+                }}>
+                  {variantMeta.label}
+                </span>
               )}
             </button>
           );
@@ -73,6 +89,13 @@ export default function MenuProposal({ proposals, chosen, onAdopt, disabled = fa
 
       {/* Body */}
       <div className="px-4 py-3 flex flex-col gap-2">
+        {/* Active variant subtitle (TICKET-034 §A) — adds one line of context
+            so the user knows WHY this proposal differs from the others. */}
+        {variants && variants[activeIdx] && (
+          <p style={{ fontSize: 10.5, color: 'rgba(255,90,31,0.85)', fontWeight: 600, lineHeight: 1.5 }}>
+            {VARIANT_META[variants[activeIdx]].description}
+          </p>
+        )}
         <p style={{ fontSize: 11, color: 'rgba(0,0,0,0.42)', fontWeight: 600, letterSpacing: '0.04em' }}>
           {active.weekStart} · 周一首餐预览
         </p>

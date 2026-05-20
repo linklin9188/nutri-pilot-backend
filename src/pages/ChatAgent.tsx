@@ -16,7 +16,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useChatSession, type ChatMode, type ProposalChoice } from '../hooks/useChatSession';
 import { useWeeklyMenu, ALGO_VERSION, getCacheKey, type WeeklyMenu } from '../hooks/useWeeklyMenu';
 import { streamChat } from '../lib/chatStreaming';
-import { generateThreeProposals } from '../lib/proposalEngine';
+import { generateThreeProposals, PROPOSAL_VARIANTS } from '../lib/proposalEngine';
 import { supabase } from '../lib/supabase';
 import { getUserId } from '../lib/userId';
 import BottomTabBar from '../components/BottomTabBar';
@@ -304,6 +304,10 @@ export default function ChatAgent() {
                   chosen={msg.meta.chosen ?? readWeekAdopted(msg.meta.proposals[0]?.weekStart) ?? undefined}
                   disabled={adopting}
                   onAdopt={choice => handleAdopt(msg.id, choice)}
+                  // §A (TICKET-034) Tag each tab with its semantic variant
+                  // so the user reads "均衡 / 应季 / 偏好放大" instead of
+                  // three identical-looking shuffles.
+                  variants={PROPOSAL_VARIANTS}
                 />
               )}
             </div>
