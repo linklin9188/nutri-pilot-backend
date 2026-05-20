@@ -1622,13 +1622,51 @@ function generateWeekPlan(
     // ═══════════════════════════════════════════════════════════════════
     const fruitDish: SupabaseDish | undefined = (() => {
       if (fruitPool.length === 0) return undefined;
+      // §C2 (TICKET-032 / SPEC §3.2 Smell 1 阶段 3) — fruit pool 进 9-axis：
+      // 不再纯 dayIndex 旋转，按 scoreFruit 评分后 weightedRandom 抽样。
+      // 仅启用 3 类相关 axis：seasonal（当季 +0.30 / 候补 'all-season'）+
+      // sweet flavor（+0.20 童趣偏好）+ health_benefit_tags 学习信号
+      // （借用 sigmoid weight × usagePower 与主菜共享学习数据）。
+      // 季节优先逻辑保留 — 先 filter 当季 + all-season pool，pool 空再
+      // 回退到全 fruitPool（无人为周末跳过水果的情况）。
       const seasonalCol = solarTerm?.season;
       const seasonal = seasonalCol
         ? fruitPool.filter(f => f.seasonal_tag === seasonalCol || f.seasonal_tag === 'all-season')
         : fruitPool;
       const pickFrom = seasonal.length > 0 ? seasonal : fruitPool;
-      const idx = dayIndex % pickFrom.length;
-      const raw = pickFrom[idx];
+
+      // 学习段 sigmoid weight 镜像 scoreForWeek axis 4 (同公式)
+      const learnedSignals = Object.values(prefScores)
+        .filter(v => typeof v === 'number' && v !== 0).length;
+      const sigmoidWeight = 0.35 + 1.15 * (1 - Math.exp(-learnedSignals / 15));
+
+      const scoreFruit = (f: any): number => {
+        let s = 0;
+        // axis A: seasonal alignment
+        const tag = (f.seasonal_tag ?? '').toLowerCase();
+        if (seasonalCol && tag === seasonalCol) s += 0.30;
+        else if (tag === 'all-season') s += 0.05;
+        // axis B: sweet flavor bias
+        const ft = (f.flavor_tags ?? []) as string[];
+        if (ft.includes('sweet')) s += 0.20;
+        // axis C: health_benefit_tags 学习信号（仅这一类 tag 适配水果场景）
+        const ht = (f.health_benefit_tags ?? []) as string[];
+        for (const tag of ht) {
+          const col = HEALTH_COL[tag];
+          if (col && prefScores[col]) s += usagePower(prefScores[col]) * 0.6 * sigmoidWeight;
+        }
+        // axis D: recency decay — 同一周内 fruit 别重复（recentIds 复用主菜表）
+        const daysSince = recentIds.get(f.id);
+        if (daysSince !== undefined) {
+          if (daysSince < 7)       s -= 0.40;
+          else if (daysSince < 14) s -= 0.20;
+        }
+        return s;
+      };
+
+      const scored = pickFrom.map(f => ({ dish: f, score: scoreFruit(f) }));
+      const picks = weightedRandom(scored, 1, rng);
+      const raw = picks[0]?.dish;
       return raw ? enrichRaw(raw) : undefined;
     })();
 
