@@ -30,6 +30,7 @@ import WeChatIn from './pages/WeChatIn';
 import Privacy from './pages/Privacy';
 import Terms from './pages/Terms';
 import RequireAuth from './components/RequireAuth';
+import NetworkBanner from './components/NetworkBanner';
 import { syncFavoritesFromCloud } from './lib/favorites';
 import { syncProfileFromDB } from './lib/profileSync';
 import { getUserId } from './lib/userId';
@@ -114,6 +115,8 @@ function AppShell() {
 
   return (
     <>
+    {/* TICKET-047 §B — global offline strip; only renders when device is offline. */}
+    <NetworkBanner />
     <Routes>
       {/* ── Public — no login needed ──────────────────────────────
           / 是匿名访客唯一能看到的页面（只读，无 AI 成本）。Auth 入口
