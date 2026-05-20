@@ -63,7 +63,8 @@ export interface WeeklyMenu {
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v42'; // §C3 (TICKET-032 / SPEC_smell1_phase3 阶段 3 收尾): 跨日 dedup 3 天窗口 hard-block + fruit pool 进 9-axis (seasonal/sweet/health_benefit) + breakfast combo 二次 scoreForWeek 排序 + breakfast keyword 注入跨日 dedup 池。
+export const ALGO_VERSION = 'v43'; // §B (TICKET-053): axis 28 公式微调 — 3+ 应季食材整体 bonus +0.15 + 单菜 cap +0.5；INGREDIENT_SEASONALITY 扩至 60+ 食材。
+// v42: §C3 (TICKET-032 / SPEC_smell1_phase3 收尾): 跨日 dedup 3 天 hard-block + fruit 进 9-axis + breakfast combo 二次 scoreForWeek 排序。
 // v41: §C (TICKET-015) generateWeekPlan seed PRNG + weightedRandom rng 参数。
 // v40: Smell 1 阶段 2 合并双管道 + scoreForWeek 9-axis + sigmoid 学习曲线 + 周五"放纵日"。
 // v37: Western high-end bias. v36: pool-aware breakfast combo. v35: hometown 地域大区. v34: cook-method variety. v33: power curve.
@@ -943,10 +944,14 @@ function scoreForWeek({
   if (profile.dietary_goal === 'lactation' && (dish as any).is_lactation_friendly) score += 0.50;
   if (profile.dietary_goal === 'elderly'   && (dish as any).is_elderly_friendly)   score += 0.50;
 
-  // ── 28. §B (TICKET-043) 单食材应季加分 — 24 节气 × 时令食材 ──────────
+  // ── 28. §B (TICKET-043 起 + TICKET-053 §B 公式微调) 单食材应季加分 ──
   // 与 axis 19 solarTerm（菜系级 health/flavor）互补：本轴看具体食材是否
-  // 命中当前节气的"应季"列表（如冬至 dish prep_steps_json 含羊肉 → +0.10）。
-  // 命中数累加，不封顶（一道菜含 2 个应季食材 → +0.20）。
+  // 命中当前节气的应季列表（如冬至 dish prep_steps_json 含羊肉）。
+  //
+  // 公式（TICKET-053 §B 调）：
+  //   - 单食材命中 +0.10
+  //   - 3+ 食材命中 → 整体额外 +0.15（应季宴 bonus，让"全应季"菜出色）
+  //   - 单菜 cap +0.5（避免命中 5 个食材就压制其他 axis）
   if (solarTerm) {
     const seasonalList = INGREDIENT_SEASONALITY[solarTerm.name_zh];
     if (seasonalList && seasonalList.length > 0) {
@@ -955,7 +960,12 @@ function scoreForWeek({
       for (const ing of dishIngs) {
         if (seasonalList.includes(ing)) seasonalHits++;
       }
-      if (seasonalHits > 0) score += seasonalHits * 0.10;
+      if (seasonalHits > 0) {
+        let seasonalBoost = seasonalHits * 0.10;
+        if (seasonalHits >= 3) seasonalBoost += 0.15;
+        if (seasonalBoost > 0.5) seasonalBoost = 0.5;
+        score += seasonalBoost;
+      }
     }
   }
 
