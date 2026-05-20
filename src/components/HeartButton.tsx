@@ -48,8 +48,10 @@ export function HeartButton({ dish, sourceTag, size = 18, className = "" }: Prop
         setOn(next);
       }}
       className={`active:scale-90 transition-transform p-1 ${className}`}
-      title={on ? "取消收藏" : "收藏这道菜"}
-      aria-label={on ? "Remove from favorites" : "Save to favorites"}
+      // TICKET-052 §B — tooltip 区分 ❤️ 收藏 vs 😋 评分。收藏 = 永久保存
+      // 这道菜到 '我的最爱'；评分 = 告诉算法你的口味（在 ✅ 我做了 popup 里）。
+      title={on ? "已收藏 · 点击移除（在'我的最爱'里）" : "保存这道菜，以后可在'我的最爱'里再找到"}
+      aria-label={on ? "Remove from My Favorites" : "Save to My Favorites for later"}
     >
       <span
         className="material-symbols-outlined"
