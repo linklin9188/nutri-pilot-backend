@@ -931,6 +931,17 @@ function scoreForWeek({
     }
   }
 
+  // ── 29. §B (TICKET-046) 特殊人群 dietary_goal — prenatal/lactation/elderly ──
+  // SPEC_special_health_goals.md §4：dietary_goal 命中对应 dish boolean
+  // 列 → +0.50 软加分。与 axis 2 dietary_goal +0.35 量级一致，单点不压过
+  // 家乡 +0.60 保持多样性。schema-check forward-compat：migration 037 未
+  // 落地时 dish.is_*_friendly === undefined → 子分支自动跳过不报错。
+  // dietary_goal 维持 legacy 'pregnancy' 兼容（不触本 axis；pregnancy.ts
+  // 链路独立处理 ban + soft boost）。
+  if (profile.dietary_goal === 'prenatal'  && (dish as any).is_prenatal_friendly)  score += 0.50;
+  if (profile.dietary_goal === 'lactation' && (dish as any).is_lactation_friendly) score += 0.50;
+  if (profile.dietary_goal === 'elderly'   && (dish as any).is_elderly_friendly)   score += 0.50;
+
   // ── 28. §B (TICKET-043) 单食材应季加分 — 24 节气 × 时令食材 ──────────
   // 与 axis 19 solarTerm（菜系级 health/flavor）互补：本轴看具体食材是否
   // 命中当前节气的"应季"列表（如冬至 dish prep_steps_json 含羊肉 → +0.10）。

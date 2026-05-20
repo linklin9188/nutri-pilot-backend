@@ -61,6 +61,11 @@ export const DISH_FIELDS = [
   'western_subtype',
   'last_backfilled_at',
   'festival_tags',  // text[] — TICKET-025 §A axis 27（Database 024 §B 落地后命中）
+  // ── TICKET-046 §B axis 29: SPECIAL HEALTH GOALS (Database migration 037 后命中) ──
+  // 未上线时 SELECT 返回 undefined → scoreForWeek axis 29 子分支自动跳过
+  'is_prenatal_friendly',
+  'is_lactation_friendly',
+  'is_elderly_friendly',
 
   // intentionally EXCLUDED: 'embedding' (vector(768), ~8KB stringified per row)
 ].join(',');
