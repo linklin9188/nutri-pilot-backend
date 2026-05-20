@@ -371,7 +371,28 @@ export default function Home() {
   const { weeklyMenu, loading: weeklyLoading, regenerate: regenerateWeekly } = useWeeklyMenu();
 
   // ── Language + cuisine prefs ─────────────────────────────────────
-  const { language, cycleLanguage, isChinese } = useLanguage();
+  const { language, cycleLanguage, isChinese, setLanguage } = useLanguage();
+  // TICKET-037 §C — language picker overlay + post-switch toast. cycleLanguage
+  // kept available as a fallback (we still wire the button to it on legacy
+  // contexts that haven't migrated to the picker UX).
+  const [langPickerOpen, setLangPickerOpen] = useState(false);
+  const [langSwitchToast, setLangSwitchToast] = useState<string | null>(null);
+  function pickLanguage(target: Language) {
+    setLangPickerOpen(false);
+    if (target === language) return; // no-op selection
+    setLanguage(target);
+    // Toast text rendered in the NEW language so the user reads confirmation
+    // in the script they just switched to.
+    const TOAST: Record<Language, string> = {
+      zh:        '已切换为简体中文',
+      'zh-Hant': '已切換為繁體中文',
+      en:        'Switched to English',
+      tl:        'Lumipat sa Tagalog',
+      id:        'Beralih ke Bahasa Indonesia',
+    };
+    setLangSwitchToast(TOAST[target] ?? `Switched to ${target}`);
+    setTimeout(() => setLangSwitchToast(null), 2500);
+  }
 
   // Single-language display: pick the right title field for a dish based on
   // the user's active language. zh / zh-Hant → title_zh; everything else
@@ -898,17 +919,53 @@ export default function Home() {
             )}
           </div>
 
-          {/* Header action stack: language toggle on top, QR scan below */}
-          <div className="flex flex-col items-end gap-2 shrink-0">
-            {/* Language cycler — short label, cycles zh → 繁 → EN → tl → id.
-                QR/fridge-scan was here too; moved to the bottom 扫冰箱 grid
-                button so the header stays single-action and clean. */}
-            <button onClick={cycleLanguage}
-              className="px-3 h-8 rounded-full flex items-center justify-center font-bold active:scale-95 transition-transform"
+          {/* Header action stack: language picker on top, QR scan below */}
+          <div className="flex flex-col items-end gap-2 shrink-0 relative">
+            {/* §C (TICKET-037) Language picker — tap opens 4-language grid
+                popover instead of single-cycle. cycleLanguage kept available
+                as ALT+click for power users / a11y. */}
+            <button
+              onClick={() => setLangPickerOpen(o => !o)}
+              onAuxClick={cycleLanguage}
+              className="px-3 h-8 rounded-full flex items-center justify-center gap-1 font-bold active:scale-95 transition-transform"
               style={{ background: "white", boxShadow: "0 4px 14px rgba(0,0,0,0.06)", fontSize: 11, color: "#1a1a1a", minWidth: 56 }}
-              title="切换语言 / Switch language">
+              title="切换语言 / Switch language"
+            >
               {LANGUAGE_LABEL[language]}
+              <span className="material-symbols-outlined" style={{
+                fontSize: 14, color: "rgba(0,0,0,0.4)",
+                transition: "transform 0.2s",
+                transform: langPickerOpen ? "rotate(180deg)" : "rotate(0deg)",
+              }}>expand_more</span>
             </button>
+            {langPickerOpen && (
+              <>
+                {/* tap-outside backdrop */}
+                <div className="fixed inset-0 z-30" onClick={() => setLangPickerOpen(false)} />
+                <div className="absolute right-0 top-full mt-2 z-40 rounded-2xl p-2 grid grid-cols-2 gap-1.5"
+                  style={{ background: 'white', boxShadow: '0 14px 38px rgba(0,0,0,0.14), 0 2px 6px rgba(0,0,0,0.06)', minWidth: 184 }}>
+                  {([
+                    { key: 'zh' as const, label: '中文'    },
+                    { key: 'en' as const, label: 'EN'      },
+                    { key: 'tl' as const, label: 'Tagalog' },
+                    { key: 'id' as const, label: 'Bahasa'  },
+                  ]).map(({ key, label }) => {
+                    const active = key === language;
+                    return (
+                      <button key={key} onClick={() => pickLanguage(key)}
+                        className="px-3 py-2 rounded-xl font-bold active:scale-95 transition-all"
+                        style={{
+                          background: active ? '#FF5A1F' : 'rgba(0,0,0,0.04)',
+                          color:      active ? 'white' : '#1a1a1a',
+                          fontSize:   12,
+                        }}>
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </div>
         </div>
       </header>
@@ -1605,6 +1662,27 @@ export default function Home() {
       )}
 
       <BottomTabBar />
+
+      {/* §C (TICKET-037) Language switch toast — floats above BottomTabBar.
+          Auto-dismisses after 2.5s; one-line text rendered in the NEW language
+          so the user reads confirmation in the script they just switched to. */}
+      {langSwitchToast && (
+        <div
+          className="fixed left-1/2 z-[70] px-4 py-2.5 rounded-full font-bold pointer-events-none"
+          style={{
+            transform: 'translateX(-50%)',
+            bottom: 'calc(env(safe-area-inset-bottom, 16px) + 140px)',
+            background: 'rgba(0,0,0,0.85)',
+            color: 'white',
+            fontSize: 12.5,
+            boxShadow: '0 8px 22px rgba(0,0,0,0.20)',
+            maxWidth: '85%',
+            textAlign: 'center',
+          }}
+        >
+          {langSwitchToast}
+        </div>
+      )}
 
       {/* Hidden fridge input */}
       <input
