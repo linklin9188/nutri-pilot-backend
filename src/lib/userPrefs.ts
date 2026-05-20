@@ -176,12 +176,18 @@ export function getUserPrefs(): UserPrefs {
   const raw = localStorage.getItem('quickPrefs');
   if (raw) {
     try {
-      const prefs = JSON.parse(raw) as {
-        goal?:   string;
+      // TICKET-075 §H — goal 可能是 string (legacy single) 或 string[] (新版 multi)。
+      // hometown 同理。primary 项 (index 0) 是 scoreDish 用的主信号；副项存
+      // localStorage 'nutri_secondary_goals' / 'nutri_secondary_hometowns'。
+      const prefsRaw = JSON.parse(raw) as {
+        goal?:   string | string[];
         spice?:  string;
         avoid?:  string[];
         health?: string[];   // health conditions from step 4
       };
+      const primaryGoal = Array.isArray(prefsRaw.goal) ? prefsRaw.goal[0]
+                        : prefsRaw.goal;
+      const prefs = { ...prefsRaw, goal: primaryGoal };
 
       // QuickSetup explicitly asks the spice question, so quickPrefs.spice
       // is authoritative when present. Otherwise (rare — quickPrefs without

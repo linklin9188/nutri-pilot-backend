@@ -31,7 +31,8 @@ const QUESTIONS = [
     step: 2,
     emoji: "🎯",
     question: "这阵子，您想怎么吃？",
-    sub: "我按这个调每天的菜。",
+    sub: "可多选 — 一家人多目标我都照顾。",
+    multi: true,
     options: [
       { id: "fatloss",   label: "减脂瘦身",   desc: "低卡、高饱腹感",         icon: "🔥" },
       { id: "muscle",    label: "增肌健体",   desc: "高蛋白、促恢复",         icon: "💪" },
@@ -96,7 +97,8 @@ const QUESTIONS = [
     step: 5,
     emoji: "🏠",
     question: "您最惦记哪一方水土的味道？",
-    sub: "我多做家乡口味，让饭桌有点念想。",
+    sub: "可多选 — 混合背景的家庭都能照顾到。",
+    multi: true,
     options: [
       // 地域大区 — 用户决策 2026-05-17：八大菜系覆盖率不足（北方人没选项），
       // 改成 7 大区 + 港澳台 + 都行。每个大区的认知摩擦接近 0，且跟 DB
@@ -154,18 +156,33 @@ const SPICE_TO_TASTE_PREF: Record<string, string | null> = {
 // gracefully no-ops when age_group is null on user_profiles.
 
 async function persistProfileToDb(prefs: Record<string, unknown>): Promise<void> {
+  // TICKET-075 §H — goal / hometown 可能是 string (legacy single-select)
+  // 或 string[] (新版 multi-select)。统一拆 head + tail：head 进 schema 单值列
+  // (dietary_goal / hometown_cuisine)，tail 存 localStorage 供 Algorithm 后续读。
+  const goalArr = Array.isArray(prefs.goal) ? prefs.goal as string[]
+                : prefs.goal ? [prefs.goal as string] : [];
+  const hometownArr = Array.isArray(prefs.hometown) ? prefs.hometown as string[]
+                    : prefs.hometown ? [prefs.hometown as string] : [];
+
   // Persist low-carb flag for the lunch / breakfast templates and hardFilter
-  // to read at score time. Skip the staple slot when this is on.
-  localStorage.setItem('nutri_low_carb', (prefs.goal as string) === 'low_carb' ? '1' : '0');
-  // Pregnancy override — QuickSetup goal='pregnancy' is the test-phase entry
-  // for hasPregnant. familyPrefs.ts ORs this with member.lifeStage='孕期'.
-  localStorage.setItem('nutri_has_pregnant_override', (prefs.goal as string) === 'pregnancy' ? '1' : '0');
+  // to read at score time. Skip the staple slot when this is on. Multi-goal:
+  // 任一目标含 low_carb 即触发。
+  localStorage.setItem('nutri_low_carb', goalArr.includes('low_carb') ? '1' : '0');
+  // Pregnancy override — multi-goal: 任一目标含 pregnancy 即触发。
+  // familyPrefs.ts ORs this with member.lifeStage='孕期'.
+  localStorage.setItem('nutri_has_pregnant_override', goalArr.includes('pregnancy') ? '1' : '0');
+  // Secondary goals / hometowns — Algorithm 后续可读取做评分广度求和。
+  localStorage.setItem('nutri_secondary_goals',
+    JSON.stringify(goalArr.slice(1)));
+  localStorage.setItem('nutri_secondary_hometowns',
+    JSON.stringify(hometownArr.slice(1)));
+
   const userId = getUserId();
   if (!userId) return;
 
-  const dietary_goal    = GOAL_TO_DIETARY_GOAL[(prefs.goal as string) ?? '']   ?? null;
+  const dietary_goal    = GOAL_TO_DIETARY_GOAL[goalArr[0] ?? ''] ?? null;
   const taste_pref      = SPICE_TO_TASTE_PREF[(prefs.spice as string) ?? '']   ?? null;
-  const hometown_cuisine = hometownToDbBucket(prefs.hometown as string);
+  const hometown_cuisine = hometownToDbBucket(hometownArr[0] ?? '');
   // Pass through avoid + health as taste/avoid hints. Only 'seafood' from
   // the avoid list maps cleanly to a flavor_tag; ingredient-level avoids
   // (cilantro/onion/beef/peanut/dairy) keep flowing through the
@@ -233,16 +250,16 @@ export default function QuickSetup() {
   };
 
   const toggleMulti = (id: string) => {
-    // Picking "无忌口 / 没有特殊情况" is an end-of-question signal — auto-advance
-    // immediately at the single-select cadence (320ms). User asked: 选完直接
-    // 跳下一页，不需要点下一步.
-    if (id === "none") {
-      setMultiSel(["none"]);
-      setTimeout(() => commitMulti(["none"]), 320);
+    // Picking "无忌口 / 没有特殊情况 / 都行没偏好" is an end-of-question signal —
+    // auto-advance immediately at the single-select cadence (320ms). TICKET-075 §H：
+    // 'no_preference' (hometown 题独有) 跟 'none' 等价 — 一选就跳。
+    if (id === "none" || id === "no_preference") {
+      setMultiSel([id]);
+      setTimeout(() => commitMulti([id]), 320);
       return;
     }
     setMultiSel(p =>
-      p.includes("none") ? [id] :
+      (p.includes("none") || p.includes("no_preference")) ? [id] :
       p.includes(id) ? p.filter(x => x !== id) : [...p, id]
     );
   };
@@ -256,7 +273,7 @@ export default function QuickSetup() {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (!("multi" in q) || !q.multi) return;
     if (multiSel.length === 0) return;
-    if (multiSel.includes("none")) return; // toggleMulti handles this path
+    if (multiSel.includes("none") || multiSel.includes("no_preference")) return; // toggleMulti handles this path
     debounceRef.current = setTimeout(() => commitMulti(multiSel), 1800);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -271,12 +288,23 @@ export default function QuickSetup() {
       setupAt: Date.now(),
     };
     localStorage.setItem("quickPrefs", JSON.stringify(prefs));
+    // TICKET-075 §H — goal / hometown 可能是 string[] (multi-select)。
+    // 主项 (index 0) 进 legacy single-string localStorage keys（保持下游
+    // useWeeklyMenu / userPrefs.ts 读取兼容）；副项已由 persistProfileToDb
+    // 存 nutri_secondary_goals / nutri_secondary_hometowns。
+    const goalArr = Array.isArray(prefs.goal) ? prefs.goal as string[]
+                  : prefs.goal ? [prefs.goal as string] : [];
+    const hometownArr = Array.isArray(prefs.hometown) ? prefs.hometown as string[]
+                      : prefs.hometown ? [prefs.hometown as string] : [];
+    const primaryGoal = goalArr[0] ?? "balanced";
+    const primaryHometown = hometownArr[0];
+
     // Map to existing taste system
     const goalToTaste: Record<string, string> = {
       fatloss: "veggie", muscle: "default", balanced: "default", nourish: "light",
     };
-    localStorage.setItem("userTaste", goalToTaste[prefs.goal as string] ?? "default");
-    localStorage.setItem("userDiet", prefs.goal as string);
+    localStorage.setItem("userTaste", goalToTaste[primaryGoal] ?? "default");
+    localStorage.setItem("userDiet", primaryGoal);
     localStorage.setItem("userSpice", prefs.spice as string);
     localStorage.setItem("userAvoid", (prefs.avoid as string[]).join(","));
     // userHometown drives readHometownCuisine() in userPrefs.ts which is the
@@ -284,7 +312,7 @@ export default function QuickSetup() {
     // promise). Without this, anonymous QuickSetup users had a 30% dead
     // hometown axis until the upsert returned — often 1-2 weeks if they
     // never came back online.
-    if (prefs.hometown) localStorage.setItem("userHometown", prefs.hometown as string);
+    if (primaryHometown) localStorage.setItem("userHometown", primaryHometown);
     // Set family defaults if not already configured
     if (!localStorage.getItem("nutri_adults")) localStorage.setItem("nutri_adults", "2");
     if (!localStorage.getItem("nutri_kids"))   localStorage.setItem("nutri_kids",   "0");
@@ -459,7 +487,7 @@ export default function QuickSetup() {
                   escape hatch when they want "no preference" without picking
                   the "none" chip. */}
               <div className="mt-6 flex items-center justify-between" style={{ minHeight: 36 }}>
-                {multiSel.length > 0 && !multiSel.includes("none") ? (
+                {multiSel.length > 0 && !multiSel.includes("none") && !multiSel.includes("no_preference") ? (
                   <p className="text-white/55" style={{ fontSize: 12, letterSpacing: "0.04em" }}>
                     已选 {multiSel.length} 项 · 稍等带您往下走
                   </p>

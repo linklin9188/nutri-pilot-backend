@@ -297,9 +297,10 @@ function useDailyTip() {
   // through to '' when no goal set OR mapping missing (rotation skips it).
   const goalTip = (() => {
     try {
-      const goal = localStorage.getItem('nutri_dietary_goal')
-        ?? JSON.parse(localStorage.getItem('quickPrefs') || '{}')?.goal
-        ?? '';
+      // TICKET-075 §H — quickPrefs.goal 可能是 string[] (多选)，取 primary [0]。
+      const rawGoal = JSON.parse(localStorage.getItem('quickPrefs') || '{}')?.goal;
+      const primaryGoal = Array.isArray(rawGoal) ? rawGoal[0] : rawGoal;
+      const goal = localStorage.getItem('nutri_dietary_goal') ?? primaryGoal ?? '';
       return GOAL_TIP_MAP[goal] ?? '';
     } catch { return ''; }
   })();
