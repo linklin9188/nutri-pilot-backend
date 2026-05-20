@@ -1156,8 +1156,10 @@ export default function Home() {
 
             {/* Dish list — bigger photos, editorial typography.
                 Smell 1 阶段 2 (v40)：所有 meal tab 统一跟随 weeklyMenu
-                loading（generateWeekPlan 一次性输出 breakfast/lunch/dinner/fruit）。 */}
-            <div className="px-5 pt-2 pb-1">
+                loading（generateWeekPlan 一次性输出 breakfast/lunch/dinner/fruit）。
+                id="today-menu-anchor" is the scroll target for TICKET-034 §B
+                onboarding success banner ("✓ 完成！今天给你推荐的 5 道菜在下方 →"). */}
+            <div id="today-menu-anchor" className="px-5 pt-2 pb-1">
               {weeklyLoading ? (
                 <div className="flex flex-col gap-4 py-3">
                   {[0, 1, 2].map(i => (
@@ -1908,20 +1910,64 @@ export default function Home() {
 // 点 CTA → /settings；× → 永久 dismiss。这是 onboarding → daily use 中间
 // 的一个"补全 hook"，目的是让她在第一次进 Home 时立刻意识到「分别建档
 // = 推荐更懂每个孩子」。
+// TICKET-034 §B — Onboarding 3-step progress + success banner.
+// Steps: 1) 家庭成员 (members filled) → 2) 饮食偏好 (dietary goal / quickPrefs set)
+//        → 3) 完工享受推荐 (both prerequisites met)
+// When all 3 steps complete the card flips to a one-time success banner that
+// auto-scrolls to id="today-menu-anchor"; persisted via `onboarding_done`.
 function FamilyMemberNudge() {
   const navigate = useNavigate();
   const [shouldShow, setShouldShow] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [stepDone, setStepDone] = useState({ family: false, diet: false });
 
   useEffect(() => {
     const kids = parseInt(localStorage.getItem("nutri_kids") ?? "0", 10) || 0;
     const adults = parseInt(localStorage.getItem("nutri_adults") ?? "0", 10) || 0;
     const expected = adults + kids;
-    if (kids <= 0) return; // 没小孩，nudge 无意义
+    if (kids <= 0) return; // 没小孩，nudge 无意义（与旧逻辑一致）
     if (localStorage.getItem("nutri_family_nudge_v1") === "dismissed") return;
+    if (localStorage.getItem("onboarding_done") === "1") return; // 已收尾，永不再显示
+
     const members = loadFamilyMembers();
-    if (members.length >= expected) return; // 已建档全
+    const familyDone = expected > 0 && members.length >= expected;
+    const dietDone = !!(
+      localStorage.getItem("nutri_dietary_goal") ||
+      localStorage.getItem("quickPrefs") ||
+      localStorage.getItem("taste_pref")
+    );
+    setStepDone({ family: familyDone, diet: dietDone });
+
+    // 两步都完成 → 一次性 success banner，5 秒后自动隐藏 + 落 sentinel。
+    if (familyDone && dietDone) {
+      setShowSuccess(true);
+      // 等下一帧让 #today-menu-anchor mount，再 scroll
+      setTimeout(() => {
+        document.getElementById('today-menu-anchor')
+          ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 600);
+      try { localStorage.setItem("onboarding_done", "1"); } catch { /* quota */ }
+      setTimeout(() => setShowSuccess(false), 5000);
+      return;
+    }
     setShouldShow(true);
   }, []);
+
+  if (showSuccess) {
+    return (
+      <div
+        className="rounded-2xl px-4 py-3 flex items-start gap-3 relative"
+        style={{
+          background: "linear-gradient(135deg, rgba(37,211,102,0.10), rgba(16,163,74,0.05))",
+          border: "1px solid rgba(37,211,102,0.30)",
+        }}>
+        <span className="text-[22px] shrink-0">✓</span>
+        <p className="flex-1" style={{ fontSize: 13, color: "#15803D", lineHeight: 1.5, fontWeight: 600 }}>
+          完成！今天给你推荐的 5 道菜在下方 →
+        </p>
+      </div>
+    );
+  }
 
   if (!shouldShow) return null;
 
@@ -1929,6 +1975,11 @@ function FamilyMemberNudge() {
     localStorage.setItem("nutri_family_nudge_v1", "dismissed");
     setShouldShow(false);
   };
+
+  // Active step = the FIRST incomplete one (1 / 2 / 3). Step 3 only highlights
+  // when both prereqs are done — but that case routes to the success banner
+  // above, so practically the active step here is always 1 or 2.
+  const activeStep: 1 | 2 | 3 = !stepDone.family ? 1 : !stepDone.diet ? 2 : 3;
 
   return (
     <div
@@ -1945,13 +1996,45 @@ function FamilyMemberNudge() {
         <p className="mt-0.5 leading-relaxed" style={{ fontSize: 12, color: "rgba(0,0,0,0.55)" }}>
           一个孩子不爱鱼、另一个长高需要奶——分别填上 2 分钟，推荐立刻懂他们。
         </p>
+
+        {/* 3-step progress bar — green for done, orange for active, gray for upcoming */}
+        <div className="mt-2 flex items-center gap-1">
+          {[
+            { idx: 1, label: '家庭成员',     done: stepDone.family },
+            { idx: 2, label: '饮食偏好',     done: stepDone.diet   },
+            { idx: 3, label: '享受推荐', done: false          }, // 3 在 success banner 里激活
+          ].map(({ idx, label, done }) => {
+            const isActive = idx === activeStep;
+            return (
+              <div key={idx} className="flex-1 flex flex-col items-center gap-0.5">
+                <div className="w-full h-1 rounded-full" style={{
+                  background: done
+                    ? '#25D366'
+                    : isActive ? '#FF5A1F' : 'rgba(0,0,0,0.08)',
+                  transition: 'background 0.25s',
+                }} />
+                <span style={{
+                  fontSize: 9.5,
+                  fontWeight: 700,
+                  color: done ? '#15803D' : isActive ? '#FF5A1F' : 'rgba(0,0,0,0.32)',
+                }}>
+                  {done ? '✓' : idx}. {label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* 去填档案 → micro animation: hover-lift + active-press, plus a subtle
+            shadow-pulse via Tailwind's group/animate-pulse classes. */}
         <button
           onClick={() => navigate("/settings")}
-          className="mt-2 px-3 py-1 rounded-full font-bold active:scale-95 transition-all"
+          className="mt-2.5 px-3 py-1 rounded-full font-bold transition-transform duration-150 hover:scale-105 active:scale-95"
           style={{
             background: "linear-gradient(135deg, #FF5A1F, #FF8C54)",
             color: "white", fontSize: 12, letterSpacing: "0.04em",
-            boxShadow: "0 2px 8px rgba(255,90,31,0.25)",
+            boxShadow: "0 2px 8px rgba(255,90,31,0.25), 0 0 0 0 rgba(255,90,31,0.40)",
+            animation: 'pulseRing 2.4s ease-in-out infinite',
           }}>
           去填档案 →
         </button>
@@ -1963,6 +2046,15 @@ function FamilyMemberNudge() {
         aria-label="dismiss">
         <span style={{ fontSize: 11, color: "rgba(0,0,0,0.45)" }}>✕</span>
       </button>
+      {/* Local keyframes for the CTA's pulsing halo. Scoped via <style> so we
+          don't touch the global index.css (surgical). */}
+      <style>{`
+        @keyframes pulseRing {
+          0%   { box-shadow: 0 2px 8px rgba(255,90,31,0.25), 0 0 0 0 rgba(255,90,31,0.40); }
+          70%  { box-shadow: 0 2px 8px rgba(255,90,31,0.25), 0 0 0 8px rgba(255,90,31,0); }
+          100% { box-shadow: 0 2px 8px rgba(255,90,31,0.25), 0 0 0 0 rgba(255,90,31,0); }
+        }
+      `}</style>
     </div>
   );
 }
