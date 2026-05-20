@@ -430,9 +430,8 @@ export default function Settings() {
   }
 
   // TICKET-061 §A — 联系客服 sheet (β 上线用户反馈通道)
+  // TICKET-067 §A — 删微信号入口 (PII 隔离 β 阶段邮件兜底)
   const [supportSheetOpen, setSupportSheetOpen] = useState(false);
-  const [wxCopied, setWxCopied] = useState(false);
-  const SUPPORT_WX = "jianjiaolin9";
   // TICKET-066 §B — JS 拼接防爬虫 grep 字面 @nothinkeats.com
   const SUPPORT_EMAIL = ["support", "nothinkeats.com"].join("@");
 
@@ -1257,29 +1256,6 @@ export default function Settings() {
                 arrow_forward_ios
               </span>
             </a>
-
-            <button
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(SUPPORT_WX);
-                  setWxCopied(true);
-                  setTimeout(() => setWxCopied(false), 1800);
-                } catch {/* clipboard blocked — 用户仍可读 */}
-              }}
-              className="w-full bg-gray-50 border border-black/5 rounded-[16px] p-4 flex items-center gap-3 active:scale-[0.98] transition-all mb-2.5"
-            >
-              <span className="text-[22px]">💬</span>
-              <div className="flex-1 text-left">
-                <p className="font-bold text-[13px]">微信 (点击复制)</p>
-                <p className="text-[11px] text-gray-400 mt-0.5 font-mono">{SUPPORT_WX}</p>
-              </div>
-              <span
-                className="material-symbols-outlined"
-                style={{ fontSize: 18, color: wxCopied ? "#16A34A" : "rgba(0,0,0,0.30)" }}
-              >
-                {wxCopied ? "check_circle" : "content_copy"}
-              </span>
-            </button>
 
             <a
               href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("[Aieats β Bug]")}&body=${encodeURIComponent("用户ID: " + (getUserId()?.slice(0, 8) ?? "unknown") + "\n\nbug 复现步骤：\n1. \n2. \n3. \n\n期望行为：\n\n实际行为：\n\n截图：\n")}`}
