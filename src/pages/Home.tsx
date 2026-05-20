@@ -638,6 +638,10 @@ export default function Home() {
   // (optional) sendDishRating — eatingDiary and user_feedback_helper
   // pipelines stay independent (per ticket "飞轮链路 100% 保留").
   const [ratingPanelDishId, setRatingPanelDishId] = useState<string | null>(null);
+  // TICKET-056 §A — "为什么推荐这道菜" 抽屉 state. Stores the dish index (in
+  // displayMenu.slice(0,5)) currently expanded; click same idx toggles closed.
+  // Tolerant of missing dish.explanation — falls back to "暂无解释数据".
+  const [expandedExplainIdx, setExpandedExplainIdx] = useState<number | null>(null);
   function handleToggleEaten(dishId: string) {
     const wasEaten = eatenSet.has(dishId);
     toggleEaten(dishId);
@@ -1384,6 +1388,71 @@ export default function Home() {
                         {/* TICKET-052 §A — 常驻 3-emoji rating bar removed.
                             Rating now lives inside the popup that opens when
                             the user taps "✅ 我做了" (check_circle) above. */}
+                        {/* TICKET-056 §A — 为什么推荐这道菜 chip + breakdown.
+                            Always-visible chip (tiny "为什么 ⓘ"); when expanded
+                            shows the explanation.breakdown list inline. Tolerant
+                            of missing explanation field (e.g. cached menu before
+                            Algorithm 055 landed) — falls back to "暂无解释数据". */}
+                        {(() => {
+                          const isOpen = expandedExplainIdx === idx;
+                          return (
+                            <div className="mt-1.5">
+                              <button
+                                onClick={() => setExpandedExplainIdx(isOpen ? null : idx)}
+                                className="inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 font-bold active:scale-95 transition-all"
+                                style={{
+                                  fontSize: 10.5,
+                                  background: isOpen ? 'rgba(255,90,31,0.12)' : 'rgba(0,0,0,0.04)',
+                                  color:      isOpen ? '#FF5A1F' : 'rgba(0,0,0,0.50)',
+                                }}>
+                                <span className="material-symbols-outlined" style={{ fontSize: 12 }}>info</span>
+                                为什么推荐
+                                <span className="material-symbols-outlined"
+                                  style={{ fontSize: 13, transition: 'transform 0.2s', transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+                                  expand_more
+                                </span>
+                              </button>
+                              {isOpen && (() => {
+                                const exp = (dish as any).explanation as
+                                  { score?: number; breakdown?: { axis_icon?: string; reason?: string; score_delta?: number }[] } | undefined;
+                                const breakdown = exp?.breakdown ?? [];
+                                if (breakdown.length === 0) {
+                                  return (
+                                    <p className="mt-1.5 px-1" style={{ fontSize: 10.5, color: 'rgba(0,0,0,0.40)', fontStyle: 'italic' }}>
+                                      暂无解释数据（菜单可能在 Algorithm 升级前缓存，下次重新生成后生效）
+                                    </p>
+                                  );
+                                }
+                                return (
+                                  <div className="mt-1.5 rounded-xl px-3 py-2 flex flex-col gap-1"
+                                    style={{ background: 'rgba(255,90,31,0.04)', border: '1px solid rgba(255,90,31,0.12)' }}>
+                                    {breakdown.map((hit, hi) => (
+                                      <div key={hi} className="flex items-center gap-2" style={{ fontSize: 11 }}>
+                                        <span style={{ fontSize: 13 }}>{hit.axis_icon ?? '•'}</span>
+                                        <span className="flex-1 truncate" style={{ color: 'rgba(0,0,0,0.70)' }}>
+                                          {hit.reason ?? '—'}
+                                        </span>
+                                        <span style={{
+                                          color: (hit.score_delta ?? 0) >= 0 ? '#16A34A' : '#DC2626',
+                                          fontWeight: 700,
+                                        }}>
+                                          {(hit.score_delta ?? 0) >= 0 ? '+' : ''}{(hit.score_delta ?? 0).toFixed(2)}
+                                        </span>
+                                      </div>
+                                    ))}
+                                    {typeof exp?.score === 'number' && (
+                                      <div className="flex items-center justify-between pt-1 mt-0.5 border-t border-black/[0.05]"
+                                        style={{ fontSize: 10.5 }}>
+                                        <span style={{ color: 'rgba(0,0,0,0.40)' }}>总分</span>
+                                        <span style={{ color: '#FF5A1F', fontWeight: 700 }}>{exp.score.toFixed(2)}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          );
+                        })()}
                       </div>
                       {/* Top-right action cluster — hoisted out of the inline
                           flow so the title can use the full row width. Compact
