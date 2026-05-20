@@ -4,46 +4,13 @@ import { supabase } from "../lib/supabase";
 import BottomTabBar from "../components/BottomTabBar";
 import MembershipBenefits from "../components/MembershipBenefits";
 import { useSubscription } from "../lib/subscription";
-import { useLanguage, LANGUAGE_LABEL, type Language } from "../contexts/LanguageContext";
+import { useLanguage } from "../contexts/LanguageContext";
 import { getUserId } from "../lib/userId";
 import { syncProfileToDB } from "../lib/profileSync";
 
-// 4-language picker (简 / 繁 / EN / Tagalog).
-function LanguageCard() {
-  const { language, setLanguage } = useLanguage();
-  const langs: { id: Language; flag: string }[] = [
-    { id: 'zh',        flag: '🇨🇳' },
-    { id: 'zh-Hant',   flag: '🇭🇰' },
-    { id: 'en',        flag: '🇬🇧' },
-    { id: 'tl',        flag: '🇵🇭' },
-  ];
-  return (
-    <div className="bg-white border border-black/5 rounded-[22px] p-4 shadow-[0_4px_20px_rgba(0,0,0,0.04)]">
-      <p className="text-[12px] text-secondary font-semibold mb-3 uppercase tracking-wider">
-        语言 · Language
-      </p>
-      <div className="grid grid-cols-4 gap-2">
-        {langs.map(l => (
-          <button
-            key={l.id}
-            onClick={() => setLanguage(l.id)}
-            className={`flex flex-col items-center gap-0.5 py-2 rounded-2xl border-2 transition-all active:scale-95 ${
-              language === l.id ? "border-primary bg-primary/5" : "border-black/[0.08] bg-gray-50"
-            }`}
-          >
-            <span className="text-[20px]">{l.flag}</span>
-            <span className={`text-[11px] font-bold ${language === l.id ? "text-primary" : "text-gray-700"}`}>
-              {LANGUAGE_LABEL[l.id]}
-            </span>
-          </button>
-        ))}
-      </div>
-      <p className="text-[10px] text-gray-400 mt-2 leading-snug">
-        繁體適合香港 / 台灣本地用户；Tagalog 给菲律宾家务助理使用。
-      </p>
-    </div>
-  );
-}
+// TICKET-071 §C — LanguageCard 已删除（Home 顶部 chip popover 已覆盖语言切换，
+// 避免重复 UI）。Settings 「下发指令语言」section (line ~928) 是菲佣指令语言
+// 独立功能，保留。
 
 // ── TICKET-067 §B — ProToolbox removed (跟 /pricing 重复，点 Pro CTA 进去即可看)
 //    保留的入口：MembershipCard 的"升级到 Pro"按钮 → /pricing 看详情
@@ -1116,8 +1083,7 @@ export default function Settings() {
             </div>
           )}
 
-          {/* ── Language picker ── */}
-          <LanguageCard />
+          {/* TICKET-071 §C — Language picker 已删除（Home 顶部 chip popover 覆盖） */}
 
           {/* ── My Favorites quick-link ── */}
           <button
