@@ -1,13 +1,15 @@
 /**
- * useChatSession — Day 2 ChatAgent (SPEC §3)
+ * useChatSession — Day 2/3 ChatAgent (SPEC §3 + §3.1)
  *
- * Single-session chat state with localStorage persistence. v1 keeps data
- * in localStorage only (DB persistence is Day 3 work, SPEC §3.1). Each
- * mode (`today` / `week` / `preference`) seeds its own first system message
- * via SPEC §5 so the user lands on intent.
+ * Single-session chat state. localStorage is the fast-path cache (every
+ * mutation persists synchronously); `chat_sessions` table is the durable
+ * store (upsert every 5 messages + on proposal-chosen events). Either
+ * layer is sufficient on its own — if the DB table isn't ready yet the
+ * hook degrades to localStorage-only without warning the user.
  */
-import { useState, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { getUserId } from '../lib/userId';
+import { supabase } from '../lib/supabase';
 import type { IntentTag } from '../lib/intentBias';
 import type { WeeklyMenu } from './useWeeklyMenu';
 
@@ -91,6 +93,93 @@ function persistSession(session: ChatSession): void {
   catch { /* quota — best-effort */ }
 }
 
+// ── DB persistence layer (Database 020 — chat_sessions table) ────────────────
+// Forward-compatible: if the table / columns aren't there yet, every call
+// silently returns false/null and the hook keeps using localStorage only.
+// Caller never sees a thrown error or a console warning.
+
+interface ChatSessionRow {
+  id:                 string;
+  user_id:            string;
+  mode:               ChatMode;
+  messages:           ChatMessage[];
+  intent_history:     IntentTag[];
+  proposals_snapshot: WeekPlan[] | null;
+  chosen:             ProposalChoice | null;
+  updated_at:         string;
+}
+
+function deriveIntentHistory(messages: ChatMessage[]): IntentTag[] {
+  const out: IntentTag[] = [];
+  for (const m of messages) if (m.meta?.intent) out.push(m.meta.intent);
+  return out;
+}
+
+function deriveLatestProposals(messages: ChatMessage[]): WeekPlan[] | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const p = messages[i].meta?.proposals;
+    if (p && p.length > 0) return p;
+  }
+  return null;
+}
+
+function deriveChosen(messages: ChatMessage[]): ProposalChoice | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const c = messages[i].meta?.chosen;
+    if (c) return c;
+  }
+  return null;
+}
+
+async function dbUpsertSession(session: ChatSession): Promise<boolean> {
+  try {
+    const row: ChatSessionRow = {
+      id:                 session.id,
+      user_id:            session.user_id,
+      mode:               session.mode,
+      messages:           session.messages,
+      intent_history:     deriveIntentHistory(session.messages),
+      proposals_snapshot: deriveLatestProposals(session.messages),
+      chosen:             deriveChosen(session.messages),
+      updated_at:         new Date(session.updated_at).toISOString(),
+    };
+    const { error } = await supabase
+      .from('chat_sessions')
+      .upsert(row, { onConflict: 'id' });
+    return !error;
+  } catch {
+    // Network / table-missing / column-missing — all silenced.
+    return false;
+  }
+}
+
+async function dbLoadSession(sessionId: string): Promise<ChatSession | null> {
+  try {
+    const { data, error } = await supabase
+      .from('chat_sessions')
+      .select('id, user_id, mode, messages, created_at, updated_at')
+      .eq('id', sessionId)
+      .maybeSingle();
+    if (error || !data) return null;
+    return {
+      id:         (data as any).id,
+      user_id:    (data as any).user_id,
+      mode:       (data as any).mode as ChatMode,
+      messages:   ((data as any).messages ?? []) as ChatMessage[],
+      created_at: tsToMs((data as any).created_at),
+      updated_at: tsToMs((data as any).updated_at),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function tsToMs(v: unknown): number {
+  if (typeof v === 'number') return v;
+  if (typeof v === 'string') { const n = Date.parse(v); return isFinite(n) ? n : Date.now(); }
+  return Date.now();
+}
+
 export function useChatSession(mode: ChatMode = 'today', resumeId?: string) {
   // Stable session id (resume from URL or mint fresh). useRef keeps it
   // stable across renders without re-seeding on every render.
@@ -135,6 +224,9 @@ export function useChatSession(mode: ChatMode = 'today', resumeId?: string) {
     });
   }, []);
 
+  // Bumped on every choose so the DB-upsert effect runs at that "key node"
+  // even when the messages-count threshold (5) hasn't been crossed yet.
+  const [chooseTick, setChooseTick] = useState(0);
   const chooseProposal = useCallback((messageId: string, choice: ProposalChoice) => {
     setSession(prev => {
       const next: ChatSession = {
@@ -149,7 +241,41 @@ export function useChatSession(mode: ChatMode = 'today', resumeId?: string) {
       persistSession(next);
       return next;
     });
+    setChooseTick(t => t + 1);
   }, []);
+
+  // ── DB upsert effect: every 5 messages OR on chooseProposal key node ───
+  const lastUpsertCountRef = useRef<number>(session.messages.length);
+  useEffect(() => {
+    const count = session.messages.length;
+    const delta = count - lastUpsertCountRef.current;
+    if (delta >= 5 || chooseTick > 0) {
+      lastUpsertCountRef.current = count;
+      // Fire-and-forget — never blocks the UI; silent on failure.
+      dbUpsertSession(session).catch(() => {});
+    }
+    // chooseTick included so the effect re-runs on adoption even when
+    // messages.length didn't cross the 5-message threshold.
+  }, [session.messages.length, chooseTick, session]);
+
+  // ── DB restore on mount: only when caller passed an explicit resumeId
+  //    AND localStorage didn't already have that session cached. The hook
+  //    silently degrades if chat_sessions table isn't there.
+  useEffect(() => {
+    if (!resumeId) return;
+    const cached = localStorage.getItem(storageKey(resumeId));
+    if (cached) return; // localStorage wins as fast-path
+    let cancelled = false;
+    (async () => {
+      const fromDb = await dbLoadSession(resumeId);
+      if (cancelled || !fromDb) return;
+      setSession(fromDb);
+      persistSession(fromDb);
+    })();
+    return () => { cancelled = true; };
+    // resumeId is sourced from useRef so the dep is stable; lint is fine.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resumeId]);
 
   return { session, appendMessage, appendStreamToken, chooseProposal };
 }
