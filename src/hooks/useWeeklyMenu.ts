@@ -273,6 +273,119 @@ export function getCurrentSolarTermZh(): string | null {
 // 高级字段, 不需要再 import useSupabaseMenu (减跨 hook 依赖).
 export { getCurrentSolarTerm } from './useSupabaseMenu';
 
+// ═══════════════════════════════════════════════════════════════════════════
+// §A (TICKET-20260521-001) 营养雷达 6 维差距补全菜推荐 — 非算法 helper
+// 与 NutritionRadar.tsx computeHealthMetrics 6 维 (protein/veggie/grain/
+// calcium/variety/light) 完全对齐. 不动 scoreForWeek; 不 bump ALGO_VERSION.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// 与 NutritionRadar.tsx 完全对齐的命中规则常量 (用 const 单独定义避免跨文件 import).
+const NUTR_PROTEIN_INGS = ['pork','beef','lamb','chicken','duck','turkey','fish','shrimp','crab','squid','scallop','clam','oyster','salmon','tuna','cod','seabass','hairtail','egg','tofu'];
+const NUTR_PLANT_INGS   = ['veggie','vegetable','mushroom','bean'];
+const NUTR_CALCIUM_KW   = /(豆腐|豆浆|芝士|奶酪|牛奶|沙丁鱼|小鱼干|芝麻|西兰花|菠菜|芥蓝|芥菜|油菜|上海青)/;
+const NUTR_STAPLE_KW    = /(米饭|面|粉|粥|饼|包|饺|馒头|薯|燕麦|杂粮)/;
+
+// 模块级 dish cache — hybrid loader pattern (与 INGREDIENT_SEASONALITY 同 pattern).
+// helper 同步签名读 cache; fetch 异步填. 5 分钟 cache.
+let _nutritionDishCache: any[] = [];
+let _nutritionDishCacheAt = 0;
+const NUTRITION_DISH_CACHE_MS = 5 * 60 * 1000;
+
+async function fetchNutritionDishCache(): Promise<void> {
+  if (Date.now() - _nutritionDishCacheAt < NUTRITION_DISH_CACHE_MS && _nutritionDishCache.length > 0) return;
+  try {
+    const { data, error } = await supabase
+      .from('dishes')
+      .select('id, title_zh, title_en, main_ingredient, course_type, flavor_tags, image_url')
+      .not('title_zh', 'is', null)
+      .limit(500);
+    _nutritionDishCacheAt = Date.now();
+    if (error || !Array.isArray(data)) return;
+    _nutritionDishCache = data;
+  } catch {
+    _nutritionDishCacheAt = Date.now();
+  }
+}
+fetchNutritionDishCache();
+
+// 判断一道菜是否补 deficit 的某一维度 — 镜像 NutritionRadar.computeHealthMetrics 规则.
+function _dishBoostsAxis(dish: any, axis: string): boolean {
+  const mi    = (dish.main_ingredient ?? '').toLowerCase();
+  const ct    = (dish.course_type ?? '') as string;
+  const title = (dish.title_zh ?? '') as string;
+  const tags  = (dish.flavor_tags ?? []) as string[];
+  switch (axis) {
+    case 'protein':
+      return NUTR_PROTEIN_INGS.includes(mi);
+    case 'veggie':
+      return NUTR_PLANT_INGS.some(p => mi.includes(p)) || ct === 'veggie_dish';
+    case 'grain':
+      return ct === 'staple' && NUTR_STAPLE_KW.test(title);
+    case 'calcium':
+      return NUTR_CALCIUM_KW.test(title);
+    case 'variety':
+      // variety 是周菜单层面的多样性, 单菜无法直接 boost; 这里仅给非主流主料 (鸭/鱼/羊/虾...)
+      // 一个软命中, UI 看到 "补 多样" 时其实是推冷门主料菜.
+      return ['duck', 'lamb', 'fish', 'shrimp', 'crab', 'tofu', 'mushroom'].includes(mi);
+    case 'light':
+      return tags.includes('light') && !tags.includes('fried') && !tags.includes('spicy') && !tags.includes('salty');
+    default:
+      return false;
+  }
+}
+
+const NUTRITION_AXES_VALID = new Set(['protein', 'veggie', 'grain', 'calcium', 'variety', 'light']);
+
+/**
+ * 营养雷达 6 维差距补全菜推荐 — 给 UI /weekly 雷达卡下方"推荐补菜"section 用.
+ *
+ * 6 维与 NutritionRadar.tsx computeHealthMetrics 完全对齐:
+ *   protein / veggie / grain / calcium / variety / light
+ *
+ * @param deficits - 用户当前周低于目标 80% 的差距维度数组 (UI 从 axes.value < 80 算)
+ * @param n - 返回菜数, 默认 3
+ * @returns Array<{ id, title_zh?, title_en?, boosts: string[] }>
+ *          boosts = 该菜命中的差距维度名 (UI 显示 "补 蛋白质 / 钙")
+ *
+ * fallback:
+ *   - deficits 空 / 全部 invalid → []
+ *   - dish cache 空 (DB 未 fetch / 失败) → []
+ *   - 不 throw
+ */
+export function getNutritionGapRecommendations(
+  deficits: string[],
+  n: number = 3,
+): Array<{ id: string; title_zh?: string; title_en?: string; boosts: string[] }> {
+  if (!Array.isArray(deficits) || deficits.length === 0) return [];
+  const validDeficits = deficits.filter(d => NUTRITION_AXES_VALID.has(d));
+  if (validDeficits.length === 0) return [];
+  if (_nutritionDishCache.length === 0) {
+    // first-call may race with fetch; trigger and return empty (UI will re-render
+    // on next nutri-prefs-changed / route re-mount).
+    fetchNutritionDishCache().catch(() => {});
+    return [];
+  }
+  const scored = _nutritionDishCache
+    .map(dish => {
+      const boosts: string[] = [];
+      for (const ax of validDeficits) {
+        if (_dishBoostsAxis(dish, ax)) boosts.push(ax);
+      }
+      // tie-breaker: 数据完整度 (image_url 非空 +1, title_en 非空 +0.5)
+      const completeness = (dish.image_url ? 1 : 0) + (dish.title_en ? 0.5 : 0);
+      return { dish, score: boosts.length + completeness * 0.01, boosts };
+    })
+    .filter(s => s.boosts.length > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, n);
+  return scored.map(s => ({
+    id: s.dish.id,
+    title_zh: s.dish.title_zh,
+    title_en: s.dish.title_en,
+    boosts: s.boosts,
+  }));
+}
+
 // §A (TICKET-043 / Smell 1 阶段 4): cross-week dish-id fatigue threshold.
 // 过去 4 周累计出现 ≥ CROSS_WEEK_FATIGUE_THRESHOLD 次的 dish_id → candidate
 // filter 阶段 hard-block（reroll 直到该菜被新候选替换）。让用户跨周也不会
