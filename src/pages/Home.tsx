@@ -31,7 +31,6 @@ import { loadCuisineMode, type CuisineMode } from "../lib/cuisineFilter";
 import { loadFamilyMembers } from "../lib/familyPrefs";
 import { HeartButton } from "../components/HeartButton";
 import DailyNutritionStrip from "../components/DailyNutritionStrip";
-import { NutritionRadarCard } from "../components/NutritionRadar";
 import { toggleEaten, getEatenToday } from "../lib/eatingDiary";
 import {
   Sun, CloudSun, Cloud, CloudFog,
@@ -1622,12 +1621,9 @@ export default function Home() {
           return <DailyNutritionStrip meals={meals} />;
         })()}
 
-        {/* TICKET-056 §B — 周营养雷达图 (6 维 hexagon). Reuses the existing
-            NutritionRadarCard already shipped in WeeklyMenu (TICKET-055 deps);
-            data derives from weeklyMenu via computeHealthMetrics — no extra
-            DB fetch / no recharts dep. Hidden when weeklyMenu is null/empty
-            (NutritionRadarCard returns null in that case). */}
-        {weeklyMenu && <NutritionRadarCard weeklyMenu={weeklyMenu} />}
+        {/* TICKET-071 §A — Home 营养雷达卡已删除，统一放到 /weekly 单独看
+            (避免 Home 重复 UI noise)。详情入口仍可点 "工作日导航 → 本周菜单"
+            或 BottomTabBar 进 /weekly. */}
 
         {/* 工作日导航入口 — "本周末出门吃"。让 Mon-Fri 用户提前看 / 预订
             周末的香港餐厅推荐。周六周日则不显示这个 nav (Home 上面已经
@@ -1768,9 +1764,6 @@ export default function Home() {
             </button>
           </div>
         )}
-
-        {/* ④ 营养雷达 — moved to WeeklyMenu page to consolidate nutrition view.
-            Home stays focused on today's loop (menu / 换菜 / 烹饪). */}
 
         {/* Day 1 CTA — only when no menu yet */}
         {!hasMenu && (
