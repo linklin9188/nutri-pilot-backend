@@ -265,6 +265,14 @@ const TASTE_OPTIONS = {
     { id: "pregnancy", label: "怀孕备孕", icon: "🤰" },
     { id: "growth",    label: "长高变壮", icon: "🌱" },
     { id: "low_carb",  label: "低碳生酮", icon: "🥑" },
+    // TICKET-047 §A — special health goals (Algorithm 043 SPEC §5).
+    // Forward-compatible: UI ships these now; dishes.is_pregnancy_friendly /
+    // is_lactation_friendly / is_elderly_friendly columns land via Database
+    // 部门下一棒。Until then the score branch is a no-op; selecting these
+    // values does not crash the recommender (schema-check forward-compat).
+    { id: "prenatal",  label: "孕期",     icon: "🤰" }, // 营养重点：叶酸 / 铁 / 钙 / DHA
+    { id: "lactation", label: "哺乳",     icon: "🤱" }, // 营养重点：蛋白 / 催乳食材
+    { id: "elderly",   label: "老人",     icon: "👴" }, // 营养重点：低钠 / 易消化 / 补钙
   ],
   spice: [
     { id: "none",   label: "完全不辣", icon: "🥛" },
