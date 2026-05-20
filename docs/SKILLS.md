@@ -29,6 +29,7 @@ _（首次填充等 4 部门 TICKET-008..011 完工后由 Cowork 汇总；目前
 - **detail**：UI 034 加营养条上方"时令小标签"未先 grep Home.tsx 头部已有节气+天气，结果用户真机看到 "☀️ 立夏 · 申时 · 小雨" 重复 2 次。教训：任何 banner / strip / 信息条 ship 前用 `grep -n` 扫 Home.tsx / 当前页面已显示什么维度信息，避免冗余。
 - **复用场景**：所有 UI 派单加新信息显示元素前必跑此 grep。
 - **来源**：TELEPOT-20260520-034 → 051 hot-fix §0 删除
+- **再次触发**：TELEPOT-20260520-062 §B（套餐卡 CTA 信息跟 §A banner 重复，UI 选择拒做 + RATIONALE 上交 CEO，避免重复加 / 增加 review 成本）
 
 ### lucide-tree-shaking — lucide-react 图标按需 import，bundle 增长几乎为零
 - **detail**：从 lucide-react import 单个具名图标（如 `import { Sun, CloudRain } from 'lucide-react'`），vite 会 tree-shake 未用图标，7 个图标只增 ~1KB minified / ~1KB gzip。无需 npm install 任何附加包。
@@ -59,6 +60,56 @@ _（首次填充等 4 部门 TICKET-008..011 完工后由 Cowork 汇总；目前
 - **detail**：决策树：(a) ≤ 7 个数据点 + 静态 / 简单 hover + 项目无 chart lib → 手写 SVG `<polygon>` / `<path>`（vite-native, 0 bundle 增长）。(b) ≥ 多系列 + zoom/brush/tooltip 复杂交互 → 上 recharts / chart.js（值 ~50KB gzip）。NutritionRadar 是 case (a) — 6 轴 polygon 共 ~60 行 SVG 解决，比 npm install + 学 lib API 省时间。
 - **复用场景**：所有"加图表"工单先评估数据维度 + 交互复杂度，再决定 lib vs SVG。
 - **来源**：TELEPOT-20260520-056 §B（NutritionRadar.tsx 手写 SVG hexagon 模板）
+
+### bottom-sheet-modal-pattern-with-safe-area — 底部 sheet modal 配 paddingBottom env() 兜底
+- **detail**：iOS Safari 底部 home indicator 占 ~34px。底部 sheet `paddingBottom: "calc(env(safe-area-inset-bottom, 16px) + 24px)"` 既保留视觉内边距，又避免内容被 home indicator 遮挡。`onClick` 点击 backdrop 关闭，sheet 本体 `onClick={e => e.stopPropagation()}` 阻止冒泡。`fixed inset-0 z-[100]` + `flex items-end justify-center` 是底部居中 sheet 模式标配。
+- **复用场景**：任何底部弹起的 modal / drawer / sheet（确认对话 / 选项菜单 / 客服联系等）。
+- **来源**：TELEPOT-20260520-061 §A（Settings 联系客服 sheet, commit 5382130）
+
+### dismissable-banner-localstorage-sentinel — banner 永久关闭用 localStorage 单 key sentinel
+- **detail**：β banner / 升级提示 / 公告等"看过一次就不再显示"的元素，用 `localStorage.setItem('<key>_dismissed', 'true')` 单 key 即可。useState 初始化 `() => localStorage.getItem(key) !== 'true'` 是 lazy init，只在 mount 时跑一次。Dismiss handler 同时写 storage + 改 state（state 立即 UI 卸载，storage 持久化）。Banner 跟其他顶部元素冲突时（如 safe-area），banner 自己承担 paddingTop，把其他元素的 paddingTop 改成条件性的。
+- **复用场景**：所有"看过即关 + 永久不再显示"的小提示。比 cookie / IndexedDB / DB 表都轻。
+- **来源**：TELEPOT-20260520-061 §B（Home β banner, commit adee15d）
+
+### code-path-trace-as-real-machine-substitute — CLI 无浏览器时用 grep+Read 验证 UI 挂载 vs 真机
+- **detail**：CLI 没法跑真机回归（无 browser / 无 emulator）。替代方法 = code-path trace：每个 verify 项找出 (a) 关键挂载点 grep（state / handler / JSX import）(b) 验证关联 import 链 (c) verify 关键 state/handler 齐全 (d) 列出 GAP/OBSERVATION 但**不擅自 hot-fix**（守 051 经验）。code-path trace 不能替代视觉/交互验证（动画 / hover / 真实点击），但能覆盖 "组件是否挂载 / state 是否齐全 / props 是否对" 等结构性问题。视觉/交互 GAP 标 OBSERVATION 不擅自 fix，等老板真机 / QA 补完。
+- **复用场景**：所有 CLI 部门收到"真机回归"工单时的标准替代法。
+- **来源**：TELEPOT-20260520-060 §A（8 项 trace 表）
+
+### promo-code-banner-prominent-monospace-pattern — promo code banner 的视觉权重模式
+- **detail**：promo code 类 banner (β code / 邀请码 / 折扣码 / 优惠券) 视觉模板：(a) 渐变背景 + 强色边框（橙金 / 紫红 / 蓝紫，让人一眼看到）(b) emoji 标题（🎉/🎁/✨）(c) code 本身用 mono + 大字号 + letter-spacing 0.06-0.10em + 强色 + 一键复制 button (d) 复制后 1.5-2s 反馈（图标 ✓ + 文案 "已复制"）(e) 副文案提示用户**粘贴到哪里**（"粘贴到 Stripe Add promotion code 框"），避免用户复制后不知下一步。
+- **复用场景**：所有 promo code / referral code / 邀请码的 banner 展示。
+- **来源**：TELEPOT-20260520-062 §A（Pricing β banner, commit b3a2202）
+
+### canvas-resize-image-to-base64-pattern — File API + canvas 客户端图片压缩到 base64
+- **detail**：用户上传头像不走 Storage 时（v1 简单方案），客户端 resize 到固定边长（如 256×256）+ JPEG 0.82 quality → toDataURL('image/jpeg') → 通常 30-80KB base64，远低于 200KB 阈值。**关键**：(a) FileReader.readAsDataURL → onload 拿 src → new Image() → onload 拿真实尺寸 (b) cover-fit crop center：`const minSide = Math.min(w,h); const sx = (w-minSide)/2; const sy = (h-minSide)/2; ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, 256, 256)` — 保证圆形头像不被拉伸 (c) `toDataURL('image/jpeg', 0.82)` 比 PNG 小 ~70%（PNG 适合透明 LOGO，照片用 JPEG）。
+- **复用场景**：所有"客户端压缩图片到 DB text 列"方案。早期产品（< 10K 用户）比 Storage 简单很多。
+- **来源**：TELEPOT-20260520-063 §A（头像上传, commit 4db3e16）
+
+### postgrest-nested-embed-with-aliased-fk — PostgREST 嵌入查询用 !helper_id alias 解 FK ambiguity
+- **detail**：`user_profiles!helper_id(display_name, avatar_b64)` 这种语法明确指定通过哪个 FK 列 join — 当目标表有多个 FK 指向同一表（或一个 FK 在源表上是显式列名）时必须 alias 才能让 PostgREST 唯一识别 join 路径。语法 `<dest_table>!<source_fk_column>(...)`，结果嵌套字段挂在 `data[i].household_members[j].user_profiles`。
+- **复用场景**：所有 PostgREST 多 FK / 自引用 / 多张关联表的嵌入查询。
+- **来源**：TELEPOT-20260520-063 §A（household_members → user_profiles join, commit 4db3e16）
+
+### year-scoped-localstorage-key-for-annual-events — 年度事件的 dismiss key 含 year，避免清理 timer
+- **detail**：每年都会重弹的提醒（节庆 / 生日 / 周年）的 "已读" 状态用 `<event>_<year>` 作 key。今年中秋 dismiss → key `festival_toast_zhongqiu_2026=true`；明年自动是新 key `festival_toast_zhongqiu_2027` → 不存在 → 重弹。**完全避开 "N 日后自动清理 dismiss" 这种 timer/cron 逻辑**——状态自然过期。比 "存 timestamp + delta check" 简单稳定。
+- **复用场景**：任何"每年固定时间提醒一次"的 reminder。比 setTimeout / setInterval 维护成本低很多。
+- **来源**：TELEPOT-20260520-063 §B（节庆 toast, commit 5dbfdee）
+
+### email-array-join-anti-scraper-pattern — 邮箱用 .join('@') 拼接挡正则爬虫
+- **detail**：`const EMAIL = ['user', 'domain.com'].join('@')` 让源代码 / minified bundle 不出现 `user@domain.com` 字面字符串。爬虫常用正则 `[a-z0-9._%+-]+@[a-z0-9.-]+` 扫源 → 拼接前的子字符串扫不到。**注意**：(a) SSR / 渲染后 HTML 还是会有 mailto link / 显示 text — 爬虫如果 eval JS 仍能拿到，本策略仅挡"懒爬虫" (b) 注释里写完整邮箱也会泄露 — minified bundle 注释会被 vite 自动去掉，但开发源码注释爬不到 GitHub repo 仍可见 (c) const 名字别叫 `EMAIL` 太显眼，叫 `SUPPORT_EMAIL` / `CONTACT` 更隐蔽。
+- **复用场景**：所有"邮箱 / 电话 / API key" 等不希望被批量爬取的字符串。
+- **来源**：TELEPOT-20260520-066 §B（commit 83a4ce2 + dist 0 字面命中验证）
+
+### mailto-subject-body-prefix-for-gmail-filter — mailto link 带 subject prefix 方便邮箱端 filter
+- **detail**：app 客服反馈 mailto link 加固定 `subject=[Aieats β 反馈]` prefix → Gmail / Cloudflare Email Routing 端可加 filter rule "subject 含 prefix → label X"。比起客服 user 自己填 subject（什么都可能） / 不填，prefix 让分类自动化。body 同时预填 `用户ID: ${uid.slice(0,8)}` 让客服一眼看到说话人，不用 user 自己写。`encodeURIComponent()` 处理换行符 `\n` / 中文 / 特殊字符。
+- **复用场景**：所有 app 端发邮件入口（客服 / 反馈 / 报 bug / 申请退款）。
+- **来源**：TELEPOT-20260520-066 §C（commit 83a4ce2）
+
+### localstorage-sliding-window-rate-limit — 滑动窗口客户端限流，N 次 / M 分钟
+- **detail**：限流逻辑：(a) 存 timestamp 数组到 localStorage 一个 key (b) 每次 click 时 `arr.filter(t => NOW - t < WINDOW_MS)` 拿近窗口 timestamps (c) 数量 ≥ MAX 则 `e.preventDefault()` + 用户提示 (d) 否则 push + 写回。滑动窗口比固定窗口（"每 5 分钟整点重置"）更精确，user 无法通过踩点突破。**仅防普通用户 / 简单 bot** — 真攻击者清 localStorage / 换浏览器即破，配套服务端限流（Cloudflare / Gmail）才是真防线。
+- **复用场景**：所有"防同用户疯狂点"场景（客服邮件 / 重置密码 / 提交反馈 / 发送验证码请求）。
+- **来源**：TELEPOT-20260520-066 §D（commit 18d0331）
 
 ---
 
