@@ -68,7 +68,15 @@
 
 - 前端 bundle 中 **无** `VITE_GEMINI_API_KEY`（已移除）。
 - 新增 Gemini 调用点：在 `supabase/functions/gemini-proxy/index.ts` 添加新 `endpoint`，前端用 `callGemini()` from `src/lib/geminiProxy.ts` 调用。
-- 已有 endpoint：`vision` / `michelin` / `school_balance` / `recipe` / `intent`，各有独立每日配额（`api_usage_daily` 表）。
+- 已有 endpoint（Day 2 + Day 4 扩充）：
+  - `vision` (15/天) — 冰箱 / 货架扫描
+  - `michelin` (20/天) — 米其林推荐
+  - `school_balance` (15/天) — 学校营养补全
+  - `recipe` (30/天) — AI 菜谱生成
+  - `chat` (30/天) — Day 2 ChatAgent，SSE 流式 + 5 条节流（commit 7302cc7）
+  - `translate` (50/天) — Day 4 zh → en/tl/id 翻译，post-success-incr（commit 2b4b4ab + f30f154）
+- `intent` 走单独的 `parse-intent` function（20/天），**不**走 gemini-proxy。
+- 配额命中节流时同时 INCR `api_usage_daily endpoint='chat_throttled'` 用于监控。
 
 ### 3. Stripe Price ID 白名单（Live Mode）
 
@@ -77,7 +85,7 @@
 | 文件 | 位置 |
 |------|------|
 | `src/pages/Pricing.tsx` | 前端渲染用 |
-| `supabase/functions/stripe-webhook/index.ts` | `ALLOWED_PRICE_IDS` |
+| `supabase/functions/stripe-webhook/index.ts` | `PRICE_TO_PLAN`（命名分歧但功能等价于另两处的 ALLOWED_PRICE_IDS） |
 | `supabase/functions/create-checkout-session/index.ts` | 同名白名单 |
 
 - 必须确认 Price ID 在 **Live** Stripe Dashboard 存在（Test-mode ID → 静默 4xx）。
@@ -88,8 +96,9 @@
 
 | Function 名 | 功能 | JWT 验证 | 配额 |
 |-------------|------|----------|------|
-| `gemini-proxy` | Gemini 通用代理 | `--no-verify-jwt` | per-endpoint 每日限额 |
-| `parse-intent` | 意图解析（IntentTag） | `--no-verify-jwt` | 20/天 |
+| `gemini-proxy` | Gemini 通用代理 + Day 2 chat SSE + Day 4 translate（6 endpoint） | `--no-verify-jwt` | per-endpoint 每日限额，详见硬性不变量 §2 |
+| `parse-intent` | 意图解析（IntentTag）— 与 gemini-proxy 分离 | `--no-verify-jwt` | 20/天 |
+| `composer` | Pro 专属家宴 AI 编排（banquet 场景） | `--no-verify-jwt` | 10/天/用户 |
 | `stripe-webhook` | Stripe 4 类事件处理 | `--no-verify-jwt` | — |
 | `create-checkout-session` | 创建支付会话 | `--no-verify-jwt` | 10/天/用户 |
 | `create-portal-session` | Stripe 客户门户 | `--no-verify-jwt` | — |
