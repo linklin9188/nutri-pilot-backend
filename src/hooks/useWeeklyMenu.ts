@@ -102,6 +102,12 @@ export function daysFromTodayOnward<T extends { dayIndex: number }>(days: T[]): 
 
 const DAY_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 
+// §C1 (TICKET-032 / SPEC §3.1 Smell 1 阶段 3): cross-day title-keyword dedup
+// 窗口（天数）。同 keyword 在窗口内出现过 → hard-block candidate filter；
+// 窗外回退到 scoreForWeek axis 9 -0.65 软扣（兜底）。3 是 SPEC 默认值，
+// 让"鸡腿/排骨"这种高频词每周最多出现 ⌈5/3⌉ = 2 次（周一 + 周四 / 周五）。
+const DEDUP_WINDOW_DAYS = 3;
+
 // ── Who's eating today ────────────────────────────────────────────────────────
 
 interface EatingMember { id: string; name: string; lifeStage: string; needs: string[] }
@@ -1057,6 +1063,12 @@ function generateWeekPlan(
   const lunchUsedIds = new Set<string>();
   const pickedIngredients: string[] = [];
   const pickedTitleKeywords: string[] = [];   // weekly keyword tracker
+  // §C1 (TICKET-032 / SPEC §3.1): cross-day title-keyword dedup window.
+  // weekKwLastDay maps keyword → 最近一次 picked 的 dayIndex；scoreForWeek
+  // 候选 filter 阶段命中近 DEDUP_WINDOW_DAYS 天 keyword → hard-block。
+  // 与同日 dayTitleKeywords 互补：同日仍 hard-block（更严），跨日窗内 hard-block，
+  // 窗外仍走 axis 9 -0.65 软扣（兜底，避免 hard-block 让 slot 空）。
+  const weekKwLastDay = new Map<string, number>();
   // Low-carb / keto: drops the staple slot in dinner AND lunch.
   const lowCarb = localStorage.getItem('nutri_low_carb') === '1';
 
@@ -1149,6 +1161,12 @@ function generateWeekPlan(
           // Same-day title-keyword hard dedup (e.g. no 2× 娃娃菜 per dinner).
           const kw = extractTitleKeyword(d.title_zh ?? d.title ?? '');
           if (kw && dayTitleKeywords.includes(kw)) return false;
+          // §C1 cross-day dedup (TICKET-032)：近 DEDUP_WINDOW_DAYS 天命中
+          // 相同 keyword → hard-block。窗外回退到 axis 9 软扣。
+          if (kw) {
+            const lastDay = weekKwLastDay.get(kw);
+            if (lastDay !== undefined && dayIndex - lastDay < DEDUP_WINDOW_DAYS) return false;
+          }
 
           // 粥 (congee) is a breakfast/light-meal staple, not a dinner main.
           // 5 dishes leak in with meal_type=dinner/all; ban them from the
@@ -1352,6 +1370,8 @@ function generateWeekPlan(
       if (kw) {
         pickedTitleKeywords.push(kw);
         dayTitleKeywords.push(kw);
+        // §C1 record latest dayIndex for cross-day window check.
+        weekKwLastDay.set(kw, dayIndex);
       }
 
       const cat = ingCategory(picked.main_ingredient ?? 'other');
