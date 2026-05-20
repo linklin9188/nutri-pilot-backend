@@ -15,7 +15,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useChatSession, type ChatMode, type ProposalChoice } from '../hooks/useChatSession';
 import { useWeeklyMenu } from '../hooks/useWeeklyMenu';
-import { streamChatMock } from '../lib/chatStreaming';
+import { streamChat } from '../lib/chatStreaming';
 import { generateThreeProposals } from '../lib/proposalEngine';
 import BottomTabBar from '../components/BottomTabBar';
 import ChatBubble from '../components/ChatBubble';
@@ -74,8 +74,12 @@ export default function ChatAgent() {
 
     setStreaming(true);
     try {
-      // Pass the up-to-date message list to the (mock) streaming source.
-      for await (const tok of streamChatMock([...session.messages, { id: 'tmp', role: 'user', content: text, timestamp: Date.now() }])) {
+      // Real gemini-proxy SSE; key stays in edge function (invariant #2).
+      const turnMessages = [
+        ...session.messages,
+        { id: 'tmp', role: 'user', content: text, timestamp: Date.now() } as const,
+      ];
+      for await (const tok of streamChat(turnMessages, undefined, proposals)) {
         appendStreamToken(tok);
       }
     } finally {
