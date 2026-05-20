@@ -1092,14 +1092,24 @@ export default function Home() {
               <>
                 {/* tap-outside backdrop */}
                 <div className="fixed inset-0 z-30" onClick={() => setLangPickerOpen(false)} />
-                <div className="absolute right-0 top-full mt-2 z-40 rounded-2xl p-2 grid grid-cols-2 gap-1.5"
-                  style={{ background: 'white', boxShadow: '0 14px 38px rgba(0,0,0,0.14), 0 2px 6px rgba(0,0,0,0.06)', minWidth: 184 }}>
-                  {([
-                    { key: 'zh' as const, label: '中文'    },
-                    { key: 'en' as const, label: 'EN'      },
-                    { key: 'tl' as const, label: 'Tagalog' },
-                    { key: 'id' as const, label: 'Bahasa'  },
-                  ]).map(({ key, label }) => {
+                <div className="absolute right-0 top-full mt-2 z-40 rounded-2xl p-2 grid grid-cols-3 gap-1.5"
+                  style={{ background: 'white', boxShadow: '0 14px 38px rgba(0,0,0,0.14), 0 2px 6px rgba(0,0,0,0.06)', minWidth: 220 }}>
+                  {/* TICKET-070 §A — 按 role 限制 3 种（雇主 简/繁/EN，菲佣 EN/tl/id） */}
+                  {((): { key: 'zh' | 'zh-Hant' | 'en' | 'tl' | 'id'; label: string }[] => {
+                    const r = localStorage.getItem('nutri_role');
+                    if (r === 'helper') {
+                      return [
+                        { key: 'en', label: 'EN'      },
+                        { key: 'tl', label: 'Tagalog' },
+                        { key: 'id', label: 'Bahasa'  },
+                      ];
+                    }
+                    return [
+                      { key: 'zh',      label: '简体' },
+                      { key: 'zh-Hant', label: '繁體' },
+                      { key: 'en',      label: 'EN'   },
+                    ];
+                  })().map(({ key, label }) => {
                     const active = key === language;
                     return (
                       <button key={key} onClick={() => pickLanguage(key)}
