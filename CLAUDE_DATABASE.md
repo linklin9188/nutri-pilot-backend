@@ -58,8 +58,11 @@
 ### 1. 禁止 FK → auth.users
 
 项目使用自定义 Auth，`auth.users` 为空。任何表添加 FK → `auth.users` 都会导致插入静默失败。
-- 历史教训：migration 004 的 `stripe_events.user_id FK → auth.users` 已被迫 drop。
-- 所有 `user_id` 列类型为 `text`，不做外键约束。
+- ★ **2026-05-20 P15 完成全面 audit + 清残留**：public.* schema FK→auth.users **0 残留**（038 完成对齐）。
+- 历史教训：migration 004 的 `stripe_events.user_id FK → auth.users` 已被迫 drop；
+  035 / 037 又清掉 init seed (nutri_pilot_feedback_schema.sql) 时埋的 3 处违规（helper_reviews.helper_id + helper_reviews.reviewer_id + community_posts.helper_id）。
+- 所有 `user_id` 列类型为 `text`，不做外键约束；FK 列只 REFERENCES `user_profiles(id)`。
+- audit 命令（Database 负责人定期跑）：见 LESSONS.md `invariant-audit-by-confrelid-systematic-sweep`。
 
 ### 2. dish_ids 列必须是 uuid[]，不是 text[]
 
@@ -86,14 +89,25 @@ ARRAY['...']::uuid[]
 ## 核心表清单
 
 ### dishes（菜品主表）
-关键列：`id uuid`、`title text`、`cuisine text[]`、`meal_type text`、健康 tag 布尔列（见下方）、`steps jsonb`、`nutrition jsonb`、`image_url text`
+当前生产 schema（2026-05-20 Day 11 同步）：
+- 标识：`id uuid PK gen_random_uuid()`、`title_zh varchar`、`title_en text`、`description_zh/en text`
+- 分类：`origin_cuisine text`（实际枚举：cantonese/jiangnan/northern/sichuan/japanese_korean/southeast_asian/western/all-season/balanced）、`main_ingredient text default 'other'`、`course_type text`、`meal_type text default 'dinner'`（CHECK 仅 4 值：breakfast/lunch/dinner/all）
+- 步骤 + 图：`prep_steps_json jsonb`、`cook_steps_json jsonb`、`image_url varchar`
+- 营养：`nutrition_kcal_per_serving int`、`oil_level/salt_level/sugar_level text`（CHECK low/mid/high）、`protein_source text[]`、`cook_method text`（CHECK 13 值）、`protein_g/carb_g/fat_g double precision`、`cook_time_min int`
+- 标签 ARRAY：`flavor_tags text[]`、`health_benefit_tags text[]`、`festival_tags text[]`（030 加，GIN 索引，DEFAULT '{}')、`embedding vector`
+- jsonb：`meta jsonb`（029 加，partial 索引 needs_regen）
+- 兼容性：`is_vegan boolean NOT NULL default false`、`is_kid_friendly boolean NOT NULL default false`、`xiaomei_compatible boolean NOT NULL default false`、`xiaomei_incompat_reason text`
+- 健康标签 12 列（032 P11 加，nullable default false，backfill 待 AI batch）：见下方
+- 特殊健康 3 列（039 加，nullable default false）：`is_prenatal_friendly` / `is_lactation_friendly` / `is_elderly_friendly`
+- Smell 4 类：`employer_crown_likes / times_kept_in_menu / times_employer_swapped / times_cooked / times_posted / repeat_rate / health_score / last_scored_at / execution_level / cultural_note / kid_acceptance_score / hk_availability_score / average_cost_hkd / helper_friendly_score / western_subtype / last_backfilled_at / source / ingredients_ready`
 
-### 健康标签布尔列（所有表统一命名）
+### 健康标签布尔列（032 P11 已落地，backfill 待 AI batch）
 ```
 is_low_sodium / is_low_sugar / is_low_purine / is_blood_tonic /
 is_sleep_aid / is_yin_nourish / is_qi_tonic / is_mood_boost /
 is_anti_aging / is_beauty / is_anti_inflammation / is_eye_care
 ```
++ 039 加的 3 个 special-health：`is_prenatal_friendly / is_lactation_friendly / is_elderly_friendly`
 
 ### user_profiles
 ⚠️ **2026-05-19 P3 订正**：表主键是 `id text`（不是 `user_id`，不存在 `user_id` 列）；`display_name` 实际 nullable。
@@ -105,10 +119,42 @@ is_anti_aging / is_beauty / is_anti_inflammation / is_eye_care
 
 migration `024_add_algo_version.sql` 加了 `algo_version` + `cache_key` 两列（均 nullable），前端用它们做缓存失效判断，替代了原 localStorage sentinel 方案。详 `docs/SPEC_algo_version_migration.md`。
 
-### households（已知 smell）
-当前列：`id / employer_id / name / invite_code / created_at`
-**缺失**：`user_id` 列 → 前端 `WHERE user_id = ?` 持续报 PostgREST 400。
-修复方案需与后端负责人对齐前端查询逻辑后再执行。
+### households（Smell 3 P6 已修复 2026-05-19，026）
+当前列：`id uuid PK / employer_id text / name text / invite_code text UNIQUE / created_at`
+employer_id 已 uuid→text（026 P6），前端 `WHERE employer_id = ?` 用 anon-first text userId 可直接命中。
+RLS：1 条 anon-first policy `households_anon_full` (FOR ALL USING(true) WITH CHECK(true))。
+
+### household_members（Smell 3 B-1 已修复 2026-05-19，025）
+当前列：`id uuid PK / household_id uuid FK→households(id) / helper_id text FK→user_profiles(id) ON DELETE CASCADE / status text / joined_at / left_at`
+helper_id 已 uuid→text + 加 FK→user_profiles(id)，5 条 auth.uid() policy → 1 条 anon-first `household_members_anon_full`。
+
+### helper_reviews（P10 已修复 2026-05-20，035；P15 顺手清残留 FK 037）
+当前列：`id uuid PK / household_id uuid / helper_id text FK→user_profiles(id) ON DELETE CASCADE / reviewer_id uuid (FK→auth.users 已 DROP) / overall_score / cooking_skill / reliability / cleanliness / comment / is_public / created_at`
+RLS 2 条 anon-first：`helper_reviews_anon_insert` + `helper_reviews_anon_read`。
+**P10.1 待做**：其他 uuid 列（id/household_id/reviewer_id）类型迁移 + 加 FK→user_profiles。
+
+### user_feedback_helper（027 飞轮起点，区别于 init seed 的旧 user_feedback NL 表）
+列：`id uuid PK / user_id text / dish_id uuid FK→dishes(id) ON DELETE SET NULL / step_index int / feedback_type text CHECK(6 enum) / locale text / meta jsonb / created_at`
+6 enum：`cant_understand / too_hard / missing_ingredient / rating_good / rating_okay / rating_bad`
+RLS：anon_insert + anon_read。UI HelperCook 1-tap 评分写入此表。
+
+### prefscores_training_log（027 飞轮训练日志）
+列：`id uuid PK / user_id text / trained_at / feedback_count int / prev_top_dishes jsonb / next_top_dishes jsonb / delta_summary text`
+RLS：anon_insert + anon_read。Backend 每次重训写入快照。
+
+### chat_sessions（028 ChatAgent DB 持久化）
+列：`id uuid PK / user_id text / mode text CHECK('today'|'week'|'preference') default 'today' / messages jsonb default '[]' / intent_history jsonb default '[]' / proposals_snapshot jsonb / chosen text CHECK('A'|'B'|'C') / created_at / updated_at`
+updated_at trigger 自动更新（plpgsql BEFORE UPDATE）。RLS：anon_insert/read/update 3 policy。
+
+### user_pantry_items（034 食材库存，per SPEC_pantry_v1.md）
+列：`id uuid PK / user_id text / ingredient_name text / qty numeric / unit text / in_pantry boolean default true / last_seen_at / created_at`
+UNIQUE (user_id, ingredient_name)，2 索引（user_last_seen DESC + partial user_in_pantry WHERE true）。
+RLS：anon_insert + anon_read + anon_update。
+
+### user_weekly_menus.dish_ids 备份表
+`_archive_household_members_pre_025` (2 行 / 025 备份)、`_archive_households_pre_p6` (85 行 / 026 备份)、
+`_archive_mapo_dedup_20260520_1437` (2 行 / 033 dedup 备份)、`_archive_helper_reviews_pre_p10` (0 行结构性 / 035 备份)、
+`_archive_xiaomei_backfill_pre_p13_1` (24 行 / 038 备份)。
 
 ### api_usage_daily
 用于 Gemini / checkout 等接口的每日配额计数，列结构见 `supabase/functions/gemini-proxy/index.ts`。
@@ -159,13 +205,25 @@ supabase db push
 
 ---
 
-## 已知 DB Smell 汇总
+## 已知 DB Smell 汇总（2026-05-20 Day 11 同步状态）
 
-| Smell | 描述 | 优先级 |
-|-------|------|--------|
-| Smell B | `user_weekly_menus` 缺 `algo_version` 列，缓存失效靠 localStorage | 高 |
-| Smell C | `households` 缺 `user_id` 列，前端查询持续 400 | 中 |
-| Smell D | `user_profiles` 两套 hometown 值（localStorage 用地域大区 id，DB 用 bucket 值），映射在读时处理，写不对称 | 中 |
+| Smell / Issue | 描述 | 状态 |
+|---|---|---|
+| Smell 1 阶段 1 | Home 与 WeeklyMenu 两套算法并跑 | ✅ 已修（前端切换 weeklyMenu.days[todayIdx]）|
+| Smell 3 B-1 | household_members 嵌入失败 + auth.uid() RLS | ✅ 已修 025 |
+| Smell 3 P6 | households.employer_id uuid 与前端 text userId 不兼容 | ✅ 已修 026 |
+| Smell 4 | user_weekly_menus 缺 algo_version 列缓存靠 localStorage | ✅ 已修 024（algo_version + cache_key 双列）|
+| P10 | helper_reviews.helper_id uuid 与 household_members text 跨表不一致 | ✅ 已修 035 |
+| P11 | dishes 缺 12 个 health-tag 布尔列 | ✅ 已修 032（schema 落地；backfill 待 AI batch）|
+| P12 | dishes 麻婆豆腐 2 行重复 | ✅ 已修 033（5 步零数据丢失 FK 迁移）|
+| P13 / P13.1 | xiaomei_compatible script 与 DB 偏移 / 节庆菜未 backfill | ✅ 已修（脚本全表对齐 + 22 节庆菜手动 UPDATE 038）|
+| P15 | init seed 历史 FK→auth.users 违规 | ✅ 已修 037（public.* 0 残留）|
+| Smell D | user_profiles 两套 hometown 值映射读取处理写不对称 | ⏳ 中 |
+| P10.1 | helper_reviews 其他 uuid 列（id/household_id/reviewer_id）类型迁移 | ⏳ 中 |
+| P15.1 | community_posts 完整 anon-first 化（helper_id 类型 + FK→user_profiles）| ⏳ 中 |
+| P16 | 22 节庆菜 dish seed pipeline Step 2-4 真跑（cook_steps/nutrition/image）| ⏳ 中 |
+| P17 | dishes 表 4 道重复菜 dedup（冬阴功汤/玛格丽特披萨/番茄炒蛋/鱼香茄子各 2 行）| ⏳ 中（Day 11 audit 发现）|
+| P18 | dishes 表 15 行 origin_cuisine 缺失 + 19 行 prep_steps 缺 + 28 行无图 | ⏳ 中（Day 11 audit 发现，含 22 节庆菜）|
 
 ---
 
