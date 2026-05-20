@@ -530,12 +530,31 @@ interface WeeklyScoreParams {
   solarTerm?: SolarTerm | null;     // 节气加分（healthBoost/flavorBoost/flavorPenalty）
   hasXiaomei?: boolean;             // 小美料理机 — xiaomei_compatible 菜上浮（付费订阅强绑）
   mealTime?: '早餐' | '午餐' | '晚餐'; // 餐别口径（晚餐 oil/salt/sugar 软扣，午餐杂粮主食 +0.10）
+  // ── §B (TICKET-015) axis 26: home inventory soft bonus ──
+  homeInventoryItems?: Set<string>; // VerifyIngredients localStorage 当日"我家有"食材集合（含 missing_ingredient 反向剔除）
+}
+
+// ── Helper: extract all ingredient names a dish references ───────────────────
+// dish.main_ingredient 单值 + prep_steps_json[].ingredient_zh (trays A/B/C/D...)
+// 去重作为命中检测目标。prep_steps_json 缺失（老菜未生成）→ 退化到单一
+// main_ingredient（命中率低但不报错）。
+function dishIngredientNames(dish: any): string[] {
+  const out = new Set<string>();
+  if (dish.main_ingredient) out.add(dish.main_ingredient);
+  const prep = dish.prep_steps_json as Array<{ ingredient_zh?: string }> | null | undefined;
+  if (Array.isArray(prep)) {
+    for (const step of prep) {
+      if (step?.ingredient_zh) out.add(step.ingredient_zh);
+    }
+  }
+  return Array.from(out);
 }
 
 function scoreForWeek({
   dish, profile, prefScores, recentIds, pickedIngredients, pickedTitleKeywords, dayIndex,
   spiceBoost = 0, ageGroup, healthPrefs, helperMode = false, hasPregnant = false,
   humidity = 75, solarTerm = null, hasXiaomei = false, mealTime = '晚餐',
+  homeInventoryItems,
 }: WeeklyScoreParams): number {
   const flavorTags: string[]  = dish.flavor_tags ?? [];
   const healthTags: string[]  = dish.health_benefit_tags ?? [];
@@ -801,6 +820,22 @@ function scoreForWeek({
     if ((dish as any).cook_method === 'deep_fry') score += 0.20;
   }
 
+  // ── 26. §B (TICKET-015) Home-inventory soft bonus (C 短期闭环) ─────────
+  // homeInventoryItems = VerifyIngredients localStorage 今日"我家有"
+  // ∩ (7 日内 missing_ingredient feedback 剔除集) 的并集（hook 层 prepare）。
+  // 命中规则：dish 的 main_ingredient + prep_steps_json[].ingredient_zh 与
+  // inventory 集合做交集计数。软加分，不硬过滤；缺 prep_steps_json 的老菜
+  // 退化为单 main_ingredient 命中（命中率低但不报错）。
+  if (homeInventoryItems && homeInventoryItems.size > 0) {
+    const names = dishIngredientNames(dish);
+    let hits = 0;
+    for (const name of names) {
+      if (homeInventoryItems.has(name)) hits++;
+    }
+    if (hits >= 4)      score += 0.30;
+    else if (hits >= 2) score += 0.15;
+  }
+
   return score;
 }
 
@@ -927,6 +962,8 @@ function generateWeekPlan(
   hasXiaomei = false,
   breakfastPool: any[] = [],   // meal_type='breakfast' fetched at hook layer
   fruitPool: any[] = [],       // course_type='fruit' fetched at hook layer
+  // ── §B (TICKET-015) axis 26 入参 ──
+  homeInventoryItems: Set<string> | undefined = undefined,
 ): WeeklyMenu {
   // 粥 / 稀饭 are breakfast-only in Chinese cuisine — user direction
   // 2026-05-17. Stripped once at function entry so every lunch + dinner
@@ -1112,6 +1149,7 @@ function generateWeekPlan(
             helperMode,
             hasPregnant: familyPrefs?.hasPregnant ?? false,
             humidity, solarTerm, hasXiaomei, mealTime: '晚餐',
+            homeInventoryItems,
           });
 
           // ── Family multi-goal scoring ───────────────────────────────────
@@ -1268,6 +1306,7 @@ function generateWeekPlan(
             healthPrefs,
             hasPregnant: familyPrefs?.hasPregnant ?? false,
             humidity, solarTerm, hasXiaomei, mealTime: '晚餐',
+            homeInventoryItems,
           });
           const flavors: string[] = d.flavor_tags ?? [];
           if (flavors.includes('sweet'))  s += 0.25;
@@ -1333,6 +1372,7 @@ function generateWeekPlan(
         dayIndex, spiceBoost, ageGroup, healthPrefs,
         hasPregnant: familyPrefs?.hasPregnant ?? false,
         humidity, solarTerm, hasXiaomei, mealTime: '午餐',
+        homeInventoryItems,
       });
       if ((d.flavor_tags ?? []).includes('light')) score += 0.15;
       return { dish: d, score };
@@ -1906,11 +1946,48 @@ export function useWeeklyMenu(weekOffset: number = 0) {
           return true;
         });
 
+        // ── §B (TICKET-015) axis 26: prepare home inventory set ──
+        // 取今日 localStorage `home_inventory_<userId>_<date>` 的 true keys
+        // ∩ 剔除 7 日内被标记 missing_ingredient 的食材集合（菲佣实测"以为
+        // 家里有"但其实没有的负反馈）。本轮不接 user_pantry_items DB 表
+        // （Day 3+）；仅 localStorage + user_feedback 信号。
+        const todayIso = new Date().toISOString().slice(0, 10);
+        const inventoryKey = `home_inventory_${userId}_${todayIso}`;
+        const inventorySet = new Set<string>();
+        try {
+          const raw = localStorage.getItem(inventoryKey);
+          if (raw) {
+            const map = JSON.parse(raw) as Record<string, boolean>;
+            for (const [k, v] of Object.entries(map)) if (v) inventorySet.add(k);
+          }
+        } catch { /* corrupt — ignore */ }
+
+        if (inventorySet.size > 0) {
+          // 7 日 missing_ingredient 反向剔除
+          const sevenDaysAgo = new Date();
+          sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+          try {
+            const { data: missing } = await supabase
+              .from('user_feedback')
+              .select('meta, dish_id, created_at')
+              .eq('user_id', userId)
+              .eq('feedback_type', 'missing_ingredient')
+              .gte('created_at', sevenDaysAgo.toISOString());
+            for (const row of (missing ?? [])) {
+              // meta 可能含 { ingredient: '<zh_name>' }（菲佣 UI 上报时填写）
+              const ing = (row as any)?.meta?.ingredient as string | undefined;
+              if (ing) inventorySet.delete(ing);
+            }
+          } catch { /* user_feedback 表未上线（migration 027 前）→ 跳过反向剔除 */ }
+        }
+        const homeInventoryItems = inventorySet.size > 0 ? inventorySet : undefined;
+
         const menu = generateWeekPlan(
           pool, profile, prefScores, recentIds, dishesPerDay, kidSlots,
           spiceBoost, profile.age_group, healthPrefs, familyPrefs, helperMode,
           hcAdults, hcKids,
           humidity, solarTerm, hasXiaomei, breakfastPool, fruitPool,
+          homeInventoryItems,
         );
 
         if (cancelled) return;
