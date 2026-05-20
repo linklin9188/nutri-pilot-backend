@@ -255,8 +255,21 @@ interface WeatherInfo {
   label: string;
 }
 
+// TICKET-044 §B — 营养小贴士动态化（3 源轮播）：节气 + dietary_goal + IntentTag
+const GOAL_TIP_MAP: Record<string, string> = {
+  muscle_gain:  '今日蛋白质目标 90g — 推荐高蛋白主菜',
+  weight_loss:  '减脂期 — 推荐高纤维 / 低油菜品',
+  growth:       '孩子长高期 — 推荐补钙 + 优质蛋白',
+  pregnancy:    '备孕 / 孕期 — 推荐叶酸 + 红肉补血',
+  postpartum:   '哺乳期 — 推荐温补汤水 + 高蛋白',
+  elder_care:   '老人养生 — 推荐易消化 + 低盐少油',
+  balanced:     '均衡营养 — 优先 5 蛋白 + 12 食材覆盖',
+  health:       '健康调理 — 节气食材优先',
+};
+
 function useDailyTip() {
   const [weather, setWeather] = useState<WeatherInfo | null>(null);
+  const [tipIdx, setTipIdx] = useState(0);
 
   useEffect(() => {
     // Default: Hong Kong coordinates; future: use geolocation
@@ -278,9 +291,44 @@ function useDailyTip() {
 
   const solarTerm = getCurrentSolarTerm();
   const weatherAdj = weather ? getWeatherAdjustment(weather.temp, weather.humidity, weather.code) : '';
-  const tip = weatherAdj || solarTerm.tip;
+  const seasonalTip = weatherAdj || solarTerm.tip;
 
-  return { solarTerm, weather, tip };
+  // TICKET-044 §B source 2 — dietary_goal → tip from GOAL_TIP_MAP. Falls
+  // through to '' when no goal set OR mapping missing (rotation skips it).
+  const goalTip = (() => {
+    try {
+      const goal = localStorage.getItem('nutri_dietary_goal')
+        ?? JSON.parse(localStorage.getItem('quickPrefs') || '{}')?.goal
+        ?? '';
+      return GOAL_TIP_MAP[goal] ?? '';
+    } catch { return ''; }
+  })();
+
+  // TICKET-044 §B source 3 — IntentTag chips from parseIntent累积 偏好。
+  const intentTip = (() => {
+    try {
+      const bias = loadIntentBias();
+      if (bias?.chips && bias.chips.length > 0) {
+        return `你最近偏好：${bias.chips.slice(0, 3).join(' · ')}`;
+      }
+    } catch { /* non-critical */ }
+    return '';
+  })();
+
+  const tips: string[] = [seasonalTip, goalTip, intentTip].filter(Boolean);
+
+  // Rotate every 5s when there are ≥ 2 sources. Single-source = no rotation
+  // (saves a setInterval and matches Day-9 behavior for users with only
+  // seasonal tip available).
+  useEffect(() => {
+    if (tips.length <= 1) return;
+    const id = setInterval(() => setTipIdx(i => (i + 1) % tips.length), 5000);
+    return () => clearInterval(id);
+  }, [tips.length]);
+
+  const tip = tips.length > 0 ? tips[tipIdx % tips.length] : '';
+
+  return { solarTerm, weather, tip, tipSources: tips.length };
 }
 
 /**
