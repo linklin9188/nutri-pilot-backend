@@ -1302,6 +1302,29 @@ export function explainScore(dish: any, ctx: ExplainContext): ScoreExplanation {
     totalScore += 0.50;
   }
 
+  // 13. fruit/veggie 应季强化 (axis 31, TICKET-064 §C)
+  // 仅在 fruit / veggie_dish 课程显示 — 非果蔬整轴不入 breakdown.
+  const _ct31 = (dish.course_type ?? '') as string;
+  if (ctx.solarTerm && (_ct31 === 'fruit' || _ct31 === 'veggie_dish')) {
+    const _list31 = INGREDIENT_SEASONALITY[ctx.solarTerm.name_zh] ?? [];
+    if (_list31.length > 0) {
+      const _ings31 = dishIngredientNames(dish);
+      const _hits31: string[] = [];
+      for (const ing of _ings31) {
+        if (_list31.includes(ing)) _hits31.push(ing);
+      }
+      const _kind = _ct31 === 'fruit' ? '水果' : '蔬菜';
+      if (_hits31.length >= 1) {
+        breakdown.push({ axis: 'fruit_veggie_seasonal', score_delta: 0.40, reason: `应季${_kind}（${_hits31.slice(0, 3).join('、')}）` });
+        totalScore += 0.40;
+      } else {
+        // 非应季软扣 — 仍显示给用户解释为什么排序较低
+        breakdown.push({ axis: 'fruit_veggie_seasonal', score_delta: -0.20, reason: `非应季${_kind}（这季节有更合时令的选择）` });
+        totalScore -= 0.20;
+      }
+    }
+  }
+
   return { score: Number(totalScore.toFixed(3)), breakdown };
 }
 
