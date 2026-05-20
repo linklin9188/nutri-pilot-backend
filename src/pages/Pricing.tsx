@@ -82,7 +82,9 @@ export default function Pricing() {
   const [loading, setLoading]   = useState(false);
   const [message, setMessage]   = useState<string | null>(null);
 
-  // Handle the post-checkout return.
+  // Handle the post-checkout AND post-portal return. The Customer Portal
+  // sends the user back to return_url after any action (cancel / change card
+  // / nothing). We refresh subscription state and surface the right toast.
   useEffect(() => {
     const status = searchParams.get("status");
     if (status === "success") {
@@ -95,6 +97,19 @@ export default function Pricing() {
       });
     } else if (status === "canceled") {
       setMessage("已取消支付，没有任何扣款。");
+    } else if (status === "portal_returned") {
+      // TICKET-037 §A — refresh state, show the right cancel/change toast.
+      refreshSubscriptionFromSupabase().then(s => {
+        if (!s.isPro) {
+          // Already lost Pro entirely — webhook caught up to a cancel.
+          setMessage("订阅已取消。");
+        } else if (s.endsAt) {
+          const iso = s.endsAt.toISOString().slice(0, 10);
+          setMessage(`订阅已更新 · 期至 ${iso} 仍可用`);
+        } else {
+          setMessage("订阅设置已保存。");
+        }
+      });
     }
   }, [searchParams]);
 
@@ -186,35 +201,57 @@ export default function Pricing() {
                 </p>
               </div>
             </div>
-            {/* Stripe Customer Portal → manage card / cancel / download invoices */}
+            {/* Stripe Customer Portal → manage card / cancel / download invoices.
+                TICKET-037 §A: icon + tooltip + loading + error toast (not raw HTTP
+                code text). return_url 带 ?portal=returned 让 useEffect 上面捕获
+                portal 回跳并刷新订阅状态。 */}
             <button
               onClick={async () => {
+                if (loading) return; // anti double-click
                 setLoading(true); setMessage(null);
                 try {
                   const userId = getUserId() ?? "";
+                  const returnUrl = `${window.location.origin}/pricing?status=portal_returned`;
                   const resp = await fetch(
                     `${import.meta.env.VITE_SUPABASE_URL ?? ""}/functions/v1/create-portal-session`,
                     {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ user_id: userId, return_url: window.location.href }),
+                      body: JSON.stringify({ user_id: userId, return_url: returnUrl }),
                     }
                   );
                   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
                   const { url } = await resp.json();
                   if (!url) throw new Error("missing portal url");
                   window.location.href = url;
-                } catch (e: any) {
-                  setMessage(`无法打开管理页面：${e.message}。检查 create-portal-session Edge Function 是否已部署。`);
-                } finally {
+                } catch {
+                  // Friendlier toast — hides the HTTP / debug detail.
+                  setMessage("暂时无法跳转，请稍后或联系客服");
                   setLoading(false);
                 }
+                // Note: on success the browser leaves this page entirely so we
+                // don't reset loading in a finally — keeping the button locked
+                // visually until the redirect completes.
               }}
               disabled={loading}
-              className="w-full h-11 rounded-2xl font-bold text-[13px] active:scale-95 disabled:opacity-50"
+              title="改卡 / 暂停 / 退订"
+              className="w-full h-11 rounded-2xl font-bold text-[13px] active:scale-95 disabled:opacity-50 inline-flex items-center justify-center gap-2"
               style={{ background: "rgba(255,90,31,0.10)", color: "#FF5A1F" }}
             >
-              {loading ? "正在打开 Stripe…" : "管理订阅 / 换卡 / 取消"}
+              {loading ? (
+                <>
+                  <span
+                    className="inline-block w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin"
+                    aria-hidden
+                  />
+                  正在跳转 Stripe…
+                </>
+              ) : (
+                <>
+                  <span className="material-symbols-outlined" style={{ fontSize: 18 }}>credit_card</span>
+                  管理订阅 / 换卡 / 取消
+                </>
+              )}
             </button>
             <button
               onClick={() => {
