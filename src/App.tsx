@@ -4,7 +4,7 @@
  */
 
 import { useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import Home from './pages/Home';
 import Login from './pages/Login';
 import QuickSetup from './pages/QuickSetup';
@@ -49,6 +49,18 @@ import { maybeAttemptSilent } from './lib/wechatSilentLogin';
 //  • No quickPrefs yet                         → /setup (anonymous onboarding)
 //  • Has quickPrefs                            → Home
 function RootRedirect() {
+  // TICKET-070 §C — ?fresh=1 强制走 Login 流程（清登录态保留偏好）
+  // 用途：老板/用户已登录设备想看 Login 页（无痕浏览替代），访问
+  // /?fresh=1 自动清 nutri_user_id / userId / nutri_role / isLoggedIn /
+  // quickPrefs / familyPrefs → /login。不清 appLanguage / nutri_audience
+  // 等纯偏好 key。
+  const [params] = useSearchParams();
+  if (params.get('fresh') === '1') {
+    ['nutri_user_id', 'userId', 'nutri_role', 'isLoggedIn',
+     'quickPrefs', 'familyPrefs'].forEach(k => localStorage.removeItem(k));
+    return <Navigate to="/login" replace />;
+  }
+
   // Silent re-auth for WeChat users who lost localStorage between sessions
   // (公众号 / 朋友圈 / 群聊 link clicks open in webview contexts whose
   // storage isn't always persisted). attemptSilent() redirects away, so
