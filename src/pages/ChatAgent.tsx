@@ -41,6 +41,12 @@ export default function ChatAgent() {
   const { session, appendMessage, appendStreamToken, chooseProposal, notFound } = useChatSession(mode, sessionId);
   const { weeklyMenu } = useWeeklyMenu(0);
   const [streaming, setStreaming] = useState(false);
+
+  // TICKET-040 §C — explicit intent class picker for the "客服合一入口".
+  // Default 'chat_menu' matches SPEC §B; Backend chat endpoint routes prompt
+  // + per-class throttle based on this. Sent via streamChat's sessionMeta arg.
+  type IntentClass = 'chat_menu' | 'chat_support_shipping' | 'chat_support_quality' | 'chat_support_other';
+  const [intentClass, setIntentClass] = useState<IntentClass>('chat_menu');
   // §B (TICKET-030) Inflight adoption — disables MenuProposal CTA on all
   // proposal cards so a second tap during the 3-second countdown is a no-op.
   const [adopting, setAdopting] = useState(false);
@@ -203,7 +209,9 @@ export default function ChatAgent() {
         ...session.messages,
         { id: 'tmp', role: 'user', content: text, timestamp: Date.now() } as const,
       ];
-      for await (const tok of streamChat(turnMessages, undefined, proposals)) {
+      // TICKET-040 §C — pass user_intent_class to Backend via sessionMeta so
+      // gemini-proxy/chat routes prompt + throttle per class.
+      for await (const tok of streamChat(turnMessages, undefined, proposals, { user_intent_class: intentClass })) {
         appendStreamToken(tok);
       }
     } finally {
@@ -326,6 +334,36 @@ export default function ChatAgent() {
         <div ref={scrollAnchorRef} />
       </main>
 
+      {/* TICKET-040 §C — Intent chips bar (4 categories: menu / shipping /
+          quality / other). Sits right above the composer, scrolls horizontally
+          on small viewports. Backend routes prompt + throttle per class. */}
+      <div className="fixed bottom-[136px] left-0 right-0 px-4 z-20 pointer-events-none">
+        <div className="max-w-md mx-auto flex gap-1.5 overflow-x-auto pointer-events-auto"
+          style={{ scrollbarWidth: 'none' }}>
+          {([
+            { id: 'chat_menu',             label: t4('Menu',     '菜单',     'Menu',          'Menu')              },
+            { id: 'chat_support_shipping', label: t4('Shipping', '采购快递', 'Pagpapadala',    'Pengiriman')        },
+            { id: 'chat_support_quality',  label: t4('Quality',  '质量问题', 'Kalidad',        'Kualitas')          },
+            { id: 'chat_support_other',    label: t4('Other',    '其他',     'Iba pa',         'Lainnya')           },
+          ] as { id: IntentClass; label: string }[]).map(({ id, label }) => {
+            const active = id === intentClass;
+            return (
+              <button key={id} onClick={() => setIntentClass(id)}
+                className="rounded-full px-3 py-1.5 font-bold active:scale-95 transition-all shrink-0"
+                style={{
+                  fontSize: 11.5,
+                  background: active ? '#FF5A1F' : 'white',
+                  color:      active ? 'white' : 'rgba(0,0,0,0.55)',
+                  border:    `1px solid ${active ? '#FF5A1F' : 'rgba(0,0,0,0.10)'}`,
+                  boxShadow:  active ? '0 4px 12px rgba(255,90,31,0.25)' : '0 2px 6px rgba(0,0,0,0.04)',
+                }}>
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Composer */}
       <div className="fixed bottom-[88px] left-0 right-0 px-4 z-20">
         <div className="max-w-md mx-auto bg-white rounded-2xl shadow-lg border border-black/[0.06] flex items-center gap-2 px-3 py-2">
@@ -334,9 +372,19 @@ export default function ChatAgent() {
             value={draft}
             onChange={e => setDraft(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-            placeholder={mode === 'preference'
-              ? t4("Tell me what style you'd like…", '聊聊你想吃啥风格…', 'Sabihin ang gusto mong istilo…', 'Ceritakan gaya yang kamu suka…')
-              : t4('e.g., spicy next week but kid-friendly…', '比如：下周想吃辣的，孩子怕辣…', 'hal., maanghang ngunit bata-friendly…', 'cth., pedas tapi ramah anak…')}
+            placeholder={
+              // TICKET-040 §C — placeholder follows the active intent chip
+              // so the user reads the right prompt before typing.
+              intentClass === 'chat_support_shipping'
+                ? t4('e.g., my order was late by 2 days…', '比如：我下的单晚到了 2 天…', 'hal., naantala ng 2 araw ang order ko…', 'cth., pesanan terlambat 2 hari…')
+                : intentClass === 'chat_support_quality'
+                ? t4('e.g., the beef I bought last week turned brown…', '比如：上周买的牛肉变色了…', 'hal., nangitim ang baka na binili ko…', 'cth., daging sapi minggu lalu berubah warna…')
+                : intentClass === 'chat_support_other'
+                ? t4('Tell us what we can help with…', '聊聊你需要什么帮助…', 'Sabihin kung anong tulong…', 'Ceritakan butuh bantuan apa…')
+                : mode === 'preference'
+                ? t4("Tell me what style you'd like…", '聊聊你想吃啥风格…', 'Sabihin ang gusto mong istilo…', 'Ceritakan gaya yang kamu suka…')
+                : t4('e.g., spicy next week but kid-friendly…', '比如：下周想吃辣的，孩子怕辣…', 'hal., maanghang ngunit bata-friendly…', 'cth., pedas tapi ramah anak…')
+            }
             className="flex-1 px-2 py-1.5 outline-none bg-transparent"
             style={{ fontSize: 14 }}
           />
