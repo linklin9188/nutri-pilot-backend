@@ -6,7 +6,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
-import { useWeeklyMenu, isWeekend, todayDayIndex } from "../hooks/useWeeklyMenu";
+import { useWeeklyMenu, isWeekend, todayDayIndex, isFruitVeggieInSeason, getCurrentSolarTermZh } from "../hooks/useWeeklyMenu";
 import WeekendDiningReport from "../components/WeekendDiningReport";
 import { type SupabaseDish } from "../hooks/useSupabaseMenu";
 import { supabase } from "../lib/supabase";
@@ -130,6 +130,10 @@ function DishCard({ dish, small = false, familyMembers = [], homeToday = [], mic
     ? (dish.img || dish.image_url)
     : `https://images.unsplash.com/photo-1512621776951-a57141f2eefd?q=80&w=400&auto=format&fit=crop`;
 
+  // 应季 chip — fruit / veggie_dish only, 当前节气有命中食材时显示
+  const solarTermZh = getCurrentSolarTermZh();
+  const { inSeason, matched } = isFruitVeggieInSeason(dish as any, solarTermZh);
+
   return (
     <div
       className={`relative flex-shrink-0 rounded-2xl overflow-hidden bg-white shadow-[0_4px_16px_rgba(0,0,0,0.08)] ${small ? "w-28" : "w-36"}`}
@@ -154,6 +158,24 @@ function DishCard({ dish, small = false, familyMembers = [], homeToday = [], mic
         style={{ background: tc, fontSize: 10, letterSpacing: "0.04em" }}>
         {tl}
       </div>
+      {/* 应季 chip — fruit / veggie_dish 命中当前节气 时显示 */}
+      {inSeason === true && (
+        <div
+          className="absolute left-2 rounded-lg font-semibold"
+          style={{
+            top: 26,
+            background: "rgba(46,125,50,0.92)",
+            color: "white",
+            fontSize: 11,
+            padding: "2px 6px",
+            letterSpacing: "0.02em",
+            boxShadow: "0 2px 6px rgba(0,0,0,0.25)",
+          }}
+          title={matched.length > 0 ? `应季食材：${matched.slice(0, 4).join('、')}` : '当季'}
+        >
+          🌱 应季
+        </div>
+      )}
       {/* Michelin star / award badge — '⭐ 3 / Lung King Heen' style */}
       {michelin && (
         <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-0.5"
