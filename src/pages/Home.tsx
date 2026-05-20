@@ -90,6 +90,43 @@ function getChineseHour(): string {
   return CHINESE_HOURS[Math.floor(((h + 1) % 24) / 2)];
 }
 
+// ── §B (TICKET-027) Festival banner metadata ──────────────────────────────
+// Maps the slug returned by Algorithm 025's getCurrentFestival(today) into a
+// user-facing name + 3 recommended dish chips. Keep in sync with the slug
+// list in src/hooks/useWeeklyMenu.ts FESTIVALS table. If a future Algorithm
+// release adds a slug we don't recognize here, fallback to the slug itself.
+const FESTIVAL_LABEL: Record<string, { name: string; icon: string; chips: string[] }> = {
+  laba:      { name: '腊八节',    icon: '🥣', chips: ['腊八粥', '腊八蒜'] },
+  chunjie:   { name: '春节',      icon: '🧧', chips: ['饺子', '年糕', '鱼'] },
+  yuanxiao:  { name: '元宵',      icon: '🏮', chips: ['汤圆', '元宵'] },
+  duanwu:    { name: '端午',      icon: '🎍', chips: ['粽子', '咸鸭蛋'] },
+  qixi:      { name: '七夕',      icon: '🌌', chips: ['巧果'] },
+  zhongqiu:  { name: '中秋',      icon: '🥮', chips: ['月饼', '螃蟹', '莲藕'] },
+  chongyang: { name: '重阳',      icon: '🌼', chips: ['菊花酒', '糕点', '羊肉'] },
+};
+
+// Hook that dynamically imports getCurrentFestival from useWeeklyMenu and
+// returns the active slug (±3 days window) — null when nothing matches OR
+// when Algorithm 025 hasn't exported the helper yet (silent skip, per
+// TICKET-027 §B fallback rule).
+function useActiveFestival(): string | null {
+  const [slug, setSlug] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const mod = await import('../hooks/useWeeklyMenu');
+        const fn = (mod as any).getCurrentFestival;
+        if (typeof fn !== 'function') return; // not exported yet — silent skip
+        const found = fn(new Date());
+        if (!cancelled && typeof found === 'string') setSlug(found);
+      } catch { /* dynamic import failed — silent skip per ticket */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+  return slug;
+}
+
 // Estimate cooking minutes for a dish badge. Prefers DB-provided cook_time_min,
 // falls back to (prep_steps + cook_steps) × ~3min, hides when nothing known.
 function getPrepTimeMin(dish: any): number | null {
@@ -673,6 +710,10 @@ export default function Home() {
   const hasMenu = (weeklyMenu?.days[todayIdx]?.dishes.length ?? storedMenuRaw.length) > 0;
 
   const { solarTerm, weather, tip } = useDailyTip();
+  const festivalSlug = useActiveFestival();
+  const festivalInfo = festivalSlug
+    ? (FESTIVAL_LABEL[festivalSlug] ?? { name: festivalSlug, icon: '🎉', chips: [] })
+    : null;
 
   const now = new Date();
   const hour = now.getHours();
@@ -802,6 +843,34 @@ export default function Home() {
               <p className="mt-1" style={{ fontSize: 11.5, color: "rgba(0,0,0,0.42)", lineHeight: 1.55, fontStyle: "italic" }}>
                 {tip}
               </p>
+            )}
+            {/* §B (TICKET-027) Festival banner — only renders when getCurrentFestival
+                returns a slug (±3 days from one of the 7 festivals). Tap → /weekly
+                so the user lands on this week's menu (where Algorithm 025 axis 27
+                has already biased festival_tags +0.4 for matching dishes). */}
+            {festivalInfo && (
+              <button
+                onClick={() => navigate('/weekly')}
+                className="mt-2 w-full rounded-2xl px-3 py-2 flex items-center gap-2 active:scale-[0.99] transition-transform text-left"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(255,90,31,0.10), rgba(255,179,71,0.18))',
+                  border: '1px solid rgba(255,90,31,0.20)',
+                }}>
+                <span style={{ fontSize: 18, lineHeight: 1 }}>{festivalInfo.icon}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold truncate" style={{ fontSize: 12, color: '#1a1a1a' }}>
+                    {festivalInfo.name}将至
+                  </p>
+                  {festivalInfo.chips.length > 0 && (
+                    <p className="truncate" style={{ fontSize: 10.5, color: 'rgba(0,0,0,0.55)', marginTop: 1 }}>
+                      推荐 {festivalInfo.chips.join(' · ')}
+                    </p>
+                  )}
+                </div>
+                <span className="material-symbols-outlined" style={{ fontSize: 16, color: '#FF5A1F' }}>
+                  arrow_forward_ios
+                </span>
+              </button>
             )}
           </div>
 
