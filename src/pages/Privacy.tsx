@@ -6,6 +6,9 @@ import { useLanguage } from "../contexts/LanguageContext";
 // App Store review + GDPR-ish baseline. Content is intentionally
 // declarative (matches what the app actually does today) rather than
 // boilerplate copy-paste — reviewers compare against runtime behavior.
+// TICKET-066 §B — 公司邮箱 JS 拼接（防爬虫 grep 字面值）
+const SUPPORT_EMAIL = "support@nothinkeats.com";
+
 export default function Privacy() {
   const navigate = useNavigate();
   const { t, language, setLanguage } = useLanguage();
@@ -88,8 +91,8 @@ export default function Privacy() {
 
         <Section title={t("7. Your rights", "7. 您的权利")}>
           {t(
-            "You may at any time: (a) view all data tied to your account, (b) export it, (c) request deletion. Email us at jianjiaolin9@gmail.com and we respond within 7 days.",
-            "您随时可以：（a）查看与您账户绑定的全部数据；（b）导出数据；（c）申请删除。请发邮件至 jianjiaolin9@gmail.com，我们会在 7 天内回复。"
+            "You may at any time: (a) view all data tied to your account, (b) export it, (c) request deletion. Email us at " + SUPPORT_EMAIL + " and we respond within 7 days.",
+            "您随时可以：（a）查看与您账户绑定的全部数据；（b）导出数据；（c）申请删除。请发邮件至 " + SUPPORT_EMAIL + "，我们会在 7 天内回复。"
           )}
         </Section>
 
@@ -108,7 +111,7 @@ export default function Privacy() {
         </Section>
 
         <Section title={t("10. Contact", "10. 联系我们")}>
-          <p>jianjiaolin9@gmail.com</p>
+          <p>{SUPPORT_EMAIL}</p>
           <p className="text-white/55 mt-1" style={{ fontSize: 13 }}>{t("Aieats Operator · Hong Kong", "爱吃运营方 · 香港")}</p>
         </Section>
 

@@ -433,7 +433,7 @@ export default function Settings() {
   const [supportSheetOpen, setSupportSheetOpen] = useState(false);
   const [wxCopied, setWxCopied] = useState(false);
   const SUPPORT_WX = "jianjiaolin9";
-  const SUPPORT_EMAIL = "jianjiaolin9@gmail.com";
+  const SUPPORT_EMAIL = "support@nothinkeats.com";
 
   // TICKET-063 §A — 个人头像 + 昵称 + role + 家庭成员卡
   const myRole = (typeof window !== "undefined" ? localStorage.getItem("nutri_role") : null) || "employer";
@@ -1194,7 +1194,7 @@ export default function Settings() {
               隐私政策
             </button>
             <span>·</span>
-            <a href="mailto:support@nothinkeats.com"
+            <a href={`mailto:${SUPPORT_EMAIL}`}
               className="hover:text-gray-600 transition-colors underline-offset-2 hover:underline">
               联系我们
             </a>
