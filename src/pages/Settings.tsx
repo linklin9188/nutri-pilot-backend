@@ -545,6 +545,29 @@ export default function Settings() {
     }
   }
 
+  // TICKET-066 §D — 客户端限流防同一用户疯狂点客服邮箱 mailto。
+  // 5 分钟内 ≥ 3 次 → alert + e.preventDefault 阻挡。仅防普通手滑 / 简单 bot；
+  // 真正服务端限流靠 Cloudflare Email Routing destination quota + Gmail filter。
+  function onClickSupportMail(e: React.MouseEvent<HTMLAnchorElement>) {
+    const KEY = "support_mail_clicks";
+    const NOW = Date.now();
+    const WINDOW_MS = 5 * 60 * 1000;
+    const MAX = 3;
+    let arr: number[] = [];
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (raw) arr = JSON.parse(raw);
+    } catch { arr = []; }
+    const recent = arr.filter(t => NOW - t < WINDOW_MS);
+    if (recent.length >= MAX) {
+      e.preventDefault();
+      alert("感谢反馈！您 5 分钟内已发起 3 次，请稍后再试。");
+      return;
+    }
+    recent.push(NOW);
+    localStorage.setItem(KEY, JSON.stringify(recent));
+  }
+
   async function kickHelper(helper_id: string, name: string | null) {
     if (!window.confirm(`确定踢出 ${name || "此成员"}？踢出后对方将看不到家里菜单。`)) return;
     const { error } = await supabase
@@ -1222,6 +1245,7 @@ export default function Settings() {
 
             <a
               href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("[Aieats β 反馈]")}&body=${encodeURIComponent("用户ID: " + (getUserId()?.slice(0, 8) ?? "unknown") + "\n\n问题描述：\n")}`}
+              onClick={onClickSupportMail}
               className="w-full bg-gray-50 border border-black/5 rounded-[16px] p-4 flex items-center gap-3 active:scale-[0.98] transition-all mb-2.5"
             >
               <span className="text-[22px]">📧</span>
@@ -1259,6 +1283,7 @@ export default function Settings() {
 
             <a
               href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("[Aieats β Bug]")}&body=${encodeURIComponent("用户ID: " + (getUserId()?.slice(0, 8) ?? "unknown") + "\n\nbug 复现步骤：\n1. \n2. \n3. \n\n期望行为：\n\n实际行为：\n\n截图：\n")}`}
+              onClick={onClickSupportMail}
               className="w-full bg-gray-50 border border-black/5 rounded-[16px] p-4 flex items-center gap-3 active:scale-[0.98] transition-all mb-4"
             >
               <span className="text-[22px]">🐛</span>
