@@ -111,6 +111,37 @@ const DAY_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', 
 // 让"鸡腿/排骨"这种高频词每周最多出现 ⌈5/3⌉ = 2 次（周一 + 周四 / 周五）。
 const DEDUP_WINDOW_DAYS = 3;
 
+// §B (TICKET-043) axis 28: 单食材应季 — 节气 name_zh → 推荐食材列表。
+// 与 solarTerm axis（节气-菜系-flavor-health 三维加分）互补：solarTerm 是
+// "整道菜的当季感"（如冬至偏温补），SEASONALITY 是"具体食材 hit"（如冬至
+// 桌上有羊肉 / 白菜）。30+ 食材覆盖 24 节气主流时令；扩展只需在此 map 加行。
+const INGREDIENT_SEASONALITY: Record<string, string[]> = {
+  '立春': ['韭菜', '春笋', '香椿', '荠菜'],
+  '雨水': ['韭菜', '春笋', '荠菜', '蒲公英'],
+  '惊蛰': ['枇杷', '樱桃', '草莓', '春笋'],
+  '春分': ['枇杷', '樱桃', '草莓', '芦笋'],
+  '清明': ['青团', '香椿', '荠菜', '马兰头'],
+  '谷雨': ['香椿', '蒲公英', '芦笋', '蚕豆'],
+  '立夏': ['枇杷', '黄瓜', '番茄', '蚕豆'],
+  '小满': ['枇杷', '黄瓜', '苦瓜', '蚕豆'],
+  '芒种': ['杨梅', '桃', '苦瓜', '丝瓜'],
+  '夏至': ['西瓜', '桃', '苦瓜', '冬瓜'],
+  '小暑': ['西瓜', '莲藕', '冬瓜', '丝瓜'],
+  '大暑': ['西瓜', '莲藕', '冬瓜', '丝瓜', '绿豆'],
+  '立秋': ['葡萄', '莲子', '板栗', '南瓜'],
+  '处暑': ['葡萄', '莲子', '板栗', '梨'],
+  '白露': ['石榴', '柿子', '大闸蟹', '山药'],
+  '秋分': ['石榴', '柿子', '大闸蟹', '山药', '梨'],
+  '寒露': ['柿子', '螃蟹', '萝卜', '莲藕'],
+  '霜降': ['柿子', '螃蟹', '萝卜', '莲藕', '白菜'],
+  '立冬': ['白菜', '萝卜', '羊肉', '山药'],
+  '小雪': ['白菜', '羊肉', '银耳', '莲子'],
+  '大雪': ['白菜', '羊肉', '银耳', '红枣'],
+  '冬至': ['白菜', '羊肉', '银耳', '桂圆', '糯米'],
+  '小寒': ['羊肉', '红枣', '桂圆', '糯米'],
+  '大寒': ['羊肉', '红枣', '桂圆', '生姜'],
+};
+
 // §A (TICKET-043 / Smell 1 阶段 4): cross-week dish-id fatigue threshold.
 // 过去 4 周累计出现 ≥ CROSS_WEEK_FATIGUE_THRESHOLD 次的 dish_id → candidate
 // filter 阶段 hard-block（reroll 直到该菜被新候选替换）。让用户跨周也不会
@@ -897,6 +928,22 @@ function scoreForWeek({
     const festivalTags = ((dish as any).festival_tags ?? []) as string[];
     if (Array.isArray(festivalTags) && festivalTags.includes(activeFestival)) {
       score += 0.4;
+    }
+  }
+
+  // ── 28. §B (TICKET-043) 单食材应季加分 — 24 节气 × 时令食材 ──────────
+  // 与 axis 19 solarTerm（菜系级 health/flavor）互补：本轴看具体食材是否
+  // 命中当前节气的"应季"列表（如冬至 dish prep_steps_json 含羊肉 → +0.10）。
+  // 命中数累加，不封顶（一道菜含 2 个应季食材 → +0.20）。
+  if (solarTerm) {
+    const seasonalList = INGREDIENT_SEASONALITY[solarTerm.name_zh];
+    if (seasonalList && seasonalList.length > 0) {
+      const dishIngs = dishIngredientNames(dish);
+      let seasonalHits = 0;
+      for (const ing of dishIngs) {
+        if (seasonalList.includes(ing)) seasonalHits++;
+      }
+      if (seasonalHits > 0) score += seasonalHits * 0.10;
     }
   }
 
