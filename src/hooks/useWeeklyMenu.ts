@@ -214,6 +214,65 @@ export async function fetchIngredientSeasonality(): Promise<void> {
 // 单例 → import 后此调用即起.
 fetchIngredientSeasonality();
 
+// ═══════════════════════════════════════════════════════════════════════════
+// §A/B (TICKET-068) 非算法 helper export — UI "应季" chip 显示用
+// 不动 scoreForWeek / explainScore 主体; 不 bump ALGO_VERSION.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * 判断一道菜是否当季 fruit / veggie. UI 拿来决定要不要在卡片上挂"应季" chip.
+ *
+ * - course_type === 'fruit' 或 'veggie_dish' → 返回 inSeason: true | false
+ * - 其他 course_type → 返回 inSeason: null (UI 应不显示 chip)
+ * - solarTermZh 为 null → 返回 inSeason: null (UI 应不显示 chip)
+ *
+ * 与 axis 31 scoring 行为一致:
+ *   - 同一 INGREDIENT_SEASONALITY map (hybrid loader 覆盖后看 DB; 未覆盖看 FALLBACK)
+ *   - 匹配窗口同时检 ingredients[] 和 title 子串 — 比 axis 31 dishIngredientNames
+ *     更宽容 (覆盖 UI 传 SupabaseDish.title 但缺 prep_steps_json 的场景)
+ *
+ * matched 用于 chip tooltip ("应季：枇杷、樱桃"), UI 可选择性显示前 N 个.
+ */
+export function isFruitVeggieInSeason(
+  dish: { course_type?: string | null; ingredients?: string[] | null; title?: string | null },
+  solarTermZh: string | null,
+): { inSeason: boolean | null; matched: string[] } {
+  const ct = dish.course_type;
+  if (ct !== 'fruit' && ct !== 'veggie_dish') {
+    return { inSeason: null, matched: [] };
+  }
+  if (!solarTermZh) {
+    return { inSeason: null, matched: [] };
+  }
+  const seasonalList = INGREDIENT_SEASONALITY[solarTermZh] ?? [];
+  if (seasonalList.length === 0) {
+    return { inSeason: null, matched: [] };
+  }
+  const haystack: string[] = [
+    ...(dish.ingredients ?? []),
+    dish.title ?? '',
+  ];
+  const matched: string[] = [];
+  for (const ing of seasonalList) {
+    if (haystack.some(h => h.includes(ing))) {
+      matched.push(ing);
+    }
+  }
+  return { inSeason: matched.length > 0, matched };
+}
+
+/**
+ * 返回当前节气中文名 (e.g. "立夏") 或 null. UI 可直接传给 isFruitVeggieInSeason.
+ * 包装 useSupabaseMenu.getCurrentSolarTerm 仅取 name_zh, 避免 UI 自己实现节气推算.
+ */
+export function getCurrentSolarTermZh(): string | null {
+  return getCurrentSolarTerm()?.name_zh ?? null;
+}
+
+// 再 re-export 完整 SolarTerm 对象 — 若 UI 需要 philosophy_zh / healthBoostTags 等
+// 高级字段, 不需要再 import useSupabaseMenu (减跨 hook 依赖).
+export { getCurrentSolarTerm } from './useSupabaseMenu';
+
 // §A (TICKET-043 / Smell 1 阶段 4): cross-week dish-id fatigue threshold.
 // 过去 4 周累计出现 ≥ CROSS_WEEK_FATIGUE_THRESHOLD 次的 dish_id → candidate
 // filter 阶段 hard-block（reroll 直到该菜被新候选替换）。让用户跨周也不会
