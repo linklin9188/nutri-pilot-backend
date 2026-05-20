@@ -1071,7 +1071,7 @@ export function explainScore(dish: any, ctx: ExplainContext): ScoreExplanation {
   // 1. hometown match
   if (hometownMatches(ctx.profile.hometown_cuisine, origin)) {
     const cuisineLabel = ORIGIN_ZH[origin] ?? origin;
-    breakdown.push({ axis: 'hometown', score_delta: 0.60, reason: `家乡菜（${cuisineLabel}）` });
+    breakdown.push({ axis: 'hometown', score_delta: 0.60, reason: `家乡味，${cuisineLabel}你熟悉` });
     totalScore += 0.60;
   }
 
@@ -1079,7 +1079,7 @@ export function explainScore(dish: any, ctx: ExplainContext): ScoreExplanation {
   if (ctx.profile.dietary_goal && ctx.profile.dietary_goal !== 'maintain') {
     if (healthTags.includes(ctx.profile.dietary_goal)) {
       const goalZh = DIETARY_GOAL_ZH[ctx.profile.dietary_goal] ?? ctx.profile.dietary_goal;
-      breakdown.push({ axis: 'dietary_goal', score_delta: 0.35, reason: `符合你的${goalZh}目标` });
+      breakdown.push({ axis: 'dietary_goal', score_delta: 0.35, reason: `配合${goalZh}的目标` });
       totalScore += 0.35;
     }
   }
@@ -1087,7 +1087,7 @@ export function explainScore(dish: any, ctx: ExplainContext): ScoreExplanation {
   // 3. taste match
   if (ctx.profile.taste_pref && flavorTags.includes(ctx.profile.taste_pref)) {
     const tasteZh = FLAVOR_ZH[ctx.profile.taste_pref] ?? ctx.profile.taste_pref;
-    breakdown.push({ axis: 'taste', score_delta: 0.25, reason: `口味偏好：${tasteZh}` });
+    breakdown.push({ axis: 'taste', score_delta: 0.25, reason: `你说喜欢${tasteZh}口味` });
     totalScore += 0.25;
   }
 
@@ -1103,7 +1103,7 @@ export function explainScore(dish: any, ctx: ExplainContext): ScoreExplanation {
       return `${zh}(${v > 0 ? '+' : ''}${v})`;
     }).join(' / ');
     const learnDelta = learnedSignals.reduce((s, [, v]) => s + Math.sign(v) * 0.15, 0);
-    breakdown.push({ axis: 'preference_learn', score_delta: learnDelta, reason: `你最近喜欢 ${topTags}` });
+    breakdown.push({ axis: 'preference_learn', score_delta: learnDelta, reason: `你最近经常点 ${topTags}，给你多推` });
     totalScore += learnDelta;
   }
 
@@ -1112,7 +1112,7 @@ export function explainScore(dish: any, ctx: ExplainContext): ScoreExplanation {
     if (healthTags.some(t => ctx.solarTerm!.healthBoostTags.includes(t))) {
       breakdown.push({
         axis: 'solar_term', score_delta: ctx.solarTerm.healthBonus,
-        reason: `${ctx.solarTerm.name_zh}：${ctx.solarTerm.philosophy_zh}`,
+        reason: `今天${ctx.solarTerm.name_zh}，${ctx.solarTerm.philosophy_zh}`,
       });
       totalScore += ctx.solarTerm.healthBonus;
     }
@@ -1125,7 +1125,7 @@ export function explainScore(dish: any, ctx: ExplainContext): ScoreExplanation {
     const festTags = ((dish as any).festival_tags ?? []) as string[];
     if (Array.isArray(festTags) && festTags.includes(fest)) {
       const festZh = FESTIVAL_ZH[fest] ?? fest;
-      breakdown.push({ axis: 'festival', score_delta: 0.40, reason: `${festZh}节庆推荐` });
+      breakdown.push({ axis: 'festival', score_delta: 0.40, reason: `${festZh}将至，老传统不能少` });
       totalScore += 0.40;
     }
   }
@@ -1136,10 +1136,10 @@ export function explainScore(dish: any, ctx: ExplainContext): ScoreExplanation {
     let hits = 0;
     for (const name of names) if (ctx.homeInventoryItems.has(name)) hits++;
     if (hits >= 4) {
-      breakdown.push({ axis: 'home_inventory', score_delta: 0.30, reason: `家里有 ${hits} 个食材` });
+      breakdown.push({ axis: 'home_inventory', score_delta: 0.30, reason: `你家里已经有 ${hits} 样食材，几乎不用买` });
       totalScore += 0.30;
     } else if (hits >= 2) {
-      breakdown.push({ axis: 'home_inventory', score_delta: 0.15, reason: `家里有 ${hits} 个食材` });
+      breakdown.push({ axis: 'home_inventory', score_delta: 0.15, reason: `你家里有 ${hits} 样食材` });
       totalScore += 0.15;
     }
   }
@@ -1155,7 +1155,7 @@ export function explainScore(dish: any, ctx: ExplainContext): ScoreExplanation {
         let delta = hitsArr.length * 0.10;
         if (hitsArr.length >= 3) delta += 0.15;
         if (delta > 0.5) delta = 0.5;
-        breakdown.push({ axis: 'seasonal_ingredient', score_delta: delta, reason: `应季食材：${hitsArr.join(' / ')}` });
+        breakdown.push({ axis: 'seasonal_ingredient', score_delta: delta, reason: `这季节就该吃 ${hitsArr.join('、')}` });
         totalScore += delta;
       }
     }
@@ -1163,33 +1163,33 @@ export function explainScore(dish: any, ctx: ExplainContext): ScoreExplanation {
 
   // 9. xiaomei
   if (ctx.hasXiaomei && (dish as any).xiaomei_compatible) {
-    breakdown.push({ axis: 'xiaomei', score_delta: 0.15, reason: '小美料理机可做' });
+    breakdown.push({ axis: 'xiaomei', score_delta: 0.15, reason: '小美料理机一键搞定，省事' });
     totalScore += 0.15;
   }
 
   // 10. spice match
   if (ctx.spiceBoost && ctx.spiceBoost > 0 && flavorTags.includes('spicy')) {
-    breakdown.push({ axis: 'spice', score_delta: ctx.spiceBoost, reason: '辣度匹配你的偏好' });
+    breakdown.push({ axis: 'spice', score_delta: ctx.spiceBoost, reason: '辣度刚好对你的胃口' });
     totalScore += ctx.spiceBoost;
   }
 
   // 11. humidity damp_clear
   if (ctx.humidity !== undefined && ctx.humidity > 85 && healthTags.includes('damp_clear')) {
-    breakdown.push({ axis: 'humidity', score_delta: 0.30, reason: `高湿度（${ctx.humidity}%）宜祛湿` });
+    breakdown.push({ axis: 'humidity', score_delta: 0.30, reason: `今天湿度 ${ctx.humidity}%，吃点祛湿的` });
     totalScore += 0.30;
   }
 
   // 12. special_health (axis 29)
   if (ctx.profile.dietary_goal === 'prenatal' && (dish as any).is_prenatal_friendly) {
-    breakdown.push({ axis: 'special_health', score_delta: 0.50, reason: '孕期推荐菜' });
+    breakdown.push({ axis: 'special_health', score_delta: 0.50, reason: '孕期身体需要的营养' });
     totalScore += 0.50;
   }
   if (ctx.profile.dietary_goal === 'lactation' && (dish as any).is_lactation_friendly) {
-    breakdown.push({ axis: 'special_health', score_delta: 0.50, reason: '哺乳期推荐菜' });
+    breakdown.push({ axis: 'special_health', score_delta: 0.50, reason: '哺乳期身体需要的营养' });
     totalScore += 0.50;
   }
   if (ctx.profile.dietary_goal === 'elderly' && (dish as any).is_elderly_friendly) {
-    breakdown.push({ axis: 'special_health', score_delta: 0.50, reason: '老人养生推荐菜' });
+    breakdown.push({ axis: 'special_health', score_delta: 0.50, reason: '老人吃得舒服，养生为主' });
     totalScore += 0.50;
   }
 
