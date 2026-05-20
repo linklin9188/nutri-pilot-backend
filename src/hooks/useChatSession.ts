@@ -189,6 +189,32 @@ export function useChatSession(mode: ChatMode = 'today', resumeId?: string) {
     loadSession(sessionIdRef.current, mode)
   );
 
+  // §C (TICKET-027) End-to-end resume validation. notFound flips true when
+  // the caller passed a resumeId, neither localStorage nor DB had any row
+  // for it, and the hook fell back to a fresh session. ChatAgent reads
+  // this to show a friendly "会话不存在或已过期" notice instead of stranding
+  // the user on a blank page.
+  const [notFound, setNotFound] = useState<boolean>(false);
+
+  // §C (TICKET-027) On first mount, if the caller did NOT pass a resumeId
+  // (= fresh session minted client-side), push session_id into the URL via
+  // history.replaceState so the user can copy-paste / share the link to
+  // restore the same conversation from another device. We only do this
+  // when location.search has no `session=` param so we don't churn URLs
+  // every render.
+  useEffect(() => {
+    if (resumeId) return; // resume path — URL already carries the id
+    if (typeof window === 'undefined') return;
+    try {
+      const url = new URL(window.location.href);
+      if (url.searchParams.get('session')) return; // already present, no-op
+      url.searchParams.set('session', sessionIdRef.current);
+      window.history.replaceState(window.history.state, '', url.toString());
+    } catch { /* SSR / sandboxed iframes — silent */ }
+    // resumeId is sourced from useRef at first render; safe to ignore.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const appendMessage = useCallback((msg: Partial<ChatMessage> & { role: ChatRole; content: string }) => {
     setSession(prev => {
       const next: ChatSession = {
@@ -268,7 +294,15 @@ export function useChatSession(mode: ChatMode = 'today', resumeId?: string) {
     let cancelled = false;
     (async () => {
       const fromDb = await dbLoadSession(resumeId);
-      if (cancelled || !fromDb) return;
+      if (cancelled) return;
+      if (!fromDb) {
+        // §C (TICKET-027) Resume requested but nothing on disk OR in DB:
+        // mark notFound so the UI can show a friendly notice. The fallback
+        // session (already in state from buildInitialSession) stays so the
+        // user can still chat — they just start fresh under the same id.
+        setNotFound(true);
+        return;
+      }
       setSession(fromDb);
       persistSession(fromDb);
     })();
@@ -277,5 +311,5 @@ export function useChatSession(mode: ChatMode = 'today', resumeId?: string) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resumeId]);
 
-  return { session, appendMessage, appendStreamToken, chooseProposal };
+  return { session, appendMessage, appendStreamToken, chooseProposal, notFound };
 }

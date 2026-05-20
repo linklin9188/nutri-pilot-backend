@@ -35,7 +35,7 @@ export default function ChatAgent() {
   const mode      = parseModeParam(searchParams.get('mode'));
   const sessionId = searchParams.get('session') ?? undefined;
 
-  const { session, appendMessage, appendStreamToken, chooseProposal } = useChatSession(mode, sessionId);
+  const { session, appendMessage, appendStreamToken, chooseProposal, notFound } = useChatSession(mode, sessionId);
   const { weeklyMenu } = useWeeklyMenu(0);
   const [streaming, setStreaming] = useState(false);
 
@@ -187,6 +187,25 @@ export default function ChatAgent() {
           </div>
         </div>
       </header>
+
+      {/* §C (TICKET-027) Resume-not-found notice — shows when the URL had
+          ?session=<uuid> but neither localStorage nor chat_sessions had a
+          row for it. The user falls into a fresh session under the same id;
+          this banner explains why their history is empty instead of leaving
+          them on a blank page. */}
+      {notFound && (
+        <div
+          className="mx-4 mt-3 rounded-2xl px-3 py-2 flex items-start gap-2"
+          style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.30)' }}
+        >
+          <span className="material-symbols-outlined shrink-0" style={{ fontSize: 18, color: '#B45309', marginTop: 1 }}>
+            info
+          </span>
+          <p style={{ fontSize: 12, color: '#92400E', lineHeight: 1.5 }}>
+            会话不存在或已过期。可以从这里开始新的对话，新会话 id 已自动写入网址。
+          </p>
+        </div>
+      )}
 
       {/* Message list */}
       <main className="flex-1 px-4 py-4 flex flex-col gap-3 overflow-y-auto pb-24">
