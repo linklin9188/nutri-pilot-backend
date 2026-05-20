@@ -303,6 +303,18 @@ function readQuickPrefs(): Record<string, string | string[]> {
   try { return JSON.parse(localStorage.getItem("quickPrefs") || "{}"); }
   catch { return {}; }
 }
+// §A (TICKET-039 Smell 2 阶段 2) — debounce 500ms 把连续多字段修改合并成
+// 一次 syncProfileToDB（避免用户连改 hometown + goal + spice 触发 3 次 DB
+// upsert）。模块级 timer id；多次 writeQuickPref 调用累加到同一窗口。
+let _profileSyncDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+function debouncedSyncProfileToDB() {
+  if (_profileSyncDebounceTimer) clearTimeout(_profileSyncDebounceTimer);
+  _profileSyncDebounceTimer = setTimeout(() => {
+    syncProfileToDB(getUserId()).catch(() => {});
+    _profileSyncDebounceTimer = null;
+  }, 500);
+}
+
 function writeQuickPref(key: string, value: string) {
   const prev = readQuickPrefs();
   prev[key] = value;
@@ -312,10 +324,10 @@ function writeQuickPref(key: string, value: string) {
   if (key === "goal")     localStorage.setItem("userDiet",  value);
   if (key === "hometown") localStorage.setItem("userHometown", value);
   window.dispatchEvent(new Event("nutri-prefs-changed"));
-  // §A (TICKET-036 Smell 2) — profile 改完同步到 DB user_profiles，让
-  // 算法侧 SELECT 的 hometown_cuisine / dietary_goal / taste_pref 跟随 UI。
-  // fire-and-forget；匿名 / 失败静默吞掉，不阻断主流程。
-  syncProfileToDB(getUserId()).catch(() => {});
+  // §A (TICKET-036 Smell 2 起步 + TICKET-039 阶段 2 升级) — profile 改完
+  // debounce 500ms 同步到 DB user_profiles，让算法侧 SELECT 的 hometown_cuisine
+  // / dietary_goal / taste_pref 跟随 UI。
+  debouncedSyncProfileToDB();
 }
 
 export default function Settings() {

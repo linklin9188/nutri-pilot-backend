@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { useLanguage, type Language } from "../contexts/LanguageContext";
 import { supabase } from "../lib/supabase";
 import { markLogin } from "../lib/userLifecycle";
+import { syncProfileFromDB } from "../lib/profileSync";
 
 type Role = "employer" | "helper";
 
@@ -47,6 +48,10 @@ function devTestLogin(role: Role, providerLabel: string) {
   // Idempotent: writes first-login epoch + flags this browser session as
   // the new-user session iff this is the very first login on this device.
   markLogin();
+  // §A (TICKET-039 Smell 2 阶段 2) — 登录成功后拉远端 profile 覆盖本地，
+  // 让跨设备登录的用户能看到上次设备保存的 hometown / goal / taste。
+  // fire-and-forget；匿名 / 网络失败 silent。
+  syncProfileFromDB(userId).catch(() => {});
   // LanguageProvider listens for this to re-derive default language
   // (helper → en, employer → zh).
   window.dispatchEvent(new Event("nutri-prefs-changed"));

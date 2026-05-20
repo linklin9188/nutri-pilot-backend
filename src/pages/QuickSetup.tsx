@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { getUserId } from "../lib/userId";
 import { hometownToDbBucket } from "../lib/hometownBuckets";
+import { syncProfileToDB } from "../lib/profileSync";
 
 // Quick 5-question onboarding — no login required
 // Saves to localStorage as "quickPrefs"
@@ -298,6 +299,11 @@ export default function QuickSetup() {
     // this, only localStorage was written, leaving DB profile all NULL and
     // making 70% of the score collapse to 0.
     persistProfileToDb(prefs).catch(() => {/* non-blocking */});
+
+    // §A (TICKET-039 Smell 2 阶段 2) — 走统一同步层让任何后续 sync←DB
+    // 拉到一致结果（persistProfileToDb 是 QuickSetup 特化路径，syncProfileToDB
+    // 是统一入口；两者写入同一 user_profiles 表字段一致，并存为无害冗余）。
+    syncProfileToDB(getUserId()).catch(() => {/* non-blocking */});
 
     // Notify hooks that preferences changed
     window.dispatchEvent(new Event("nutri-prefs-changed"));

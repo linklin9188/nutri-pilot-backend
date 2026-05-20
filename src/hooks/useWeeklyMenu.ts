@@ -31,6 +31,7 @@ import { DISH_FIELDS } from '../lib/dishFields';
 import { hometownMatches, hometownToDbBucket } from '../lib/hometownBuckets';
 import { isNewUserSession } from '../lib/userLifecycle';
 import { pickBreakfastCombo } from '../lib/breakfastCombos';
+import { syncProfileFromDB } from '../lib/profileSync';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1887,6 +1888,21 @@ export function useWeeklyMenu(weekOffset: number = 0) {
   const [weeklyMenu, setWeeklyMenu] = useState<WeeklyMenu | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // §A (TICKET-039 Smell 2 阶段 2 自愈触发) — mount 时若 localStorage 关键
+  // profile 字段任一缺失 → 拉 DB syncProfileFromDB 兜底。避免"DB 有数据
+  // 但本地空 → 算法误判新用户"的冷启动失败。fire-and-forget；DB 拉到后
+  // syncProfileFromDB 内部会 setItem localStorage，下次 nutri-prefs-changed
+  // 事件触发 menu 重生。
+  useEffect(() => {
+    const hasHometown = !!localStorage.getItem('userHometown');
+    const hasGoal     = !!localStorage.getItem('userDiet') ||
+      (() => { try { return !!(JSON.parse(localStorage.getItem('quickPrefs') ?? '{}') as { goal?: string }).goal; } catch { return false; } })();
+    const hasTaste    = !!localStorage.getItem('userTaste');
+    if (!hasHometown || !hasGoal || !hasTaste) {
+      syncProfileFromDB(getUserId()).catch(() => {/* offline-tolerant */});
+    }
+  }, []);
 
   // Re-generate when user updates preferences or eating selection changes
   useEffect(() => {
