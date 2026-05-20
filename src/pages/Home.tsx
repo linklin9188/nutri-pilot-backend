@@ -1794,31 +1794,10 @@ export default function Home() {
           </div>
         )}
 
-        {/* Pro upgrade nav — shown to logged-in non-members. Skipped on
-            first-session new users so their initial impression isn't a
-            paywall pitch. Tap → /pricing where the full benefits block
-            + plans + Stripe checkout live. */}
-        {isLoggedIn && !isPro && !isNewUserSession() && (
-          <button onClick={() => navigate('/pricing')}
-            className="w-full rounded-2xl px-4 py-3.5 flex items-center gap-3 active:scale-[0.98] transition-all"
-            style={{
-              background: "linear-gradient(135deg, #FF5A1F 0%, #FF8C54 60%, #FFB347 100%)",
-              boxShadow: "0 8px 24px rgba(255,90,31,0.28)",
-            }}>
-            <span style={{ fontSize: 24 }}>⭐</span>
-            <div className="flex-1 min-w-0 text-left">
-              <p className="font-bold text-white" style={{ fontSize: 14 }}>
-                解锁爱吃 Pro 会员
-              </p>
-              <p style={{ fontSize: 11, color: "rgba(255,255,255,0.85)", lineHeight: 1.4 }}>
-                整周菜单 · 一键采购 · 米其林菜单 · 大厨上门 · 学校营养
-              </p>
-            </div>
-            <span className="material-symbols-outlined text-white shrink-0" style={{ fontSize: 20 }}>
-              chevron_right
-            </span>
-          </button>
-        )}
+        {/* TICKET-074 §F — Home 内嵌 Pro 推广卡已删除（避免与 Settings
+            MembershipCard 重复 CTA）。Home 顶部 TrialExpiredCard (line ~1138)
+            仍保留作为 7 天试用过期的提示 banner — 它是 expected 终结提示，
+            不是推广。 */}
 
         </>}  {/* end of weekday fragment — closes the isWeekend ternary */}
 
