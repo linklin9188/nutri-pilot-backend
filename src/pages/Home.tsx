@@ -1486,6 +1486,29 @@ export default function Home() {
         }}
       />
 
+      {/* Floating chat entry — sits above the bottom tab bar (z above the
+          tab bar's z-50). Single tap opens /chat?mode=today (SPEC §5
+          default). Hidden for helper role (the BottomTabBar already hides
+          itself for helpers; mirror that here so the FAB doesn't dangle). */}
+      {localStorage.getItem('nutri_role') !== 'helper' && (
+        <button
+          onClick={() => navigate('/chat?mode=today')}
+          className="fixed z-[60] w-14 h-14 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+          style={{
+            right: 16,
+            bottom: 'calc(env(safe-area-inset-bottom, 16px) + 72px)',
+            background: '#FF5A1F',
+            boxShadow: '0 8px 24px rgba(255,90,31,0.35)',
+          }}
+          title="跟 AI 聊菜单"
+        >
+          <span className="material-symbols-outlined text-white"
+            style={{ fontSize: 26, fontVariationSettings: "'FILL' 1" }}>
+            chat
+          </span>
+        </button>
+      )}
+
       <BottomTabBar />
 
       {/* Hidden fridge input */}

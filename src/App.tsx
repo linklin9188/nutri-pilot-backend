@@ -16,6 +16,7 @@ import Community from './pages/Community';
 import VerifyIngredients from './pages/VerifyIngredients';
 import DeliveryTracking from './pages/DeliveryTracking';
 import AIPilot from './pages/AIPilot';
+import ChatAgent from './pages/ChatAgent';
 import Settings from './pages/Settings';
 import WeeklyMenu from './pages/WeeklyMenu';
 import Pricing from './pages/Pricing';
@@ -132,6 +133,7 @@ function AppShell() {
       <Route path="/prep"     element={<RequireAuth helperRole><HelperPrep /></RequireAuth>} />
       <Route path="/cook"     element={<RequireAuth helperRole><HelperCook /></RequireAuth>} />
       <Route path="/ai-pilot" element={<RequireAuth><AIPilot /></RequireAuth>} />
+      <Route path="/chat"     element={<RequireAuth><ChatAgent /></RequireAuth>} />
       <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
       <Route path="/weekly"   element={<RequireAuth><WeeklyMenu /></RequireAuth>} />
       <Route path="/helper"   element={<RequireAuth helperRole><HelperHome /></RequireAuth>} />
