@@ -1447,20 +1447,11 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Seasonal + 时辰 mini-label — sits above the nutrition card so the
-            user reads "今日时令" first, then their actual nutrition state. */}
-        <div className="flex items-center justify-center gap-1.5 mb-1"
-          style={{ fontSize: 10.5, color: 'rgba(0,0,0,0.45)', fontWeight: 600, letterSpacing: '0.04em' }}>
-          <span style={{ color: '#FF5A1F' }}>{solarTerm.icon} {solarTerm.name}</span>
-          <span style={{ color: 'rgba(0,0,0,0.18)' }}>·</span>
-          <span>{getChineseHour()}</span>
-          {weather && (<>
-            <span style={{ color: 'rgba(0,0,0,0.18)' }}>·</span>
-            <span className="inline-flex items-center gap-1">
-              <WeatherIcon code={weather.code} size={13} /> {weather.label}
-            </span>
-          </>)}
-        </div>
+        {/* TICKET-051 §0 hot-fix — removed duplicate seasonal/时辰/weather strip
+            above the nutrition card. The same info already shows in the page
+            header (solar term + WeatherIcon + label) — keeping both produced
+            "立夏 · 申时 · 小雨" twice on screen. Header copy stays as the
+            single source of truth. */}
 
         {/* 今日营养 strip — 中国营养主厨 daily scorecard.
             Pulls today's lunch+dinner from weeklyMenu, falls back to the
