@@ -429,6 +429,12 @@ export default function Settings() {
     window.dispatchEvent(new Event("nutri-prefs-changed"));
   }
 
+  // TICKET-061 §A — 联系客服 sheet (β 上线用户反馈通道)
+  const [supportSheetOpen, setSupportSheetOpen] = useState(false);
+  const [wxCopied, setWxCopied] = useState(false);
+  const SUPPORT_WX = "jianjiaolin9";
+  const SUPPORT_EMAIL = "jianjiaolin9@gmail.com";
+
   function openMember(m: FamilyMember) {
     if (openId === m.id) {
       setOpenId(null);
@@ -919,6 +925,21 @@ export default function Settings() {
               section, not a separate page, to stay surgical. */}
           <FeedbackHistorySection />
 
+          {/* TICKET-061 §A — 联系客服 (β 反馈通道) */}
+          <button
+            onClick={() => setSupportSheetOpen(true)}
+            className="w-full bg-white border border-black/5 rounded-[22px] p-4 shadow-[0_4px_20px_rgba(0,0,0,0.04)] flex items-center gap-3 active:scale-[0.98] transition-all"
+          >
+            <span className="text-[24px]">📩</span>
+            <div className="flex-1 text-left">
+              <p className="font-bold text-[14px]">联系客服</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">用 app 遇问题 / 反馈 / 报 bug</p>
+            </div>
+            <span className="material-symbols-outlined" style={{ fontSize: 18, color: "rgba(0,0,0,0.30)" }}>
+              chevron_right
+            </span>
+          </button>
+
           {/* ── Legal / contact — links to /privacy and /terms ─────────────
               Required by WeChat 小程序 提审 (审核员要在 app 内能找到这两
               页). Also surfaces them to the雇主, who otherwise only ever
@@ -942,6 +963,86 @@ export default function Settings() {
 
         </div>
       </div>
+
+      {/* TICKET-061 §A — 联系客服 sheet */}
+      {supportSheetOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-end justify-center"
+          style={{ background: "rgba(0,0,0,0.45)" }}
+          onClick={() => setSupportSheetOpen(false)}
+        >
+          <div
+            className="w-full max-w-md bg-white rounded-t-[28px] p-5 pb-8"
+            style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 16px) + 24px)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-12 h-1 bg-black/10 rounded-full mx-auto mb-4" />
+            <h3 className="text-[16px] font-bold mb-1">联系客服</h3>
+            <p className="text-[12px] text-gray-500 mb-4">用 app 遇到问题？告诉我们，我们 24h 内回复你。</p>
+
+            <a
+              href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("Aieats 反馈")}`}
+              className="w-full bg-gray-50 border border-black/5 rounded-[16px] p-4 flex items-center gap-3 active:scale-[0.98] transition-all mb-2.5"
+            >
+              <span className="text-[22px]">📧</span>
+              <div className="flex-1 text-left">
+                <p className="font-bold text-[13px]">发邮件反馈</p>
+                <p className="text-[11px] text-gray-400 mt-0.5">{SUPPORT_EMAIL}</p>
+              </div>
+              <span className="material-symbols-outlined" style={{ fontSize: 18, color: "rgba(0,0,0,0.30)" }}>
+                arrow_forward_ios
+              </span>
+            </a>
+
+            <button
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(SUPPORT_WX);
+                  setWxCopied(true);
+                  setTimeout(() => setWxCopied(false), 1800);
+                } catch {/* clipboard blocked — 用户仍可读 */}
+              }}
+              className="w-full bg-gray-50 border border-black/5 rounded-[16px] p-4 flex items-center gap-3 active:scale-[0.98] transition-all mb-2.5"
+            >
+              <span className="text-[22px]">💬</span>
+              <div className="flex-1 text-left">
+                <p className="font-bold text-[13px]">微信 (点击复制)</p>
+                <p className="text-[11px] text-gray-400 mt-0.5 font-mono">{SUPPORT_WX}</p>
+              </div>
+              <span
+                className="material-symbols-outlined"
+                style={{ fontSize: 18, color: wxCopied ? "#16A34A" : "rgba(0,0,0,0.30)" }}
+              >
+                {wxCopied ? "check_circle" : "content_copy"}
+              </span>
+            </button>
+
+            <a
+              href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("Aieats Bug")}`}
+              className="w-full bg-gray-50 border border-black/5 rounded-[16px] p-4 flex items-center gap-3 active:scale-[0.98] transition-all mb-4"
+            >
+              <span className="text-[22px]">🐛</span>
+              <div className="flex-1 text-left">
+                <p className="font-bold text-[13px]">报 bug</p>
+                <p className="text-[11px] text-gray-400 mt-0.5">附上截图 / 步骤更快定位</p>
+              </div>
+              <span className="material-symbols-outlined" style={{ fontSize: 18, color: "rgba(0,0,0,0.30)" }}>
+                arrow_forward_ios
+              </span>
+            </a>
+
+            <p className="text-[11px] text-gray-400 text-center">我们 24h 内回复你</p>
+
+            <button
+              onClick={() => setSupportSheetOpen(false)}
+              className="w-full mt-4 py-3 rounded-[16px] bg-black/5 text-[13px] font-bold text-gray-600 active:scale-[0.98] transition-transform"
+            >
+              关闭
+            </button>
+          </div>
+        </div>
+      )}
+
       <BottomTabBar />
     </div>
   );
