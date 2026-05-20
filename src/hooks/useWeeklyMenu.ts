@@ -61,7 +61,8 @@ export interface WeeklyMenu {
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v41'; // §C (TICKET-015): generateWeekPlan 加 seed?: number 入参 + mulberry32 PRNG，ChatAgent.proposalEngine 拿 3 个 deterministic 候选；weightedRandom 接受 rng 参数（默认 Math.random，向后兼容）。
+export const ALGO_VERSION = 'v42'; // §C3 (TICKET-032 / SPEC_smell1_phase3 阶段 3 收尾): 跨日 dedup 3 天窗口 hard-block + fruit pool 进 9-axis (seasonal/sweet/health_benefit) + breakfast combo 二次 scoreForWeek 排序 + breakfast keyword 注入跨日 dedup 池。
+// v41: §C (TICKET-015) generateWeekPlan seed PRNG + weightedRandom rng 参数。
 // v40: Smell 1 阶段 2 合并双管道 + scoreForWeek 9-axis + sigmoid 学习曲线 + 周五"放纵日"。
 // v37: Western high-end bias. v36: pool-aware breakfast combo. v35: hometown 地域大区. v34: cook-method variety. v33: power curve.
 
@@ -1596,9 +1597,12 @@ function generateWeekPlan(
     const lunchDishes = allLunchPicks;
 
     // ═══════════════════════════════════════════════════════════════════
-    // Smell 1 阶段 2: breakfast — 用 pickBreakfastCombo 在 breakfastPool 上
-    // 选一组（dry staple + wet drink + side），按 hometown 旋转。pool 由
-    // hook 层 fetch + 已过滤 avoidTags/avoidIngredients。
+    // Smell 1 阶段 2/3: breakfast — pickBreakfastCombo 按 hometown 模板选
+    // 一组（保留文化锚定 — 粤式 / 江南 / 北方 / 川式...）。阶段 3 (TICKET-032
+    // §C3 / SPEC §3.3) 在 combo 返回后跑 scoreForWeek mealTime='早餐' 二次
+    // 排序，把 breakfast 接入主评分流；并把 breakfast title-keyword 注入
+    // pickedTitleKeywords + weekKwLastDay → 让 lunch/dinner 跨菜系 dedup 视
+    // 野覆盖早餐（豆浆 / 油条等也算跨日 keyword）。
     // ═══════════════════════════════════════════════════════════════════
     const breakfastDishes: SupabaseDish[] = (() => {
       if (breakfastPool.length === 0) return [];
@@ -1610,7 +1614,37 @@ function generateWeekPlan(
           avoidIngredients: [],
           avoidTags: [],
         });
-        return (result.dishes ?? []).map((d: any) => enrichRaw(d));
+        const rawDishes = result.dishes ?? [];
+        // §C3 scoreForWeek 二次评分（mealTime='早餐'）—— 不改 hometown 模板
+        // 选出的 dish 集合，仅按分数稳定排序 + 同步学习信号 / 9-axis 状态
+        // 到主评分链。当 combo 内只有 1 个候选时排序无副作用。
+        const scored = rawDishes.map((d: any) => ({
+          dish: d,
+          score: scoreForWeek({
+            dish: d, profile, prefScores, recentIds,
+            pickedIngredients: [...pickedIngredients, ...dayIngredients],
+            pickedTitleKeywords,
+            dayIndex,
+            spiceBoost,
+            ageGroup,
+            healthPrefs,
+            hasPregnant: familyPrefs?.hasPregnant ?? false,
+            humidity, solarTerm, hasXiaomei, mealTime: '早餐',
+            homeInventoryItems,
+          }),
+        }));
+        scored.sort((a, b) => b.score - a.score);
+        // §C3 注入 breakfast title-keyword 到跨日 dedup 状态
+        for (const item of scored) {
+          const kw = extractTitleKeyword(item.dish.title_zh ?? item.dish.title ?? '');
+          if (kw) {
+            pickedTitleKeywords.push(kw);
+            // 注意：dayTitleKeywords 不加 — 同日 breakfast 不该禁同日 dinner
+            //（家庭文化里 早 油条 / 晚 油条炒青菜 是合理的，不是关键字冲突）
+            weekKwLastDay.set(kw, dayIndex);
+          }
+        }
+        return scored.map(s => enrichRaw(s.dish));
       } catch {
         return [];
       }
