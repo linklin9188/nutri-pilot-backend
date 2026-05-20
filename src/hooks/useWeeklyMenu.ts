@@ -61,7 +61,8 @@ export interface WeeklyMenu {
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v40'; // Smell 1 阶段 2：合并双管道（generateWeekPlan 统一输出 breakfast/lunch/dinner/fruit，删除 useRecommendDishes + scoreDish 链路）；scoreForWeek 扩到 9-axis（基础 5 + xiaomei + spiceBoost + humidity + solarTerm）；学习信号叠加 sigmoid weight 0.35+1.15*(1-exp(-n/15))；周五"放纵日" spice 容忍 +0.5 + cook_method 油炸 +0.20。跳 v38/v39 留给未来。
+export const ALGO_VERSION = 'v41'; // §C (TICKET-015): generateWeekPlan 加 seed?: number 入参 + mulberry32 PRNG，ChatAgent.proposalEngine 拿 3 个 deterministic 候选；weightedRandom 接受 rng 参数（默认 Math.random，向后兼容）。
+// v40: Smell 1 阶段 2 合并双管道 + scoreForWeek 9-axis + sigmoid 学习曲线 + 周五"放纵日"。
 // v37: Western high-end bias. v36: pool-aware breakfast combo. v35: hometown 地域大区. v34: cook-method variety. v33: power curve.
 
 // ── 周末规则 (Weekend rule) — user-confirmed 2026-05-17 ───────────────────────
@@ -246,10 +247,27 @@ export function getWeekStartISO(weekOffset: number = 0): string {
   return formatLocalDate(d);
 }
 
-// Weighted random pick: higher score → higher probability
+// ── §C (TICKET-015) deterministic PRNG for ChatAgent multi-candidate ─────────
+// mulberry32: 32-bit seeded PRNG, returns [0, 1). Used when generateWeekPlan
+// is invoked with an explicit `seed` so ChatAgent.proposalEngine can request
+// 3 deterministic alternative weekly menus by passing seed=0/1/2.
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return function () {
+    a = (a + 0x6D2B79F5) | 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), 1 | t);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Weighted random pick: higher score → higher probability.
+// rng defaults to Math.random; pass mulberry32(seed) for deterministic picks.
 function weightedRandom<T extends { score: number }>(
   candidates: T[],
   count: number,
+  rng: () => number = Math.random,
 ): T[] {
   const result: T[] = [];
   const pool = [...candidates];
@@ -258,7 +276,7 @@ function weightedRandom<T extends { score: number }>(
     const min = Math.min(...pool.map(c => c.score));
     const shifted = pool.map(c => ({ ...c, w: Math.max(0, c.score - min + 0.1) }));
     const total = shifted.reduce((s, c) => s + c.w, 0);
-    let r = Math.random() * total;
+    let r = rng() * total;
     let idx = 0;
     for (let j = 0; j < shifted.length; j++) {
       r -= shifted[j].w;
@@ -964,7 +982,15 @@ function generateWeekPlan(
   fruitPool: any[] = [],       // course_type='fruit' fetched at hook layer
   // ── §B (TICKET-015) axis 26 入参 ──
   homeInventoryItems: Set<string> | undefined = undefined,
+  // ── §C (TICKET-015) deterministic candidate seed ──
+  // undefined → Math.random()（保持原非确定行为）
+  // number    → mulberry32(seed)，ChatAgent.proposalEngine 拿 3 个 deterministic 候选
+  seed: number | undefined = undefined,
 ): WeeklyMenu {
+  // Pick PRNG once per generateWeekPlan invocation; all 4 weightedRandom call
+  // sites (dinner main / kidDishes / lunch / per-member lunch meat) share the
+  // same stream so the same seed yields identical output across runs.
+  const rng: () => number = seed !== undefined ? mulberry32(seed) : Math.random;
   // 粥 / 稀饭 are breakfast-only in Chinese cuisine — user direction
   // 2026-05-17. Stripped once at function entry so every lunch + dinner
   // pool below inherits the ban (the previous per-slot filter only ran
@@ -1255,7 +1281,7 @@ function generateWeekPlan(
 
       if (allCandidates.length === 0) break;
 
-      const picked = weightedRandom(allCandidates, 1)[0]?.dish;
+      const picked = weightedRandom(allCandidates, 1, rng)[0]?.dish;
       if (!picked) break;
 
       dayDishes.push(picked);
@@ -1317,7 +1343,7 @@ function generateWeekPlan(
         .sort((a, b) => b.score - a.score)
         .slice(0, 15);
 
-      weightedRandom(kidCandidates, dayEffectiveKidSlots).forEach(c => {
+      weightedRandom(kidCandidates, dayEffectiveKidSlots, rng).forEach(c => {
         kidDishes.push(c.dish);
         const kw = extractTitleKeyword(c.dish.title_zh ?? c.dish.title ?? '');
         if (kw) pickedTitleKeywords.push(kw);
@@ -1435,7 +1461,7 @@ function generateWeekPlan(
         const kw = extractTitleKeyword(c.dish.title_zh ?? c.dish.title ?? '');
         return !(kw && lunchKwsSeen.includes(kw));
       });
-      const picks = weightedRandom(filtered, n).map(c => enrichRaw(c.dish));
+      const picks = weightedRandom(filtered, n, rng).map(c => enrichRaw(c.dish));
       picks.forEach(d => {
         const kw = extractTitleKeyword(d.title_zh ?? d.title ?? '');
         if (kw) lunchKwsSeen.push(kw);
@@ -1477,7 +1503,7 @@ function generateWeekPlan(
             score: c.score + familyGoalScore(c.dish, memberWeights as any, member.goals.length) * 1.5,
           }))
           .sort((a, b) => b.score - a.score);
-        const top = weightedRandom(rescored.slice(0, 8), 1).map(c => enrichRaw(c.dish));
+        const top = weightedRandom(rescored.slice(0, 8), 1, rng).map(c => enrichRaw(c.dish));
         if (top[0]) {
           picks.push(top[0]);
           taken.add(top[0].id);
