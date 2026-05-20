@@ -98,11 +98,11 @@ function defaultForRole(): Language {
     const tl = detectFromBrowser();
     return tl === 'tl' || tl === 'id' ? tl : 'en';
   }
-  // Employer side: English-first by product decision (HK + international
-  // market, where most users read English faster). The chip in Login/header
-  // still cycles 简 / 繁 / EN so users who prefer Chinese can flip. When we
-  // push into mainland China, flip this default to detectFromBrowser() ?? 'zh'.
-  return 'en';
+  // TICKET-074 §G — Employer side: 简体中文 first（老板 2026-05-21 拍板）。
+  // 主战场是 HK + 大陆妈妈，绝大多数读中文更顺。Home 顶部 chip 仍按 role
+  // 提供 简 / 繁 / EN 切换。已显式选过语言的用户（localStorage.appLanguage
+  // 有值）不受影响 — hasExplicitPref 优先于 defaultForRole()。
+  return 'zh';
 }
 
 export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
