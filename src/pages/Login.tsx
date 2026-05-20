@@ -5,6 +5,7 @@ import { useLanguage, type Language } from "../contexts/LanguageContext";
 import { supabase } from "../lib/supabase";
 import { markLogin } from "../lib/userLifecycle";
 import { syncProfileFromDB } from "../lib/profileSync";
+import { getUserId, setUserId } from "../lib/userId";
 
 type Role = "employer" | "helper";
 
@@ -123,6 +124,12 @@ export default function Login() {
 
   const [error, setError] = useState("");
 
+  // TICKET-068 §B — 菲佣邀请码登录 state
+  const [inviteCode, setInviteCode] = useState("");
+  const [inviteNick, setInviteNick] = useState("");
+  const [inviteErr, setInviteErr] = useState("");
+  const [inviteBusy, setInviteBusy] = useState(false);
+
   // TICKET-037 §B — WeChat 自动登录路径的进度条 + 手动降级。
   // 当用户从微信里第一次进入 /login（isWxFlow=true）且没有缓存的
   // wechat_session 时，先显示一个"微信识别中…"覆盖层，4 秒后自动落到
@@ -173,6 +180,55 @@ export default function Login() {
         goAfterLogin(role);
       }
     }, 1500);
+  };
+
+  // TICKET-068 §B — 邀请码提交：households 查 → upsert user_profiles +
+  // household_members → 持久化 helper role + navigate /helper. 跳过 OAuth,
+  // 菲佣不需要 FB/IG/微信账号即可进入。
+  const submitInviteCode = async () => {
+    setInviteErr("");
+    const code = inviteCode.trim().toUpperCase();
+    const nick = inviteNick.trim();
+    if (!code) { setInviteErr(t("Please enter the invite code", "请输入邀请码")); return; }
+    if (!nick) { setInviteErr(t("Please enter your name", "请填写你的名字")); return; }
+    setInviteBusy(true);
+    try {
+      const { data: hh, error: hhErr } = await supabase
+        .from('households')
+        .select('id, employer_id')
+        .eq('invite_code', code)
+        .maybeSingle();
+      if (hhErr || !hh) {
+        setInviteErr(t("Wrong invite code, ask your employer to resend.", "邀请码不对，请联系雇主重发"));
+        setInviteBusy(false);
+        return;
+      }
+
+      let helperId = getUserId();
+      if (!helperId) {
+        helperId = crypto.randomUUID();
+        setUserId(helperId);
+      }
+
+      await supabase.from('user_profiles').upsert(
+        { id: helperId, display_name: nick },
+        { onConflict: 'id' }
+      );
+
+      await supabase.from('household_members').upsert(
+        { household_id: hh.id, helper_id: helperId, status: 'active' },
+        { onConflict: 'household_id,helper_id' }
+      );
+
+      localStorage.setItem('isLoggedIn', 'true');
+      localStorage.setItem('nutri_role', 'helper');
+      markLogin();
+      window.dispatchEvent(new Event('nutri-prefs-changed'));
+      navigate('/helper');
+    } catch (e: any) {
+      setInviteErr(e?.message ?? t("Submit failed, please retry", "提交失败，请重试"));
+      setInviteBusy(false);
+    }
   };
 
   const handleWeChat = () => {
@@ -363,6 +419,61 @@ export default function Login() {
               {roleHint}
             </p>
 
+            {role === "helper" ? (
+              /* TICKET-068 §B — 菲佣邀请码登录入口（跳过 OAuth 直接进 /helper） */
+              <div className="flex flex-col gap-3 rounded-2xl p-4"
+                style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.10)" }}>
+                <p className="text-white font-semibold text-center" style={{ fontSize: 14 }}>
+                  {t("I'm a helper", "我是工人")}
+                </p>
+                <input
+                  type="text"
+                  inputMode="text"
+                  autoCapitalize="characters"
+                  value={inviteCode}
+                  onChange={e => setInviteCode(e.target.value)}
+                  placeholder={t("Invite code (6 chars)", "邀请码（6 位）")}
+                  className="w-full h-11 rounded-xl px-3 text-white outline-none"
+                  style={{
+                    background: "rgba(255,255,255,0.10)",
+                    border: "1px solid rgba(255,255,255,0.15)",
+                    fontSize: 14, letterSpacing: "0.08em",
+                  }}
+                />
+                <input
+                  type="text"
+                  value={inviteNick}
+                  onChange={e => setInviteNick(e.target.value)}
+                  placeholder={t("Your nickname", "你的名字")}
+                  className="w-full h-11 rounded-xl px-3 text-white outline-none"
+                  style={{
+                    background: "rgba(255,255,255,0.10)",
+                    border: "1px solid rgba(255,255,255,0.15)",
+                    fontSize: 14,
+                  }}
+                />
+                <button
+                  onClick={submitInviteCode}
+                  disabled={inviteBusy}
+                  className="w-full h-[54px] rounded-2xl flex items-center justify-center gap-2 font-semibold transition-all active:scale-[0.98] disabled:opacity-60"
+                  style={{
+                    background: "#25D366",
+                    boxShadow: "0 8px 24px rgba(37,211,102,0.28)",
+                    fontSize: 15, color: "white",
+                  }}
+                >
+                  {inviteBusy
+                    ? t("Submitting…", "提交中…")
+                    : t("Enter with code", "用邀请码进入")}
+                </button>
+                {inviteErr && (
+                  <p className="text-center" style={{ color: "#FF8C54", fontSize: 13 }}>
+                    {inviteErr}
+                  </p>
+                )}
+              </div>
+            ) : (
+            <>
             {/* WeChat — always shown */}
             <button
               onClick={handleWeChat}
@@ -412,6 +523,8 @@ export default function Login() {
                   Facebook
                 </button>
               </div>
+            )}
+            </>
             )}
 
             {error && (
