@@ -432,7 +432,7 @@ export default function Home() {
 
   // Dish ratings (1-tap 好吃 / 一般 / 不喜欢) — caches today's rated dish ids
   // in localStorage so the widget hides after the first tap per dish/day.
-  // Backed by user_feedback (Database migration 027). Errors are swallowed.
+  // Backed by user_feedback_helper (Database migration 027). Errors swallowed.
   const ratingsTodayKey = `dish_rated_${getUserId() ?? 'anon'}_${new Date().toISOString().slice(0, 10)}`;
   const [ratedDishIds, setRatedDishIds] = useState<Set<string>>(() => {
     try {
@@ -453,8 +453,8 @@ export default function Home() {
       locale:        language,
     };
     try {
-      const { error } = await supabase.from('user_feedback').insert(payload);
-      if (error) await supabase.from('user_feedback').insert(payload); // silent retry once
+      const { error } = await supabase.from('user_feedback_helper').insert(payload);
+      if (error) await supabase.from('user_feedback_helper').insert(payload); // silent retry once
     } catch { /* silent fail — owner shouldn't see infra errors */ }
   }
 
@@ -1162,7 +1162,7 @@ export default function Home() {
                         {/* Owner 1-tap rating — 午晚 only. Drives B 数据飞轮:
                             three emoji buttons fade into "已记录" after one tap
                             per dish per day (localStorage-cached, idempotent).
-                            POST silently to user_feedback (Database 027). */}
+                            POST silently to user_feedback_helper (Database 027). */}
                         {mealTime !== '早餐' && dish.id && (
                           <div className="flex items-center justify-end gap-1 mt-1.5">
                             {ratedDishIds.has(dish.id) ? (

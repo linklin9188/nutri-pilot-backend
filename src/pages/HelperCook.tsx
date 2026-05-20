@@ -212,7 +212,7 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
       feedback_type: type,
       locale: language,
     };
-    const attempt = () => supabase.from('user_feedback').insert(payload);
+    const attempt = () => supabase.from('user_feedback_helper').insert(payload);
     try {
       const { error } = await attempt();
       if (error) await attempt(); // silent retry once (table-missing / transient)
@@ -449,7 +449,7 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
 
         {/* Helper feedback buttons — 3 zero-cognition-load 1-taps for the
             person actually cooking. Drives the B 数据飞轮: every tap goes
-            to user_feedback with step_index so we know WHICH step in WHICH
+            to user_feedback_helper with step_index so we know WHICH step in WHICH
             dish is unclear / too hard / missing materials. Posts silently
             (with one retry) so a failure never surfaces to the helper. */}
         {(() => {
