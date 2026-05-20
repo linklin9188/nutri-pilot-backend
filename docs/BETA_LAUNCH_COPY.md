@@ -25,20 +25,20 @@ AI 自动给一家人排 21 顿饭，按口味 + 健康目标 + 当季食材。
 
 ---
 
-**菲佣群版 / English / WhatsApp / Facebook helper group**
+**菲佣群版 / English / WhatsApp + Facebook helper community**
 
 ```
 Hi friends 👋
 
-I'm trying out an AI menu app for the family I cook for — it plans 21 meals
-a week (Chinese / Cantonese / Filipino mix), in Tagalog / English / Indonesian.
+My employer is trying a new AI menu app called Aieats — plans 21 meals/week
+for the family I cook for, in Tagalog / English / Indonesian.
 
-Your employer enters your helper code (ask them for it in Settings), then
-you log in with that code — no Facebook needed.
+Just ask your employer to send you their invite link from Settings — tap it
+and you're in (no Facebook account needed).
 
 First 100 helpers get free Pro for a year 🎁 (promo: AIEATS_BETA)
 
-👉 https://nothinkeats.com
+👉 Ask your employer for their invite link
 
 Tell me if anything feels weird 🙏
 ```
