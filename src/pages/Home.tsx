@@ -109,9 +109,33 @@ const FESTIVAL_LABEL: Record<string, { name: string; icon: string; chips: string
 // returns the active slug (±3 days window) — null when nothing matches OR
 // when Algorithm 025 hasn't exported the helper yet (silent skip, per
 // TICKET-027 §B fallback rule).
+//
+// Dev override (TICKET-030 §C): `?debug_festival=<slug>` on localhost or
+// vite-dev forces the banner to render with that slug so all 7 banners can
+// be visually QA'd without waiting for the calendar. Stripped on production
+// nothinkeats.com (hostname check + import.meta.env.DEV gate).
 function useActiveFestival(): string | null {
   const [slug, setSlug] = useState<string | null>(null);
   useEffect(() => {
+    // 1. Dev override first — exit early if a debug slug is in the URL and
+    //    we're on a dev host. On production this branch is skipped entirely.
+    if (typeof window !== 'undefined') {
+      try {
+        const url   = new URL(window.location.href);
+        const debug = url.searchParams.get('debug_festival');
+        const host  = window.location.hostname;
+        const isDev = import.meta.env.DEV
+          || host === 'localhost'
+          || host === '127.0.0.1'
+          || host.endsWith('.local');
+        if (debug && isDev) {
+          setSlug(debug);
+          return; // dev fast-path; skip the dynamic-import probe below
+        }
+      } catch { /* malformed URL — fall through to production path */ }
+    }
+
+    // 2. Production path — dynamic import probe (per TICKET-027 §B).
     let cancelled = false;
     (async () => {
       try {
