@@ -634,6 +634,7 @@ interface WeeklyScoreParams {
   prefScores: Record<string, number>;
   recentIds: Map<string, number>;   // dishId → days since last served
   pickedIngredients: string[];       // main_ingredient values picked so far this week
+  pickedCuisines?: string[];         // origin_cuisine values picked so far this week (axis 30 cold-start diversity)
   pickedTitleKeywords: string[];     // title keywords already used this week
   dayIndex: number;                  // 0=Mon … 6=Sun
   spiceBoost?: number;              // from userPrefs
@@ -667,7 +668,7 @@ function dishIngredientNames(dish: any): string[] {
 }
 
 function scoreForWeek({
-  dish, profile, prefScores, recentIds, pickedIngredients, pickedTitleKeywords, dayIndex,
+  dish, profile, prefScores, recentIds, pickedIngredients, pickedCuisines = [], pickedTitleKeywords, dayIndex,
   spiceBoost = 0, ageGroup, healthPrefs, helperMode = false, hasPregnant = false,
   humidity = 75, solarTerm = null, hasXiaomei = false, mealTime = '晚餐',
   homeInventoryItems,
@@ -998,6 +999,20 @@ function scoreForWeek({
     }
     if (hits >= 4)      score += 0.30;
     else if (hits >= 2) score += 0.15;
+  }
+
+  // ── 30. §A (TICKET-061) New-user cold-start diversity bonus ─────────────
+  // SPEC_smell5_signals §2.2 candidate B：新用户学习信号稀疏 (learnedSignals
+  // < 10) 时强制本周多样化 — 同一 origin_cuisine 已在本周出现 → -0.20/次；
+  // 同一 main_ingredient 已出现 → 额外 -0.20/次（叠 axis 7 的 -0.55 → -0.75/次）。
+  // 目的：让首周 7×N 道菜里覆盖 ≥ 4 种 cuisine，给 preference_learn 信号采样
+  // 留出空间。老用户 (≥ 10 信号) → axis 30 = 0 自然退出，已有充足偏好自塑造。
+  // learnedSignals 已在 axis 4 sigmoid 计算时算过，直接复用避免重复 reduce。
+  // sameIngCount 同样来自 axis 7。pickedCuisines 默认 [] → 老路径零影响。
+  if (learnedSignals < 10) {
+    const sameCuisineCount = pickedCuisines.filter(c => c === origin).length;
+    if (sameCuisineCount > 0) score -= 0.20 * sameCuisineCount;
+    if (sameIngCount > 0)     score -= 0.20 * sameIngCount;
   }
 
   return score;
@@ -1370,6 +1385,10 @@ function generateWeekPlan(
   // showed up 3× per week because lunch only filtered by today's dinner).
   const lunchUsedIds = new Set<string>();
   const pickedIngredients: string[] = [];
+  // §A (TICKET-061) axis 30 cold-start：weekly origin_cuisine tracker
+  // 新用户 (learnedSignals < 10) 时 scoreForWeek 用其判断"已用过的菜系再扣 -0.20"。
+  // 老用户 axis 30 内部 short-circuit → 此数组对老用户无作用，但仍维护以备实时切换。
+  const pickedCuisines: string[] = [];
   const pickedTitleKeywords: string[] = [];   // weekly keyword tracker
   // §C1 (TICKET-032 / SPEC §3.1): cross-day title-keyword dedup window.
   // weekKwLastDay maps keyword → 最近一次 picked 的 dayIndex；scoreForWeek
@@ -1422,6 +1441,7 @@ function generateWeekPlan(
 
     const dayDishes: any[] = [];
     const dayIngredients: string[] = [];
+    const dayCuisines: string[] = [];   // §A (TICKET-061) axis 30 — 当日已用 origin_cuisine
     // Same-day title-keyword hard dedup. Without this, the -0.65 soft penalty
     // in scoreForWeek wasn't enough to stop 上汤娃娃菜 + 虾米娃娃菜 landing
     // in the same dinner. Hard-block any candidate whose title keyword has
@@ -1547,6 +1567,7 @@ function generateWeekPlan(
           let score = scoreForWeek({
             dish: d, profile, prefScores, recentIds,
             pickedIngredients: [...pickedIngredients, ...dayIngredients],
+            pickedCuisines: [...pickedCuisines, ...dayCuisines],
             pickedTitleKeywords,
             dayIndex,
             spiceBoost: slotSpiceBoost,
@@ -1666,6 +1687,9 @@ function generateWeekPlan(
 
       dayDishes.push(picked);
       dayIngredients.push(picked.main_ingredient ?? 'other');
+      // §A (TICKET-061) axis 30 — 追踪 origin_cuisine（空串当一种"无菜系"，
+      // 与 pickedCuisines.filter === origin 自动一致，不专门 guard）。
+      dayCuisines.push(picked.origin_cuisine ?? '');
       usedIds.add(picked.id);
       if (picked.cook_method) dayCookMethods.push(picked.cook_method);
 
@@ -1707,6 +1731,7 @@ function generateWeekPlan(
           let s = scoreForWeek({
             dish: d, profile, prefScores, recentIds,
             pickedIngredients: [...pickedIngredients, ...dayIngredients],
+            pickedCuisines: [...pickedCuisines, ...dayCuisines],
             pickedTitleKeywords,
             dayIndex,
             spiceBoost: -1.0,   // extra spicy penalty for kid pass
@@ -1736,6 +1761,11 @@ function generateWeekPlan(
 
     // Track for next day's scoring
     dayIngredients.forEach(ing => pickedIngredients.push(ing));
+    // §A (TICKET-061) axis 30 — 镜像 dayIngredients propagation：让"周一晚餐 4 道
+    // 都是 cantonese"在周二晚餐 scoreForWeek 内计为 4 重 -0.20 = -0.80 软扣 → 周
+    // 二自然换菜系。kid pass 同上面 dayIngredients 一样不进 weekly tracker
+    //（kid 菜 ingredient/cuisine 与成人一桌混算会让多样性失真）。
+    dayCuisines.forEach(c => pickedCuisines.push(c));
 
     // ── Generate lunch — scales with headcount ─────────────────────────
     // Template by total target N (from calcDishCount('午餐')):
@@ -1776,6 +1806,7 @@ function generateWeekPlan(
       let score = scoreForWeek({
         dish: d, profile, prefScores, recentIds,
         pickedIngredients: dayIngredients,
+        pickedCuisines: dayCuisines,   // §A (TICKET-061) — 午餐与晚餐同日 cuisine 多样性
         pickedTitleKeywords,         // share weekly title dedup (no repeating 娃娃菜 in lunch either)
         dayIndex, spiceBoost, ageGroup, healthPrefs,
         hasPregnant: familyPrefs?.hasPregnant ?? false,
@@ -1937,6 +1968,7 @@ function generateWeekPlan(
           score: scoreForWeek({
             dish: d, profile, prefScores, recentIds,
             pickedIngredients: [...pickedIngredients, ...dayIngredients],
+            pickedCuisines: [...pickedCuisines, ...dayCuisines],
             pickedTitleKeywords,
             dayIndex,
             spiceBoost,
