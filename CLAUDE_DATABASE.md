@@ -156,6 +156,10 @@ RLS：anon_insert + anon_read + anon_update。
 `_archive_mapo_dedup_20260520_1437` (2 行 / 033 dedup 备份)、`_archive_helper_reviews_pre_p10` (0 行结构性 / 035 备份)、
 `_archive_xiaomei_backfill_pre_p13_1` (24 行 / 038 备份)。
 
+Day 12 P17 4 道 dedup 备份（040-043）：
+`_archive_dongyin_pre_dedup_20260520_1610` / `_archive_margherita_pre_dedup_20260520_1610` /
+`_archive_tomatoegg_pre_dedup_20260520_1610` / `_archive_yuxiang_qiezi_pre_dedup_20260520_1610` （各 2 行）。
+
 ### api_usage_daily
 用于 Gemini / checkout 等接口的每日配额计数，列结构见 `supabase/functions/gemini-proxy/index.ts`。
 
@@ -218,12 +222,15 @@ supabase db push
 | P12 | dishes 麻婆豆腐 2 行重复 | ✅ 已修 033（5 步零数据丢失 FK 迁移）|
 | P13 / P13.1 | xiaomei_compatible script 与 DB 偏移 / 节庆菜未 backfill | ✅ 已修（脚本全表对齐 + 22 节庆菜手动 UPDATE 038）|
 | P15 | init seed 历史 FK→auth.users 违规 | ✅ 已修 037（public.* 0 残留）|
+| P17 | dishes 4 道重复菜 dedup（冬阴功汤/玛格丽特披萨/番茄炒蛋/鱼香茄子）| ✅ 已修 040-043（5 步零损 FK 迁移）|
+| P18-cuisine | dishes 15 行水果 missing origin_cuisine | ✅ 已修 044（'all-season/balanced' 兜底）|
+| P18-nutrition | 22 节庆菜 missing nutrition_kcal_per_serving | ✅ 已修 Day 13（backfill-dish-nutrition.ts 22/22 全成）|
 | Smell D | user_profiles 两套 hometown 值映射读取处理写不对称 | ⏳ 中 |
 | P10.1 | helper_reviews 其他 uuid 列（id/household_id/reviewer_id）类型迁移 | ⏳ 中 |
 | P15.1 | community_posts 完整 anon-first 化（helper_id 类型 + FK→user_profiles）| ⏳ 中 |
-| P16 | 22 节庆菜 dish seed pipeline Step 2-4 真跑（cook_steps/nutrition/image）| ⏳ 中 |
-| P17 | dishes 表 4 道重复菜 dedup（冬阴功汤/玛格丽特披萨/番茄炒蛋/鱼香茄子各 2 行）| ⏳ 中（Day 11 audit 发现）|
-| P18 | dishes 表 15 行 origin_cuisine 缺失 + 19 行 prep_steps 缺 + 28 行无图 | ⏳ 中（Day 11 audit 发现，含 22 节庆菜）|
+| P16 | 22 节庆菜 cook_steps + image 真跑（nutrition 已 Day 13 补完）| ⏳ 中 |
+| P19 | 6 老脏菜 image 缺补齐（gen-dish-images.ts）| ⏳ 中 |
+| P20 | dish_ingredients 表 474/748 缺口 backfill（详 docs/SPEC_dish_ingredients_backfill.md）| ⏳ 中（Day 13 audit 发现，>20 走 SPEC）|
 
 ---
 
