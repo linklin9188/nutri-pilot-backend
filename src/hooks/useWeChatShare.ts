@@ -9,8 +9,8 @@ interface ShareConfig {
 }
 
 const DEFAULT: Required<ShareConfig> = {
-  title:  '妈妈们的智能菜单 · 爱吃 Aieats',
-  desc:   '按节气推应季菜，学校吃过的今天不再上',
+  title:  '爱吃 Aieats · 妈妈们的智能菜单',
+  desc:   '每一餐，都是给家人的惦记～',
   link:   'https://nothinkeats.com/',
   imgUrl: 'https://nothinkeats.com/og-image.png',
 };
