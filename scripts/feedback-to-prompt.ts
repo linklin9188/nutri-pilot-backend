@@ -12,14 +12,14 @@
  * (TELEPOT-20260520-014 §D explicitly defers real writes to Day 3). The
  * cron registration (pg_cron / GitHub Actions schedule) is also Day 3.
  *
- * Schema check: production user_feedback (as of 2026-05-20) was shipped by
- * Database 027 with a USER-PREFERENCE shape — id / user_id / feedback_text /
- * flavor_signals / health_signals / cuisine_signal / is_dish_request /
- * created_at — and does NOT yet have the HELPER-FEEDBACK columns required by
- * SPEC §3.1 (dish_id / feedback_type / step_index). If the required columns
- * are missing the script aborts gracefully with a clear message instead of
- * crashing, so the cron entry can be installed before the Database part
- * lands.
+ * Schema check: helper feedback lives in a NEW dedicated table named
+ * `user_feedback_helper` (CEO chose this name to avoid colliding with the
+ * legacy user_feedback table — see TICKET-20260520-018). The new table is
+ * provisioned by Database TICKET-016 with the HELPER-FEEDBACK shape required
+ * by SPEC §3.1: dish_id / feedback_type / step_index / created_at. If the
+ * table or its required columns are missing, the script aborts gracefully
+ * with a clear message instead of crashing, so the cron entry can be
+ * installed before the Database part lands.
  *
  * Run:
  *   npx tsx scripts/feedback-to-prompt.ts
@@ -51,7 +51,7 @@ async function checkSchema(): Promise<SchemaCheck> {
   const { rows } = await db.query<{ column_name: string }>(`
     SELECT column_name
     FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'user_feedback'
+    WHERE table_schema = 'public' AND table_name = 'user_feedback_helper'
   `);
   const cols = new Set(rows.map(r => r.column_name));
   const required = ['dish_id', 'feedback_type', 'step_index'];
@@ -74,19 +74,19 @@ async function rollup(): Promise<void> {
   if (!schema.ok) {
     console.log('');
     console.log('[feedback-to-prompt] SCHEMA NOT READY');
-    console.log(`  user_feedback present cols : ${schema.presentCols.join(', ')}`);
-    console.log(`  user_feedback missing cols : ${schema.missingCols.join(', ')}`);
-    console.log('  Reason : Database 027 (TICKET-012) shipped a user-preference shape;');
-    console.log('           SPEC §3.1 helper-feedback shape (dish_id / feedback_type / step_index)');
-    console.log('           is not in production yet.');
+    console.log(`  user_feedback_helper present cols : ${schema.presentCols.join(', ')}`);
+    console.log(`  user_feedback_helper missing cols : ${schema.missingCols.join(', ')}`);
+    console.log('  Reason : user_feedback_helper (Database TICKET-016) is not yet in production,');
+    console.log('           or it exists but is missing SPEC §3.1 columns');
+    console.log('           (dish_id / feedback_type / step_index).');
     console.log('  Action : Rollup aborted gracefully. would-mark count: 0');
-    console.log('           Re-run after Database adds the helper-feedback columns.');
+    console.log('           Re-run after Database creates user_feedback_helper.');
     return;
   }
 
   const { rows } = await db.query<RollupRow>(
     `SELECT dish_id, feedback_type, step_index, COUNT(*) AS n
-     FROM user_feedback
+     FROM user_feedback_helper
      WHERE feedback_type = ANY($1::text[])
        AND created_at >= NOW() - ($2::int || ' days')::interval
      GROUP BY dish_id, feedback_type, step_index
