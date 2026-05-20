@@ -60,5 +60,7 @@ export const DISH_FIELDS = [
   'helper_friendly_score',
   'western_subtype',
   'last_backfilled_at',
+  'festival_tags',  // text[] — TICKET-025 §A axis 27（Database 024 §B 落地后命中）
+
   // intentionally EXCLUDED: 'embedding' (vector(768), ~8KB stringified per row)
 ].join(',');

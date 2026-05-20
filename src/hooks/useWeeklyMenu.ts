@@ -456,6 +456,37 @@ function westernHighEndBias(title: string, origin: string): number {
   return 0;
 }
 
+// ── §A (TICKET-025) Festival window detector ──────────────────────────────
+// 7 节日 + 公历近似日期（农历转换暂用固定日期 ±3，精度够 v1；未来可接
+// lunar lib）。返回当前 active festival slug 或 null。
+const FESTIVALS: Array<{ slug: string; month: number; day: number }> = [
+  { slug: 'laba',      month: 1,  day: 17 }, // 腊八
+  { slug: 'chunjie',   month: 2,  day: 10 }, // 春节
+  { slug: 'yuanxiao',  month: 2,  day: 24 }, // 元宵
+  { slug: 'duanwu',    month: 6,  day: 10 }, // 端午
+  { slug: 'qixi',      month: 8,  day: 29 }, // 七夕
+  { slug: 'zhongqiu',  month: 9,  day: 29 }, // 中秋
+  { slug: 'chongyang', month: 10, day: 29 }, // 重阳
+];
+
+function getCurrentFestival(today: Date): string | null {
+  const year = today.getFullYear();
+  const todayMs = today.getTime();
+  for (const f of FESTIVALS) {
+    // Build candidate dates this year and adjacent years (cover 12 月底 ↔ 次年 1 月初)
+    const candidates = [
+      new Date(year - 1, f.month - 1, f.day),
+      new Date(year,     f.month - 1, f.day),
+      new Date(year + 1, f.month - 1, f.day),
+    ];
+    for (const cand of candidates) {
+      const diffDays = Math.abs(todayMs - cand.getTime()) / 86400000;
+      if (diffDays <= 3) return f.slug;
+    }
+  }
+  return null;
+}
+
 // Month → season tag. DB seasonal_tag uses "Spring/Summer/Autumn/Winter"
 // (also lowercase variants). Northern hemisphere months.
 function currentSeasonTag(): string {
@@ -836,6 +867,18 @@ function scoreForWeek({
   if (dayIndex === 4) {
     if (flavorTags.includes('spicy')) score += 0.5;
     if ((dish as any).cook_method === 'deep_fry') score += 0.20;
+  }
+
+  // ── 27. §A (TICKET-025) Festival axis — 节庆 ±3 日内 +0.4 ───────────
+  // dish.festival_tags 命中当前 active festival 时软加分。Database 024 §B
+  // 上线 festival_tags 列前，dish.festival_tags 为 undefined → axis 27 = 0
+  // 自然降级；落地后自动生效，不需要 ALGO_VERSION bump 或 cache 失效。
+  const activeFestival = getCurrentFestival(new Date());
+  if (activeFestival) {
+    const festivalTags = ((dish as any).festival_tags ?? []) as string[];
+    if (Array.isArray(festivalTags) && festivalTags.includes(activeFestival)) {
+      score += 0.4;
+    }
   }
 
   // ── 26. §B (TICKET-015) Home-inventory soft bonus (C 短期闭环) ─────────
