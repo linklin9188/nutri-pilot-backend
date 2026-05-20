@@ -118,6 +118,30 @@ export default function Login() {
 
   const [error, setError] = useState("");
 
+  // TICKET-037 §B — WeChat 自动登录路径的进度条 + 手动降级。
+  // 当用户从微信里第一次进入 /login（isWxFlow=true）且没有缓存的
+  // wechat_session 时，先显示一个"微信识别中…"覆盖层，4 秒后自动落到
+  // 手动登录视图（用户也可立即点"手动登录"跳过等待）。
+  const [wxRecognizing, setWxRecognizing] = useState<boolean>(() => {
+    if (!isWxFlow) return false;
+    // 已有 wechat_session 缓存 = 老用户重复进入，不再 stall — 直接显示
+    // 手动登录界面（点微信按钮即可走 OAuth）。
+    try {
+      const cached = localStorage.getItem("wechat_session");
+      if (cached) {
+        const parsed = JSON.parse(cached) as { at?: number };
+        // 24 小时内有缓存就跳过等待
+        if (parsed.at && Date.now() - parsed.at < 24 * 3600 * 1000) return false;
+      }
+    } catch { /* corrupt cache — fall through to recognizing */ }
+    return true;
+  });
+  useEffect(() => {
+    if (!wxRecognizing) return;
+    const t = setTimeout(() => setWxRecognizing(false), 4000);
+    return () => clearTimeout(t);
+  }, [wxRecognizing]);
+
   const goAfterLogin = (r: Role) => {
     if (r === "helper") { navigate("/helper"); return; }
     navigate(localStorage.getItem("quickPrefs") ? "/" : "/setup");
@@ -219,6 +243,33 @@ export default function Login() {
   const roleHint = role === "helper"
     ? t("Sign in to view today's shopping & cooking tasks", "登录后即可查看今天的采买与烹饪任务")
     : t("Sign in to unlock your menu & smart shopping", "登录解锁完整菜单与智能采购");
+
+  // TICKET-037 §B — WeChat auto-recognition overlay. Renders before the
+  // regular login UI so the user lands on "微信识别中…" first when the silent
+  // OAuth is in flight (and falls through to the manual login after 4 s
+  // OR a tap on "手动登录").
+  if (wxRecognizing) {
+    return (
+      <div className="font-sans min-h-screen flex flex-col items-center justify-center max-w-md mx-auto px-8 text-white"
+        style={{ background: "#080808" }}>
+        <div className="inline-block w-9 h-9 rounded-full border-2 border-white/15 border-t-[#25D366] animate-spin mb-4" />
+        <p style={{ fontSize: 17, fontWeight: 600, marginBottom: 6 }}>微信识别中…</p>
+        <p style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", textAlign: 'center', lineHeight: 1.6 }}>
+          已识别您来自微信，正在尝试自动登录<br />
+          {/* If the user already has an account on this device, RootRedirect's
+              maybeAttemptSilent path will have left them logged in — this page
+              is the fallback when localStorage was wiped or it's a fresh device. */}
+          稍候片刻或点下方手动登录
+        </p>
+        <button
+          onClick={() => setWxRecognizing(false)}
+          className="mt-5 px-5 py-2 rounded-full font-bold active:scale-95 transition-transform"
+          style={{ background: "rgba(255,255,255,0.10)", color: "white", fontSize: 13 }}>
+          手动登录 →
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="font-sans min-h-screen flex flex-col max-w-md mx-auto relative overflow-hidden text-white"
