@@ -29,7 +29,7 @@ Friend or user creates an account at <https://developers.facebook.com/>
 and runs these steps:
 
 1. **Create App**: My Apps → Create App → "Consumer" → Display name
-   "Aieats / 爱吃". Contact email: `jianjiaolin9@gmail.com`.
+   "Aieats / 爱吃". Contact email: `support@nothinkeats.com`.
 2. **Add Facebook Login product**: Sidebar → Products → "Set up"
    Facebook Login (Web platform).
 3. **Site URL**: `https://nothinkeats.com`
