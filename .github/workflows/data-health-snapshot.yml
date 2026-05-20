@@ -1,0 +1,36 @@
+# Daily data_health_summary snapshot
+# Spec : TICKET-20260520-063 §C
+# Schedule: 02:30 HKT (UTC+8) = 18:30 UTC the prior day → cron '30 18 * * *'
+#   Intentionally 90 min before the 04:00 HKT feedback-rollup so the two
+#   cron jobs don't collide on the same DB connection pool.
+#
+# Required GitHub Secrets:
+#   DIRECT_DATABASE_URL  → Postgres direct connection string
+#
+# Manual trigger: Actions tab → "Daily Data Health Snapshot" → Run workflow.
+
+name: Daily Data Health Snapshot
+
+on:
+  schedule:
+    - cron: '30 18 * * *'   # 02:30 HKT next day (UTC+8)
+  workflow_dispatch:
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install deps
+        run: npm install --no-audit --no-fund
+
+      - name: Run data_health snapshot
+        env:
+          DIRECT_DATABASE_URL: ${{ secrets.DIRECT_DATABASE_URL }}
+        run: npx tsx scripts/snapshot-data-health.ts
