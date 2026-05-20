@@ -632,9 +632,25 @@ export default function Home() {
     window.addEventListener('nutri-eaten-changed', handler);
     return () => window.removeEventListener('nutri-eaten-changed', handler);
   }, []);
+  // TICKET-052 §A — "我做了" combo state. When the user marks a dinner /
+  // lunch dish as eaten for the first time today, open a rating panel so
+  // they can immediately tell us 😋/😐/😞. Dual write: toggleEaten +
+  // (optional) sendDishRating — eatingDiary and user_feedback_helper
+  // pipelines stay independent (per ticket "飞轮链路 100% 保留").
+  const [ratingPanelDishId, setRatingPanelDishId] = useState<string | null>(null);
   function handleToggleEaten(dishId: string) {
+    const wasEaten = eatenSet.has(dishId);
     toggleEaten(dishId);
-    // toggleEaten dispatches the event; state catches up next render
+    // Open the rating panel only on the FIRST 我做了 tap, and only when
+    // there's something to rate (午/晚 dishes; breakfast is excluded from
+    // the rating flow per TICKET-008 design).
+    if (!wasEaten && !ratedDishIds.has(dishId) && mealTime !== '早餐') {
+      setRatingPanelDishId(dishId);
+    }
+  }
+  function handlePanelRate(dishId: string, rating: 'good' | 'okay' | 'bad') {
+    sendDishRating(dishId, rating);
+    setRatingPanelDishId(null);
   }
 
   // Fridge scan
@@ -1365,33 +1381,9 @@ export default function Home() {
                             ) : null;
                           })()}
                         </div>
-                        {/* Owner 1-tap rating — 午晚 only. Drives B 数据飞轮:
-                            three emoji buttons fade into "已记录" after one tap
-                            per dish per day (localStorage-cached, idempotent).
-                            POST silently to user_feedback_helper (Database 027). */}
-                        {mealTime !== '早餐' && dish.id && (
-                          <div className="flex items-center justify-end gap-1 mt-1.5">
-                            {ratedDishIds.has(dish.id) ? (
-                              <span style={{ fontSize: 10.5, color: 'rgba(0,0,0,0.32)', fontStyle: 'italic' }}>已记录</span>
-                            ) : (
-                              <>
-                                {([
-                                  { v: 'good' as const, e: '😋', t: '好吃' },
-                                  { v: 'okay' as const, e: '😐', t: '一般' },
-                                  { v: 'bad'  as const, e: '😞', t: '不喜欢' },
-                                ]).map(({ v, e, t }) => (
-                                  <button key={v}
-                                    onClick={() => sendDishRating(dish.id, v)}
-                                    title={t}
-                                    className="w-6 h-6 rounded-full flex items-center justify-center active:scale-90 transition-transform"
-                                    style={{ background: 'rgba(0,0,0,0.04)', fontSize: 13, lineHeight: 1 }}>
-                                    {e}
-                                  </button>
-                                ))}
-                              </>
-                            )}
-                          </div>
-                        )}
+                        {/* TICKET-052 §A — 常驻 3-emoji rating bar removed.
+                            Rating now lives inside the popup that opens when
+                            the user taps "✅ 我做了" (check_circle) above. */}
                       </div>
                       {/* Top-right action cluster — hoisted out of the inline
                           flow so the title can use the full row width. Compact
@@ -1399,16 +1391,21 @@ export default function Home() {
                           unobtrusive at the corner. */}
                       <div className="absolute top-1.5 right-1 flex items-center gap-0 z-10">
                         <HeartButton dish={dish} sourceTag={mealTime} size={14} className="!p-1.5" />
-                        {/* ✓ 已吃 — toggle persists to localStorage via
-                            eatingDiary; DailyNutritionStrip flips from
-                            "计划" to "实际" mode the moment any dish is
-                            ticked. */}
+                        {/* TICKET-052 §A — "✅ 我做了" combo: 1st tap toggles
+                            eatingDiary AND opens the rating panel for first-time
+                            午/晚 dishes. Repeat tap untoggles eaten (no panel).
+                            Already-rated dishes show check + tooltip 今天已做
+                            instead of re-opening the rating panel. */}
                         <button onClick={() => handleToggleEaten(dish.id)}
                           className="w-6 h-6 rounded-full flex items-center justify-center active:scale-90 transition-transform"
                           style={{
                             background: eatenSet.has(dish.id) ? 'rgba(22,163,74,0.15)' : 'transparent',
                           }}
-                          title={eatenSet.has(dish.id) ? '已吃 · 点击取消' : '标记为已吃'}>
+                          title={
+                            eatenSet.has(dish.id)
+                              ? (ratedDishIds.has(dish.id) ? '今天已做' : '已吃 · 点击取消')
+                              : '我做了 (做完点这里评分)'
+                          }>
                           <span className="material-symbols-outlined" style={{
                             fontSize: 14,
                             color: eatenSet.has(dish.id) ? '#16A34A' : 'rgba(0,0,0,0.40)',
@@ -1840,6 +1837,45 @@ export default function Home() {
                 取消
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* TICKET-052 §A — Rating panel popup triggered by "✅ 我做了". Tapping
+          outside or "跳过" dismisses without rating (eaten state already
+          persisted). 3 emoji buttons close the panel + POST user_feedback_helper.
+          §B tooltip subtitle "告诉算法你的口味，下次更懂你" sits under title. */}
+      {ratingPanelDishId && (
+        <div className="fixed inset-0 z-[105] flex flex-col justify-end">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setRatingPanelDishId(null)} />
+          <div className="relative bg-white w-full max-w-md mx-auto rounded-t-[28px] pt-4 pb-8 px-6 shadow-2xl">
+            <div className="w-10 h-1 rounded-full mx-auto mb-4" style={{ background: 'rgba(0,0,0,0.10)' }} />
+            <p className="text-center font-bold" style={{ fontSize: 18 }}>做完啦！怎么样？</p>
+            <p className="text-center" style={{ fontSize: 11.5, color: 'rgba(0,0,0,0.45)', marginTop: 4 }}>
+              告诉算法你的口味，下次更懂你
+            </p>
+            <div className="flex justify-around mt-5 mb-3">
+              {([
+                { v: 'good' as const, e: '😋', t: '好吃' },
+                { v: 'okay' as const, e: '😐', t: '一般' },
+                { v: 'bad'  as const, e: '😞', t: '不喜欢' },
+              ]).map(({ v, e, t }) => (
+                <button key={v}
+                  onClick={() => handlePanelRate(ratingPanelDishId, v)}
+                  className="flex flex-col items-center gap-1.5 active:scale-90 transition-transform"
+                  style={{ minWidth: 64 }}>
+                  <span style={{ fontSize: 44, lineHeight: 1 }}>{e}</span>
+                  <span style={{ fontSize: 12, color: 'rgba(0,0,0,0.55)', fontWeight: 600 }}>{t}</span>
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setRatingPanelDishId(null)}
+              className="w-full mt-2 py-2.5 rounded-2xl font-bold active:scale-[0.98]"
+              style={{ background: 'rgba(0,0,0,0.04)', color: 'rgba(0,0,0,0.55)', fontSize: 13 }}>
+              跳过
+            </button>
           </div>
         </div>
       )}
