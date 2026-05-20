@@ -31,6 +31,7 @@ import { loadCuisineMode, type CuisineMode } from "../lib/cuisineFilter";
 import { loadFamilyMembers } from "../lib/familyPrefs";
 import { HeartButton } from "../components/HeartButton";
 import DailyNutritionStrip from "../components/DailyNutritionStrip";
+import { NutritionRadarCard } from "../components/NutritionRadar";
 import { toggleEaten, getEatenToday } from "../lib/eatingDiary";
 import {
   Sun, CloudSun, Cloud, CloudFog,
@@ -1534,6 +1535,13 @@ export default function Home() {
           // not 2000.
           return <DailyNutritionStrip meals={meals} />;
         })()}
+
+        {/* TICKET-056 §B — 周营养雷达图 (6 维 hexagon). Reuses the existing
+            NutritionRadarCard already shipped in WeeklyMenu (TICKET-055 deps);
+            data derives from weeklyMenu via computeHealthMetrics — no extra
+            DB fetch / no recharts dep. Hidden when weeklyMenu is null/empty
+            (NutritionRadarCard returns null in that case). */}
+        {weeklyMenu && <NutritionRadarCard weeklyMenu={weeklyMenu} />}
 
         {/* 工作日导航入口 — "本周末出门吃"。让 Mon-Fri 用户提前看 / 预订
             周末的香港餐厅推荐。周六周日则不显示这个 nav (Home 上面已经
