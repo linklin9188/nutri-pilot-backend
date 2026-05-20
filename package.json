@@ -28,6 +28,7 @@
     "react-router-dom": "^7.15.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.3",
+    "weixin-js-sdk": "^1.6.5",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

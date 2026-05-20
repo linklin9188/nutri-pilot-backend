@@ -37,6 +37,7 @@ import { getUserId } from './lib/userId';
 import { LanguageProvider } from './contexts/LanguageContext';
 import { supabase } from './lib/supabase';
 import { maybeAttemptSilent } from './lib/wechatSilentLogin';
+import { useWeChatShare } from './hooks/useWeChatShare';
 
 
 // Smart entry point for "/". Anonymous-first: visitors don't need to log in
@@ -95,6 +96,8 @@ function RootRedirect() {
 // dumped freshly-logged-in 微信 users straight back to /login on the
 // next tab click.
 function AppShell() {
+  useWeChatShare();  // 全局默认分享配置（微信群分享显示 hero 卡）
+
   useEffect(() => {
     // Pull cloud-saved favorites into the local cache on boot. Anonymous
     // users (no userId yet) get a no-op; once they finish QuickSetup the
