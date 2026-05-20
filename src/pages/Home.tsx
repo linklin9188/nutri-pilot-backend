@@ -1053,6 +1053,7 @@ export default function Home() {
             富妈妈 + 2 孩子的场景下推荐立刻能翻倍准确度——只要她肯花
             2 分钟分别建档 (一个不吃鱼 + 一个长高需求等)。 */}
         <FamilyMemberNudge />
+        <InviteFamilySheet />
 
         {/* ① TODAY'S MENU — Editorial hero ────────────────────────
             Inspired by food magazine layouts: large dish photography on
@@ -2041,6 +2042,126 @@ export default function Home() {
 // 点 CTA → /settings；× → 永久 dismiss。这是 onboarding → daily use 中间
 // 的一个"补全 hook"，目的是让她在第一次进 Home 时立刻意识到「分别建档
 // = 推荐更懂每个孩子」。
+// TICKET-044 §A — Invite-family share sheet. Collapsed by default to a small
+// "+ 邀请家人加入" pill; expanded shows the invite_code, a copyable link,
+// native Web Share (Android / iOS Safari → WhatsApp / Messages / etc), and
+// a manual-copy fallback for WeChat 公众号 webview (no native share).
+// Invite code is sourced from localStorage 'nutri_invite_code' if present,
+// otherwise minted client-side (6-char Crockford-ish alphabet) and persisted.
+// Real households.invite_code DB sync is Database 部门 backlog.
+function InviteFamilySheet() {
+  const [open, setOpen] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const [inviteCode] = useState<string>(() => {
+    try {
+      const existing = localStorage.getItem('nutri_invite_code');
+      if (existing && existing.length >= 4) return existing;
+      const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I/O/0/1
+      const code = Array.from({ length: 6 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
+      localStorage.setItem('nutri_invite_code', code);
+      return code;
+    } catch { return 'XXXXXX'; }
+  });
+  const inviteUrl = typeof window !== 'undefined'
+    ? `${window.location.origin}/join?code=${inviteCode}`
+    : `/join?code=${inviteCode}`;
+  const isWxMp = typeof window !== 'undefined' && localStorage.getItem('nutri_source') === 'wx_mp';
+  const canShare = typeof navigator !== 'undefined' && typeof (navigator as any).share === 'function';
+
+  function copyTo(text: string, label: string) {
+    try {
+      navigator.clipboard?.writeText(text).then(() => {
+        setToast(`${label}已复制`);
+        setTimeout(() => setToast(null), 2000);
+      }).catch(() => { setToast('复制失败，请长按手动选择'); setTimeout(() => setToast(null), 2500); });
+    } catch { setToast('复制不可用'); setTimeout(() => setToast(null), 2000); }
+  }
+
+  async function nativeShare() {
+    try {
+      await (navigator as any).share({
+        title: '一起加入爱吃家庭',
+        text: `用我的邀请码 ${inviteCode} 加入家庭菜单`,
+        url:   inviteUrl,
+      });
+    } catch { /* user cancelled / not available */ }
+  }
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)}
+        className="w-full rounded-2xl px-4 py-2.5 flex items-center gap-2 active:scale-[0.99] transition-transform"
+        style={{
+          background: 'linear-gradient(135deg, rgba(255,90,31,0.08), rgba(255,140,84,0.04))',
+          border: '1px solid rgba(255,90,31,0.18)',
+        }}>
+        <span className="material-symbols-outlined" style={{ fontSize: 18, color: '#FF5A1F' }}>group_add</span>
+        <span style={{ fontSize: 12.5, fontWeight: 700, color: '#1a1a1a' }}>邀请家人 / 菲佣加入家庭</span>
+        <span className="material-symbols-outlined ml-auto" style={{ fontSize: 16, color: 'rgba(0,0,0,0.30)' }}>expand_more</span>
+      </button>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl bg-white border border-black/[0.08] overflow-hidden shadow-sm">
+      <div className="flex items-center justify-between px-4 py-2.5" style={{ background: 'rgba(255,90,31,0.04)' }}>
+        <p style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>邀请新成员加入</p>
+        <button onClick={() => setOpen(false)} className="w-7 h-7 rounded-full flex items-center justify-center active:scale-90"
+          style={{ background: 'rgba(0,0,0,0.05)' }}>
+          <span className="material-symbols-outlined" style={{ fontSize: 15 }}>close</span>
+        </button>
+      </div>
+      <div className="px-4 py-3 flex flex-col gap-2.5">
+        {/* Code card — big readable code (kerned) + small URL preview */}
+        <div className="rounded-2xl px-4 py-3 text-center" style={{ background: 'rgba(255,90,31,0.06)', border: '1px dashed rgba(255,90,31,0.20)' }}>
+          <p style={{ fontSize: 10, color: 'rgba(0,0,0,0.42)', letterSpacing: '0.16em' }}>邀请码</p>
+          <p style={{ fontSize: 28, fontWeight: 800, letterSpacing: 6, color: '#FF5A1F', lineHeight: 1.2, marginTop: 2 }}>
+            {inviteCode}
+          </p>
+          <p className="truncate" style={{ fontSize: 10.5, color: 'rgba(0,0,0,0.45)', marginTop: 4 }}>{inviteUrl}</p>
+        </div>
+        {/* Action buttons */}
+        <div className="grid grid-cols-2 gap-2">
+          <button onClick={() => copyTo(inviteCode, '邀请码')}
+            className="rounded-xl py-2 font-bold active:scale-95"
+            style={{ background: 'rgba(255,90,31,0.10)', color: '#FF5A1F', fontSize: 12 }}>
+            复制邀请码
+          </button>
+          <button onClick={() => copyTo(inviteUrl, '邀请链接')}
+            className="rounded-xl py-2 font-bold active:scale-95"
+            style={{ background: 'rgba(255,90,31,0.10)', color: '#FF5A1F', fontSize: 12 }}>
+            复制邀请链接
+          </button>
+          {canShare && (
+            <button onClick={nativeShare}
+              className="rounded-xl py-2 font-bold text-white active:scale-95 col-span-2"
+              style={{ background: '#25D366', fontSize: 12 }}>
+              <span className="material-symbols-outlined align-middle mr-1" style={{ fontSize: 14 }}>share</span>
+              分享 (WhatsApp / Messages / …)
+            </button>
+          )}
+          {isWxMp && (
+            <button onClick={() => copyTo(inviteUrl, '微信邀请链接')}
+              className="rounded-xl py-2 font-bold text-white active:scale-95 col-span-2"
+              style={{ background: '#07C160', fontSize: 12 }}>
+              <span className="align-middle mr-1">💬</span>
+              微信邀请（复制后粘贴给家人）
+            </button>
+          )}
+        </div>
+        <p style={{ fontSize: 10, color: 'rgba(0,0,0,0.40)', textAlign: 'center', lineHeight: 1.5 }}>
+          家人 / 菲佣打开链接或输入邀请码即可加入这个家庭菜单。
+        </p>
+      </div>
+      {toast && (
+        <div className="px-4 pb-2.5 text-center" style={{ fontSize: 11.5, color: '#15803D', fontWeight: 600 }}>
+          ✓ {toast}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // TICKET-034 §B — Onboarding 3-step progress + success banner.
 // Steps: 1) 家庭成员 (members filled) → 2) 饮食偏好 (dietary goal / quickPrefs set)
 //        → 3) 完工享受推荐 (both prerequisites met)
