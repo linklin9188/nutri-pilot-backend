@@ -46,6 +46,19 @@ const LIMIT    = (() => {
 const PROD_GUARD = process.env.AIEATS_PROD_TRANSLATE === 'true';
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL ?? process.env.SUPABASE_URL ?? '';
 
+// TICKET-050 flags:
+// --skip-already-translated  → SELECT only dishes whose cook_steps_json has at least
+//                              one step missing action_tl/action_id/state_target_tl/_id.
+//                              Lets batch resume across runs without re-scanning the
+//                              5/20/50 dishes already done.
+// --user-suffix=<x>          → swap the per-dish quota namespace, e.g. :v2 → :v3
+//                              when :v2 buckets get burned by sustained 5xx retries.
+const SKIP_ALREADY_TRANSLATED = process.argv.includes('--skip-already-translated');
+const USER_SUFFIX = (() => {
+  const a = process.argv.find(a => a.startsWith('--user-suffix='));
+  return a ? a.split('=')[1] : 'v2';
+})();
+
 const TARGET_LANGS = ['en', 'tl', 'id'] as const;
 type Lang = typeof TARGET_LANGS[number];
 
@@ -186,10 +199,24 @@ async function rollup(): Promise<void> {
     return;
   }
 
+  // --skip-already-translated: only SELECT dishes where at least one step still
+  // lacks one of action_tl / action_id / state_target_tl / state_target_id.
+  // This makes batch runs resumable: 5 → 20 → 50 → … without re-scanning the
+  // already-translated head of the table on every pass.
+  const skipFilter = SKIP_ALREADY_TRANSLATED
+    ? `AND EXISTS (
+         SELECT 1 FROM jsonb_array_elements(cook_steps_json) AS step
+         WHERE NOT (
+                step ? 'action_tl' AND step ? 'action_id'
+                AND step ? 'state_target_tl' AND step ? 'state_target_id'
+              )
+       )`
+    : '';
   const { rows } = await db.query<DishRow>(
     `SELECT id, title_zh, cook_steps_json
        FROM dishes
        WHERE cook_steps_json IS NOT NULL
+         ${skipFilter}
        ORDER BY id
        LIMIT $1`,
     [LIMIT],
@@ -226,9 +253,10 @@ async function rollup(): Promise<void> {
     if (DRY_RUN) continue;
 
     // LIVE — per-dish user_id so each dish has its own 50/day quota bucket.
-    // The :v2 suffix is a manual bump after legacy proxy (pre-2026-05-20)
-    // burned quota on transient 5xx; the new proxy only incrs on 2xx success.
-    const dishUserId = `script:translate-cook-steps:v2:${dish.id.slice(0, 8)}`;
+    // USER_SUFFIX defaults to 'v2' (post-2026-05-20 proxy that only incrs on
+    // success). Bump to :v3 / :v4 via --user-suffix when a namespace's buckets
+    // get filled up by sustained 5xx retries on a prior run.
+    const dishUserId = `script:translate-cook-steps:${USER_SUFFIX}:${dish.id.slice(0, 8)}`;
     const updatedSteps: Step[] = steps.map(s => ({ ...s }));
 
     // Tolerate partial failure — Gemini 2.5 Flash periodically returns 503
