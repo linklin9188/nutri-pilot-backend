@@ -823,9 +823,41 @@ export default function WeeklyMenu() {
       )}
 
       {/* ── Nutrition radar (moved from Home — single source of truth) ──── */}
+      {/* TICKET-074 §E — Pro gate：非 Pro 用户看到 RadarPreview placeholder，
+          Pro 用户看到完整 6 维营养雷达图。点击 placeholder 跳 /pricing 升级。 */}
       {weeklyMenu && !loading && (
         <div className="relative z-10 mx-5 mb-4">
-          <NutritionRadarCard weeklyMenu={weeklyMenu} dark />
+          {isPro ? (
+            <NutritionRadarCard weeklyMenu={weeklyMenu} dark />
+          ) : (
+            <button
+              onClick={() => navigate('/pricing')}
+              className="w-full rounded-2xl p-5 text-center transition-all active:scale-[0.98]"
+              style={{
+                background: "linear-gradient(135deg, rgba(255,90,31,0.10), rgba(255,140,84,0.05))",
+                border: "1px solid rgba(255,90,31,0.22)",
+              }}
+            >
+              <div className="text-[28px] mb-1">🌟</div>
+              <p className="font-bold text-white" style={{ fontSize: 14 }}>
+                营养雷达 · Pro
+              </p>
+              <p className="text-white/55 mt-1 mb-3" style={{ fontSize: 11, lineHeight: 1.5 }}>
+                看本周 6 维营养摄入分布 + 智能推荐补全菜
+              </p>
+              <span
+                className="inline-flex items-center gap-1 px-4 py-2 rounded-full font-bold text-white"
+                style={{
+                  background: "linear-gradient(135deg, #FF5A1F, #FF8C54)",
+                  fontSize: 12,
+                  boxShadow: "0 6px 18px rgba(255,90,31,0.30)",
+                }}
+              >
+                升级解锁
+                <span className="material-symbols-outlined" style={{ fontSize: 14 }}>arrow_forward</span>
+              </span>
+            </button>
+          )}
         </div>
       )}
 
