@@ -24,6 +24,7 @@ import { useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { getUserId } from '../lib/userId';
 import { FLAVOR_COL, HEALTH_COL, CUISINE_COL } from './preferenceColMap';
+import { removePantryItem } from './usePantry';
 
 // Title keywords to track (same list as in useWeeklyMenu.ts)
 const TITLE_KEYWORDS = [
@@ -232,5 +233,32 @@ export function useFeedbackEngine() {
     await consumeRatingFeedback(userId).catch(() => {});
   }, []);
 
-  return { recordEngagement, consumeRatings };
+  // §B (TICKET-041 + SPEC_pantry_v1 §4): reportMissingIngredient 实时反向闭环。
+  // 菲佣 / 雇主在 UI 标 "没材料"时调用 — 同时做两件事:
+  //   1) INSERT user_feedback_helper feedback_type='missing_ingredient' 记录信号
+  //   2) removePantryItem(uid, ingredient) → DB UPDATE in_pantry=false +
+  //      LS delete，scoreForWeek axis 26 下次 prepare 时立刻不再命中该食材
+  // 与 useWeeklyMenu prepare 段 7 日 missing 循环互补（兜底为主，本入口实时）。
+  const reportMissingIngredient = useCallback(async (params: {
+    dish?: { id?: string; title_zh?: string };
+    ingredient: string;
+    step_index?: number;
+  }) => {
+    const userId = getUserId();
+    if (!userId || userId === 'anonymous' || !params.ingredient) return;
+    // 1. INSERT user_feedback_helper（与 UI HelperCook 反馈链路共表）
+    try {
+      await supabase.from('user_feedback_helper').insert({
+        user_id:        userId,
+        dish_id:        params.dish?.id ?? null,
+        step_index:     params.step_index ?? null,
+        feedback_type:  'missing_ingredient',
+        meta:           { ingredient: params.ingredient, source: 'reportMissingIngredient' },
+      }).then(() => {}, () => {});
+    } catch { /* 表未上线 → silent */ }
+    // 2. 反向触发 pantry — DB UPDATE in_pantry=false + LS delete
+    await removePantryItem(userId, params.ingredient).catch(() => {});
+  }, []);
+
+  return { recordEngagement, consumeRatings, reportMissingIngredient };
 }

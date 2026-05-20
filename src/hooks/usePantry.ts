@@ -20,7 +20,7 @@
  * 与 useFeedbackEngine.consumeRatings 同模式：error 静默吞掉，主流程不报错。
  */
 
-import { supabase } from './supabase';
+import { supabase } from '../lib/supabase';
 
 // ── localStorage key helper (与 VerifyIngredients.tsx haveIt 同模式) ──────
 function inventoryLsKey(uid: string): string {

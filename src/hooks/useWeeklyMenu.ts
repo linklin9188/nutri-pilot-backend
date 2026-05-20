@@ -32,6 +32,7 @@ import { hometownMatches, hometownToDbBucket } from '../lib/hometownBuckets';
 import { isNewUserSession } from '../lib/userLifecycle';
 import { pickBreakfastCombo } from '../lib/breakfastCombos';
 import { syncProfileFromDB } from '../lib/profileSync';
+import { loadPantryItems } from './usePantry';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -2127,24 +2128,16 @@ export function useWeeklyMenu(weekOffset: number = 0) {
           return true;
         });
 
-        // ── §B (TICKET-015) axis 26: prepare home inventory set ──
-        // 取今日 localStorage `home_inventory_<userId>_<date>` 的 true keys
-        // ∩ 剔除 7 日内被标记 missing_ingredient 的食材集合（菲佣实测"以为
-        // 家里有"但其实没有的负反馈）。本轮不接 user_pantry_items DB 表
-        // （Day 3+）；仅 localStorage + user_feedback_helper 信号。
-        const todayIso = new Date().toISOString().slice(0, 10);
-        const inventoryKey = `home_inventory_${userId}_${todayIso}`;
-        const inventorySet = new Set<string>();
-        try {
-          const raw = localStorage.getItem(inventoryKey);
-          if (raw) {
-            const map = JSON.parse(raw) as Record<string, boolean>;
-            for (const [k, v] of Object.entries(map)) if (v) inventorySet.add(k);
-          }
-        } catch { /* corrupt — ignore */ }
+        // ── §B (TICKET-041) axis 26: 切到 usePantry 统一读 + 7 日 missing 反向 ──
+        // 数据源由 SPEC_pantry_v1 §5 切到 usePantry.loadPantryItems：
+        //   - DB user_pantry_items WHERE in_pantry=true → merge LS → Set
+        //   - Forward-compat：DB 未上线 silent fallback 同日 LS key
+        // 7 日 missing_ingredient feedback 反向剔除保留（SPEC §4 实时模式
+        // 落地前的兜底；042 + UI VerifyIngredients markPantry 完工后此段
+        // 反向剔除将由 DB in_pantry=false 自动覆盖）。
+        const inventorySet = await loadPantryItems(userId);
 
         if (inventorySet.size > 0) {
-          // 7 日 missing_ingredient 反向剔除
           const sevenDaysAgo = new Date();
           sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
           try {
@@ -2155,11 +2148,10 @@ export function useWeeklyMenu(weekOffset: number = 0) {
               .eq('feedback_type', 'missing_ingredient')
               .gte('created_at', sevenDaysAgo.toISOString());
             for (const row of (missing ?? [])) {
-              // meta 可能含 { ingredient: '<zh_name>' }（菲佣 UI 上报时填写）
               const ing = (row as any)?.meta?.ingredient as string | undefined;
               if (ing) inventorySet.delete(ing);
             }
-          } catch { /* user_feedback_helper 表未上线（Database 016/027 前）→ 跳过反向剔除 */ }
+          } catch { /* user_feedback_helper 未上线 → 跳过 */ }
         }
         const homeInventoryItems = inventorySet.size > 0 ? inventorySet : undefined;
 
