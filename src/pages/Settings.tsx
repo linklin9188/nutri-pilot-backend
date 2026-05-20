@@ -879,7 +879,7 @@ export default function Settings() {
               （Postgres BEFORE INSERT trigger 自动生成），上面 useEffect
               如果用户没 household 会自动 insert 一行让 trigger 生码。 */}
           <div className="pt-2">
-            <p className="text-[11px] font-bold text-secondary/50 uppercase tracking-wider px-1 mb-2">家政工人</p>
+            <p className="text-[11px] font-bold text-secondary/50 uppercase tracking-wider px-1 mb-2">做饭辅助</p>
 
             <div className="bg-white rounded-[22px] shadow-[0_4px_20px_rgba(0,0,0,0.05)] px-5 py-5 space-y-5">
 
@@ -1013,6 +1013,32 @@ export default function Settings() {
                 <span style={{ fontSize: 16 }}>📲</span>
                 邀请 {helperName || "工人姐姐"} 加入
               </button>
+
+              {/* TICKET-067 §C — 小美料理机 toggle 并入做饭辅助卡（原独立 card 已删）*/}
+              <div className="h-px bg-black/5" />
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-full bg-[#FFF3E0] flex items-center justify-center">
+                    <span className="text-[18px]">🤖</span>
+                  </div>
+                  <div>
+                    <p className="text-[14px] font-bold text-on-surface">我有小美料理机</p>
+                    <p className="text-[11px] text-secondary mt-0.5">
+                      {hasXiaomei ? '小美能做的菜会被优先推荐 + 标记 🤖' : '关闭时不影响排菜'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={toggleHasXiaomei}
+                  className="relative w-12 h-6 rounded-full transition-all flex-shrink-0"
+                  style={{ background: hasXiaomei ? '#FF5A1F' : 'rgba(0,0,0,0.12)' }}
+                >
+                  <span
+                    className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all"
+                    style={{ left: hasXiaomei ? '26px' : '2px' }}
+                  />
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1094,32 +1120,7 @@ export default function Settings() {
               cancellation terms) so we don't make promises we can't keep. */}
           <MembershipBenefits isPro={proReason === 'paid' || proReason === 'helper'} />
 
-          {/* ── 小美 / cooking robot toggle ──
-              When ON, the recommend algo boosts robot-doable dishes by
-              +0.15 so they float to the top, and each dish card shows a
-              🤖 chip telling the user / helper "this one can go straight
-              to the robot tonight". */}
-          <button
-            onClick={toggleHasXiaomei}
-            className="w-full bg-white border border-black/5 rounded-[22px] p-4 shadow-[0_4px_20px_rgba(0,0,0,0.04)] flex items-center gap-3 active:scale-[0.98] transition-all"
-          >
-            <span className="text-[24px]">🤖</span>
-            <div className="flex-1 text-left">
-              <p className="font-bold text-[14px]">我有小美料理机</p>
-              <p className="text-[11px] text-gray-400 mt-0.5">
-                打开后，小美能做的菜会被优先推荐，菜单也会标记 🤖
-              </p>
-            </div>
-            <div
-              className="w-11 h-6 rounded-full relative transition-colors"
-              style={{ background: hasXiaomei ? "#FF5A1F" : "rgba(0,0,0,0.12)" }}
-            >
-              <div
-                className="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-all"
-                style={{ left: hasXiaomei ? "22px" : "2px" }}
-              />
-            </div>
-          </button>
+          {/* TICKET-067 §C — 独立 小美料理机 toggle card 已删除，并入"做饭辅助"分组卡 */}
 
           {/* ── Sign out ── */}
           <button
