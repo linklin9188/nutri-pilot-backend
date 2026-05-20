@@ -14,6 +14,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useChatSession, type ChatMode, type ProposalChoice } from '../hooks/useChatSession';
+import { useWeeklyMenu } from '../hooks/useWeeklyMenu';
+import { streamChatMock } from '../lib/chatStreaming';
+import { generateThreeProposals } from '../lib/proposalEngine';
 import BottomTabBar from '../components/BottomTabBar';
 import ChatBubble from '../components/ChatBubble';
 import MenuProposal from '../components/MenuProposal';
@@ -30,11 +33,14 @@ export default function ChatAgent() {
   const mode      = parseModeParam(searchParams.get('mode'));
   const sessionId = searchParams.get('session') ?? undefined;
 
-  const { session, appendMessage, chooseProposal } = useChatSession(mode, sessionId);
+  const { session, appendMessage, appendStreamToken, chooseProposal } = useChatSession(mode, sessionId);
+  const { weeklyMenu } = useWeeklyMenu(0);
+  const [streaming, setStreaming] = useState(false);
 
   function handleAdopt(messageId: string, choice: ProposalChoice) {
     chooseProposal(messageId, choice);
-    // commit ③ will upsert user_weekly_menus here when proposals are real.
+    // Day 3 will upsert user_weekly_menus (algo_version + cache_key) here
+    // once Algorithm Day 2 lands the real seed-based generateWeekPlan.
   }
   const [draft, setDraft] = useState('');
   const scrollAnchorRef = useRef<HTMLDivElement>(null);
@@ -44,18 +50,37 @@ export default function ChatAgent() {
     scrollAnchorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [session.messages.length]);
 
-  function handleSend() {
+  async function handleSend() {
     const text = draft.trim();
-    if (!text) return;
+    if (!text || streaming) return;
     appendMessage({ role: 'user', content: text });
     setDraft('');
-    // Skeleton ack — commit ③ will wire real streaming via chatStreaming.ts.
-    setTimeout(() => {
-      appendMessage({
-        role:    'ai',
-        content: '收到。AI 流式响应将在 commit ③ 接入，本轮先记一条占位回复。',
-      });
-    }, 200);
+
+    // Only attach 3-候选 proposals on the user's FIRST message (SPEC §5);
+    // mode=preference would gather 6 turns first, but skeleton path keeps it
+    // simple — first-message attach matches today/week and is benign for
+    // preference (the user can ignore the card).
+    const userMsgCount = session.messages.filter(m => m.role === 'user').length;
+    const isFirstUserMessage = userMsgCount === 0;
+    const proposals = isFirstUserMessage ? generateThreeProposals(weeklyMenu) : undefined;
+
+    // Append the AI bubble up-front (empty content + proposals meta) so the
+    // proposal card renders immediately while tokens stream into the bubble.
+    appendMessage({
+      role:    'ai',
+      content: '',
+      meta:    proposals && proposals.length > 0 ? { proposals } : undefined,
+    });
+
+    setStreaming(true);
+    try {
+      // Pass the up-to-date message list to the (mock) streaming source.
+      for await (const tok of streamChatMock([...session.messages, { id: 'tmp', role: 'user', content: text, timestamp: Date.now() }])) {
+        appendStreamToken(tok);
+      }
+    } finally {
+      setStreaming(false);
+    }
   }
 
   return (
@@ -81,20 +106,24 @@ export default function ChatAgent() {
 
       {/* Message list */}
       <main className="flex-1 px-4 py-4 flex flex-col gap-3 overflow-y-auto pb-24">
-        {session.messages.map(msg => (
-          <div key={msg.id} className="flex flex-col gap-2">
-            <ChatBubble message={msg} />
-            {/* Proposal card piggybacks on the AI message that carries proposals
-                in its meta. commit ③ will set meta.proposals from proposalEngine. */}
-            {msg.role === 'ai' && msg.meta?.proposals && msg.meta.proposals.length > 0 && (
-              <MenuProposal
-                proposals={msg.meta.proposals}
-                chosen={msg.meta.chosen}
-                onAdopt={choice => handleAdopt(msg.id, choice)}
-              />
-            )}
-          </div>
-        ))}
+        {session.messages.map((msg, idx) => {
+          const isLatest    = idx === session.messages.length - 1;
+          const isStreaming = streaming && isLatest && msg.role === 'ai';
+          return (
+            <div key={msg.id} className="flex flex-col gap-2">
+              <ChatBubble message={msg} streaming={isStreaming} />
+              {/* Proposal card piggybacks on the AI message that carries
+                  meta.proposals — populated by proposalEngine on first turn. */}
+              {msg.role === 'ai' && msg.meta?.proposals && msg.meta.proposals.length > 0 && (
+                <MenuProposal
+                  proposals={msg.meta.proposals}
+                  chosen={msg.meta.chosen}
+                  onAdopt={choice => handleAdopt(msg.id, choice)}
+                />
+              )}
+            </div>
+          );
+        })}
         <div ref={scrollAnchorRef} />
       </main>
 
