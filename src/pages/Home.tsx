@@ -651,6 +651,39 @@ export default function Home() {
     localStorage.setItem('beta_banner_dismissed', 'true');
     setBetaBannerShown(false);
   }
+
+  // TICKET-063 §B — 节庆 in-app toast (mock, Day 17 接真 push API)
+  // 检测 ±3 日节庆 → localStorage check 当年该节庆是否已 dismiss → 1s 后弹 toast。
+  // Key 含年份 (festival_toast_<slug>_<year>) — 跨年同节庆自动重弹，无需 7 日清理逻辑。
+  const [festivalToastSlug, setFestivalToastSlug] = useState<string | null>(null);
+  const festivalSlugForToast = useActiveFestival();
+  useEffect(() => {
+    if (!festivalSlugForToast) return;
+    const year = new Date().getFullYear();
+    const dismissKey = `festival_toast_${festivalSlugForToast}_${year}`;
+    if (localStorage.getItem(dismissKey) === 'true') return;
+    const t = setTimeout(() => setFestivalToastSlug(festivalSlugForToast), 1000);
+    return () => clearTimeout(t);
+  }, [festivalSlugForToast]);
+  function dismissFestivalToast() {
+    if (festivalToastSlug) {
+      const year = new Date().getFullYear();
+      localStorage.setItem(`festival_toast_${festivalToastSlug}_${year}`, 'true');
+    }
+    setFestivalToastSlug(null);
+  }
+  // 节庆中心日距离今天的天数（用于"3 日后"文案；负数 = 已过、0 = 当日、正 = 将至）
+  function getFestivalDaysOffset(slug: string): number {
+    const map: Record<string, [number, number]> = {
+      laba: [1, 17], chunjie: [2, 10], yuanxiao: [2, 24], duanwu: [6, 10],
+      qixi: [8, 22], zhongqiu: [9, 29], chongyang: [10, 20],
+    };
+    const md = map[slug];
+    if (!md) return 0;
+    const now = new Date();
+    const target = new Date(now.getFullYear(), md[0] - 1, md[1]);
+    return Math.round((target.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  }
   function handleToggleEaten(dishId: string) {
     const wasEaten = eatenSet.has(dishId);
     toggleEaten(dishId);
@@ -1797,6 +1830,50 @@ export default function Home() {
           regenerateWeekly();
         }}
       />
+
+      {/* TICKET-063 §B — 节庆 in-app toast (mock; Day 17 接真 push API).
+          ±3 日节庆窗口内 mount 1s 后弹；点击跳 /weekly；✕ 永久 dismiss 当年此节庆。 */}
+      {festivalToastSlug && FESTIVAL_LABEL[festivalToastSlug] && (() => {
+        const info = FESTIVAL_LABEL[festivalToastSlug];
+        const offset = getFestivalDaysOffset(festivalToastSlug);
+        const whenLabel = offset > 0 ? `${offset} 日后` : offset === 0 ? '今天' : `${-offset} 日前`;
+        return (
+          <div
+            className="fixed left-3 right-3 z-[70] rounded-2xl shadow-2xl"
+            style={{
+              bottom: 'calc(env(safe-area-inset-bottom, 16px) + 140px)',
+              background: 'linear-gradient(135deg, #FFB347 0%, #FF8C54 60%, #FF5A1F 100%)',
+              boxShadow: '0 12px 36px rgba(255,90,31,0.40)',
+              maxWidth: 'calc(100vw - 24px)',
+            }}
+          >
+            <button
+              onClick={() => { dismissFestivalToast(); navigate('/weekly'); }}
+              className="w-full text-left p-3.5 active:scale-[0.98] transition-transform"
+            >
+              <div className="flex items-center gap-3">
+                <span style={{ fontSize: 28, lineHeight: 1 }}>{info.icon}</span>
+                <div className="flex-1 min-w-0 text-white">
+                  <p className="font-bold text-[13.5px] leading-snug">
+                    {info.name}{offset > 0 ? '将至' : offset === 0 ? '到了' : ''}（{whenLabel}）
+                  </p>
+                  <p className="text-[11.5px] opacity-95 mt-0.5">
+                    我们为你备好了 {info.chips.length} 道节庆菜，去看 →
+                  </p>
+                </div>
+              </div>
+            </button>
+            <button
+              onClick={dismissFestivalToast}
+              className="absolute top-1 right-1 w-7 h-7 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+              style={{ background: 'rgba(255,255,255,0.20)' }}
+              aria-label="关闭节庆提醒"
+            >
+              <span className="material-symbols-outlined text-white" style={{ fontSize: 16 }}>close</span>
+            </button>
+          </div>
+        );
+      })()}
 
       {/* Floating chat entry — sits above the bottom tab bar (z above the
           tab bar's z-50). Single tap opens /chat?mode=today (SPEC §5
