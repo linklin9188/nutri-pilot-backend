@@ -81,6 +81,8 @@ export default function Pricing() {
   const [selected, setSelected] = useState<Exclude<SubscriptionPlan, "free">>("pro_halfyear");
   const [loading, setLoading]   = useState(false);
   const [message, setMessage]   = useState<string | null>(null);
+  // TICKET-062 §A — β 试用码一键复制反馈
+  const [betaCopied, setBetaCopied] = useState(false);
 
   // Handle the post-checkout AND post-portal return. The Customer Portal
   // sends the user back to return_url after any action (cancel / change card
@@ -168,6 +170,76 @@ export default function Pricing() {
       </header>
 
       <main className="flex-1 px-5 py-5 pb-52 space-y-5">
+
+        {/* TICKET-062 §A — β 试用码 banner (critical hot-fix for β 上线)
+            老板朋友圈 / 群发 LAUNCH_COPY 写明"试用码 AIEATS_BETA"，进 /pricing
+            必须明显看到。默认常显不可关闭；过 100 用户后老板可手动改条件。
+            allow_promotion_codes:true 已在 Stripe checkout session 配，
+            用户在 Stripe Checkout 页 "Add promotion code" 框输入即可。 */}
+        <section
+          className="rounded-3xl p-5 border-2"
+          style={{
+            background: "linear-gradient(135deg, rgba(255,179,71,0.20) 0%, rgba(255,90,31,0.18) 100%)",
+            borderColor: "rgba(255,90,31,0.35)",
+          }}
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-[22px]">🎉</span>
+            <h3 className="font-bold text-[15px]" style={{ color: "#B84A0F" }}>β 内测用户福利</h3>
+          </div>
+          <p className="text-[12.5px] leading-snug mb-3" style={{ color: "rgba(0,0,0,0.72)" }}>
+            在下一步 Stripe 结账页输入试用码 <span className="font-bold">→ 1 个月免费</span>
+          </p>
+
+          <button
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText('AIEATS_BETA');
+                setBetaCopied(true);
+                setTimeout(() => setBetaCopied(false), 1800);
+              } catch { /* clipboard blocked — code 可肉眼读 */ }
+            }}
+            className="w-full rounded-2xl p-3 flex items-center gap-3 active:scale-[0.98] transition-all"
+            style={{
+              background: "white",
+              border: "1.5px dashed rgba(255,90,31,0.45)",
+            }}
+            title="点击复制试用码"
+          >
+            <span
+              className="font-mono font-black flex-1 text-left"
+              style={{ fontSize: 22, letterSpacing: "0.08em", color: "#FF5A1F" }}
+            >
+              AIEATS_BETA
+            </span>
+            <span
+              className="material-symbols-outlined"
+              style={{
+                fontSize: 22,
+                color: betaCopied ? "#16A34A" : "#FF8C54",
+                fontVariationSettings: "'FILL' 1",
+              }}
+            >
+              {betaCopied ? "check_circle" : "content_copy"}
+            </span>
+          </button>
+          {betaCopied && (
+            <p className="text-[11px] text-center mt-2 font-bold" style={{ color: "#16A34A" }}>
+              ✓ 已复制 · 粘贴到 Stripe "Add promotion code" 框
+            </p>
+          )}
+
+          <p className="text-[11px] mt-3 leading-snug" style={{ color: "rgba(0,0,0,0.55)" }}>
+            限前 100 名朋友 · 24h 内回复你任何问题
+            <button
+              onClick={() => navigate('/settings')}
+              className="font-bold mx-0.5 underline underline-offset-2"
+              style={{ color: "#FF5A1F" }}
+            >
+              设置 &gt; 联系客服
+            </button>
+          </p>
+        </section>
 
         {/* 拓客期免费 banner removed 2026-05-16 — Pro features now require
             payment for all employer users; only helpers are still free. */}
