@@ -187,8 +187,12 @@ function calcDishesPerDay(): number {
   return calcDishesForToday().dishesPerDay;
 }
 
-/** Stable localStorage cache key — includes algo version, headcount, cuisine mode, eating selection, intent. */
-function getCacheKey(weekStart: string): string {
+/** Stable localStorage cache key — includes algo version, headcount, cuisine mode, eating selection, intent.
+ *  Exported (additive — no signature change) so ChatAgent's "采用此方案" path
+ *  can write user_weekly_menus rows with the exact lsKey useWeeklyMenu would
+ *  later compare against, preventing the just-adopted menu from being
+ *  judged stale on the next /weekly mount. */
+export function getCacheKey(weekStart: string): string {
   const { dishesPerDay } = calcDishesForToday();
   const eatingRaw = localStorage.getItem('nutri_eating_today');
   let eatingKey = 'all';

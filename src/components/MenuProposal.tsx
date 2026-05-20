@@ -83,12 +83,14 @@ export default function MenuProposal({ proposals, chosen, onAdopt }: Props) {
 
       {/* Adopt CTA */}
       <button onClick={() => onAdopt(activeChoice)} disabled={isAdopted}
-        className="w-full py-3 font-bold text-white transition-all active:scale-[0.99] disabled:opacity-60"
+        className="w-full py-3 font-bold text-white transition-all active:scale-[0.99] disabled:opacity-60 flex items-center justify-center gap-1.5"
         style={{
           background: isAdopted ? '#25D366' : '#FF5A1F',
           fontSize: 14,
         }}>
-        {isAdopted ? `✓ 已采纳方案 ${activeChoice}` : `采纳方案 ${activeChoice}，存到这周菜单`}
+        {isAdopted
+          ? `✓ 已采用方案 ${activeChoice}，跳转中…`
+          : <>采用方案 {activeChoice} → 存到这周菜单</>}
       </button>
     </div>
   );

@@ -14,9 +14,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useChatSession, type ChatMode, type ProposalChoice } from '../hooks/useChatSession';
-import { useWeeklyMenu } from '../hooks/useWeeklyMenu';
+import { useWeeklyMenu, ALGO_VERSION, getCacheKey, type WeeklyMenu } from '../hooks/useWeeklyMenu';
 import { streamChat } from '../lib/chatStreaming';
 import { generateThreeProposals } from '../lib/proposalEngine';
+import { supabase } from '../lib/supabase';
+import { getUserId } from '../lib/userId';
 import BottomTabBar from '../components/BottomTabBar';
 import ChatBubble from '../components/ChatBubble';
 import MenuProposal from '../components/MenuProposal';
@@ -37,10 +39,88 @@ export default function ChatAgent() {
   const { weeklyMenu } = useWeeklyMenu(0);
   const [streaming, setStreaming] = useState(false);
 
-  function handleAdopt(messageId: string, choice: ProposalChoice) {
+  async function handleAdopt(messageId: string, choice: ProposalChoice) {
+    // Resolve the chosen proposal off the message's meta.
+    const msg = session.messages.find(m => m.id === messageId);
+    const proposals = msg?.meta?.proposals;
+    if (!proposals || proposals.length === 0) return;
+    const idx = (['A','B','C'] as const).indexOf(choice);
+    const chosenPlan = proposals[Math.min(idx, proposals.length - 1)] as WeeklyMenu | undefined;
+    if (!chosenPlan) return;
+
+    // 1) Mark chosen on the ChatSession (also bumps chat_sessions key-node upsert).
     chooseProposal(messageId, choice);
-    // Day 3 will upsert user_weekly_menus (algo_version + cache_key) here
-    // once Algorithm Day 2 lands the real seed-based generateWeekPlan.
+
+    // 2) Compute the exact lsKey useWeeklyMenu will compare against on /weekly
+    //    mount; this prevents the adopted menu from being judged stale.
+    const userId = getUserId() ?? 'anonymous';
+    const lsKey  = getCacheKey(chosenPlan.weekStart);
+
+    // 3) Mirror saveToDB's row shape — dinner / lunch / breakfast / fruit
+    //    per day, with algo_version + cache_key columns. Wrapped in try/catch
+    //    so a single-row failure doesn't strand the user mid-adoption.
+    const rows = chosenPlan.days.flatMap(day => [
+      {
+        user_id:      userId,
+        week_start:   chosenPlan.weekStart,
+        day_index:    day.dayIndex,
+        meal_type:    'dinner',
+        dish_ids:     day.dishes.map(d => d.id),
+        algo_version: ALGO_VERSION,
+        cache_key:    lsKey,
+      },
+      ...(day.lunchDishes.length > 0 ? [{
+        user_id:      userId,
+        week_start:   chosenPlan.weekStart,
+        day_index:    day.dayIndex,
+        meal_type:    'lunch',
+        dish_ids:     day.lunchDishes.map(d => d.id),
+        algo_version: ALGO_VERSION,
+        cache_key:    lsKey,
+      }] : []),
+      ...(day.breakfastDishes && day.breakfastDishes.length > 0 ? [{
+        user_id:      userId,
+        week_start:   chosenPlan.weekStart,
+        day_index:    day.dayIndex,
+        meal_type:    'breakfast',
+        dish_ids:     day.breakfastDishes.map(d => d.id),
+        algo_version: ALGO_VERSION,
+        cache_key:    lsKey,
+      }] : []),
+      ...(day.fruitDish ? [{
+        user_id:      userId,
+        week_start:   chosenPlan.weekStart,
+        day_index:    day.dayIndex,
+        meal_type:    'fruit',
+        dish_ids:     [day.fruitDish.id],
+        algo_version: ALGO_VERSION,
+        cache_key:    lsKey,
+      }] : []),
+    ]);
+    try {
+      await supabase
+        .from('user_weekly_menus')
+        .upsert(rows, { onConflict: 'user_id,week_start,day_index,meal_type' });
+    } catch { /* network — localStorage below still wins on the next /weekly mount */ }
+
+    // 4) Mirror the adopted menu into localStorage so useWeeklyMenu's
+    //    Step-2 localStorage cache hit also serves the chat-adopted plan
+    //    even before the DB upsert has propagated.
+    try { localStorage.setItem(lsKey, JSON.stringify(chosenPlan)); }
+    catch { /* quota — DB still wins on next mount */ }
+
+    // 5) Sentinel so Home / WeeklyMenu can recognize "this week was adopted
+    //    via chat" if we ever want a banner. Keyed by week so a new week
+    //    starts fresh.
+    try {
+      localStorage.setItem(
+        `chat_adopted_week_${chosenPlan.weekStart}`,
+        JSON.stringify({ choice, sessionId: session.id, at: Date.now() }),
+      );
+    } catch { /* quota */ }
+
+    // 6) Bounce to /weekly so the user sees the menu they just adopted.
+    navigate('/weekly');
   }
   const [draft, setDraft] = useState('');
   const scrollAnchorRef = useRef<HTMLDivElement>(null);
