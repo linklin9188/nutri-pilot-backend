@@ -36,6 +36,19 @@ import { loadPantryItems } from './usePantry';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+// §A (TICKET-055): explainScore API — 给 UI "为什么推这道菜" 抽屉打开 black box。
+// 每个 AxisHit 是一条用户能直接看懂的中文解释 + 该轴的实际加分。
+export interface AxisHit {
+  axis: string;           // axis 短 slug: hometown / dietary_goal / preference_learn / solar_term / festival / home_inventory / seasonal_ingredient / xiaomei / spice / humidity / special_health
+  score_delta: number;    // 该轴对总分贡献（正负皆可）
+  reason: string;         // 中文化原因，UI 直接显示
+}
+
+export interface ScoreExplanation {
+  score: number;          // explainScore 复刻的总分（主轴累加，与 scoreForWeek 量级一致但不含全部细分 axis）
+  breakdown: AxisHit[];   // 用户友好的主轴明细（约 6-10 条命中项）
+}
+
 export interface WeeklyDayMenu {
   date: string;          // ISO date string for this day (YYYY-MM-DD)
   dayIndex: number;      // 0=Mon … 6=Sun
@@ -44,6 +57,8 @@ export interface WeeklyDayMenu {
   lunchDishes: SupabaseDish[];     // lunch dishes (simpler, 1-2 items)
   breakfastDishes: SupabaseDish[]; // breakfast combo (Smell 1 阶段 2: 来自 generateWeekPlan 调用 pickBreakfastCombo)
   fruitDish?: SupabaseDish;        // 餐后水果（dinner-attached, optional）
+  // §B (TICKET-055): explanation map keyed by dish.id，UI 可选消费
+  explanations?: Record<string, ScoreExplanation>;
 }
 
 // weekStart is YYYY-MM-DD (Monday). Returns YYYY-MM-DD for weekStart + dayIndex days,
@@ -986,6 +1001,199 @@ function scoreForWeek({
   }
 
   return score;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// §A (TICKET-055) explainScore — 为 UI "为什么推这道菜" 抽屉返回中文 breakdown。
+//
+// 设计原则:
+//   - 与 scoreForWeek 解耦 — 不动 scoreForWeek 签名（向后兼容）；本函数自
+//     己重跑主轴判断 + 中文化 reason，主轴累加分与 scoreForWeek 同量级
+//   - 只覆盖用户感知的 9-10 个主轴（hometown / dietary_goal / preference_learn /
+//     solar_term / festival / home_inventory / seasonal_ingredient / xiaomei /
+//     spice / humidity / special_health）；细分 axis (recency / diversity /
+//     weekday speed 等) 算入主路径但不进 breakdown — 用户不需要看
+//   - 总分 ≠ scoreForWeek 总分（无所谓 — 这是给用户看的 user-facing 解释，
+//     不是审计；UI 用 breakdown 而非 .score 数字）
+// ═══════════════════════════════════════════════════════════════════════════
+
+const ORIGIN_ZH: Record<string, string> = {
+  cantonese: '粤菜', sichuan: '川菜', jiangnan: '江南菜', northern: '北方菜',
+  shandong: '鲁菜', hunan: '湘菜', huaiyang: '淮扬菜', anhui: '徽菜',
+  fujian: '闽菜', zhejiang: '浙菜', shanxi: '陕西菜', yunnan_guizhou: '云贵菜',
+  chaoshan: '潮汕菜', shunde: '顺德菜', taiwanese: '台菜',
+  japanese_korean: '日韩菜', southeast_asian: '东南亚菜', western: '西餐',
+};
+
+const DIETARY_GOAL_ZH: Record<string, string> = {
+  muscle_gain: '增肌', lose_weight: '减脂', maintain: '维持', detox: '排毒',
+  growth: '生长发育', pregnancy: '孕期', prenatal: '孕期营养',
+  lactation: '哺乳期', elderly: '老人养生',
+};
+
+const FLAVOR_ZH: Record<string, string> = {
+  spicy: '辣', sweet: '甜', sour: '酸', salty: '咸', light: '清淡',
+  seafood: '海鲜', veggie: '蔬菜',
+};
+
+const HEALTH_ZH: Record<string, string> = {
+  damp_clear: '祛湿', muscle_gain: '增肌', lose_weight: '减脂',
+  maintain: '保健', detox: '排毒', authentic_hk: '港式',
+  mood_boost: '安神', anti_inflammation: '消炎', immunity: '增免疫',
+  beauty: '美容', pregnancy: '安胎',
+};
+
+const FESTIVAL_ZH: Record<string, string> = {
+  laba: '腊八', chunjie: '春节', yuanxiao: '元宵', duanwu: '端午',
+  qixi: '七夕', zhongqiu: '中秋', chongyang: '重阳',
+};
+
+export interface ExplainContext {
+  profile: { hometown_cuisine: string | null; dietary_goal: string | null; taste_pref: string | null };
+  prefScores: Record<string, number>;
+  dayIndex: number;
+  mealTime?: '早餐' | '午餐' | '晚餐';
+  today?: Date;            // 用于 festival 判定 + "X 日后/前" 文案
+  solarTerm?: SolarTerm | null;
+  humidity?: number;
+  hasXiaomei?: boolean;
+  homeInventoryItems?: Set<string>;
+  spiceBoost?: number;
+}
+
+export function explainScore(dish: any, ctx: ExplainContext): ScoreExplanation {
+  const breakdown: AxisHit[] = [];
+  let totalScore = 0;
+  const flavorTags: string[] = dish.flavor_tags ?? [];
+  const healthTags: string[] = dish.health_benefit_tags ?? [];
+  const origin: string = dish.origin_cuisine ?? '';
+
+  // 1. hometown match
+  if (hometownMatches(ctx.profile.hometown_cuisine, origin)) {
+    const cuisineLabel = ORIGIN_ZH[origin] ?? origin;
+    breakdown.push({ axis: 'hometown', score_delta: 0.60, reason: `家乡菜（${cuisineLabel}）` });
+    totalScore += 0.60;
+  }
+
+  // 2. dietary_goal match
+  if (ctx.profile.dietary_goal && ctx.profile.dietary_goal !== 'maintain') {
+    if (healthTags.includes(ctx.profile.dietary_goal)) {
+      const goalZh = DIETARY_GOAL_ZH[ctx.profile.dietary_goal] ?? ctx.profile.dietary_goal;
+      breakdown.push({ axis: 'dietary_goal', score_delta: 0.35, reason: `符合你的${goalZh}目标` });
+      totalScore += 0.35;
+    }
+  }
+
+  // 3. taste match
+  if (ctx.profile.taste_pref && flavorTags.includes(ctx.profile.taste_pref)) {
+    const tasteZh = FLAVOR_ZH[ctx.profile.taste_pref] ?? ctx.profile.taste_pref;
+    breakdown.push({ axis: 'taste', score_delta: 0.25, reason: `口味偏好：${tasteZh}` });
+    totalScore += 0.25;
+  }
+
+  // 4. preference_learn — 取 prefScores 最大的 1-2 个 tag
+  const learnedSignals = Object.entries(ctx.prefScores)
+    .filter(([, v]) => typeof v === 'number' && v !== 0)
+    .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
+    .slice(0, 2);
+  if (learnedSignals.length > 0) {
+    const topTags = learnedSignals.map(([col, v]) => {
+      const tagName = col.replace(/^pref_/, '');
+      const zh = FLAVOR_ZH[tagName] ?? HEALTH_ZH[tagName] ?? ORIGIN_ZH[tagName] ?? tagName;
+      return `${zh}(${v > 0 ? '+' : ''}${v})`;
+    }).join(' / ');
+    const learnDelta = learnedSignals.reduce((s, [, v]) => s + Math.sign(v) * 0.15, 0);
+    breakdown.push({ axis: 'preference_learn', score_delta: learnDelta, reason: `你最近喜欢 ${topTags}` });
+    totalScore += learnDelta;
+  }
+
+  // 5. solar_term
+  if (ctx.solarTerm) {
+    if (healthTags.some(t => ctx.solarTerm!.healthBoostTags.includes(t))) {
+      breakdown.push({
+        axis: 'solar_term', score_delta: ctx.solarTerm.healthBonus,
+        reason: `${ctx.solarTerm.name_zh}：${ctx.solarTerm.philosophy_zh}`,
+      });
+      totalScore += ctx.solarTerm.healthBonus;
+    }
+  }
+
+  // 6. festival ±3 日
+  const today = ctx.today ?? new Date();
+  const fest = getCurrentFestival(today);
+  if (fest) {
+    const festTags = ((dish as any).festival_tags ?? []) as string[];
+    if (Array.isArray(festTags) && festTags.includes(fest)) {
+      const festZh = FESTIVAL_ZH[fest] ?? fest;
+      breakdown.push({ axis: 'festival', score_delta: 0.40, reason: `${festZh}节庆推荐` });
+      totalScore += 0.40;
+    }
+  }
+
+  // 7. home_inventory hits
+  if (ctx.homeInventoryItems && ctx.homeInventoryItems.size > 0) {
+    const names = dishIngredientNames(dish);
+    let hits = 0;
+    for (const name of names) if (ctx.homeInventoryItems.has(name)) hits++;
+    if (hits >= 4) {
+      breakdown.push({ axis: 'home_inventory', score_delta: 0.30, reason: `家里有 ${hits} 个食材` });
+      totalScore += 0.30;
+    } else if (hits >= 2) {
+      breakdown.push({ axis: 'home_inventory', score_delta: 0.15, reason: `家里有 ${hits} 个食材` });
+      totalScore += 0.15;
+    }
+  }
+
+  // 8. seasonal_ingredient (axis 28)
+  if (ctx.solarTerm) {
+    const seasonalList = INGREDIENT_SEASONALITY[ctx.solarTerm.name_zh] ?? [];
+    if (seasonalList.length > 0) {
+      const dishIngs = dishIngredientNames(dish);
+      const hitsArr: string[] = [];
+      for (const ing of dishIngs) if (seasonalList.includes(ing)) hitsArr.push(ing);
+      if (hitsArr.length > 0) {
+        let delta = hitsArr.length * 0.10;
+        if (hitsArr.length >= 3) delta += 0.15;
+        if (delta > 0.5) delta = 0.5;
+        breakdown.push({ axis: 'seasonal_ingredient', score_delta: delta, reason: `应季食材：${hitsArr.join(' / ')}` });
+        totalScore += delta;
+      }
+    }
+  }
+
+  // 9. xiaomei
+  if (ctx.hasXiaomei && (dish as any).xiaomei_compatible) {
+    breakdown.push({ axis: 'xiaomei', score_delta: 0.15, reason: '小美料理机可做' });
+    totalScore += 0.15;
+  }
+
+  // 10. spice match
+  if (ctx.spiceBoost && ctx.spiceBoost > 0 && flavorTags.includes('spicy')) {
+    breakdown.push({ axis: 'spice', score_delta: ctx.spiceBoost, reason: '辣度匹配你的偏好' });
+    totalScore += ctx.spiceBoost;
+  }
+
+  // 11. humidity damp_clear
+  if (ctx.humidity !== undefined && ctx.humidity > 85 && healthTags.includes('damp_clear')) {
+    breakdown.push({ axis: 'humidity', score_delta: 0.30, reason: `高湿度（${ctx.humidity}%）宜祛湿` });
+    totalScore += 0.30;
+  }
+
+  // 12. special_health (axis 29)
+  if (ctx.profile.dietary_goal === 'prenatal' && (dish as any).is_prenatal_friendly) {
+    breakdown.push({ axis: 'special_health', score_delta: 0.50, reason: '孕期推荐菜' });
+    totalScore += 0.50;
+  }
+  if (ctx.profile.dietary_goal === 'lactation' && (dish as any).is_lactation_friendly) {
+    breakdown.push({ axis: 'special_health', score_delta: 0.50, reason: '哺乳期推荐菜' });
+    totalScore += 0.50;
+  }
+  if (ctx.profile.dietary_goal === 'elderly' && (dish as any).is_elderly_friendly) {
+    breakdown.push({ axis: 'special_health', score_delta: 0.50, reason: '老人养生推荐菜' });
+    totalScore += 0.50;
+  }
+
+  return { score: Number(totalScore.toFixed(3)), breakdown };
 }
 
 // ── Enrich raw DB row → SupabaseDish (lightweight copy of enrichDish) ─────────
