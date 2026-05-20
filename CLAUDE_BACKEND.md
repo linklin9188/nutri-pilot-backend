@@ -128,13 +128,36 @@ supabase functions deploy <function-name> --no-verify-jwt
 
 ---
 
+## 上线决策 trade-off（Day 11 5% 优化 → Day 12 ACK Y）
+
+CEO 在 Day 12 (2026-05-20T15:45 HKT, TICKET-063) 明确接受 Backend Day 11 推荐 Y 慢迭代路线，三件已知缺口按下不阻塞 β 上线：
+
+### 1. 翻译扩 50 暂停于 34/50（68%）
+- **现状**：dishes 表 752 道菜中 34 道嵌入 zh + en + tl + id 四语言 cook_steps（高频菜已覆盖）。
+- **理由**：剩 16 道边际收益低；Gemini 2.5 Flash 503 sustained + 长 retry session 触发 fetch ETIMEDOUT 是已知现象，不是 Backend bug。
+- **后续**：脚本 `scripts/translate-cook-steps.ts` 保留可用；下一棒 CEO 可派 `--limit=16 --user-suffix=v4` 补完。
+
+### 2. dish_ingredients 478 道缺口（64%）走慢迭代
+- **现状**：274 道菜有 ingredients（核心 MVP 足够），478 道缺，多为节庆 / 长尾菜系。
+- **理由**：核心功能（ChatAgent / 飞轮 / 节庆 / Pantry / 雷达图）不依赖 ingredients；478 道用 Gemini 推断 ~1500 calls × $0.001 = $1.5；上线后看用户实际点击哪些菜 → backfill 优先级数据驱动更准。
+- **后续**：上线后加 cron `ingredients-backfill-daily` 每日 30 道，估 16 天补完。
+
+### 3. P22 user_weekly_menus 337 行 NULL algo_version 留 Day 13+
+- **现状**：Smell 4 双列校验（algo_version + cache_key）已上线；NULL 行被 stale 兜底机制视为已失效，下次访问自动重 generate。
+- **理由**：用户零感知 + 自动收敛 → 不阻塞 β 上线。
+- **后续**：Day 13+ 加 backfill 或 cron 清理 NULL 行。
+
+---
+
 ## 已知后端 Smell
 
-### Smell A — households 查询字段不存在
-`households` 表无 `user_id` 列，但前端 `WHERE user_id = ?` 导致每次 Home 页挂载出现 2-4 条 PostgREST 400。暂时忽略，但日志噪声严重。修复需与数据库负责人协作。
+### Smell A — households 查询字段不存在 (已修)
+~~`households` 表无 `user_id` 列，但前端 `WHERE user_id = ?` 导致每次 Home 页挂载出现 2-4 条 PostgREST 400~~。
+TICKET-019/022 落地 Smell 3 B-1 (migration 025 加 FK + RLS) + B-2 (Home.tsx commit b556449 加 hint + INSERT error)。已修。
 
-### Smell B — `weekly_menu` 缓存无 algo_version 列
-`user_weekly_menus` 表无版本字段，缓存失效靠前端两个 localStorage sentinel，极易失步。建议加 `algo_version text` 列（需数据库负责人执行 migration）。
+### Smell B — `weekly_menu` 缓存无 algo_version 列 (已修)
+~~`user_weekly_menus` 表无版本字段~~ → Smell 4 双列校验已上线 (Algorithm 部门 v40+ 维护)。
+当前 stale 行：337 NULL algo_version，由 stale 兜底机制自动处理 (见上方 trade-off §3)。
 
 ---
 
