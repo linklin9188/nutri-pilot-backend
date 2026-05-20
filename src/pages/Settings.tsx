@@ -7,6 +7,7 @@ import { useSubscription } from "../lib/subscription";
 import { useLanguage } from "../contexts/LanguageContext";
 import { getUserId } from "../lib/userId";
 import { syncProfileToDB } from "../lib/profileSync";
+import { isWithinTrial, trialDaysRemaining } from "../lib/userLifecycle";
 
 // TICKET-071 §C — LanguageCard 已删除（Home 顶部 chip popover 已覆盖语言切换，
 // 避免重复 UI）。Settings 「下发指令语言」section (line ~928) 是菲佣指令语言
@@ -17,46 +18,60 @@ import { syncProfileToDB } from "../lib/profileSync";
 //    /banquet / /pro/wellness / /pro/school-balance 路由仍在 App.tsx 不动
 
 // ── Membership entry shown above 退出登录 ──────────────────────────────────────
+// TICKET-074 §F — 精简为状态卡：
+//   helper → 白色简洁「助理永久免费」
+//   paid   → 白色简洁「✨ Pro 会员 · {plan} · 到期 {endsAt}」
+//   trial  → 小橙色入口「免费试用 · 剩 X 天 · 看看 Pro →」（精简，非大块推广）
+//   expired→ 橙色 CTA「免费版 · 升级 Pro 解锁全部 →」（精简）
 function MembershipCard() {
   const navigate = useNavigate();
   const { proReason, plan, endsAt } = useSubscription();
 
-  // Three visual states (promo retired 2026-05-16):
-  //   1. helper → grey 「助理永久免费」
-  //   2. paid   → white 「Pro 会员 · 套餐 + 到期」
-  //   3. none   → orange CTA 「升级到 Pro」
-  // proReason 'promo' is no longer emitted by effectiveProReason(), so we
-  // collapse it into the 'none' (upgrade) bucket if anything stale leaks in.
-  const variant: 'helper' | 'paid' | 'none' =
+  const variant: 'helper' | 'paid' | 'trial' | 'expired' =
     proReason === 'helper' ? 'helper'
     : proReason === 'paid' ? 'paid'
-    : 'none';
+    : isWithinTrial()      ? 'trial'
+    :                        'expired';
 
   const styleMap = {
-    helper: { bg: "white", shadow: "0 4px 20px rgba(0,0,0,0.04)", textColor: "#1a1a1a", subColor: "rgba(0,0,0,0.45)", chevColor: "rgba(0,0,0,0.30)" },
-    paid:   { bg: "white", shadow: "0 4px 20px rgba(255,90,31,0.08)", textColor: "#1a1a1a", subColor: "rgba(0,0,0,0.45)", chevColor: "rgba(0,0,0,0.30)" },
-    none:   { bg: "linear-gradient(135deg, #FF5A1F, #FF8C54)", shadow: "0 8px 24px rgba(255,90,31,0.30)", textColor: "white", subColor: "rgba(255,255,255,0.85)", chevColor: "rgba(255,255,255,0.80)" },
+    helper:  { bg: "white",
+               shadow: "0 4px 20px rgba(0,0,0,0.04)",
+               textColor: "#1a1a1a", subColor: "rgba(0,0,0,0.45)", chevColor: "rgba(0,0,0,0.30)",
+               border: 'none' },
+    paid:    { bg: "white",
+               shadow: "0 4px 20px rgba(255,90,31,0.08)",
+               textColor: "#1a1a1a", subColor: "rgba(0,0,0,0.45)", chevColor: "rgba(0,0,0,0.30)",
+               border: '1px solid rgba(255,90,31,0.20)' },
+    trial:   { bg: "white",
+               shadow: "0 4px 20px rgba(255,90,31,0.10)",
+               textColor: "#1a1a1a", subColor: "#FF5A1F", chevColor: "#FF8C54",
+               border: '1px solid rgba(255,90,31,0.25)' },
+    expired: { bg: "linear-gradient(135deg, #FF5A1F, #FF8C54)",
+               shadow: "0 6px 18px rgba(255,90,31,0.22)",
+               textColor: "white", subColor: "rgba(255,255,255,0.85)", chevColor: "rgba(255,255,255,0.80)",
+               border: 'none' },
   }[variant];
 
   const icon  = variant === 'helper' ? '🧑‍🍳'
               : variant === 'paid'   ? '✨'
-              : '⭐';
+              : variant === 'trial'  ? '🎁'
+              :                        '⭐';
 
   const title = variant === 'helper' ? '助理永久免费'
               : variant === 'paid'   ? '爱吃 Pro 会员'
-              : '升级到 爱吃 Pro';
+              : variant === 'trial'  ? `免费试用中 · 剩 ${trialDaysRemaining()} 天`
+              :                        '升级 Pro · 解锁全部';
 
   const sub = variant === 'helper' ? '家政助理使用爱吃从不收费'
             : variant === 'paid'   ? `${plan === 'pro_yearly' ? '年度' : plan === 'pro_halfyear' ? '半年' : '月度'}${endsAt ? ` · 到期 ${endsAt.toISOString().slice(0,10)}` : ''}`
-            : '解锁米其林菜单 + 高端食材采购';
-
-  const border = variant === 'paid' ? '1px solid rgba(255,90,31,0.20)' : 'none';
+            : variant === 'trial'  ? '看看 Pro 有什么 →'
+            :                        '整周菜单 / 一键采购 / 米其林菜单';
 
   return (
     <button
       onClick={() => navigate("/pricing")}
       className="w-full rounded-[22px] p-4 text-left transition-all active:scale-[0.98] flex items-center gap-3"
-      style={{ background: styleMap.bg, border, boxShadow: styleMap.shadow }}
+      style={{ background: styleMap.bg, border: styleMap.border, boxShadow: styleMap.shadow }}
     >
       <span className="text-[28px]">{icon}</span>
       <div className="flex-1">
