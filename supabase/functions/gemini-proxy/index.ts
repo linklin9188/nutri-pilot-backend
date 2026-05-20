@@ -28,6 +28,7 @@ const ENDPOINT_LIMITS: Record<string, number> = {
   school_balance: 15,  // 学校营养补全
   recipe:         30,  // AI 菜谱生成
   chat:           30,  // Day 2 ChatAgent — dispatch goes through handleChatEndpoint (5-rule throttling, SSE stream)
+  translate:      50,  // Day 4 cook-step translation (zh → en/tl/id) — dispatch via handleTranslateEndpoint
 };
 
 const DEFAULT_MODEL = "gemini-2.5-flash";
@@ -93,6 +94,14 @@ Deno.serve(async (req: Request) => {
     // builds its own system prompt from intent + proposals.
     if (endpoint === "chat") {
       return await handleChatEndpoint(body);
+    }
+
+    // Day 4 cook-step translation — translate endpoint also has its own dispatch
+    // because it builds a hard-constrained translation prompt server-side (caller
+    // only supplies source_text + target_lang) and rejects oversize inputs early.
+    // Plain JSON response (not SSE) — small/short outputs.
+    if (endpoint === "translate") {
+      return await handleTranslateEndpoint(body);
     }
 
     if (!endpoint || !(endpoint in ENDPOINT_LIMITS)) {
@@ -339,4 +348,121 @@ async function handleChatEndpoint(body: Partial<ChatRequestBody>): Promise<Respo
 
   // Pass-through SSE body. Frontend reads data: {...} lines per SSE protocol.
   return new Response(gemRes.body, { headers: SSE_HEADERS });
+}
+
+// ── Day 4 cook-step translation — translate endpoint ────────────────────────
+// SPEC: TICKET-20260520-026 §A. Helper-locale i18n for HelperCook steps.
+// Hard-constrained prompt enforces: action verbs only, ingredient+unit verbatim,
+// natural spoken tone, output text only (no quotes/markdown/preamble).
+
+const TRANSLATE_DAILY_LIMIT = 50;
+
+// Source-text length guard. Cooking steps are short; 2000 chars is plenty and
+// keeps the per-call cost bounded.
+const TRANSLATE_SOURCE_MAX_LEN = 2000;
+
+const TRANSLATE_TARGET_LANGS = new Set(["en", "tl", "id"]);
+
+// Friendly target-language descriptions for the system prompt. 'tl' is the
+// ISO 639-1 code for Tagalog; some sources use 'fil' (Filipino) interchangeably.
+// We include both names in the prompt so the model picks the right register.
+const TARGET_LANG_DESC: Record<string, string> = {
+  en: "English (American, conversational tone — what a helper would actually say)",
+  tl: "Tagalog (also called Filipino, code 'tl'/'fil'; everyday spoken style, NOT formal Filipino)",
+  id: "Bahasa Indonesia (everyday spoken style, NOT formal written Indonesian)",
+};
+
+interface TranslateRequestBody {
+  user_id:     string;
+  endpoint:    "translate";
+  source_text: string;
+  target_lang: "en" | "tl" | "id";
+  domain?:     "cooking" | string;
+}
+
+function buildTranslatePrompt(sourceText: string, targetLang: string, domain: string | undefined): string {
+  const langDesc = TARGET_LANG_DESC[targetLang] ?? targetLang;
+  const domainHint = (domain === undefined || domain === "cooking")
+    ? "You are translating cooking instructions for a domestic helper who follows the steps in the kitchen."
+    : `Domain: ${domain}. Translate accordingly.`;
+  return [
+    `${domainHint} Translate the Chinese text below into ${langDesc}.`,
+    "",
+    "HARD CONSTRAINTS:",
+    "1. Translate action verbs (cut / stir-fry / boil / add / steam / pan-fry / season / serve, etc.).",
+    "2. KEEP all ingredient names and quantity units; localize the ingredient noun if natural",
+    "   (e.g. '500g 鸡肉' → '500g chicken' in en / '500g manok' in tl / '500g daging ayam' in id).",
+    "3. Use everyday spoken language a native speaker would say in a home kitchen.",
+    "4. Do NOT translate word-by-word; rewrite for natural flow. NO literary / formal register.",
+    "5. Output ONLY the translated text. NO quotes, NO markdown, NO preamble, NO explanation.",
+    "",
+    "Source (zh):",
+    sourceText,
+  ].join("\n");
+}
+
+async function handleTranslateEndpoint(body: Partial<TranslateRequestBody>): Promise<Response> {
+  const { user_id, source_text, target_lang, domain } = body ?? {};
+
+  if (!user_id || typeof user_id !== "string") {
+    return json({ error: "user_id required" }, 400);
+  }
+  if (!source_text || typeof source_text !== "string") {
+    return json({ error: "source_text (string) required" }, 400);
+  }
+  if (source_text.length > TRANSLATE_SOURCE_MAX_LEN) {
+    return json({ error: `source_text too long (max ${TRANSLATE_SOURCE_MAX_LEN} chars)` }, 400);
+  }
+  if (!target_lang || typeof target_lang !== "string" || !TRANSLATE_TARGET_LANGS.has(target_lang)) {
+    return json({ error: "target_lang must be one of: en, tl, id" }, 400);
+  }
+
+  // Quota check (read before incr so 429 doesn't consume a slot)
+  const todayCount = await getDailyCount(user_id, "translate");
+  if (todayCount >= TRANSLATE_DAILY_LIMIT) {
+    return json(
+      { error: `今日 translate 额度已用完 (${TRANSLATE_DAILY_LIMIT}/day)，明日再试。`, count: todayCount },
+      429,
+    );
+  }
+  await incrCounter(user_id, "translate");
+
+  const apiKey = Deno.env.get("GEMINI_API_KEY") ?? "";
+  if (!apiKey) return json({ error: "Gemini not configured" }, 500);
+
+  const prompt = buildTranslatePrompt(source_text, target_lang, typeof domain === "string" ? domain : undefined);
+
+  const gemUrl = `${GEMINI_BASE}/${DEFAULT_MODEL}:generateContent?key=${apiKey}`;
+  const gemRes = await fetch(gemUrl, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature:      0.3,   // low — translation is closer to deterministic than creative
+        maxOutputTokens:  600,   // roughly 2x typical step length cap
+      },
+    }),
+  });
+
+  if (!gemRes.ok) {
+    const errText = await gemRes.text().catch(() => "");
+    console.error("Gemini translate upstream error:", gemRes.status, errText.slice(0, 200));
+    return json({ error: "translate upstream error" }, 502);
+  }
+
+  const gemJson = await gemRes.json();
+  const rawText: string = gemJson.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+
+  // Defensive trim: model occasionally wraps output in quotes despite instruction.
+  const translation = rawText
+    .trim()
+    .replace(/^["「『'`](.*)["」』'`]$/s, "$1")
+    .trim();
+
+  return json({
+    translation,
+    target_lang,
+    remaining: TRANSLATE_DAILY_LIMIT - todayCount - 1,
+  });
 }
