@@ -111,6 +111,12 @@ const DAY_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', 
 // 让"鸡腿/排骨"这种高频词每周最多出现 ⌈5/3⌉ = 2 次（周一 + 周四 / 周五）。
 const DEDUP_WINDOW_DAYS = 3;
 
+// §A (TICKET-043 / Smell 1 阶段 4): cross-week dish-id fatigue threshold.
+// 过去 4 周累计出现 ≥ CROSS_WEEK_FATIGUE_THRESHOLD 次的 dish_id → candidate
+// filter 阶段 hard-block（reroll 直到该菜被新候选替换）。让用户跨周也不会
+// 5 次以上吃到同一道菜（即便 keyword 不同，dish_id 强相等去重）。
+const CROSS_WEEK_FATIGUE_THRESHOLD = 4;
+
 // ── Who's eating today ────────────────────────────────────────────────────────
 
 interface EatingMember { id: string; name: string; lifeStage: string; needs: string[] }
@@ -1042,6 +1048,10 @@ function generateWeekPlan(
   // undefined → Math.random()（保持原非确定行为）
   // number    → mulberry32(seed)，ChatAgent.proposalEngine 拿 3 个 deterministic 候选
   seed: number | undefined = undefined,
+  // ── §A (TICKET-043 Smell 1 阶段 4) cross-week fatigue 输入 ──
+  // dishId → 过去 4 周累计出现次数；hook 层 prepare 时 fetch user_weekly_menus
+  // 近 4 周聚合好后传入。候选 filter ≥ CROSS_WEEK_FATIGUE_THRESHOLD hard-block。
+  fatigueByDishId: Map<string, number> | undefined = undefined,
 ): WeeklyMenu {
   // Pick PRNG once per generateWeekPlan invocation; all 4 weightedRandom call
   // sites (dinner main / kidDishes / lunch / per-member lunch meat) share the
@@ -1169,6 +1179,13 @@ function generateWeekPlan(
           if (kw) {
             const lastDay = weekKwLastDay.get(kw);
             if (lastDay !== undefined && dayIndex - lastDay < DEDUP_WINDOW_DAYS) return false;
+          }
+          // §A (TICKET-043 Smell 1 阶段 4) cross-week fatigue hard-block：
+          // 该 dish_id 过去 4 周累计出现 ≥ CROSS_WEEK_FATIGUE_THRESHOLD → 弃用。
+          // dishId 强相等比较，避开"同 kw 不同 dish"漏网（如鸡腿 5 种做法）。
+          if (fatigueByDishId) {
+            const cnt = fatigueByDishId.get(d.id) ?? 0;
+            if (cnt >= CROSS_WEEK_FATIGUE_THRESHOLD) return false;
           }
 
           // 粥 (congee) is a breakfast/light-meal staple, not a dinner main.
@@ -2155,12 +2172,41 @@ export function useWeeklyMenu(weekOffset: number = 0) {
         }
         const homeInventoryItems = inventorySet.size > 0 ? inventorySet : undefined;
 
+        // ── §A (TICKET-043 Smell 1 阶段 4) prepare cross-week fatigue map ──
+        // 拉 user_weekly_menus 最近 4 周所有 meal_type 行（dinner / lunch /
+        // breakfast / fruit），聚合 dish_ids 出现次数。≥ CROSS_WEEK_FATIGUE_THRESHOLD
+        // (4) 的 dish_id 在 generateWeekPlan candidate filter 阶段被 hard-block。
+        // 失败 / 表未上线 → 传 undefined，candidate filter 退化为"无 fatigue 限制"
+        // 与本 ticket 前的行为一致（forward-compat）。
+        const fourWeeksAgo = new Date();
+        fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
+        let fatigueByDishId: Map<string, number> | undefined;
+        try {
+          const { data: pastWeeks } = await supabase
+            .from('user_weekly_menus')
+            .select('dish_ids, swapped_dish_ids')
+            .eq('user_id', userId)
+            .gte('week_start', fourWeeksAgo.toISOString().slice(0, 10));
+          if (pastWeeks && pastWeeks.length > 0) {
+            const counts = new Map<string, number>();
+            for (const row of pastWeeks) {
+              const ids = ((row as any).swapped_dish_ids ?? (row as any).dish_ids ?? []) as string[];
+              for (const id of ids) {
+                if (typeof id === 'string') counts.set(id, (counts.get(id) ?? 0) + 1);
+              }
+            }
+            if (counts.size > 0) fatigueByDishId = counts;
+          }
+        } catch { /* user_weekly_menus query 失败 → undefined fallback */ }
+
         const menu = generateWeekPlan(
           pool, profile, prefScores, recentIds, dishesPerDay, kidSlots,
           spiceBoost, profile.age_group, healthPrefs, familyPrefs, helperMode,
           hcAdults, hcKids,
           humidity, solarTerm, hasXiaomei, breakfastPool, fruitPool,
           homeInventoryItems,
+          undefined, // seed: 主用户路径不需 deterministic
+          fatigueByDishId,
         );
 
         if (cancelled) return;
