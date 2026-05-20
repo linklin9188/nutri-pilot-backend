@@ -13,6 +13,7 @@
  */
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLanguage } from '../contexts/LanguageContext';
 import { useChatSession, type ChatMode, type ProposalChoice } from '../hooks/useChatSession';
 import { useWeeklyMenu, ALGO_VERSION, getCacheKey, type WeeklyMenu } from '../hooks/useWeeklyMenu';
 import { streamChat } from '../lib/chatStreaming';
@@ -34,6 +35,8 @@ export default function ChatAgent() {
 
   const mode      = parseModeParam(searchParams.get('mode'));
   const sessionId = searchParams.get('session') ?? undefined;
+
+  const { t4 } = useLanguage();
 
   const { session, appendMessage, appendStreamToken, chooseProposal, notFound } = useChatSession(mode, sessionId);
   const { weeklyMenu } = useWeeklyMenu(0);
@@ -219,11 +222,13 @@ export default function ChatAgent() {
             <span className="material-symbols-outlined" style={{ fontSize: 20 }}>arrow_back</span>
           </button>
           <div className="flex-1 min-w-0">
-            <h1 className="font-black truncate" style={{ fontSize: 17 }}>AI 营养小助手</h1>
+            <h1 className="font-black truncate" style={{ fontSize: 17 }}>
+              {t4('AI Nutrition Buddy', 'AI 营养小助手', 'AI Tagapayo sa Nutrisyon', 'AI Pakar Nutrisi')}
+            </h1>
             <p className="truncate" style={{ fontSize: 11, color: 'rgba(0,0,0,0.45)' }}>
-              {mode === 'today' && '今天 · 三套候选'}
-              {mode === 'week' && '本周 · 三套方案'}
-              {mode === 'preference' && '风格定制'}
+              {mode === 'today'      && t4('Today · 3 candidates',    '今天 · 三套候选', 'Ngayon · 3 piliin',  'Hari ini · 3 pilihan')}
+              {mode === 'week'       && t4('This week · 3 plans',     '本周 · 三套方案', 'Linggo · 3 plano',   'Minggu · 3 rencana')}
+              {mode === 'preference' && t4('Style customization',     '风格定制',         'Pasadyang istilo',    'Kustomisasi gaya')}
             </p>
           </div>
         </div>
@@ -279,7 +284,12 @@ export default function ChatAgent() {
             info
           </span>
           <p style={{ fontSize: 12, color: '#92400E', lineHeight: 1.5 }}>
-            会话不存在或已过期。可以从这里开始新的对话，新会话 id 已自动写入网址。
+            {t4(
+              'Session not found or expired. Start a new chat — the new session id is already in the URL.',
+              '会话不存在或已过期。可以从这里开始新的对话，新会话 id 已自动写入网址。',
+              'Hindi nakita ang sesyon o nag-expire. Magsimula ng bago — nasa URL na ang bagong session id.',
+              'Sesi tidak ditemukan atau kedaluwarsa. Mulai obrolan baru — id sesi baru sudah ada di URL.',
+            )}
           </p>
         </div>
       )}
@@ -324,7 +334,9 @@ export default function ChatAgent() {
             value={draft}
             onChange={e => setDraft(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-            placeholder={mode === 'preference' ? '聊聊你想吃啥风格…' : '比如：下周想吃辣的，孩子怕辣…'}
+            placeholder={mode === 'preference'
+              ? t4("Tell me what style you'd like…", '聊聊你想吃啥风格…', 'Sabihin ang gusto mong istilo…', 'Ceritakan gaya yang kamu suka…')
+              : t4('e.g., spicy next week but kid-friendly…', '比如：下周想吃辣的，孩子怕辣…', 'hal., maanghang ngunit bata-friendly…', 'cth., pedas tapi ramah anak…')}
             className="flex-1 px-2 py-1.5 outline-none bg-transparent"
             style={{ fontSize: 14 }}
           />

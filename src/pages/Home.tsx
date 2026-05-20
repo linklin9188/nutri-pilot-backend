@@ -371,7 +371,7 @@ export default function Home() {
   const { weeklyMenu, loading: weeklyLoading, regenerate: regenerateWeekly } = useWeeklyMenu();
 
   // ── Language + cuisine prefs ─────────────────────────────────────
-  const { language, cycleLanguage, isChinese, setLanguage } = useLanguage();
+  const { language, cycleLanguage, isChinese, setLanguage, t4 } = useLanguage();
   // TICKET-037 §C — language picker overlay + post-switch toast. cycleLanguage
   // kept available as a fallback (we still wire the button to it on legacy
   // contexts that haven't migrated to the picker UX).
@@ -870,7 +870,7 @@ export default function Home() {
             <h1 className="font-serif font-black mt-1" style={{
               fontSize: 30, color: "#1a1a1a", letterSpacing: "-0.01em", lineHeight: 1.05,
             }}>
-              {greeting}，<span style={{ color: "#FF5A1F" }}>开饭啦</span>
+              {greeting}，<span style={{ color: "#FF5A1F" }}>{t4("let's eat", '开饭啦', 'kain na', "ayo makan")}</span>
             </h1>
             {/* Solar term + weather as a single inline row, no chip clutter */}
             <p className="mt-2 flex items-center gap-2 flex-wrap" style={{ fontSize: 11.5, color: "rgba(0,0,0,0.55)" }}>
@@ -904,11 +904,16 @@ export default function Home() {
                 <span style={{ fontSize: 18, lineHeight: 1 }}>{festivalInfo.icon}</span>
                 <div className="flex-1 min-w-0">
                   <p className="font-bold truncate" style={{ fontSize: 12, color: '#1a1a1a' }}>
-                    {festivalInfo.name}将至
+                    {t4(
+                      `${festivalInfo.name} coming up`,
+                      `${festivalInfo.name}将至`,
+                      `Paparating ang ${festivalInfo.name}`,
+                      `${festivalInfo.name} akan tiba`,
+                    )}
                   </p>
                   {festivalInfo.chips.length > 0 && (
                     <p className="truncate" style={{ fontSize: 10.5, color: 'rgba(0,0,0,0.55)', marginTop: 1 }}>
-                      推荐 {festivalInfo.chips.join(' · ')}
+                      {t4('Recommended', '推荐', 'Inirerekomenda', 'Direkomendasikan')} {festivalInfo.chips.join(' · ')}
                     </p>
                   )}
                 </div>
@@ -1652,7 +1657,7 @@ export default function Home() {
             background: '#FF5A1F',
             boxShadow: '0 8px 24px rgba(255,90,31,0.35)',
           }}
-          title="跟 AI 聊菜单"
+          title={t4('Chat with AI about menu', '跟 AI 聊菜单', 'Mag-chat sa AI tungkol sa menu', 'Ngobrol AI tentang menu')}
         >
           <span className="material-symbols-outlined text-white"
             style={{ fontSize: 26, fontVariationSettings: "'FILL' 1" }}>

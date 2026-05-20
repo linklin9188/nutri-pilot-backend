@@ -333,6 +333,10 @@ function writeQuickPref(key: string, value: string) {
 export default function Settings() {
   const navigate = useNavigate();
   const { proReason } = useSubscription();
+  // TICKET-040 §A — add useLanguage to main Settings function (sub-components
+  // already use it). Lets the header subtitle + Pro toolbox section title
+  // follow the global language picker.
+  const { t4 } = useLanguage();
 
   const [members,   setMembers]   = useState<FamilyMember[]>(loadMembers);
   const [openId,    setOpenId]    = useState<string | null>(null);
@@ -482,8 +486,12 @@ export default function Settings() {
             <span className="material-symbols-outlined text-primary text-2xl">arrow_back</span>
           </button>
           <div>
-            <p className="font-bold text-[18px] text-on-surface leading-tight">家庭成员档案</p>
-            <p className="text-[12px] text-secondary">{members.length} 位成员</p>
+            <p className="font-bold text-[18px] text-on-surface leading-tight">
+              {t4('Family Profile', '家庭成员档案', 'Pamilya Profile', 'Profil Keluarga')}
+            </p>
+            <p className="text-[12px] text-secondary">
+              {members.length} {t4('members', '位成员', 'miyembro', 'anggota')}
+            </p>
           </div>
         </header>
 
