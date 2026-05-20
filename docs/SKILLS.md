@@ -92,3 +92,13 @@ _（首次填充等 TICKET-011 完工后由 Cowork 汇总；目前已知一条�
 - **detail**：场景：员工 cat 工单后只看 §A/§B/§C 主体跳过末尾增补段，结果漏了 PROCESS.md v1.2 新加的 §12 清空工单 + §13 LEARNED_SKILLS 强制段。坑：CEO 在工单尾部追加的新规则没读到 → 完工不合规 → 第二轮 cat 时才识别要补完工。复用：员工 cat 工单时**逐行读到 EOF**，特别留意"完工动作"段是否引用了新的 PROCESS.md 版本号（v1.2 / v1.3 等），所有 §N 章节项必须打勾。
 - **复用场景**：所有员工每次 `process telepot` 时读 telepot_<dept>.md 必须读到文件末尾，不能跳过尾部 SOP 增量。
 - **来源**：TELEPOT-20260520-011（Algorithm 补完工事故）
+
+### table-rename-follow-with-grep-verify — 跨部门表重命名跟随：grep 列全 → 逐点 Edit → 收尾 grep 零残留
+- **detail**：场景：Database 改飞轮表名 user_feedback → user_feedback_helper，UI/Backend/Algorithm 多个文件的 SELECT/INSERT/注释 / docstring 都要跟。坑：用 `sed -i` 简单替换会误中包含 substring 的新表名（user_feedback_helper），所以必须**逐点 Edit**。步骤：(a) `grep -n "user_feedback" <file>` 列全命中；(b) 分类（代码字符串 / 段落标题 / 注释 / catch reason）后单点 Edit；(c) 收尾 `grep` 一次确认只剩新名无旧名残留。注释里的"老表名"也要清掉，**不留旧痕**。
+- **复用场景**：所有跨部门重命名 / 迁移工单（schema rename / API rename / 角色 rename）。
+- **来源**：TELEPOT-20260520-019（Algorithm 表名跟随）
+
+### cross-dept-shape-decouple-via-schema-check — 依赖 DB 表先 schema-check 容错路径，避免上线时序硬耦合
+- **detail**：场景：Backend rollup script 写好时 Database 027 表还没上线（或者表名待定）。坑：硬 SELECT 会 42P01 (relation does not exist) 直接 crash。解决：脚本入口先跑 `SELECT 1 FROM information_schema.columns WHERE table_name=$1 AND column_name=$2 LIMIT 1` 检查关键列，缺列就输出友好 "SCHEMA NOT READY: <table>(<col>) — 请确认 Database TICKET-XXX 已落地" 并 graceful exit。这样 Backend 部门可以**先于 Database 完工**，互不阻塞；表上线后 re-run 自动走真路径。
+- **复用场景**：所有跨部门、跨 service 的 DB 表 / API endpoint 依赖。先 schema/health-check 容错，再业务逻辑。
+- **来源**：TELEPOT-20260520-014 + TELEPOT-20260520-018（Backend rollup dry-run）
