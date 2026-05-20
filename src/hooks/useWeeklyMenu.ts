@@ -132,7 +132,11 @@ const DEDUP_WINDOW_DAYS = 3;
 // "整道菜的当季感"（如冬至偏温补），SEASONALITY 是"具体食材 hit"（如冬至
 // 桌上有羊肉 / 白菜）。30+ 食材覆盖 24 节气主流时令；扩展只需在此 map 加行。
 // TICKET-053 §A: 扩到 60+ 食材覆盖（24 节气 × 港 + 内地常见时令）
-const INGREDIENT_SEASONALITY: Record<string, string[]> = {
+// TICKET-064 §B: 改 hybrid loader — FALLBACK 保持 hardcoded 不变（防 DB
+// 不可用），运行时 fetchIngredientSeasonality() 从 DB 的 ingredient_seasonality
+// 表覆盖到 INGREDIENT_SEASONALITY (mutable let). schema-check forward-compat:
+// 表不存在 / RLS 拒读 / 网络失败 → silent skip 保 FALLBACK.
+const INGREDIENT_SEASONALITY_FALLBACK: Record<string, string[]> = {
   '立春': ['韭菜', '春笋', '香椿', '荠菜', '豌豆苗'],
   '雨水': ['韭菜', '春笋', '荠菜', '蒲公英', '菠菜', '油菜', '苋菜'],
   '惊蛰': ['枇杷', '樱桃', '草莓', '春笋', '莴笋', '樱桃萝卜'],
@@ -158,6 +162,56 @@ const INGREDIENT_SEASONALITY: Record<string, string[]> = {
   '小寒': ['羊肉', '红枣', '桂圆', '糯米', '腊肉', '砂锅'],
   '大寒': ['羊肉', '红枣', '桂圆', '生姜', '糖瓜'],
 };
+
+// §B (TICKET-064) Mutable 运行时 map — 默认指向 FALLBACK, fetchIngredientSeasonality()
+// 成功时整体覆盖. scoreForWeek / explainScore / axis 28 / axis 31 全部通过此符号读取
+// (let → 引用每次调用按当前值解析). DB 表不存在 / RLS / 网络失败 → FALLBACK 持续生效.
+// eslint-disable-next-line prefer-const
+let INGREDIENT_SEASONALITY: Record<string, string[]> = INGREDIENT_SEASONALITY_FALLBACK;
+
+let _seasonalityFetchedAt = 0;
+const SEASONALITY_CACHE_MS = 5 * 60 * 1000;  // 5 分钟避免每次 generateWeekPlan 都 SELECT
+
+/**
+ * §B (TICKET-064) 从 DB 的 ingredient_seasonality 表加载应季食材表,
+ * 倒排 (ingredient_name + solar_terms[]) → (term → ingredient[]) 覆盖到
+ * INGREDIENT_SEASONALITY. schema-check 模式:
+ *   - 表不存在 (42P01) / RLS 拒读 / 网络失败 → silent fallback, 不抛错
+ *   - 5 分钟 cache 避免重复 SELECT
+ * fire-and-forget 调用; 不阻塞 generateWeekPlan.
+ */
+export async function fetchIngredientSeasonality(): Promise<void> {
+  if (Date.now() - _seasonalityFetchedAt < SEASONALITY_CACHE_MS) return;
+  try {
+    const { data, error } = await supabase
+      .from('ingredient_seasonality')
+      .select('ingredient_name, solar_terms')
+      .limit(2000);
+    _seasonalityFetchedAt = Date.now();  // 即便失败也 5 分钟不重试
+    if (error || !Array.isArray(data) || data.length === 0) return;
+    const newMap: Record<string, string[]> = {};
+    for (const row of data as Array<{ ingredient_name?: string; solar_terms?: string[] | null }>) {
+      const ing = row.ingredient_name;
+      const terms = Array.isArray(row.solar_terms) ? row.solar_terms : [];
+      if (!ing) continue;
+      for (const term of terms) {
+        if (!term) continue;
+        if (!newMap[term]) newMap[term] = [];
+        if (!newMap[term].includes(ing)) newMap[term].push(ing);
+      }
+    }
+    if (Object.keys(newMap).length > 0) {
+      INGREDIENT_SEASONALITY = newMap;
+    }
+  } catch {
+    _seasonalityFetchedAt = Date.now();
+  }
+}
+
+// 模块加载即 fire-and-forget. 首次 generateWeekPlan 可能仍读 FALLBACK
+// (promise 未 resolve), 但 5 min cache 后续命中 DB 值. supabase client 是
+// 单例 → import 后此调用即起.
+fetchIngredientSeasonality();
 
 // §A (TICKET-043 / Smell 1 阶段 4): cross-week dish-id fatigue threshold.
 // 过去 4 周累计出现 ≥ CROSS_WEEK_FATIGUE_THRESHOLD 次的 dish_id → candidate
@@ -2289,6 +2343,9 @@ export function useWeeklyMenu(weekOffset: number = 0) {
     if (!hasHometown || !hasGoal || !hasTaste) {
       syncProfileFromDB(getUserId()).catch(() => {/* offline-tolerant */});
     }
+    // §B (TICKET-064) 钩子 mount 时 hybrid 刷新 — 5 min cache 命中则 no-op,
+    // miss 则覆盖 INGREDIENT_SEASONALITY. fire-and-forget, 不阻塞 menu 生成.
+    fetchIngredientSeasonality().catch(() => {/* offline-tolerant */});
   }, []);
 
   // Re-generate when user updates preferences or eating selection changes
