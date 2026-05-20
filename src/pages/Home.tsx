@@ -643,6 +643,14 @@ export default function Home() {
   // displayMenu.slice(0,5)) currently expanded; click same idx toggles closed.
   // Tolerant of missing dish.explanation — falls back to "暂无解释数据".
   const [expandedExplainIdx, setExpandedExplainIdx] = useState<number | null>(null);
+  // TICKET-061 §B — β 反馈 banner (dismissable, localStorage 持久化)
+  const [betaBannerShown, setBetaBannerShown] = useState<boolean>(
+    () => localStorage.getItem('beta_banner_dismissed') !== 'true'
+  );
+  function dismissBetaBanner() {
+    localStorage.setItem('beta_banner_dismissed', 'true');
+    setBetaBannerShown(false);
+  }
   function handleToggleEaten(dishId: string) {
     const wasEaten = eatenSet.has(dishId);
     toggleEaten(dishId);
@@ -925,8 +933,43 @@ export default function Home() {
         paddingBottom: 100,
       }}>
 
+      {/* TICKET-061 §B — β 反馈提示 banner (dismissable + localStorage 持久化)
+          仅 β 阶段显示；关闭后 localStorage.beta_banner_dismissed=true 永久不再显示。 */}
+      {betaBannerShown && (
+        <div
+          className="mx-3 mt-2 rounded-2xl px-3 py-2.5 flex items-start gap-2"
+          style={{
+            paddingTop: "calc(env(safe-area-inset-top, 0px) + 10px)",
+            background: "linear-gradient(135deg, rgba(255,90,31,0.10), rgba(255,179,71,0.18))",
+            border: "1px solid rgba(255,90,31,0.20)",
+          }}
+        >
+          <span style={{ fontSize: 16, lineHeight: 1.2 }}>🧪</span>
+          <p className="flex-1 leading-snug" style={{ fontSize: 12, color: "rgba(0,0,0,0.75)" }}>
+            欢迎试用 <span className="font-bold" style={{ color: "#FF5A1F" }}>β 版</span>！碰到问题去
+            <button
+              onClick={() => navigate('/settings')}
+              className="font-bold mx-0.5 underline underline-offset-2"
+              style={{ color: "#FF5A1F" }}
+            >
+              设置 &gt; 联系客服
+            </button>
+            给我反馈。
+          </p>
+          <button
+            onClick={dismissBetaBanner}
+            className="active:scale-90 transition-transform"
+            aria-label="关闭 β 反馈提示"
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: 18, color: "rgba(0,0,0,0.45)" }}>
+              close
+            </span>
+          </button>
+        </div>
+      )}
+
       {/* ── Editorial header — warm paper, serif greeting ─────────── */}
-      <header style={{ paddingTop: "env(safe-area-inset-top, 44px)" }}>
+      <header style={{ paddingTop: betaBannerShown ? 0 : "env(safe-area-inset-top, 44px)" }}>
         <div className="flex items-start justify-between px-5 pt-3 pb-1">
           <div className="flex-1 min-w-0 pr-3">
             {/* Date in tiny caps over the greeting — editorial feel */}
