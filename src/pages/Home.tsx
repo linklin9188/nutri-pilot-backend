@@ -1417,14 +1417,12 @@ export default function Home() {
                         </button>
                         <button onClick={() => openSwapDrawer(idx)}
                           className="w-6 h-6 rounded-full flex items-center justify-center active:scale-90 transition-transform"
-                          title="换一道">
+                          title="换一道 / 直接不要">
                           <span className="material-symbols-outlined" style={{ fontSize: 14, color: "rgba(0,0,0,0.40)" }}>sync_alt</span>
                         </button>
-                        <button onClick={() => hideDish(dish.id)}
-                          className="w-6 h-6 rounded-full flex items-center justify-center active:scale-90 transition-transform"
-                          title="删除这道菜">
-                          <span className="material-symbols-outlined" style={{ fontSize: 14, color: "rgba(0,0,0,0.40)" }}>close</span>
-                        </button>
+                        {/* TICKET-052 §0 — ✕ delete button removed. The "直接不要"
+                            option now lives inside the swap drawer panel below,
+                            consolidating "我不想吃这道" intents into one CTA. */}
                       </div>
                     </div>
                   ))}
@@ -1821,6 +1819,27 @@ export default function Home() {
               disabled={isSwapLoading || !selectedSwap}>
               确认换菜
             </button>
+            {/* TICKET-052 §0 — 3-option footer absorbs the deleted ✕ button. */}
+            <div className="flex gap-2 mt-3">
+              <button
+                onClick={() => {
+                  if (swappingDishIndex !== null) {
+                    const dish = displayMenu[swappingDishIndex];
+                    if (dish?.id) hideDish(dish.id);
+                  }
+                  setIsSwapOpen(false);
+                }}
+                className="flex-1 h-11 rounded-2xl font-bold active:scale-[0.98]"
+                style={{ background: 'rgba(220,38,38,0.10)', color: '#DC2626', fontSize: 13 }}>
+                直接不要
+              </button>
+              <button
+                onClick={() => setIsSwapOpen(false)}
+                className="flex-1 h-11 rounded-2xl font-bold active:scale-[0.98]"
+                style={{ background: 'rgba(0,0,0,0.05)', color: 'rgba(0,0,0,0.55)', fontSize: 13 }}>
+                取消
+              </button>
+            </div>
           </div>
         </div>
       )}
