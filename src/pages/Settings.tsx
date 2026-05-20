@@ -45,60 +45,9 @@ function LanguageCard() {
   );
 }
 
-// ── Pro toolbox: 3 Pro feature shortcuts beneath the membership card ──────
-// Free users tapping any of these still land on the feature page first;
-// each page's internal ProGate redirects to /pricing.
-function ProToolbox() {
-  const navigate = useNavigate();
-  const { isPro } = useSubscription();
-  const tools = [
-    { path: '/banquet',           emoji: '🎉', title: '家宴菜单',     desc: '10–20 人聚餐 / 寿宴 / 儿童派对排菜',
-      tint: 'rgba(255,193,7,0.10)', border: 'rgba(255,193,7,0.25)' },
-    { path: '/pro/wellness',      emoji: '🌿', title: '港式祛湿调理', desc: '按节气推汤水 / 凉茶',
-      tint: 'rgba(46,125,50,0.08)', border: 'rgba(46,125,50,0.22)' },
-    { path: '/pro/school-balance', emoji: '🎒', title: '学校营养补全', desc: '输入校餐 → 3 道补全晚餐',
-      tint: 'rgba(25,118,210,0.08)', border: 'rgba(25,118,210,0.22)' },
-  ];
-  return (
-    <div className="bg-white border border-black/5 rounded-[22px] p-4 shadow-[0_4px_20px_rgba(0,0,0,0.04)] space-y-2">
-      <div className="flex items-center justify-between mb-1 px-1">
-        <p className="text-[12px] text-secondary font-semibold uppercase tracking-wider">
-          {isPro ? '会员 Pro · 工具箱' : '会员 Pro · 解锁后可用'}
-        </p>
-        {isPro && (
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-            style={{ background: "linear-gradient(135deg, #FFD700, #FFA500)", color: "white" }}>
-            ✨ 已开通
-          </span>
-        )}
-      </div>
-      {tools.map(t => (
-        <button
-          key={t.path}
-          onClick={() => navigate(isPro ? t.path : '/pricing')}
-          className="w-full flex items-center gap-3 px-3 py-3 rounded-2xl text-left transition-all active:scale-[0.98]"
-          style={{ background: t.tint, border: `1px solid ${t.border}` }}
-        >
-          <span className="text-[22px]">{t.emoji}</span>
-          <div className="flex-1 min-w-0">
-            <p className="font-bold text-[14px]">{t.title}</p>
-            <p className="text-[11px] text-gray-500 mt-0.5 truncate">{t.desc}</p>
-          </div>
-          {!isPro && (
-            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap"
-              style={{ background: "linear-gradient(135deg, #FFD700, #FFA500)", color: "white" }}>
-              Pro
-            </span>
-          )}
-          <span className="material-symbols-outlined shrink-0"
-            style={{ fontSize: 18, color: "rgba(0,0,0,0.30)" }}>
-            chevron_right
-          </span>
-        </button>
-      ))}
-    </div>
-  );
-}
+// ── TICKET-067 §B — ProToolbox removed (跟 /pricing 重复，点 Pro CTA 进去即可看)
+//    保留的入口：MembershipCard 的"升级到 Pro"按钮 → /pricing 看详情
+//    /banquet / /pro/wellness / /pro/school-balance 路由仍在 App.tsx 不动
 
 // ── Membership entry shown above 退出登录 ──────────────────────────────────────
 function MembershipCard() {
@@ -1171,9 +1120,6 @@ export default function Settings() {
               />
             </div>
           </button>
-
-          {/* ── Pro toolbox (家宴 / 祛湿 / 学校营养) ── */}
-          <ProToolbox />
 
           {/* ── Sign out ── */}
           <button
