@@ -435,6 +435,129 @@ export default function Settings() {
   const SUPPORT_WX = "jianjiaolin9";
   const SUPPORT_EMAIL = "jianjiaolin9@gmail.com";
 
+  // TICKET-063 §A — 个人头像 + 昵称 + role + 家庭成员卡
+  const myRole = (typeof window !== "undefined" ? localStorage.getItem("nutri_role") : null) || "employer";
+  const [myAvatar, setMyAvatar] = useState<string | null>(null);
+  const [myDisplayName, setMyDisplayName] = useState<string | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [avatarMsg, setAvatarMsg] = useState<string | null>(null);
+  interface HouseholdHelper { helper_id: string; name: string | null; avatar_b64: string | null; }
+  const [householdHelpers, setHouseholdHelpers] = useState<HouseholdHelper[]>([]);
+
+  // Initial fetch — 自己 profile + 家里已加入的 helpers (employer only)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const uid = getUserId();
+      if (!uid) return;
+      // 自己 profile
+      const { data: me } = await supabase
+        .from("user_profiles")
+        .select("display_name, avatar_b64")
+        .eq("id", uid)
+        .maybeSingle();
+      if (cancelled) return;
+      if (me) {
+        setMyAvatar((me as { avatar_b64?: string | null }).avatar_b64 ?? null);
+        setMyDisplayName((me as { display_name?: string | null }).display_name ?? null);
+      }
+      // 家里 helpers — 仅雇主拉
+      if (myRole === "employer") {
+        const { data: hhs } = await supabase
+          .from("households")
+          .select("id, household_members(helper_id, user_profiles!helper_id(display_name, avatar_b64))")
+          .eq("employer_id", uid);
+        if (cancelled) return;
+        const list: HouseholdHelper[] = [];
+        (hhs ?? []).forEach((hh: any) => {
+          (hh.household_members ?? []).forEach((hm: any) => {
+            if (!hm.helper_id) return;
+            const up = hm.user_profiles;
+            list.push({
+              helper_id: hm.helper_id,
+              name: up?.display_name ?? null,
+              avatar_b64: up?.avatar_b64 ?? null,
+            });
+          });
+        });
+        setHouseholdHelpers(list);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [myRole]);
+
+  // Resize selected image → 256×256 JPEG base64 (~30-80KB typically)
+  function resizeImageToBase64(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          canvas.width = 256;
+          canvas.height = 256;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) { reject(new Error("canvas ctx")); return; }
+          // Cover-fit crop center
+          const minSide = Math.min(img.width, img.height);
+          const sx = (img.width - minSide) / 2;
+          const sy = (img.height - minSide) / 2;
+          ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, 256, 256);
+          resolve(canvas.toDataURL("image/jpeg", 0.82));
+        };
+        img.onerror = () => reject(new Error("image load"));
+        img.src = reader.result as string;
+      };
+      reader.onerror = () => reject(new Error("file read"));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handleAvatarFile(file: File) {
+    setAvatarMsg(null);
+    if (!file.type.startsWith("image/")) { setAvatarMsg("仅支持图片格式"); return; }
+    setUploadingAvatar(true);
+    try {
+      const b64 = await resizeImageToBase64(file);
+      if (b64.length > 220 * 1024) {
+        setAvatarMsg("图片仍过大，请选小一点的");
+        setUploadingAvatar(false);
+        return;
+      }
+      const uid = getUserId();
+      if (!uid) { setAvatarMsg("未登录"); setUploadingAvatar(false); return; }
+      const { error } = await supabase
+        .from("user_profiles")
+        .update({ avatar_b64: b64 })
+        .eq("id", uid);
+      if (error) {
+        setAvatarMsg("保存失败，稍后重试");
+      } else {
+        setMyAvatar(b64);
+        setAvatarMsg("✓ 头像已更新");
+        setTimeout(() => setAvatarMsg(null), 1800);
+      }
+    } catch {
+      setAvatarMsg("处理失败，请换一张图片");
+    } finally {
+      setUploadingAvatar(false);
+    }
+  }
+
+  async function kickHelper(helper_id: string, name: string | null) {
+    if (!window.confirm(`确定踢出 ${name || "此成员"}？踢出后对方将看不到家里菜单。`)) return;
+    const { error } = await supabase
+      .from("household_members")
+      .delete()
+      .eq("helper_id", helper_id);
+    if (error) {
+      setAvatarMsg("踢出失败，稍后重试");
+      setTimeout(() => setAvatarMsg(null), 1800);
+      return;
+    }
+    setHouseholdHelpers(prev => prev.filter(h => h.helper_id !== helper_id));
+  }
+
   function openMember(m: FamilyMember) {
     if (openId === m.id) {
       setOpenId(null);
@@ -510,6 +633,77 @@ export default function Settings() {
         </header>
 
         <div className="px-4 space-y-3">
+
+          {/* TICKET-063 §A — 个人头像 + 昵称 + role 卡片 (Settings 顶部最显眼位置)
+              点头像触发 file input → canvas 256×256 resize → base64 → supabase.user_profiles.avatar_b64
+              avatar_b64 列 supabase migration 045 已加。 */}
+          <div className="bg-white rounded-[22px] p-4 shadow-[0_4px_20px_rgba(0,0,0,0.04)] flex items-center gap-3 mt-1">
+            <label className="relative cursor-pointer active:scale-95 transition-transform" title="点击更换头像">
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                disabled={uploadingAvatar}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleAvatarFile(f);
+                  e.target.value = "";
+                }}
+              />
+              {myAvatar ? (
+                <img
+                  src={myAvatar}
+                  alt=""
+                  className="w-16 h-16 rounded-full object-cover border-2 border-white"
+                  style={{ boxShadow: "0 4px 14px rgba(255,90,31,0.30)" }}
+                />
+              ) : (
+                <div
+                  className="w-16 h-16 rounded-full flex items-center justify-center"
+                  style={{ background: "linear-gradient(135deg, #FF8C54, #FF5A1F)", boxShadow: "0 4px 14px rgba(255,90,31,0.30)" }}
+                >
+                  <span className="text-white font-black" style={{ fontSize: 24 }}>
+                    {(myDisplayName?.[0] ?? "你").toUpperCase()}
+                  </span>
+                </div>
+              )}
+              {uploadingAvatar ? (
+                <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center">
+                  <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                </div>
+              ) : (
+                <div
+                  className="absolute -right-0.5 -bottom-0.5 w-6 h-6 rounded-full bg-white flex items-center justify-center"
+                  style={{ boxShadow: "0 2px 6px rgba(0,0,0,0.18)" }}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: 14, color: "#FF5A1F" }}>
+                    photo_camera
+                  </span>
+                </div>
+              )}
+            </label>
+            <div className="flex-1 min-w-0">
+              <p className="font-bold text-[16px] truncate">
+                {myDisplayName || (getUserId()?.slice(0, 8) ?? "你")}
+              </p>
+              <div className="mt-1 inline-flex items-center gap-1.5">
+                <span
+                  className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                  style={{
+                    background: myRole === "employer" ? "rgba(255,90,31,0.10)" : "rgba(37,211,102,0.12)",
+                    color: myRole === "employer" ? "#FF5A1F" : "#16A34A",
+                  }}
+                >
+                  {myRole === "employer" ? "雇主" : "助理"}
+                </span>
+                {avatarMsg && (
+                  <span className="text-[10px] font-bold" style={{ color: avatarMsg.startsWith("✓") ? "#16A34A" : "#B84A0F" }}>
+                    {avatarMsg}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
 
           {/* ── 我的口味 ── inline editor for the three global onboarding
               answers (目标 / 辣度 / 家乡味). 忌口 + 健康状况 live on the
@@ -853,6 +1047,51 @@ export default function Settings() {
           {/* Role switcher removed — identity is picked once at /login.
               Keeping it here was confusing (one user shouldn't be both
               employer and helper on the same account). */}
+
+          {/* TICKET-063 §A — 家里已加入的助理 (employer only). 通过 invite_code
+              加入家庭的 helper 列表 + 头像 + 踢出 (DELETE household_members)。 */}
+          {myRole === "employer" && householdHelpers.length > 0 && (
+            <div className="bg-white rounded-[22px] p-4 shadow-[0_4px_20px_rgba(0,0,0,0.04)]">
+              <p className="text-[11px] font-bold text-secondary uppercase tracking-wider mb-2.5">
+                家里已加入的助理 · {householdHelpers.length}
+              </p>
+              <div className="space-y-2.5">
+                {householdHelpers.map((h, i) => {
+                  const fallbackColor = AVATAR_COLORS[i % AVATAR_COLORS.length];
+                  return (
+                    <div key={h.helper_id} className="flex items-center gap-3">
+                      {h.avatar_b64 ? (
+                        <img src={h.avatar_b64} alt="" className="w-10 h-10 rounded-full object-cover" />
+                      ) : (
+                        <div className={`w-10 h-10 rounded-full ${fallbackColor} flex items-center justify-center text-white font-bold`}>
+                          {(h.name?.[0] ?? "?").toUpperCase()}
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-[13px] truncate">
+                          {h.name || h.helper_id.slice(0, 8)}
+                        </p>
+                        <span
+                          className="inline-block text-[10px] font-bold mt-0.5 px-1.5 py-0.5 rounded-full"
+                          style={{ background: "rgba(37,211,102,0.12)", color: "#16A34A" }}
+                        >
+                          菲佣
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => kickHelper(h.helper_id, h.name)}
+                        className="px-3 py-1.5 rounded-full text-[11px] font-bold active:scale-95 transition-all"
+                        style={{ background: "rgba(220,38,38,0.08)", color: "#DC2626" }}
+                        title={`踢出 ${h.name || "此成员"}`}
+                      >
+                        踢出
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* ── Language picker ── */}
           <LanguageCard />
