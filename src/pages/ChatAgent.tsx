@@ -13,8 +13,10 @@
  */
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useChatSession, type ChatMode, type ChatMessage } from '../hooks/useChatSession';
+import { useChatSession, type ChatMode, type ProposalChoice } from '../hooks/useChatSession';
 import BottomTabBar from '../components/BottomTabBar';
+import ChatBubble from '../components/ChatBubble';
+import MenuProposal from '../components/MenuProposal';
 
 function parseModeParam(raw: string | null): ChatMode {
   if (raw === 'week' || raw === 'preference' || raw === 'today') return raw;
@@ -28,7 +30,12 @@ export default function ChatAgent() {
   const mode      = parseModeParam(searchParams.get('mode'));
   const sessionId = searchParams.get('session') ?? undefined;
 
-  const { session, appendMessage } = useChatSession(mode, sessionId);
+  const { session, appendMessage, chooseProposal } = useChatSession(mode, sessionId);
+
+  function handleAdopt(messageId: string, choice: ProposalChoice) {
+    chooseProposal(messageId, choice);
+    // commit ③ will upsert user_weekly_menus here when proposals are real.
+  }
   const [draft, setDraft] = useState('');
   const scrollAnchorRef = useRef<HTMLDivElement>(null);
 
@@ -75,7 +82,18 @@ export default function ChatAgent() {
       {/* Message list */}
       <main className="flex-1 px-4 py-4 flex flex-col gap-3 overflow-y-auto pb-24">
         {session.messages.map(msg => (
-          <InlineBubble key={msg.id} message={msg} />
+          <div key={msg.id} className="flex flex-col gap-2">
+            <ChatBubble message={msg} />
+            {/* Proposal card piggybacks on the AI message that carries proposals
+                in its meta. commit ③ will set meta.proposals from proposalEngine. */}
+            {msg.role === 'ai' && msg.meta?.proposals && msg.meta.proposals.length > 0 && (
+              <MenuProposal
+                proposals={msg.meta.proposals}
+                chosen={msg.meta.chosen}
+                onAdopt={choice => handleAdopt(msg.id, choice)}
+              />
+            )}
+          </div>
         ))}
         <div ref={scrollAnchorRef} />
       </main>
@@ -105,25 +123,3 @@ export default function ChatAgent() {
   );
 }
 
-// Inline bubble used in commit ①. Commit ② will replace this with a proper
-// ChatBubble component sourced from src/components/ChatBubble.tsx.
-function InlineBubble({ message }: { message: ChatMessage }) {
-  const isUser   = message.role === 'user';
-  const isSystem = message.role === 'system';
-  return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div
-        className="rounded-2xl px-4 py-2.5 max-w-[80%]"
-        style={{
-          background: isUser ? '#FF5A1F' : isSystem ? 'rgba(0,0,0,0.05)' : 'white',
-          color:      isUser ? 'white'   : '#1a1a1a',
-          fontSize:   14,
-          lineHeight: 1.55,
-          boxShadow:  isUser ? 'none' : '0 2px 8px rgba(0,0,0,0.04)',
-        }}
-      >
-        {message.content}
-      </div>
-    </div>
-  );
-}
