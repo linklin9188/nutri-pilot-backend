@@ -1,0 +1,43 @@
+# Daily helper-feedback rollup
+# Spec : docs/SPEC_day2_feedback_pipeline.md §3.1 (rollup) + §3.3 (cadence)
+# Ticket: TELEPOT-20260520-022 §B (chose plan 2 — GitHub Actions over pg_cron)
+# Why plan 2: project is hosted on Railway + Supabase Free. pg_cron requires
+# Supabase Pro plan with extension explicitly enabled — defer that upgrade to
+# CEO's call. GitHub Actions runs on the existing repo for free, idempotent,
+# observable in the Actions tab.
+#
+# Schedule: 04:00 HKT (UTC+8) daily. GitHub Actions cron is in UTC, so the
+# expression is "0 20 * * *" which fires at 20:00 UTC = 04:00 HKT next day.
+#
+# Required GitHub Secrets (set under repo Settings → Secrets and variables → Actions):
+#   DIRECT_DATABASE_URL  → same value as local .env DIRECT_DATABASE_URL (Postgres direct connection string)
+# Env injected:
+#   AIEATS_PROD_ROLLUP=true  → unlocks the script's live-update path (§C safety guard)
+# Manual trigger: Actions tab → "Daily Feedback Rollup" → Run workflow.
+
+name: Daily Feedback Rollup
+
+on:
+  schedule:
+    - cron: '0 20 * * *'   # 04:00 HKT next day (UTC+8)
+  workflow_dispatch:         # ad-hoc manual run
+
+jobs:
+  rollup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install deps
+        run: npm install --no-audit --no-fund
+
+      - name: Run helper-feedback rollup (live)
+        env:
+          DIRECT_DATABASE_URL: ${{ secrets.DIRECT_DATABASE_URL }}
+          AIEATS_PROD_ROLLUP: 'true'
+        run: npx tsx scripts/feedback-to-prompt.ts
