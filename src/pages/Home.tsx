@@ -32,6 +32,10 @@ import { loadFamilyMembers } from "../lib/familyPrefs";
 import { HeartButton } from "../components/HeartButton";
 import DailyNutritionStrip from "../components/DailyNutritionStrip";
 import { toggleEaten, getEatenToday } from "../lib/eatingDiary";
+import {
+  Sun, CloudSun, Cloud, CloudFog,
+  CloudRain, CloudRainWind, CloudLightning,
+} from "lucide-react";
 // pickBreakfastCombo / DISH_FIELDS 已在 Smell 1 阶段 2 (v40) 移到 useWeeklyMenu 内部
 
 // ── Solar term (节气) calculator ─────────────────────────────────────────────
@@ -149,6 +153,27 @@ const WEATHER_CODE_LABEL: Record<number, string> = {
   80: '阵雨', 81: '阵雨', 82: '暴雨',
   95: '雷雨', 96: '雷暴', 99: '暴风雨',
 };
+
+// open-meteo weather_code → lucide-react icon component. Mirrors the LABEL
+// map's bucketing (晴/多云/雾/雨/阵雨/雷雨). All used icons confirmed present
+// in lucide-react 0.546.x, so no runtime fallback branch is needed.
+const WEATHER_CODE_ICON: Record<number, React.ComponentType<{ size?: number; className?: string }>> = {
+  0:  Sun,
+  1:  CloudSun,
+  2:  Cloud,            3:  Cloud,
+  45: CloudFog,         48: CloudFog,
+  51: CloudRain,        53: CloudRain,        55: CloudRain,
+  61: CloudRain,        63: CloudRain,        65: CloudRain,
+  80: CloudRainWind,    81: CloudRainWind,    82: CloudRainWind,
+  95: CloudLightning,   96: CloudLightning,   99: CloudLightning,
+};
+
+// Renders the lucide icon for a given weather_code. Falls back to Cloud
+// (neutral) for any code we haven't mapped — keeps the layout intact.
+function WeatherIcon({ code, size = 14 }: { code: number; size?: number }) {
+  const Icon = WEATHER_CODE_ICON[code] ?? Cloud;
+  return <Icon size={size} className="inline-block align-[-2px]" />;
+}
 
 function getWeatherAdjustment(temp: number, humidity: number, code: number): string {
   if (code >= 80) return '雨天湿冷，暖胃为主';
@@ -767,7 +792,9 @@ export default function Home() {
               {weather && (
                 <>
                   <span style={{ color: "rgba(0,0,0,0.18)" }}>·</span>
-                  <span>{weather.temp}°C {weather.label}</span>
+                  <span className="inline-flex items-center gap-1">
+                    {weather.temp}°C <WeatherIcon code={weather.code} size={14} /> {weather.label}
+                  </span>
                 </>
               )}
             </p>
@@ -1223,7 +1250,9 @@ export default function Home() {
           <span>{getChineseHour()}</span>
           {weather && (<>
             <span style={{ color: 'rgba(0,0,0,0.18)' }}>·</span>
-            <span>{weather.label}</span>
+            <span className="inline-flex items-center gap-1">
+              <WeatherIcon code={weather.code} size={13} /> {weather.label}
+            </span>
           </>)}
         </div>
 
