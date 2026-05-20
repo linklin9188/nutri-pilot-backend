@@ -139,6 +139,34 @@
 - **教训**：写 SPEC 前先 read 生产 schema（不止类型也看 jsonb 内部结构）。SPEC drift 后及时更新（已弃 sidecar，改 embedded — CEO 已自决）。
 - **来源**：TELEPOT-20260520-026
 
+### partial-delivery-status-needs-review-vs-done — 部分交付时 STATUS=needs_review 比硬上 STATUS=done 诚实
+- **场景**：TICKET-050 §A 翻译目标 50/50 但 background script 在第 21 道菜 fetch ETIMEDOUT crash，实际只完成 34/50 (68%)。
+- **踩坑**：若硬写 STATUS=done 含混 partial，CEO 会以为 §A 完成 + 不知道剩 16 道需要后续派单。若卡在 STATUS=in_progress 永远不闭环，下棒读不到 LAST_PROCESSED_TICKET。
+- **代价**：误以为 ship 完毕的下游可能根据 34 道菜做决策，回头要回滚。
+- **教训**：partial 交付时 STATUS=needs_review + RESULT 显式列"达到 X/Y，剩 Z 留下一棒"+ 给 CEO 推荐继续策略 (X/Y/Z 选项)。让 CEO 在掌握全貌后决定 ship 还是补完。is_progress 留给真"我在跑"中途中断不闭环的场景。
+- **来源**：TELEPOT-20260520-050
+
+### db-source-of-truth-over-stdout-buffering — background batch 长时间 0 行 output 不代表 hang，DB 写入才是真相
+- **场景**：TICKET-035 / 050 跑 background tsx 脚本 30+ 分钟，output 文件持续 0 行 — 看似进程 hang。实际 query supabase 看 dishes_with_tl count 在涨，脚本一直在写 DB。
+- **踩坑**：Node tsx stdout 默认 block-buffered to file (~64KB)，长跑脚本 buffer 未满前 file 显示空白。若员工因 "0 output 30 分钟" panic kill 进程，会损失已写入的 partial 进度 + 浪费 v2 quota namespace。
+- **代价**：曾考虑 kill 进程，但先 query DB 看到 17/20 dish 已完成才没动。
+- **教训**：所有 background batch 监控**优先 query DB 实测**（dish count / api_usage_daily incr / table row 数），stdout 是 best-effort。想强制实时 log 用 `process.stdout.write('') / writeSync(1, ...)`。
+- **来源**：TELEPOT-20260520-035 / 050
+
+### telepot-file-source-of-truth-when-user-loop-spam — /loop 重复 prompt 时按 telepot 文件而非 user 消息决定执行内容
+- **场景**：TICKET-050 期间用户 prompt 在重复发上一棒 (TICKET-035) 的 4 件指令 (cron yml push / rollup / 翻译扩 / CLAUDE_BACKEND 同步)。但 telepot_backend.md 已经被 Cowork 覆盖为 TICKET-050 (Day 11 5% 优化) 完全不同任务 (翻译扩 50 / dish 1 retry / ingredients audit / 节庆 cook_steps)。
+- **踩坑**：用户重复 prompt 是 /loop 触发的旧 prompt 残留 (CEO 不知道用户在 loop)。若按 user 消息做事，会重复跑已完成的 035；按 telepot 文件做事才是 source of truth。
+- **代价**：员工误判 = 重做已完工的任务 + CEO/Backend 误信"还在做 X"。
+- **教训**：遇用户 prompt 与 telepot 文件不一致时，按 PROCESS.md §4 算法 + telepot 文件 source of truth，response 里清楚标"与 user prompt 不符，按 telepot 执行"，让 Cowork/CEO 透明知道分叉。CEO 新指令"遇分支转 CEO 不要再问"也涵盖此场景 (员工自决 + 事后通报)。
+- **来源**：TELEPOT-20260520-050（user /loop spam 持续时按 telepot 050 执行）
+
+### context-budget-progressive-dump-before-70-percent — context 接近 70% 前主动 dump SKILLS/LESSONS + commit，避免触限被 /compact 截断
+- **场景**：Backend 跑 11+ 棒长 session，每棒 sustain ~5% context 涨幅。本会话 (TICKET-014 → 065) 累计 ~62-68%，CEO 在 065 工单 §G 明确要求"context 完工时报告 + 接近 70% 触发 dump"。
+- **踩坑**：若不主动 dump，等 /compact 触发时 LEARNED_SKILLS / NOTES 详细信息可能被截断丢失 — 下棒读不到本棒沉淀。
+- **代价**：本会话 20+ LEARNED_SKILLS 全靠 LESSONS.md / SKILLS.md 落地保存，dump 失败 = 经验丢失。
+- **教训**：员工每棒 response 末尾报告 CONTEXT_USAGE_AT_COMPLETION。接近 70% 时主动 (1) 看 docs/SKILLS.md + LESSONS.md 现状；(2) grep 自己未沉淀的 skill_id；(3) 追加缺的；(4) commit + push；(5) 再 /compact。**不要等系统自动截断**。
+- **来源**：TELEPOT-20260520-065（CEO 工单 §G + 本次 dump 操作）
+
 ---
 
 ## Architect (退役 session)

@@ -142,6 +142,101 @@ _（首次填充等 4 部门 TICKET-008..011 完工后由 Cowork 汇总；目前
 - **复用场景**：所有 jsonb 列批量加键 / 状态字段（meta / config / preferences 等）。
 - **来源**：TELEPOT-20260520-022（rollup 写 dishes.meta 多键）
 
+### gemini-sse-streaming — Gemini 2.5 flash 流式调用走 :streamGenerateContent?alt=sse + 透传 ReadableStream
+- **detail**：用 `:streamGenerateContent?alt=sse&key=<KEY>` 端点（非 :generateContent）。Deno 端最省事：`return new Response(gemRes.body, { headers: SSE_HEADERS })` 透传上游 ReadableStream 零拷贝。SSE_HEADERS 三件套：Content-Type: text/event-stream / Cache-Control: no-cache / Connection: keep-alive。
+- **复用场景**：未来任何 Gemini 流式 endpoint (chat 增强 / 实时菜单调整 / 多轮对话)。
+- **来源**：TELEPOT-20260520-014（chat endpoint）
+
+### scripts-pg-pool-style — scripts/ 下脚本约定用 pg.Pool 直连，不用 supabase-js
+- **detail**：`import pg from 'pg'; import { config } from 'dotenv'; config(); const db = new pg.Pool({ connectionString: process.env.DIRECT_DATABASE_URL, ssl: { rejectUnauthorized: false } });`。env 变量是 DIRECT_DATABASE_URL（不是 SUPABASE_URL），来自 .env。原因：scripts/ 多为后台批量任务，pg.Pool 比 supabase-js 高效（无 PostgREST 中转），且能跑原生 SQL。
+- **复用场景**：写任何 scripts/ 新 backfill / rollup / dry-run / cron 脚本。
+- **来源**：TELEPOT-20260520-014（feedback-to-prompt 脚本起手）
+
+### supabase-cli-logs-version-gap — supabase CLI v2.98.2 不支持 functions logs（v2.99+ 才加入）
+- **detail**：CEO 工单常要求 `supabase functions logs <name> --tail 100`，但 v2.98.2 没有 logs 子命令。替代方案：(1) supabase db query api_usage_daily 看 endpoint 用量；(2) Dashboard → Edge Functions → Logs GUI；(3) 升级 CLI 到 v2.100.1 (但升级 CLI 有副作用，需 Cowork 批准)。
+- **复用场景**：未来工单要求看 edge function logs 时，先用替代方案 1/2。
+- **来源**：TELEPOT-20260520-014（Backend 想看 5xx logs 但 CLI 不支持）
+
+### gemini-translate-low-temperature — 翻译类 Gemini 调用用 temperature=0.3 + maxOutputTokens 约 2x 源文本
+- **detail**：默认 temperature=1.0 适合 chat / 创意场景；翻译是 deterministic-ish 任务，高温度会引入同义变体。设 0.3 让输出更稳。maxOutputTokens 设 2x 源文本长度（cook step 50-200 → cap 600）刚好。chat 用 0.7、structured generation 用 0.5、creative 用 1.0+。
+- **复用场景**：所有"输入文本固定 → 输出可预测"的 Gemini 端点（翻译 / 摘要 / 结构化抽取）。
+- **来源**：TELEPOT-20260520-026（translate endpoint 设计）
+
+### embedded-i18n-vs-sidecar-columns-divergence — SPEC sidecar 列 vs 生产 embedded i18n 字段偏差，按 SPEC 写 + schema-check + NOTES 标 + 等 CEO
+- **detail**：场景：dishes.cook_steps_json step object 已含 action_zh/action_en（embedded i18n），但 SPEC 设计 sidecar 列模式（cook_steps_json_en/_tl/_id）。处理：脚本按 SPEC 写 + schema-check 容错（缺列 abort）+ response 标偏差 + 列两种修复路径（X sidecar / Y embedded）+ 等 CEO 决策。**不擅自切换设计**（部门越权）。
+- **复用场景**：每次拿 SPEC 写脚本前都看生产 schema 一眼，若与 SPEC 不一致，按 SPEC 写 + NOTES 标偏差 + 推荐方向 + 等 CEO。
+- **来源**：TELEPOT-20260520-026
+
+### gemini-2-5-flash-sustained-503 — gemini-2.5-flash 高峰返回持续 503 "high demand"，batch 必须 retry + tolerate-partial
+- **detail**：实测 batch 跑 124 calls 第一次全 dish 在 1-2 个 call 后撞 503 (`This model is currently experiencing high demand`)。Retry 3 attempts + backoff 2s/4s/8s 多数 transient spike 一次过；sustained 高峰可能 3 次都失败 → 必须配合 tolerate-partial（单 tuple 失败 continue 不 break 整 dish）。jsonb merge 允许部分写入，下次跑 schema-check 自然检出 missing 继续补。
+- **复用场景**：任何 batch 调用 Gemini 2.5 模型的脚本；其他 endpoints 也应考虑加 retry。
+- **来源**：TELEPOT-20260520-029（首次 5 道菜真跑 + 翻译质量验证）
+
+### proxy-quota-incr-on-success-only — 边缘代理给上游 5xx 重试场景必须 post-success-incr，否则客户端 retry 烧配额
+- **detail**：原 gemini-proxy 所有 endpoint 在 fetch 之前 incr (pre-fetch)。客户端正常 OK，但 5xx + retry 模式下：每次重试 = 一次 incr → 单 source_text 被算 4 次（1 主 + 3 retry）。实测：50/day 配额在 sustained 503 + 3 retry/call 模式下 ~12 source 就烧光。**修法**：incrCounter 移到 fetch 成功 (gemRes.ok) 的 return path 内。429 行为不变（getDailyCount read-only check）。
+- **复用场景**：所有给上游 retry-able service 做代理的 endpoint。
+- **来源**：TELEPOT-20260520-029
+
+### tolerate-partial-jsonb-merge-pattern — jsonb merge 批量翻译时单 tuple 失败 continue 不 break，下次跑自然补完
+- **detail**：错法（all-or-nothing）：first fail → break dish → skip UPDATE → 0 progress → 下次跑还是 32 tuples（已成功 23 个白翻译）。对法（tolerate-partial）：fail continue → dish 写入 23 个成功的 lang keys → 下次 missingForStep() 检出 9 个 missing → 只算 9 个。**关键前提**：UPDATE 用 jsonb merge 不破坏 existing keys。
+- **复用场景**：所有 batch 调外部 API 失败可重跑的场景；尤其 jsonb-merge / partial-update 支持的列。
+- **来源**：TELEPOT-20260520-029
+
+### tsx-stdout-block-buffer-when-redirected — tsx 重定向 stdout 到 file 时 block-buffered，长时间 0 行不代表卡住，DB 是 source of truth
+- **detail**：实测：background script 跑 31 分钟 + output file 0 行 = 看起来 hang。但 ps 显示进程 alive (S 状态 IO-wait)，query supabase 看 api_usage_daily + dishes_with_tl 实测正在写入（17/20 dish done）。Node tsx stdout 默认 line-buffered 在 TTY，但 redirect to file 时切到 block-buffered (~64KB)。**处理**：DB 是 source of truth — query 实测进度；不要因 "0 output" kill 进程；想实时 log 用 `process.stdout.write('')` 或 `writeSync(1, ...)` 强制 unbuffered。
+- **复用场景**：所有 batch 脚本 background 跑 + 想看实时进度的场景。
+- **来源**：TELEPOT-20260520-035
+
+### github-actions-cron-utc-vs-hkt — GitHub Actions cron 是 UTC，HKT 04:00 = UTC 20:00（前一天），yml '0 20 * * *'
+- **detail**：HKT = UTC+8。HKT 04:00 = UTC 20:00 (前一天)。cron 表达式：`'0 20 * * *'`。陷阱：不要写 `'0 4 * * *'` 误以为 HKT (那是 UTC 04:00 = HKT 12:00 中午高峰)；不要写负数（cron 不支持）；DST 不影响（HKT 不夏令时）。
+- **复用场景**：所有给项目加新 cron job 时；HKT-based 业务时间统一 "-8 hours" 算 UTC。
+- **来源**：TELEPOT-20260520-035（feedback-rollup cron 配置）
+
+### pg-pool-ecircuitbreaker-supabase-auth-rate-limit — supabase pooler ECIRCUITBREAKER (auth failures locked) 等 30s 自然恢复
+- **detail**：长 background script 完成后立即跑下一个触发 `FATAL: (ECIRCUITBREAKER) too many authentication failures, new connections are temporarily blocked`。原因：supabase 端 pooler 对短时间大量新 auth 请求设了 circuit breaker。处理：等 30-60 秒；同 process 内保持 pg.Pool 长开；CLI 自带 retry，pg-pool 不会。
+- **复用场景**：任何 background script 完成立即跑下一个时；多个 batch script 并发时。
+- **来源**：TELEPOT-20260520-050
+
+### cli-flag-namespace-rotation-pattern — `--user-suffix=v3` CLI flag 让 ops 手动 bump quota namespace，避免 hardcode + git edit + commit
+- **detail**：per-dish user_id `script:foo:v2:<id8>` 长跑后部分 bucket 烧光。错法：每次烧光 git Edit hardcode :v2 → :v3 commit + push。对法：加 --user-suffix CLI flag (default 'v2'，跑 --user-suffix=v3 即可)：`const USER_SUFFIX = process.argv.find(a => a.startsWith('--user-suffix='))?.split('=')[1] ?? 'v2'`。
+- **复用场景**：任何长跑 batch + 上游 per-user quota + 可能多次烧配额的场景。
+- **来源**：TELEPOT-20260520-050
+
+### long-retry-session-fetch-etimedout — Node fetch 长 retry session (>30 min, 数百次 fetch) 触发 OS-level ETIMEDOUT；需 AbortController + per-call try/catch
+- **detail**：background batch 跑 70 分钟 / 600+ calls 后 fetch 触发 `TypeError: fetch failed [cause: Error: read ETIMEDOUT]`。原因：Node 18+ fetch 默认无 user-defined timeout，OS-level TCP keep-alive 在长 batch 让某个空闲 socket 超时。**修法**：`const controller = new AbortController(); const timeoutId = setTimeout(() => controller.abort(), 120000); const res = await fetch(url, { signal: controller.signal, ... }); clearTimeout(timeoutId);` 或在 callX 外层加 try/catch + 重试 1 次。
+- **复用场景**：所有 batch script 长跑 (>30 min) + 上游 5xx sustained 容易触发的场景。
+- **来源**：TELEPOT-20260520-050
+
+### edge-function-service-role-gating — deploy --no-verify-jwt + 函数内验证 Authorization == SUPABASE_SERVICE_ROLE_KEY = CEO-only endpoint
+- **detail**：想 "CEO 能调，匿名 / anon-key 不行"。错法：deploy --verify-jwt 仅验证 supabase 自动签发 JWT (含 anon-key) — anon-key 也能调。**对法**：(1) deploy --no-verify-jwt (绕过自动 JWT 层) (2) 函数内手动 check：`const presented = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : ""; if (!SERVICE_ROLE_KEY || presented !== SERVICE_ROLE_KEY) return 401;`
+- **复用场景**：任何"内部观察 / 管理 endpoint" (DAU 监控 / 数据 audit / 紧急维护 op)。
+- **来源**：TELEPOT-20260520-063（dau-snapshot endpoint）
+
+### supabase-js-distinct-cross-table-via-set-union — supabase-js 不支持 SQL union；client-side Set union 替代
+- **detail**：场景：DAU = 跨 3 表 distinct user_id last 24h。错法：SQL `SELECT DISTINCT user_id FROM (a UNION b UNION c)` — supabase-js 不直接支持 union；得用 .rpc plpgsql function (Database 工)。**对法**：3 个独立 `.from(table).select('user_id').gte('created_at', ...)` → client 端 `Promise.all` + Set union：`const dauSet = new Set(); for (const s of sets) for (const u of s) dauSet.add(u);`
+- **复用场景**：任何"几个小表跨表 distinct" + 不想多走 RPC migration 的快交付场景。性能：β 流量 <10K rows/表 OK；超 100K 时改 RPC plpgsql function。
+- **来源**：TELEPOT-20260520-063
+
+### backend-cross-dept-migration-with-ceo-ack — Backend 越界写 supabase/migrations/ 必须 commit message + NOTES 显式标 CEO 授权
+- **detail**：CLAUDE_BACKEND.md 硬约束"不动 supabase/migrations/"（Database 部门）。但 CEO 在 Database 紧迫并行时明确授权 Backend 越界 (TICKET-064 §A 原文 "Backend 自决写在 supabase/migrations/ 也 OK，但记得 commit message 写明跨部门")。正确做法：(1) commit message 含 "(Backend 越界写 migration，跨部门补漏)"；(2) migration 文件头部 comment 说明跨部门原因 + ticket #；(3) response NOTES 重申 CEO 授权来源。
+- **复用场景**：任何"按规矩归 X 部门，但本轮 CEO 临时跨部门授权"的场景。
+- **来源**：TELEPOT-20260520-064（migration 049 data_health_history）
+
+### negative-test-when-positive-test-creds-unavailable — 本地缺 service-role key 时用 anon-key + no-auth 跑 negative-test 验证 endpoint live + auth gate
+- **detail**：场景：dau-snapshot endpoint service-role gating，本地无 SUPABASE_SERVICE_ROLE_KEY (服务端 secret 不入 .env)。无法跑 positive test。替代：(1) GET without Authorization → expect 401；(2) GET with anon-key Bearer → expect 401 (验证 service-role gate 工作)。两 test 通过 = endpoint live + auth gate 正确。positive test 留 CEO 跑同一 script（设计成"有 key 跑 positive，无 key skip"）。
+- **复用场景**：任何 service-role / admin-only endpoint 的部署 verify；secret 不入 .env 但需要"endpoint 可达"信号。
+- **来源**：TELEPOT-20260520-064（test-dau-snapshot.ts 设计）
+
+### parallel-promise-all-for-multi-check-endpoint — 多 check status endpoint 用 Promise.all 总耗时 = max(checks) 而非 sum
+- **detail**：beta-readiness-check 跑 7 个 check (3 SQL + 3 Stripe retrieves + 1 nested fetch)。串行 ~8-10s 易超 Supabase edge function 10s timeout。Promise.all 并行 ~5-6s。`const [c1, c2, c3, ...] = await Promise.all([check1(), check2(), ...]);` **约束**：每个 check 必须有自己 try/catch + return shape，避免 rejected promise 让 Promise.all 整体 fail。
+- **复用场景**：所有"多依赖一键体检"endpoint；CI/CD self-test endpoints；single-route 内调多个 service。
+- **来源**：TELEPOT-20260520-065（β-readiness check）
+
+### postgrest-information-schema-fallback-pattern — PostgREST 不暴露 information_schema；用 `.from(t).select('*', { head: true }).limit(0)` 探测表存在
+- **detail**：想知道表存在 → 自然写法 `.from('information_schema.tables').select('table_name')`，但 PostgREST 默认不暴露 information_schema (security best-practice)。**replacement**：`const { error } = await supabase.from(t).select('*', { count: 'exact', head: true }).limit(0); const exists = !error;`。每张表 1 query (head + limit 0 = 极廉价)。或让 Database 部门暴露 RPC function `public.list_tables()`。
+- **复用场景**：edge function 检查表存在 / cross-env schema validation；supabase-js 客户端代码做 schema introspection。
+- **来源**：TELEPOT-20260520-065
+
 ---
 
 ## Database
