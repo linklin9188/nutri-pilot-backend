@@ -1001,6 +1001,28 @@ function scoreForWeek({
     else if (hits >= 2) score += 0.15;
   }
 
+  // ── 31. §A (TICKET-064) fruit/veggie 应季强化 ───────────────────────────
+  // course_type === 'fruit' 或 'veggie_dish' 时, 比对当前节气
+  // INGREDIENT_SEASONALITY[name_zh] 应季食材清单:
+  //   - 命中 ≥ 1 → +0.40 (强应季 bonus, 把"立夏的西瓜 / 秋分的螃蟹"明显前推)
+  //   - 命中 0   → -0.20 (软扣, 非应季蔬果排序后移; 不硬过滤防止 slot 空)
+  // 其他 course_type / solarTerm 为 null → axis 31 = 0 (整轴跳过)
+  // 该轴对 axis 28 (单食材 +0.10 累计) 是上层"是否应季 fruit/veggie"的硬态
+  // 判断 — fruit/veggie 全菜单 ~ 15% 占比, 升降幅明显但不会压制其他轴.
+  const _courseType31 = (dish.course_type ?? '') as string;
+  if (solarTerm && (_courseType31 === 'fruit' || _courseType31 === 'veggie_dish')) {
+    const seasonalList31 = INGREDIENT_SEASONALITY[solarTerm.name_zh];
+    if (seasonalList31 && seasonalList31.length > 0) {
+      const dishIngs31 = dishIngredientNames(dish);
+      let hits31 = 0;
+      for (const ing of dishIngs31) {
+        if (seasonalList31.includes(ing)) hits31++;
+      }
+      if (hits31 >= 1) score += 0.40;
+      else             score -= 0.20;
+    }
+  }
+
   // ── 30. §A (TICKET-061) New-user cold-start diversity bonus ─────────────
   // SPEC_smell5_signals §2.2 candidate B：新用户学习信号稀疏 (learnedSignals
   // < 10) 时强制本周多样化 — 同一 origin_cuisine 已在本周出现 → -0.20/次；
