@@ -915,6 +915,10 @@ export default function Settings() {
             退出登录
           </button>
 
+          {/* TICKET-056 §C — 反馈记录（透明 + 撤销）— embedded as a collapsible
+              section, not a separate page, to stay surgical. */}
+          <FeedbackHistorySection />
+
           {/* ── Legal / contact — links to /privacy and /terms ─────────────
               Required by WeChat 小程序 提审 (审核员要在 app 内能找到这两
               页). Also surfaces them to the雇主, who otherwise only ever
@@ -939,6 +943,144 @@ export default function Settings() {
         </div>
       </div>
       <BottomTabBar />
+    </div>
+  );
+}
+
+// ── TICKET-056 §C — Feedback history (transparent + undo) ─────────────────
+interface FeedbackRow {
+  id:            string;
+  dish_id:       string | null;
+  dish_title:    string | null;  // joined from dishes if available
+  feedback_type: string;
+  locale:        string | null;
+  created_at:    string;         // ISO timestamp from PG
+}
+
+const FEEDBACK_LABEL: Record<string, string> = {
+  rating_good:         '😋 好吃',
+  rating_okay:         '😐 一般',
+  rating_bad:          '😞 不喜欢',
+  cant_understand:     '❓ 看不懂',
+  too_hard:            '🥵 太难了',
+  missing_ingredient:  '🛒 没材料',
+};
+
+function relativeTimeShort(iso: string): string {
+  const t = Date.parse(iso);
+  if (!isFinite(t)) return '';
+  const diff = Math.max(0, Date.now() - t);
+  const m = Math.floor(diff / 60000);
+  if (m < 1)  return '刚刚';
+  if (m < 60) return `${m} 分钟前`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} 小时前`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d} 天前`;
+  return iso.slice(0, 10);
+}
+
+function FeedbackHistorySection() {
+  const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState<FeedbackRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setLoading(true);
+    (async () => {
+      try {
+        const uid = getUserId();
+        if (!uid) return;
+        const { data } = await supabase
+          .from('user_feedback_helper')
+          .select('id, dish_id, feedback_type, locale, created_at')
+          .eq('user_id', uid)
+          .order('created_at', { ascending: false })
+          .limit(50);
+        const fbRows = (data ?? []) as Omit<FeedbackRow, 'dish_title'>[];
+        // Best-effort dish title join — schema-tolerant. Silent on error.
+        const dishIds = Array.from(new Set(fbRows.map(r => r.dish_id).filter(Boolean) as string[]));
+        const titleMap = new Map<string, string>();
+        if (dishIds.length > 0) {
+          try {
+            const { data: dishes } = await supabase
+              .from('dishes').select('id, title_zh').in('id', dishIds);
+            (dishes ?? []).forEach((d: any) => { if (d?.id) titleMap.set(d.id, d.title_zh ?? ''); });
+          } catch { /* silent — show '—' for title */ }
+        }
+        if (!cancelled) {
+          setRows(fbRows.map(r => ({ ...r, dish_title: r.dish_id ? (titleMap.get(r.dish_id) ?? '') : null })));
+        }
+      } catch { /* table missing → empty list */ }
+      finally { if (!cancelled) setLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [open]);
+
+  async function handleUndo(rowId: string) {
+    try {
+      await supabase.from('user_feedback_helper').delete().eq('id', rowId);
+      setRows(prev => prev.filter(r => r.id !== rowId));
+      setToast('已撤销');
+      setTimeout(() => setToast(null), 1800);
+    } catch {
+      setToast('撤销失败，请稍后再试');
+      setTimeout(() => setToast(null), 2500);
+    }
+  }
+
+  return (
+    <div className="bg-white border border-black/5 rounded-[22px] shadow-[0_4px_20px_rgba(0,0,0,0.04)] overflow-hidden">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-4 py-3.5 active:bg-black/[0.02]">
+        <div className="flex items-center gap-2.5">
+          <span className="material-symbols-outlined" style={{ fontSize: 20, color: '#FF5A1F' }}>history</span>
+          <span style={{ fontSize: 14, fontWeight: 700 }}>反馈记录</span>
+          <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.40)' }}>透明 · 可撤销</span>
+        </div>
+        <span className="material-symbols-outlined" style={{
+          fontSize: 18, color: 'rgba(0,0,0,0.40)',
+          transition: 'transform 0.2s',
+          transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
+        }}>expand_more</span>
+      </button>
+      {open && (
+        <div className="border-t border-black/[0.05] px-3 py-2 max-h-[360px] overflow-y-auto">
+          {loading && (
+            <p className="text-center py-4" style={{ fontSize: 11.5, color: 'rgba(0,0,0,0.40)' }}>加载中…</p>
+          )}
+          {!loading && rows.length === 0 && (
+            <p className="text-center py-4" style={{ fontSize: 11.5, color: 'rgba(0,0,0,0.40)' }}>暂无反馈记录</p>
+          )}
+          {rows.map(r => (
+            <div key={r.id} className="flex items-center gap-2 px-2 py-2 border-b border-black/[0.04] last:border-b-0">
+              <div className="flex-1 min-w-0">
+                <p className="truncate" style={{ fontSize: 12.5, fontWeight: 600, color: '#1a1a1a' }}>
+                  {r.dish_title || '(无菜名)'}
+                </p>
+                <p className="truncate" style={{ fontSize: 10.5, color: 'rgba(0,0,0,0.45)', marginTop: 1 }}>
+                  {FEEDBACK_LABEL[r.feedback_type] ?? r.feedback_type} · {relativeTimeShort(r.created_at)}
+                  {r.locale ? ` · ${r.locale}` : ''}
+                </p>
+              </div>
+              <button onClick={() => handleUndo(r.id)}
+                className="px-2.5 py-1 rounded-full font-bold active:scale-95"
+                style={{ background: 'rgba(220,38,38,0.08)', color: '#DC2626', fontSize: 11 }}>
+                撤销
+              </button>
+            </div>
+          ))}
+          {toast && (
+            <p className="text-center py-2" style={{ fontSize: 11, color: '#15803D', fontWeight: 600 }}>
+              ✓ {toast}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
