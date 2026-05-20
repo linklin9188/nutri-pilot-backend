@@ -38,8 +38,29 @@ export default function ChatAgent() {
   const { session, appendMessage, appendStreamToken, chooseProposal, notFound } = useChatSession(mode, sessionId);
   const { weeklyMenu } = useWeeklyMenu(0);
   const [streaming, setStreaming] = useState(false);
+  // §B (TICKET-030) Inflight adoption — disables MenuProposal CTA on all
+  // proposal cards so a second tap during the 3-second countdown is a no-op.
+  const [adopting, setAdopting] = useState(false);
+  // §B (TICKET-030) Toast — `kind` controls color. `null` hides the surface.
+  const [toast, setToast] = useState<{ kind: 'info' | 'error'; msg: string } | null>(null);
+
+  // §B (TICKET-030) Dedup helper — read the per-week "已采用 X" sentinel so
+  // a returning user (different chat session, same week) sees the proposal
+  // card pre-marked as adopted instead of being able to re-tap and overwrite.
+  function readWeekAdopted(weekStart: string | undefined): ProposalChoice | null {
+    if (!weekStart) return null;
+    try {
+      const raw = localStorage.getItem(`chat_adopted_week_${weekStart}`);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      const c = parsed?.choice;
+      return c === 'A' || c === 'B' || c === 'C' ? c : null;
+    } catch { return null; }
+  }
 
   async function handleAdopt(messageId: string, choice: ProposalChoice) {
+    // §B Debounce: in-flight adoption blocks subsequent taps.
+    if (adopting) return;
     // Resolve the chosen proposal off the message's meta.
     const msg = session.messages.find(m => m.id === messageId);
     const proposals = msg?.meta?.proposals;
@@ -47,6 +68,8 @@ export default function ChatAgent() {
     const idx = (['A','B','C'] as const).indexOf(choice);
     const chosenPlan = proposals[Math.min(idx, proposals.length - 1)] as WeeklyMenu | undefined;
     if (!chosenPlan) return;
+
+    setAdopting(true);
 
     // 1) Mark chosen on the ChatSession (also bumps chat_sessions key-node upsert).
     chooseProposal(messageId, choice);
@@ -57,8 +80,7 @@ export default function ChatAgent() {
     const lsKey  = getCacheKey(chosenPlan.weekStart);
 
     // 3) Mirror saveToDB's row shape — dinner / lunch / breakfast / fruit
-    //    per day, with algo_version + cache_key columns. Wrapped in try/catch
-    //    so a single-row failure doesn't strand the user mid-adoption.
+    //    per day, with algo_version + cache_key columns.
     const rows = chosenPlan.days.flatMap(day => [
       {
         user_id:      userId,
@@ -97,21 +119,33 @@ export default function ChatAgent() {
         cache_key:    lsKey,
       }] : []),
     ]);
+
+    // §B Capture BOTH the supabase REST error AND any thrown network error.
+    // supabase-js doesn't throw on REST 4xx/5xx — it returns { error } — so
+    // we must read the response shape AND wrap in try/catch for network drop.
+    let upsertFailed = false;
     try {
-      await supabase
+      const { error } = await supabase
         .from('user_weekly_menus')
         .upsert(rows, { onConflict: 'user_id,week_start,day_index,meal_type' });
-    } catch { /* network — localStorage below still wins on the next /weekly mount */ }
+      if (error) upsertFailed = true;
+    } catch { upsertFailed = true; }
+
+    if (upsertFailed) {
+      // §B Retry path — toast + re-enable so the user can tap again.
+      setToast({ kind: 'error', msg: '采纳失败，可重试' });
+      setAdopting(false);
+      setTimeout(() => setToast(null), 4000);
+      return;
+    }
 
     // 4) Mirror the adopted menu into localStorage so useWeeklyMenu's
-    //    Step-2 localStorage cache hit also serves the chat-adopted plan
-    //    even before the DB upsert has propagated.
+    //    Step-2 cache hit also serves the chat-adopted plan even before
+    //    the DB upsert has propagated to subsequent reads.
     try { localStorage.setItem(lsKey, JSON.stringify(chosenPlan)); }
     catch { /* quota — DB still wins on next mount */ }
 
-    // 5) Sentinel so Home / WeeklyMenu can recognize "this week was adopted
-    //    via chat" if we ever want a banner. Keyed by week so a new week
-    //    starts fresh.
+    // 5) Per-week sentinel for the dedup readback below.
     try {
       localStorage.setItem(
         `chat_adopted_week_${chosenPlan.weekStart}`,
@@ -119,8 +153,10 @@ export default function ChatAgent() {
       );
     } catch { /* quota */ }
 
-    // 6) Bounce to /weekly so the user sees the menu they just adopted.
-    navigate('/weekly');
+    // §B Success toast + 3-second delayed navigation so the user actually
+    // reads the confirmation instead of being yanked instantly.
+    setToast({ kind: 'info', msg: `✓ 已采用方案 ${choice} → 跳转菜单页 (3 秒)` });
+    setTimeout(() => navigate('/weekly'), 3000);
   }
   const [draft, setDraft] = useState('');
   const scrollAnchorRef = useRef<HTMLDivElement>(null);
@@ -188,6 +224,42 @@ export default function ChatAgent() {
         </div>
       </header>
 
+      {/* §B (TICKET-030) Adopt toast — info on success (3-sec countdown
+          before navigate), error on upsert failure (4-sec auto-dismiss). */}
+      {toast && (
+        <div
+          className="mx-4 mt-3 rounded-2xl px-3 py-2 flex items-start gap-2"
+          style={{
+            background: toast.kind === 'error'
+              ? 'rgba(220,38,38,0.12)'
+              : 'rgba(37,211,102,0.12)',
+            border: toast.kind === 'error'
+              ? '1px solid rgba(220,38,38,0.30)'
+              : '1px solid rgba(37,211,102,0.30)',
+          }}
+        >
+          <span
+            className="material-symbols-outlined shrink-0"
+            style={{
+              fontSize: 18,
+              color: toast.kind === 'error' ? '#B91C1C' : '#15803D',
+              marginTop: 1,
+              fontVariationSettings: "'FILL' 1",
+            }}
+          >
+            {toast.kind === 'error' ? 'error' : 'check_circle'}
+          </span>
+          <p style={{
+            fontSize: 12,
+            color: toast.kind === 'error' ? '#7F1D1D' : '#14532D',
+            lineHeight: 1.5,
+            fontWeight: 600,
+          }}>
+            {toast.msg}
+          </p>
+        </div>
+      )}
+
       {/* §C (TICKET-027) Resume-not-found notice — shows when the URL had
           ?session=<uuid> but neither localStorage nor chat_sessions had a
           row for it. The user falls into a fresh session under the same id;
@@ -220,7 +292,12 @@ export default function ChatAgent() {
               {msg.role === 'ai' && msg.meta?.proposals && msg.meta.proposals.length > 0 && (
                 <MenuProposal
                   proposals={msg.meta.proposals}
-                  chosen={msg.meta.chosen}
+                  // §B (TICKET-030) Dedup pre-fill: if THIS chat session
+                  // already marked a choice → use it; otherwise read the
+                  // per-week sentinel so a different chat session for the
+                  // same week reflects the adoption too.
+                  chosen={msg.meta.chosen ?? readWeekAdopted(msg.meta.proposals[0]?.weekStart) ?? undefined}
+                  disabled={adopting}
                   onAdopt={choice => handleAdopt(msg.id, choice)}
                 />
               )}

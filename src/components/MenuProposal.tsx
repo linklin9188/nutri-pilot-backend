@@ -18,6 +18,9 @@ interface Props {
   proposals: WeekPlan[];
   chosen?:   ProposalChoice;
   onAdopt:   (choice: ProposalChoice) => void;
+  /** Parent-controlled disable (e.g. while another adopt is in flight).
+   *  ORs with the internal isAdopted-derived disable; default false. */
+  disabled?: boolean;
 }
 
 const TABS: ProposalChoice[] = ['A', 'B', 'C'];
@@ -32,7 +35,7 @@ function summarizeProposal(plan: WeekPlan): string {
   return titles.join(' · ');
 }
 
-export default function MenuProposal({ proposals, chosen, onAdopt }: Props) {
+export default function MenuProposal({ proposals, chosen, onAdopt, disabled = false }: Props) {
   const [activeIdx, setActiveIdx] = useState<number>(
     chosen ? TABS.indexOf(chosen) : 0
   );
@@ -81,8 +84,10 @@ export default function MenuProposal({ proposals, chosen, onAdopt }: Props) {
         </p>
       </div>
 
-      {/* Adopt CTA */}
-      <button onClick={() => onAdopt(activeChoice)} disabled={isAdopted}
+      {/* Adopt CTA. `disabled` ORs the parent-controlled inflight flag with
+          the internal isAdopted state so a second tap during a 3-second
+          countdown is a no-op (anti double-click). */}
+      <button onClick={() => onAdopt(activeChoice)} disabled={isAdopted || disabled}
         className="w-full py-3 font-bold text-white transition-all active:scale-[0.99] disabled:opacity-60 flex items-center justify-center gap-1.5"
         style={{
           background: isAdopted ? '#25D366' : '#FF5A1F',
@@ -90,7 +95,9 @@ export default function MenuProposal({ proposals, chosen, onAdopt }: Props) {
         }}>
         {isAdopted
           ? `✓ 已采用方案 ${activeChoice}，跳转中…`
-          : <>采用方案 {activeChoice} → 存到这周菜单</>}
+          : disabled
+            ? '处理中…'
+            : <>采用方案 {activeChoice} → 存到这周菜单</>}
       </button>
     </div>
   );
