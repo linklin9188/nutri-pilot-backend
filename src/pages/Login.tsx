@@ -90,7 +90,10 @@ export default function Login() {
   // sent to 阿姨). Otherwise default to employer — most landings are the
   // 家庭 owner. Persisted to localStorage immediately on pick so OAuth
   // redirect chains see the right role even after window.location.href.
-  const urlRole: Role = searchParams.get("role") === "helper" ? "helper" : "employer";
+  // TICKET-068 §B+ — ?invite=ABC123 链接也自动切 helper tab + 预填邀请码
+  // (一键 WhatsApp 闭环：雇主分享 → 菲佣点 link → 不用手输直接进 InviteCodeBox)
+  const urlRole: Role = (searchParams.get("role") === "helper" || searchParams.get("invite"))
+    ? "helper" : "employer";
   const [role, setRole] = useState<Role>(() => {
     const saved = localStorage.getItem("nutri_role");
     if (saved === "employer" || saved === "helper") return saved;
@@ -103,7 +106,10 @@ export default function Login() {
   const [error, setError] = useState("");
 
   // TICKET-068 §B — 菲佣邀请码登录 state
-  const [inviteCode, setInviteCode] = useState("");
+  // §B+ URL ?invite=ABC 自动预填（一键 WhatsApp 闭环菲佣点 link 不用手输）
+  const [inviteCode, setInviteCode] = useState(() =>
+    (searchParams.get("invite") ?? "").toUpperCase()
+  );
   const [inviteNick, setInviteNick] = useState("");
   const [inviteErr, setInviteErr] = useState("");
   const [inviteBusy, setInviteBusy] = useState(false);
