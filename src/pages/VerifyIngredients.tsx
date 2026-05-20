@@ -419,14 +419,10 @@ export default function VerifyIngredients() {
   const navigate = useNavigate();
   const { t } = useLanguage();
 
-  // One-step shopping is member-only (spec 2026-05-17). Bounce non-members
-  // to /pricing on mount so they hit the paywall instead of an empty
-  // shopping list. We check after the initial render so the redirect
-  // doesn't fight RequireAuth's location-state handoff.
-  const { isPro, loading: subLoading } = useSubscription();
-  useEffect(() => {
-    if (!subLoading && !isPro) navigate('/pricing', { replace: true });
-  }, [subLoading, isPro, navigate]);
+  // TICKET-074 §C — 删除强制跳转。非 Pro 用户能进页面看清单，
+  // 但「导出 Excel」等一键动作改用按钮级 paywall（onClick 触发 ProGate modal）。
+  const { isPro } = useSubscription();
+  const [proGateOpen, setProGateOpen] = useState(false);
 
   // If the user just arrived from /banquet, default to that view.
   const arrivedFromBanquet = typeof window !== 'undefined'
@@ -973,12 +969,27 @@ export default function VerifyIngredients() {
                 </button>
               )}
               <button
-                onClick={handleExportExcel}
-                className="flex items-center gap-1.5 px-4 py-2.5 rounded-full text-[13px] font-bold text-white transition-all active:scale-95"
+                onClick={() => {
+                  if (!isPro) { setProGateOpen(true); return; }
+                  handleExportExcel();
+                }}
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-full text-[13px] font-bold text-white transition-all active:scale-95 relative"
                 style={{ background: 'linear-gradient(135deg, #16a34a, #22c55e)' }}
               >
                 <span className="material-symbols-outlined text-[16px]">download</span>
                 导出 Excel
+                {!isPro && (
+                  <span
+                    className="absolute -top-1.5 -right-1.5 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-black"
+                    style={{
+                      background: 'linear-gradient(135deg, #FF5A1F, #FF8C54)',
+                      color: 'white',
+                      boxShadow: '0 2px 6px rgba(255,90,31,0.35)',
+                    }}
+                  >
+                    🌟 Pro
+                  </span>
+                )}
               </button>
             </div>
           </div>
@@ -1001,6 +1012,51 @@ export default function VerifyIngredients() {
       )}
 
       <BottomTabBar />
+
+      {/* TICKET-074 §C — ProGate modal（复用 ProGate.tsx 设计语言：
+          橙色渐变 emoji + 标题 + 副标题 + 升级 CTA）。点遮罩或「稍后再说」关闭。 */}
+      {proGateOpen && (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center px-6"
+          style={{ background: 'rgba(0,0,0,0.55)' }}
+          onClick={() => setProGateOpen(false)}
+        >
+          <div
+            className="rounded-3xl p-6 max-w-sm w-full text-center"
+            style={{
+              background: 'linear-gradient(135deg, #fff 0%, #fff5ef 100%)',
+              border: '1px solid rgba(255,90,31,0.18)',
+              boxShadow: '0 24px 64px rgba(0,0,0,0.30)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-[40px] mb-2">🛒</div>
+            <h3 className="font-serif font-black text-[20px] mb-1" style={{ color: '#1a1a1a' }}>
+              一键导出采购清单
+            </h3>
+            <p className="text-[13px] text-gray-500 mb-5">
+              升级 Pro 解锁 Excel 导出 · 高端食材采购源 · 一键直送供应商
+            </p>
+            <button
+              onClick={() => { setProGateOpen(false); navigate('/pricing'); }}
+              className="w-full px-6 py-3 rounded-full font-bold text-white text-[14px] transition-all active:scale-95 mb-2"
+              style={{
+                background: 'linear-gradient(135deg, #FF5A1F, #FF8C54)',
+                boxShadow: '0 8px 24px rgba(255,90,31,0.30)',
+              }}
+            >
+              升级解锁 →
+            </button>
+            <button
+              onClick={() => setProGateOpen(false)}
+              className="w-full py-2 rounded-full text-[12px] font-bold"
+              style={{ color: 'rgba(0,0,0,0.45)' }}
+            >
+              稍后再说
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
