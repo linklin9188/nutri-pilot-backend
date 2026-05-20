@@ -417,7 +417,10 @@ async function handleTranslateEndpoint(body: Partial<TranslateRequestBody>): Pro
     return json({ error: "target_lang must be one of: en, tl, id" }, 400);
   }
 
-  // Quota check (read before incr so 429 doesn't consume a slot)
+  // Quota check (read-only here; incr is deferred to after a successful 2xx
+  // response so transient Gemini 5xx + client-side retries don't burn the
+  // daily slot. Race condition risk is bounded for batch scripts which run
+  // sequentially; live UI is rate-limited upstream anyway.
   const todayCount = await getDailyCount(user_id, "translate");
   if (todayCount >= TRANSLATE_DAILY_LIMIT) {
     return json(
@@ -425,7 +428,6 @@ async function handleTranslateEndpoint(body: Partial<TranslateRequestBody>): Pro
       429,
     );
   }
-  await incrCounter(user_id, "translate");
 
   const apiKey = Deno.env.get("GEMINI_API_KEY") ?? "";
   if (!apiKey) return json({ error: "Gemini not configured" }, 500);
@@ -448,7 +450,14 @@ async function handleTranslateEndpoint(body: Partial<TranslateRequestBody>): Pro
   if (!gemRes.ok) {
     const errText = await gemRes.text().catch(() => "");
     console.error("Gemini translate upstream error:", gemRes.status, errText.slice(0, 200));
-    return json({ error: "translate upstream error" }, 502);
+    // Surface upstream status + first 500 chars of upstream body so the caller
+    // (e.g. batch translate scripts) can diagnose without CLI/dashboard access.
+    // Gemini error bodies are JSON-ish and don't carry secrets — safe to relay.
+    return json({
+      error:           "translate upstream error",
+      upstream_status: gemRes.status,
+      upstream_detail: errText.slice(0, 500),
+    }, 502);
   }
 
   const gemJson = await gemRes.json();
@@ -459,6 +468,9 @@ async function handleTranslateEndpoint(body: Partial<TranslateRequestBody>): Pro
     .trim()
     .replace(/^["「『'`](.*)["」』'`]$/s, "$1")
     .trim();
+
+  // Post-success incr (see note above the quota check).
+  await incrCounter(user_id, "translate");
 
   return json({
     translation,
