@@ -1006,6 +1006,21 @@ function scoreForWeek({
 // ═══════════════════════════════════════════════════════════════════════════
 // §A (TICKET-055) explainScore — 为 UI "为什么推这道菜" 抽屉返回中文 breakdown。
 //
+// §B (TICKET-058) Perf 路径分工 — 显式标注 hot path vs slow path:
+//
+//   ┌─────────────────────────────────────────────────────────────────────┐
+//   │ HOT PATH (高频)                                                      │
+//   │   scoreForWeek(): 仅返 number，不构造对象、不 push breakdown 数组。   │
+//   │   每次 generateWeekPlan 抽样调用 ~100 次（dinner 主循环 25 candidates │
+//   │   × 5-7 days + lunch + kid + 微调）。函数纯算 → JIT 优化、无 GC 抖动。│
+//   ├─────────────────────────────────────────────────────────────────────┤
+//   │ SLOW PATH (低频)                                                     │
+//   │   explainScore(): 构造 AxisHit[] + push 12 主轴 + 中文 reason 拼接。  │
+//   │   每次 generateWeekPlan 仅对**选中**的菜跑 1 次（21 道菜/周 = breakfast │
+//   │   3 + lunch 3 + dinner 5 + fruit 1 ≈ 12 道/天 × 5 天 ≈ 60 次/全周）。 │
+//   │   单道菜慢 ~30% 也只是 60 次而非 100×N=2000 次 → 总 overhead 可忽略。│
+//   └─────────────────────────────────────────────────────────────────────┘
+//
 // 设计原则:
 //   - 与 scoreForWeek 解耦 — 不动 scoreForWeek 签名（向后兼容）；本函数自
 //     己重跑主轴判断 + 中文化 reason，主轴累加分与 scoreForWeek 同量级
@@ -1015,6 +1030,9 @@ function scoreForWeek({
 //     weekday speed 等) 算入主路径但不进 breakdown — 用户不需要看
 //   - 总分 ≠ scoreForWeek 总分（无所谓 — 这是给用户看的 user-facing 解释，
 //     不是审计；UI 用 breakdown 而非 .score 数字）
+//   - 调用时机：generateWeekPlan 末尾 days.push 之前对每道选中菜跑一次
+//     （§B TICKET-055 commit 343a376 已实现）；不要在 candidate filter /
+//     抽样循环里调（会破坏 perf 边界）
 // ═══════════════════════════════════════════════════════════════════════════
 
 const ORIGIN_ZH: Record<string, string> = {
