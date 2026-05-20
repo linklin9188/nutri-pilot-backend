@@ -137,6 +137,16 @@ _（首次填充等 TICKET-010 完工后由 Cowork 汇总；目前已知一条�
 - **复用场景**：所有需要 updated_at 自动维护的表（chat_sessions / user_profiles / household_members 等）。
 - **来源**：TELEPOT-20260520-020（chat_sessions 028 表）
 
+### hardcoded-map-to-db-inverse-direction-choice — 硬编码 {K: V[]} map 迁 DB 按"UNIQUE 主键 + 查询模式"选行向
+- **detail**：场景：`useWeeklyMenu.ts` `INGREDIENT_SEASONALITY = {节气: [食材...]}` 24 行 map 迁 DB 表有两种 shape：(A) 一行一节气，ingredients text[] (24 行宽 array)；(B) 一行一食材，solar_terms text[] (63 行窄 array)。最终选 B 依据：(1) UNIQUE 主键自然落在"食材名"（每食材唯一 category / peak_solar_term 元数据）；(2) Algorithm 查询模式是"今天节气 X，哪些食材应季？" → `SELECT WHERE 'X' = ANY(solar_terms)`，对 array 用 GIN index 比 24 行展开 array 取 ANY 更顺；(3) 未来扩展（peak / notes）按食材附挂更自然。复用：硬编码 `{K: V[]}` 迁 DB 时先问"主键应该是 K 还是 V？" 答错就要重做表。
+- **复用场景**：所有"map 类静态数据迁 DB"的方向决策。
+- **来源**：TELEPOT-20260520-065（047 ingredient_seasonality 表）
+
+### migration-include-all-when-out-of-order-numbering — 本地 migration 编号小于远端最新时用 --include-all 补齐
+- **detail**：场景：本地写 047/048，但远端已 push 049（另一部门越界写的）。`supabase db push --linked` 直接拒绝："Found local migration files to be inserted before the last migration on remote"。根因：supabase CLI 默认按时序推，发现"过去"未推的 migration 时拒绝（防覆盖远端）。解法：加 `--include-all` 显式确认"我知道有过去 migration 要补，按字典序补齐"。副作用预判：047/048 是纯 CREATE TABLE + INSERT，对 049 已建的表零依赖、零冲突。若 047/048 触及 049 已有的对象（如 ALTER 049 表）就要警惕。
+- **复用场景**：多部门并行写 migration 必看 `ls migrations/` 头尾，编号撞了用 `--include-all` 修。
+- **来源**：TELEPOT-20260520-065
+
 ---
 
 ## Algorithm

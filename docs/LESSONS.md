@@ -121,6 +121,13 @@
   3. 用 EXCEPT / NOT EXISTS 子查询识别冲突集合，避免漏
 - **来源**：TELEPOT-20260520-033 §B
 
+### ceo-ticket-numeric-claim-verify-before-execute — CEO 工单引用"X 道/Y 行"数字时先 1 SQL 实测
+- **场景**：TICKET-062 §A 工单写"028 + 045 + 048 = 28 道节庆菜 backfill xiaomei_compatible"，实测 `SELECT COUNT(*) FROM dishes WHERE festival_tags <> '{}' AND xiaomei_compatible IS NULL` → 0 行（91 道节庆菜早已对齐）。
+- **踩坑**：CEO 引用 ticket 编号时易口误（028 是 user_feedback；045 是 avatar；都不是节庆菜）。若按 28 盲跑 backfill 会差/多操作几十道。
+- **代价**：TICKET-062 §A 实际无需运行 backfill-xiaomei-compat.ts，但若不实测就盲跑会污染数据 + 浪费 1 棒。
+- **教训**：所有 backfill / batch / migration 任务执行前**强制 1 SQL 实测目标行数**，如与工单数字不符 → response NOTES 透明汇报差异 + 按实测值执行（或转 CEO 确认）。
+- **来源**：TELEPOT-20260520-062 §A no-op
+
 ---
 
 ## Backend
