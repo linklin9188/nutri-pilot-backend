@@ -601,15 +601,28 @@ function weightedRandom<T extends { score: number }>(
   return result;
 }
 
+// hardFilter 用 dish.main_ingredient (英文 token, 30 distinct in DB) 做 equality
+// 匹配 (`ingSet.has(ing)`). 关键词覆盖 DB 现有 token; gluten / tree_nuts 在
+// 当前 schema 内无对应 main_ingredient 枚举 — 占位等 Database 070 补 schema 后
+// 真生效 (e.g. 加 'wheat'/'noodle'/'flour' 或 'almond'/'walnut' token).
 const ALLERGEN_TO_INGREDIENTS: Record<string, Set<string>> = {
   seafood: new Set([
     'seafood','fish','shrimp','crab','shellfish','squid','scallop',
     'clam','lobster','salmon','tuna','cod','hairtail','seabass','oyster',
   ]),
-  dairy:   new Set(['milk','cheese','butter','cream','yogurt']),
+  // 鱼类细分 (避免 'seafood' 把所有海鲜一锅端时 fish-only 用户找不到出口)
+  fish:    new Set(['fish','salmon','tuna','cod','hairtail','seabass']),
+  dairy:   new Set(['dairy','milk','cheese','butter','cream','yogurt']),
+  // 新 UI 006 用复数 'eggs'; 旧 'egg' key 保留向后兼容
+  eggs:    new Set(['egg','duck_egg']),
+  egg:     new Set(['egg','duck_egg']),
+  // 占位 — DB 无对应 main_ingredient token, 待 Database 070 补 schema
+  gluten:  new Set(['wheat','flour','noodle','bread','dumpling','bun']),
+  soy:     new Set(['tofu','soy','soybean','soy_milk','tofu_skin']),
+  // 占位 — DB 无对应 main_ingredient token, 待 Database 070 补 schema
+  tree_nuts: new Set(['almond','walnut','cashew','hazelnut','pistachio','pine_nut','pecan','macadamia']),
   peanut:  new Set(['peanut']),
   beef:    new Set(['beef']),
-  egg:     new Set(['egg']),
 };
 
 function hardFilter(
@@ -629,6 +642,8 @@ function hardFilter(
       // 蜂蜜照烧三文鱼 etc. that aren't tagged 'seafood' explicitly.
       const ing = (dish.main_ingredient ?? '').toLowerCase();
       for (const allergen of avoidTags) {
+        // UI 006 Q10 "其他自填" 写成 'other:芒果' — 留 v1.5 解析, hardFilter 跳过
+        if (allergen.startsWith('other:')) continue;
         const ingSet = ALLERGEN_TO_INGREDIENTS[allergen];
         if (ingSet && ingSet.has(ing)) return false;
       }
