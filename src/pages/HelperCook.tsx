@@ -97,19 +97,34 @@ function DishListScreen({ dishes, loading, onSelect }: {
           <div className="flex items-center justify-center py-24">
             <div className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin" />
           </div>
-        ) : dishes.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-24 gap-3">
-            <span className="text-5xl">🍽</span>
-            <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14, textAlign: 'center' }}>
-              {t4(
-                "No menu yet. Ask the employer to generate today's menu first.",
-                "还没有菜单，请等雇主生成今日菜单。",
-                "Wala pang menu. Hintayin ang employer na gumawa ng menu.",
-                "Belum ada menu. Minta majikan membuat menu hari ini dulu."
+        ) : dishes.length === 0 ? (() => {
+          // TICKET-010 §J — role-aware empty state (parity with HelperPrep)
+          const role = localStorage.getItem('nutri_role');
+          const isEmployer = role !== 'helper';
+          return (
+            <div className="flex flex-col items-center justify-center py-24 gap-3 px-8 text-center">
+              <span className="text-5xl">🍽</span>
+              <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: 14, fontWeight: 600 }}>
+                {isEmployer
+                  ? t4("No menu for today yet",
+                       "今日还没有菜单",
+                       "Wala pang menu para ngayon",
+                       "Belum ada menu hari ini")
+                  : t4("No menu yet. Ask the employer to generate today's menu first.",
+                       "还没有菜单，请等雇主生成今日菜单。",
+                       "Wala pang menu. Hintayin ang employer na gumawa ng menu.",
+                       "Belum ada menu. Minta majikan membuat menu hari ini dulu.")}
+              </p>
+              {isEmployer && (
+                <button onClick={() => navigate('/weekly')}
+                  className="mt-3 px-6 py-2.5 rounded-full font-bold text-white active:scale-95"
+                  style={{ fontSize: 13, background: '#FF5A1F', boxShadow: '0 6px 18px rgba(255,90,31,0.30)' }}>
+                  {t4("Generate this week's menu", "生成本周菜单", "Gumawa ng menu sa linggo", "Buat menu minggu ini")}
+                </button>
               )}
-            </p>
-          </div>
-        ) : (
+            </div>
+          );
+        })() : (
           dishes.map((dish, i) => {
             const steps = dish.cook_steps_json ?? [];
             const mins = Math.round(totalCookMin(steps));

@@ -196,14 +196,39 @@ export default function HelperPrep() {
           </div>
         )}
 
-        {!loading && dishes.length === 0 && (
-          <div className="text-center py-20 text-gray-400 text-[14px]">
-            {t4("No menu yet. Ask the employer to generate today's menu first.",
-                "还没有菜单，请等雇主生成今日菜单。",
-                "Wala pang menu. Hintayin ang employer na gumawa ng menu ngayon.",
-                "Belum ada menu. Minta majikan membuat menu hari ini dulu.")}
-          </div>
-        )}
+        {!loading && dishes.length === 0 && (() => {
+          // TICKET-010 §J — role-aware empty state. 雇主点 Home "烹饪" 按钮
+          // 时如 displayMenu 为空 (算法 fail / β 用户首次未生成) → generatedMenu
+          // 写 '[]' → 这里 ids=[] → 原文案 "请等雇主生成" 对雇主自己错位 +
+          // 一行灰字看着像空白页。分流：
+          //   employer (or anonymous) → "今日菜单为空" + 跳 /weekly 生成
+          //   helper → 原文案 (等雇主)
+          const role = localStorage.getItem('nutri_role');
+          const isEmployer = role !== 'helper';
+          return (
+            <div className="flex flex-col items-center gap-4 py-16 px-6 text-center">
+              <span style={{ fontSize: 48 }}>🍽️</span>
+              <p className="text-gray-500 font-semibold" style={{ fontSize: 15 }}>
+                {isEmployer
+                  ? t4("No menu for today yet",
+                       "今日还没有菜单",
+                       "Wala pang menu para ngayon",
+                       "Belum ada menu hari ini")
+                  : t4("No menu yet. Ask the employer to generate today's menu first.",
+                       "还没有菜单，请等雇主生成今日菜单。",
+                       "Wala pang menu. Hintayin ang employer na gumawa ng menu ngayon.",
+                       "Belum ada menu. Minta majikan membuat menu hari ini dulu.")}
+              </p>
+              {isEmployer && (
+                <button onClick={() => navigate('/weekly')}
+                  className="mt-2 px-6 py-2.5 rounded-full font-bold text-white active:scale-95"
+                  style={{ fontSize: 13, background: "#FF5A1F", boxShadow: "0 6px 18px rgba(255,90,31,0.30)" }}>
+                  {t4("Generate this week's menu", "生成本周菜单", "Gumawa ng menu sa linggo", "Buat menu minggu ini")}
+                </button>
+              )}
+            </div>
+          );
+        })()}
 
         {dishes.map((dish, dishIndex) => {
           const steps = dish.prep_steps_json ?? [];
