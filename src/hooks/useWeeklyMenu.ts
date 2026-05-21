@@ -722,7 +722,16 @@ export function getCacheKey(weekStart: string): string {
       if (parts.length > 0) byDayKey = `_d${parts.join('|')}`;
     }
   } catch {}
-  return `weekly_menu_${ALGO_VERSION}_${weekStart}_p${dishesPerDay}_c${cuisineKey}_e${eatingKey}_i${intentKey}${byDayKey}`;
+  // TICKET-008 — cooking complexity hash. passesCookingComplexity drops dishes
+  // based on cook_complexity (quick/normal/unlimited) + cook_role (helper 难菜
+  // filter); when either flips, the cached menu may contain now-filtered dishes
+  // and must regenerate. First char ('q' / 'n' / 'u' / '-' for null) keeps the
+  // key compact.
+  const cc = localStorage.getItem('cook_complexity');
+  const cr = localStorage.getItem('cook_role');
+  const ccKey = cc ? cc.charAt(0) : '-';
+  const crKey = cr ? cr.charAt(0) : '-';
+  return `weekly_menu_${ALGO_VERSION}_${weekStart}_p${dishesPerDay}_c${cuisineKey}_e${eatingKey}_i${intentKey}_x${ccKey}${crKey}${byDayKey}`;
 }
 
 // Always use the local-time date to avoid UTC offset shifting the value to the
