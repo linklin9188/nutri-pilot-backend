@@ -128,6 +128,187 @@ const DAY_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', 
 // 让"鸡腿/排骨"这种高频词每周最多出现 ⌈5/3⌉ = 2 次（周一 + 周四 / 周五）。
 const DEDUP_WINDOW_DAYS = 3;
 
+// ═══════════════════════════════════════════════════════════════════════════
+// §A/B/C (TICKET-20260521-005) v3 image-onboarding-driven scoring — 9 new axes
+// 核心洞察：人的本质区别不是来自哪里，而是喜欢吃什么。hometown 仅 5% 兜底。
+//   axis 32 protein_main_class  15% — 主蛋白大类 (red/white/seafood/veg)
+//   axis 33 staple_pref          8% — 米/杂粮/面/粥/饼/馒头
+//   axis 34 protein_pref        12% — 具体主蛋白 (牛/猪/鸡/鸭/鱼/虾/蛋/豆/...)
+//   axis 35 beef_style           7% (仅 beef dish) — 小炒/牛排/卤/红烧/炖
+//   axis 36 chicken_style        7% (仅 chicken)   — 白切/三杯/黄焖/红烧/炖煮
+//   axis 37 seafood_style        6% (仅 seafood)   — 清蒸/红烧/凉拌/炒/烤
+//   axis 38 veggie_method        8% — 清炒/凉拌/煲汤/干煸/蒸
+//   axis 39 oil_level            7% — light/normal/heavy
+//   axis 40 breakfast_cuisine    5% (mealType='早餐' 时段) — 中式/西式/港式
+// 合计 75%。hometown 5% + goal 15% + prefScores 5% = 100%.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface ImagePrefs {
+  protein_main_class?: string[];   // axis 32: ['red','white','seafood','veg']
+  staple_pref?: string[];          // axis 33: ['rice','grain','noodle','congee','bread','bun']
+  protein_pref?: string[];         // axis 34: ['beef','pork','chicken','duck','fish','shrimp','egg','tofu',...]
+  beef_style?: string[];           // axis 35: ['stirfry','steak','braise','redbraise','stew']
+  chicken_style?: string[];        // axis 36: ['poached','sanbei','braise','redbraise','stew']
+  seafood_style?: string[];        // axis 37: ['steam','redbraise','cold','stirfry','grill']
+  veggie_method?: string[];        // axis 38: ['stirfry','cold','soup','drystir','steam']
+  oil_level?: string | null;       // axis 39: 'light' | 'normal' | 'heavy'
+  breakfast_cuisine?: string | null; // axis 40: 'chinese' | 'western' | 'hk'
+}
+
+// 安全 load — 任一字段缺失即跳过 (axis 内部 if blocks 自然不命中 → 0 加分).
+export function loadImagePrefs(): ImagePrefs {
+  if (typeof localStorage === 'undefined') return {};
+  const out: ImagePrefs = {};
+  const arrKeys = ['protein_main_class','staple_pref','protein_pref',
+                   'beef_style','chicken_style','seafood_style','veggie_method'] as const;
+  for (const k of arrKeys) {
+    try {
+      const raw = localStorage.getItem(k);
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr) && arr.length > 0) (out as any)[k] = arr;
+      }
+    } catch {}
+  }
+  const oil = localStorage.getItem('oil_level');
+  if (oil) out.oil_level = oil;
+  const bc = localStorage.getItem('breakfast_cuisine');
+  if (bc) out.breakfast_cuisine = bc;
+  return out;
+}
+
+// 把 dish.main_ingredient 映射到 protein_main_class 大类.
+function _proteinClassOf(mi: string): string {
+  if (['beef','pork','lamb'].includes(mi)) return 'red';
+  if (['chicken','duck','turkey'].includes(mi)) return 'white';
+  if (['fish','shrimp','crab','squid','scallop','clam','oyster','salmon','tuna','cod','seabass','hairtail'].includes(mi)) return 'seafood';
+  if (['tofu','egg','soy','mushroom','veggie','vegetable','bean'].includes(mi)) return 'veg';
+  return '';
+}
+
+// 把 dish title + course_type 映射到 staple 子类.
+function _stapleClassOf(title: string, ct: string): string {
+  if (ct !== 'staple') return '';
+  if (/(粥|稀饭)/.test(title)) return 'congee';
+  if (/(馒头|包)/.test(title)) return 'bun';
+  if (/(饼)/.test(title)) return 'bread';
+  if (/(面|粉)/.test(title)) return 'noodle';
+  if (/(燕麦|杂粮|糙米)/.test(title)) return 'grain';
+  if (/(米|饭)/.test(title)) return 'rice';
+  return '';
+}
+
+// 推断牛肉烹饪风格 (axis 35)
+function _beefStyleOf(title: string, cook: string): string {
+  if (/(小炒|爆炒)/.test(title)) return 'stirfry';
+  if (/牛排/.test(title)) return 'steak';
+  if (/卤/.test(title)) return 'braise';
+  if (/(红烧)/.test(title) || cook === 'red_braise') return 'redbraise';
+  if (/(炖|煲)/.test(title) || cook === 'stew') return 'stew';
+  if (cook === 'stir_fry') return 'stirfry';
+  return '';
+}
+
+// 推断鸡肉烹饪风格 (axis 36)
+function _chickenStyleOf(title: string, cook: string): string {
+  if (/(白切|白斩|盐焗)/.test(title)) return 'poached';
+  if (/三杯/.test(title)) return 'sanbei';
+  if (/黄焖/.test(title)) return 'braise';
+  if (/红烧/.test(title) || cook === 'red_braise') return 'redbraise';
+  if (/(炖|煲|汤)/.test(title) || cook === 'stew') return 'stew';
+  return '';
+}
+
+// 推断海鲜烹饪风格 (axis 37)
+function _seafoodStyleOf(title: string, cook: string): string {
+  if (/(清蒸|蒸)/.test(title) || cook === 'steam') return 'steam';
+  if (/红烧/.test(title) || cook === 'red_braise') return 'redbraise';
+  if (/凉拌/.test(title)) return 'cold';
+  if (/(烤|焗)/.test(title) || cook === 'grill') return 'grill';
+  if (/炒/.test(title) || cook === 'stir_fry') return 'stirfry';
+  return '';
+}
+
+// 蔬菜烹饪方法 (axis 38)
+function _veggieMethodOf(title: string, cook: string): string {
+  if (/(凉拌|沙拉)/.test(title)) return 'cold';
+  if (/(煲|汤)/.test(title) || cook === 'stew') return 'soup';
+  if (/干煸/.test(title)) return 'drystir';
+  if (/(清蒸|蒸)/.test(title) || cook === 'steam') return 'steam';
+  if (/炒/.test(title) || cook === 'stir_fry') return 'stirfry';
+  return '';
+}
+
+// 早餐菜系大类 (axis 40)
+function _breakfastCuisineOf(origin: string): string {
+  if (origin === 'western') return 'western';
+  if (origin === 'cantonese') return 'hk';   // 港式 + 粤式归港式 (产品口径)
+  if (['northern','sichuan','jiangnan','huaiyang','shandong','hunan','anhui','fujian','zhejiang','taiwanese'].includes(origin)) return 'chinese';
+  return '';
+}
+
+/**
+ * 9 axes 总加分函数 — caller pass mealType, hot path 单次调用.
+ * 返回 number, 内部不构造对象, 不抛错.
+ */
+export function imageOnboardingScore(dish: any, imagePrefs: ImagePrefs, mealType: '早餐' | '午餐' | '晚餐'): number {
+  if (!imagePrefs || Object.keys(imagePrefs).length === 0) return 0;
+  let s = 0;
+  const mi    = (dish.main_ingredient ?? '') as string;
+  const title = (dish.title_zh ?? dish.title ?? '') as string;
+  const cook  = (dish.cook_method ?? '') as string;
+  const ct    = (dish.course_type ?? '') as string;
+  const origin = (dish.origin_cuisine ?? '') as string;
+  // protein_source ARRAY 备查 (axis 34/35/36/37 多源覆盖鸡蛋豆制品等组合)
+  const psrc  = (Array.isArray(dish.protein_source) ? dish.protein_source : []) as string[];
+
+  // axis 32 — protein_main_class 15%
+  if (imagePrefs.protein_main_class?.length) {
+    const cls = _proteinClassOf(mi);
+    if (cls && imagePrefs.protein_main_class.includes(cls)) s += 0.15;
+  }
+  // axis 33 — staple_pref 8%
+  if (imagePrefs.staple_pref?.length && ct === 'staple') {
+    const sc = _stapleClassOf(title, ct);
+    if (sc && imagePrefs.staple_pref.includes(sc)) s += 0.08;
+  }
+  // axis 34 — protein_pref 12%
+  if (imagePrefs.protein_pref?.length) {
+    if (imagePrefs.protein_pref.includes(mi)) s += 0.12;
+    else if (psrc.some(p => imagePrefs.protein_pref!.includes(p))) s += 0.06;  // 半分 (副蛋白源)
+  }
+  // axis 35 — beef_style 7%, 仅含牛
+  if (imagePrefs.beef_style?.length && (mi === 'beef' || psrc.includes('beef'))) {
+    const bs = _beefStyleOf(title, cook);
+    if (bs && imagePrefs.beef_style.includes(bs)) s += 0.07;
+  }
+  // axis 36 — chicken_style 7%, 仅含鸡
+  if (imagePrefs.chicken_style?.length && (mi === 'chicken' || psrc.includes('chicken'))) {
+    const cs = _chickenStyleOf(title, cook);
+    if (cs && imagePrefs.chicken_style.includes(cs)) s += 0.07;
+  }
+  // axis 37 — seafood_style 6%, 仅海鲜
+  if (imagePrefs.seafood_style?.length && _proteinClassOf(mi) === 'seafood') {
+    const ss = _seafoodStyleOf(title, cook);
+    if (ss && imagePrefs.seafood_style.includes(ss)) s += 0.06;
+  }
+  // axis 38 — veggie_method 8%
+  if (imagePrefs.veggie_method?.length) {
+    const vm = _veggieMethodOf(title, cook);
+    if (vm && imagePrefs.veggie_method.includes(vm)) s += 0.08;
+  }
+  // axis 39 — oil_level 7%
+  if (imagePrefs.oil_level && dish.oil_level && imagePrefs.oil_level === dish.oil_level) {
+    s += 0.07;
+  }
+  // axis 40 — breakfast_cuisine 5% 仅早餐
+  if (mealType === '早餐' && imagePrefs.breakfast_cuisine) {
+    const bc = _breakfastCuisineOf(origin);
+    if (bc && bc === imagePrefs.breakfast_cuisine) s += 0.05;
+  }
+  return s;
+}
+
 // §B (TICKET-043) axis 28: 单食材应季 — 节气 name_zh → 推荐食材列表。
 // 与 solarTerm axis（节气-菜系-flavor-health 三维加分）互补：solarTerm 是
 // "整道菜的当季感"（如冬至偏温补），SEASONALITY 是"具体食材 hit"（如冬至
@@ -864,7 +1045,7 @@ interface WeeklyScoreParams {
   pickedCuisines?: string[];         // origin_cuisine values picked so far this week (axis 30 cold-start diversity)
   pickedTitleKeywords: string[];     // title keywords already used this week
   dayIndex: number;                  // 0=Mon … 6=Sun
-  spiceBoost?: number;              // from userPrefs
+  spiceBoost?: number;              // deprecated TICKET-005 — kept for backward compat but unused inside scoreForWeek
   ageGroup?: string | null;
   healthPrefs?: { preferLowSodium: boolean; preferLowSugar: boolean; avoidHighPurine: boolean };
   helperMode?: boolean;             // household has a helper — prefer low execution_level
@@ -876,6 +1057,8 @@ interface WeeklyScoreParams {
   mealTime?: '早餐' | '午餐' | '晚餐'; // 餐别口径（晚餐 oil/salt/sugar 软扣，午餐杂粮主食 +0.10）
   // ── §B (TICKET-015) axis 26: home inventory soft bonus ──
   homeInventoryItems?: Set<string>; // VerifyIngredients localStorage 当日"我家有"食材集合（含 missing_ingredient 反向剔除）
+  // ── §A (TICKET-005) axis 32-40: image-onboarding-driven scoring ──
+  imagePrefs?: ImagePrefs;          // 9 个 axis 共用一个 prefs 对象, 由 caller 一次性 load
 }
 
 // ── Helper: extract all ingredient names a dish references ───────────────────
@@ -896,10 +1079,12 @@ function dishIngredientNames(dish: any): string[] {
 
 function scoreForWeek({
   dish, profile, prefScores, recentIds, pickedIngredients, pickedCuisines = [], pickedTitleKeywords, dayIndex,
-  spiceBoost = 0, ageGroup, healthPrefs, helperMode = false, hasPregnant = false,
+  spiceBoost: _unusedSpiceBoost = 0, ageGroup, healthPrefs, helperMode = false, hasPregnant = false,
   humidity = 75, solarTerm = null, hasXiaomei = false, mealTime = '晚餐',
-  homeInventoryItems,
+  homeInventoryItems, imagePrefs,
 }: WeeklyScoreParams): number {
+  // TICKET-005 v3 重设计: spiceBoost 入参保留但不再使用 — 由 axis 32-40 间接覆盖.
+  void _unusedSpiceBoost;
   const flavorTags: string[]  = dish.flavor_tags ?? [];
   const healthTags: string[]  = dish.health_benefit_tags ?? [];
   const origin: string        = dish.origin_cuisine ?? '';
@@ -914,17 +1099,19 @@ function scoreForWeek({
   const userBucket = hometownToDbBucket(profile.hometown_cuisine);
   let score = originBaseFor(origin, userBucket);
   if (hometownMatches(profile.hometown_cuisine, origin)) {
-    // 家乡权重要大（user direction 2026-05-17）。+0.60 让自家菜系跟其他
-    // 菜系的差距拉到 0.56+ (家乡 0.60 vs 其他中餐 base 0.04)，确保家乡
-    // 菜永远是绝对最高分。
-    score += 0.60;
+    // TICKET-005 v3 重设计: hometown 从 +0.60 (30%) 降到 +0.05 (5%) 仅兜底.
+    // 老板核心洞察"人的本质区别不是来自哪里，而是喜欢吃什么", 真区分维度
+    // (axis 32-40 主料 + 烹饪 + 油脂) 占 75%, hometown 5% 保留以处理 image
+    // 11 题完全跳过的边缘用户.
+    score += 0.05;
   }
 
   // ── 2. Dietary goal — only count tags BEYOND 'maintain' ──────────────────
   // 'maintain' is on 82% of dishes, so it adds zero signal.
   // Only score specific health goals (lose_weight, muscle_gain, detox, etc.)
   if (profile.dietary_goal && profile.dietary_goal !== 'maintain') {
-    if (healthTags.includes(profile.dietary_goal)) score += 0.35;
+    // TICKET-005 v3 重设计: 0.35 → 0.15 (25% → 15%) — goal 仍重要但不再主导.
+    if (healthTags.includes(profile.dietary_goal)) score += 0.15;
   } else if (profile.dietary_goal === 'maintain') {
     // For maintain users: prefer dishes that are NOT heavily tagged with
     // other goals (stay neutral), and give a small bonus for light/balanced
@@ -960,9 +1147,8 @@ function scoreForWeek({
   if (cuisineCol && prefScores[cuisineCol]) score += usagePower(prefScores[cuisineCol]) * 1.0 * sigmoidWeight;
 
   // ── 5. Spice preference ───────────────────────────────────────────────────
-  if (spiceBoost !== 0 && flavorTags.includes('spicy')) {
-    score += spiceBoost;
-  }
+  // TICKET-005 v3 重设计: axis 5 已删除 — 用 axis 35 beef_style "小炒黄牛肉" +
+  // axis 38 veggie_method "干煸" + axis 3 taste 'spicy' 间接推断辣味偏好.
 
   // ── 6. Recency decay ──────────────────────────────────────────────────────
   const daysSince = recentIds.get(dish.id);
@@ -1155,12 +1341,9 @@ function scoreForWeek({
   }
 
   // ── 25. §C 周五"放纵日" (2026-05-19 工单)  ──────────────────────────
-  // dayIndex===4 (周五) 是工作周最后一天 = 放纵日：
-  //   · spice 容忍 +0.5 (不辣用户也能尝到周五辣味)
-  //   · cook_method=deep_fry 软加 +0.20 (炸物概率上浮)
-  // 周一-周四与原口径一致，不动；周六/周日由 generateWeekPlan 整体 skip。
+  // TICKET-005 v3 重设计: 周五 spice +0.5 已删除 (axis 5 spice 整体删除). 保留
+  // deep_fry +0.20 — 炸物上浮是"放纵日"独立 cookmethod 偏好, 与 spice 无关.
   if (dayIndex === 4) {
-    if (flavorTags.includes('spicy')) score += 0.5;
     if ((dish as any).cook_method === 'deep_fry') score += 0.20;
   }
 
@@ -1262,6 +1445,14 @@ function scoreForWeek({
     const sameCuisineCount = pickedCuisines.filter(c => c === origin).length;
     if (sameCuisineCount > 0) score -= 0.20 * sameCuisineCount;
     if (sameIngCount > 0)     score -= 0.20 * sameIngCount;
+  }
+
+  // ── 32-40. §A (TICKET-005) v3 image-onboarding-driven scoring ────────────
+  // 9 个新 axes (合计 75% 权重) — 主料 + 烹饪方式 + 油脂 + 早餐风格. 由
+  // imageOnboardingScore 一次性计算并返 number, hot path 单一 if 不破坏
+  // 现有 JIT 优化. imagePrefs 缺失 → 整块自然 0 加分 (向后兼容老用户).
+  if (imagePrefs) {
+    score += imageOnboardingScore(dish, imagePrefs, mealTime);
   }
 
   return score;
@@ -1639,6 +1830,9 @@ function generateWeekPlan(
   // sites (dinner main / kidDishes / lunch / per-member lunch meat) share the
   // same stream so the same seed yields identical output across runs.
   const rng: () => number = seed !== undefined ? mulberry32(seed) : Math.random;
+  // §A (TICKET-005) v3 image-onboarding-driven scoring — 一次性 load 9 个
+  // localStorage prefs key, 后续 4 处 scoreForWeek 调用点共享同一对象.
+  const imagePrefs: ImagePrefs = loadImagePrefs();
   // 粥 / 稀饭 are breakfast-only in Chinese cuisine — user direction
   // 2026-05-17. Stripped once at function entry so every lunch + dinner
   // pool below inherits the ban (the previous per-slot filter only ran
@@ -1848,7 +2042,7 @@ function generateWeekPlan(
             helperMode,
             hasPregnant: familyPrefs?.hasPregnant ?? false,
             humidity, solarTerm, hasXiaomei, mealTime: '晚餐',
-            homeInventoryItems,
+            homeInventoryItems, imagePrefs,
           });
 
           // ── Family multi-goal scoring ───────────────────────────────────
@@ -2011,7 +2205,7 @@ function generateWeekPlan(
             healthPrefs,
             hasPregnant: familyPrefs?.hasPregnant ?? false,
             humidity, solarTerm, hasXiaomei, mealTime: '晚餐',
-            homeInventoryItems,
+            homeInventoryItems, imagePrefs,
           });
           const flavors: string[] = d.flavor_tags ?? [];
           if (flavors.includes('sweet'))  s += 0.25;
@@ -2083,7 +2277,7 @@ function generateWeekPlan(
         dayIndex, spiceBoost, ageGroup, healthPrefs,
         hasPregnant: familyPrefs?.hasPregnant ?? false,
         humidity, solarTerm, hasXiaomei, mealTime: '午餐',
-        homeInventoryItems,
+        homeInventoryItems, imagePrefs,
       });
       if ((d.flavor_tags ?? []).includes('light')) score += 0.15;
       return { dish: d, score };
@@ -2248,7 +2442,7 @@ function generateWeekPlan(
             healthPrefs,
             hasPregnant: familyPrefs?.hasPregnant ?? false,
             humidity, solarTerm, hasXiaomei, mealTime: '早餐',
-            homeInventoryItems,
+            homeInventoryItems, imagePrefs,
           }),
         }));
         scored.sort((a, b) => b.score - a.score);
