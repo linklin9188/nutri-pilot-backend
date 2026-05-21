@@ -31,16 +31,17 @@ const QUESTIONS = [
     step: 2,
     emoji: "🎯",
     question: "这阵子，您想怎么吃？",
-    sub: "可多选 — 一家人多目标我都照顾。",
+    sub: "可多选，至少选 1 个（不强制选'营养均衡'）。",
     multi: true,
     options: [
-      { id: "fatloss",   label: "减脂瘦身",   desc: "低卡、高饱腹感",         icon: "🔥" },
-      { id: "muscle",    label: "增肌健体",   desc: "高蛋白、促恢复",         icon: "💪" },
-      { id: "balanced",  label: "营养均衡",   desc: "荤素搭配、全面补充",     icon: "🥗" },
-      { id: "nourish",   label: "养生调理",   desc: "温和滋补、顾脾胃",       icon: "🍵" },
-      { id: "pregnancy", label: "怀孕备孕",   desc: "叶酸 · 铁 · 钙，避刺激",  icon: "🤰" },
-      { id: "growth",    label: "长高变壮",   desc: "钙 · 蛋白 · DHA，骨骼发育", icon: "🌱" },
-      { id: "low_carb",  label: "低碳生酮",   desc: "去主食 · 重蛋白 · 控糖",   icon: "🥑" },
+      { id: "kid_growth",  label: "给孩子长高",        desc: "钙 + 蛋白 + DHA",           icon: "🌱" },
+      { id: "elder_care",  label: "给老人养护",        desc: "养胃 / 三高管理",            icon: "🍵" },
+      { id: "fatloss",     label: "控制体重",          desc: "低卡 + 高饱腹",             icon: "🔥" },
+      { id: "pregnancy",   label: "备孕 / 孕期 / 月子", desc: "叶酸 + 铁 + 钙",           icon: "🤰" },
+      { id: "muscle",      label: "健身增肌",          desc: "高蛋白 + 促恢复",            icon: "💪" },
+      { id: "chronic",     label: "三高管理",          desc: "低钠 + 低糖 + 低嘌呤",       icon: "❤️‍🩹" },
+      { id: "anti_inflam", label: "抗炎 / 抗衰",       desc: "Omega-3 + 多酚",            icon: "🌿" },
+      { id: "comfort",     label: "单纯吃舒服点",      desc: "无特别需求，按节气换样",     icon: "🥢" },
     ],
   },
   {
@@ -124,19 +125,16 @@ const QUESTIONS = [
 // to match the actual tags present in dishes (health_benefit_tags +
 // flavor_tags) so scoreDish can hit them.
 const GOAL_TO_DIETARY_GOAL: Record<string, string> = {
-  fatloss:   'lose_weight',
-  muscle:    'muscle_gain',
-  balanced:  'maintain',
-  nourish:   'detox',
-  // 'pregnancy' / 'growth' didn't map before, so selecting either wrote
-  // dietary_goal=null and the 40% goal score collapsed to 0. Map to the
-  // closest existing health_benefit_tag so scoring isn't blind. Pregnancy
-  // safety details (raw-seafood ban, high-mercury fish penalty, iron+folate
-  // boost) are handled separately in applyPregnancyAdjustments via the
-  // household member's hasPregnant flag.
-  pregnancy: 'maintain',
-  growth:    'muscle_gain',
-  low_carb:  'lose_weight',
+  // TICKET-004 — new 8-goal scheme (replaces fatloss/muscle/balanced/nourish/pregnancy/growth/low_carb).
+  // schema single-value column so head [0] only; tail goals stay in localStorage.
+  kid_growth:  'muscle_gain',
+  elder_care:  'maintain',
+  fatloss:     'lose_weight',
+  pregnancy:   'maintain',
+  muscle:      'muscle_gain',
+  chronic:     'maintain',
+  anti_inflam: 'maintain',
+  comfort:     'maintain',
 };
 const SPICE_TO_TASTE_PREF: Record<string, string | null> = {
   none:   'light',
@@ -296,12 +294,13 @@ export default function QuickSetup() {
                   : prefs.goal ? [prefs.goal as string] : [];
     const hometownArr = Array.isArray(prefs.hometown) ? prefs.hometown as string[]
                       : prefs.hometown ? [prefs.hometown as string] : [];
-    const primaryGoal = goalArr[0] ?? "balanced";
+    const primaryGoal = goalArr[0] ?? "comfort";
     const primaryHometown = hometownArr[0];
 
-    // Map to existing taste system
+    // Map to existing taste system. comfort = 兜底 default。kid_growth / elder_care
+    // / chronic / anti_inflam fall back to "default" via ??. fatloss / muscle 保持原映射。
     const goalToTaste: Record<string, string> = {
-      fatloss: "veggie", muscle: "default", balanced: "default", nourish: "light",
+      fatloss: "veggie", muscle: "default", elder_care: "light", comfort: "default",
     };
     localStorage.setItem("userTaste", goalToTaste[primaryGoal] ?? "default");
     localStorage.setItem("userDiet", primaryGoal);
