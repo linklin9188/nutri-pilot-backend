@@ -347,12 +347,19 @@ export function imageOnboardingScore(dish: any, imagePrefs: ImagePrefs, mealType
     if (cs && matchDb) s += 0.07;
   }
   // axis 37 — seafood_style 6% (UI steamed/braised/salted/blanched → DB steam/redbraise/steam|stirfry/steam)
-  if (imagePrefs.seafood_style?.length && _proteinClassOf(mi) === 'seafood') {
-    const ss = _seafoodStyleOf(title, cook);
-    const matchDb = imagePrefs.seafood_style.some(ui =>
-      (SEAFOOD_STYLE_UI_TO_DB[ui] ?? [ui]).includes(ss)
-    );
-    if (ss && matchDb) s += 0.06;
+  // TICKET-012: gate 改读 dishes.protein_main_class DB 列 (Database 060 backfill 100% 填充),
+  // fallback _proteinClassOf 推断. 037 道 main_ingredient='other' 但 pmc='seafood' 在旧 gate 失败,
+  // 改后纳入 axis 37 评分 (6% 权重). 同 axis 32 双轨 pattern (TICKET-011 形)。
+  if (imagePrefs.seafood_style?.length) {
+    const pmcDb = (dish.protein_main_class ?? '') as string;
+    const isSeafood = pmcDb === 'seafood' || _proteinClassOf(mi) === 'seafood';
+    if (isSeafood) {
+      const ss = _seafoodStyleOf(title, cook);
+      const matchDb = imagePrefs.seafood_style.some(ui =>
+        (SEAFOOD_STYLE_UI_TO_DB[ui] ?? [ui]).includes(ss)
+      );
+      if (ss && matchDb) s += 0.06;
+    }
   }
   // axis 38 — veggie_method 8% (UI stirfry/dry_fried/cold/soup → DB stirfry/drystir/cold/soup)
   if (imagePrefs.veggie_method?.length) {
