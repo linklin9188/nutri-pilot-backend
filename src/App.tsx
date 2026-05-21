@@ -12,6 +12,7 @@ import Onboarding from './pages/Onboarding';
 import HelperPrep from './pages/HelperPrep';
 import HelperCook from './pages/HelperCook';
 import HelperHome from './pages/HelperHome';
+import LearnerHome from './pages/LearnerHome';
 import Community from './pages/Community';
 import VerifyIngredients from './pages/VerifyIngredients';
 import DeliveryTracking from './pages/DeliveryTracking';
@@ -181,7 +182,12 @@ function AppShell() {
       <Route path="/chat"     element={<RequireAuth><ChatAgent /></RequireAuth>} />
       <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
       <Route path="/weekly"   element={<RequireAuth><WeeklyMenu /></RequireAuth>} />
-      <Route path="/helper"   element={<RequireAuth helperRole><HelperHome /></RequireAuth>} />
+      {/* UI 013 §C — Learner mode shows LearnerHome (cuisine browser); affiliated helpers see HelperHome (employer-linked tasks) */}
+      <Route path="/helper"   element={
+        <RequireAuth helperRole>
+          {localStorage.getItem("nutri_helper_mode") === "learner" ? <LearnerHome /> : <HelperHome />}
+        </RequireAuth>
+      } />
       <Route path="/community" element={<RequireAuth><Community /></RequireAuth>} />
       <Route path="/banquet"  element={<RequireAuth><Banquet /></RequireAuth>} />
       <Route path="/weekend"  element={<RequireAuth><WeekendDining /></RequireAuth>} />
