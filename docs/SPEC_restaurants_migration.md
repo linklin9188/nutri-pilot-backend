@@ -129,6 +129,59 @@ COMMIT;
 | **（新增）**     | `source`         | `text`       | NO    | `DEFAULT 'seed'`                       |
 | **（新增）**     | `created_at`     | `timestamptz`| NO    | `DEFAULT now()`                        |
 | **（新增）**     | `updated_at`     | `timestamptz`| NO    | `DEFAULT now()` + trigger              |
+| **（Phase 3）**  | `kid_friendly`   | `boolean`    | NO    | `DEFAULT false` — 是否儿童友好（有 BB 椅 / 儿童餐 / 安静环境）|
+| **（Phase 3）**  | `school_balance_tags`| `text[]` | NO    | `DEFAULT '{}'` — 配学校营养补充菜的标签集合（如 `iron_boost` / `calcium_boost` / `protein_boost`）|
+| **（Phase 3）**  | `min_seats`      | `int`        | YES   | 餐厅最小可订座（≤2 时家庭只能拼桌） |
+| **（Phase 3）**  | `max_seats`      | `int`        | YES   | 餐厅最大可订座（用于"三代同堂 8 人"过滤） |
+
+### 1.2.b Family / School 补充字段（Phase 3 提前建好，参 §1.3 与 Phase 字段策略）
+
+**为什么提前建（参考 §1.1 §1.3 Phase 2 字段策略）**：
+- `kid_friendly`、`school_balance_tags`、`min_seats`、`max_seats` 4 列虽然 Phase 1 不消费，但属于"一定会用上 + 现在加成本接近 0、二次 migration 痛"的字段，与 `commission_rate / partner_status / booking_url` 同档。
+- 一并预置后，Phase 3「家庭组合 / 学校营养补强」上线时仅写应用层逻辑，**0 schema 变更**。
+
+**字段语义**：
+
+1. `kid_friendly boolean DEFAULT false`：是否儿童友好。判定来源（建议）：
+   - 餐厅明确提供 BB 椅 / 儿童菜单 / 儿童折扣 → `true`
+   - 米其林 ≥ 2★ 高级餐厅（环境不适合儿童）→ `false`
+   - Seed 阶段默认 `false`，由运营人工填或后续 Gemini 标注
+
+2. `school_balance_tags text[] DEFAULT '{}'`：配学校营养补充菜的标签集合，与 `dishes.health_benefit_tags` 同概念但更紧凑。建议初始值集合：
+   - `iron_boost`（红肉为主，补铁）
+   - `calcium_boost`（虾皮 / 豆制品 / 乳制品丰富）
+   - `protein_boost`（蛋白质重菜单，配合增肌儿童期）
+   - `fiber_boost`（蔬菜量充足）
+   - `dha_boost`（深海鱼为主，补脑）
+
+   查询模式（Phase 3 前端）：
+   ```ts
+   // 周末选餐厅时，根据小孩本周营养缺口（从 nutrition_balance_state 读）
+   // 找补足该缺口的餐厅
+   .filter('school_balance_tags', 'cs', `{${needTag}}`)  // PostgREST cs = contains
+   ```
+   配合 §1.1 已有的 `idx_restaurants_good_for_gin`（gin on text[]）可直接复用 — 见 §1.5 加 index 决策。
+
+3. `min_seats int` / `max_seats int`：座位容量。Phase 3 家庭组合查询场景：
+   - "三代同堂 8 人"→ `WHERE min_seats <= 8 AND max_seats >= 8`
+   - "二人晚餐 brunch"→ `WHERE min_seats <= 2`
+   - NULL 表示未知（不参与过滤，按 fallback "可订"）。
+
+**index 建议（Phase 3 落地时再加，本 SPEC 不前置）**：
+```sql
+-- Phase 3 上线时再加，不在 §1.1 主 migration 里
+CREATE INDEX idx_restaurants_kid_friendly
+  ON restaurants(city, kid_friendly)
+  WHERE hidden = false AND kid_friendly = true;
+
+CREATE INDEX idx_restaurants_school_balance_gin
+  ON restaurants USING gin (school_balance_tags)
+  WHERE hidden = false;
+```
+
+**与 Phase 1 hardcoded TS 的兼容性**：
+- `src/lib/hkRestaurants.ts` 现 100 条 seed **没有这 4 字段**，DB 一次性 seed 时显式 `DEFAULT false / '{}' / NULL / NULL` 填入。
+- 前端 hybrid loader（§4）的 `HkRestaurant` interface 暂不消费这 4 字段（保持 Phase 1 / Phase 3 解耦）。Phase 3 上线时 interface 加 4 字段、消费方再读。
 
 ### 1.3 与现有表的关联
 
