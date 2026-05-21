@@ -5,6 +5,7 @@ import { supabase } from "../lib/supabase";
 import { getUserId } from "../lib/userId";
 import { syncProfileToDB } from "../lib/profileSync";
 import ImageGrid, { ImageGridOption } from "../components/ImageGrid";
+import NumberStepper from "../components/NumberStepper";
 
 // TICKET-005 v3 — 图片驱动 onboarding（11 题，条件渲染实际 8-9 步）。
 // 文案铁律：所有标题都是问句 + "怎么吃 / 喜欢" 视角，绕过用户自我描述偏差。
@@ -26,19 +27,25 @@ interface QuestionV3 {
 }
 
 const QUESTIONS_V3: QuestionV3[] = [
-  // Q0 — 餐桌画面，一图三用：人数 + 中西餐 + 复杂度
+  // Q0 — 家庭组合：UI 015 §A: 4 选项扩展为 6 选项 (含 custom 自定义双 stepper)。
+  // 新 img path q0_solo_w_kid / q0_couple_1kid / q0_couple_2kids / q0_couple_3kids /
+  // q0_three_gen / q0_custom 由 Database 012 灌入；ship 前用 emoji 占位（ImageGrid
+  // 自动 fallback），ship 后 CEO 把 img 字段加回（5 min swap）。
   {
     id: 'table_style',
     emoji: '🍽',
-    question: '你家餐桌更像哪个？',
-    sub: '一眼挑出最像你家用餐的画面 — 我顺手算出人数、风格、复杂度。',
+    question: '你家是几口人？',
+    sub: '挑最像你家的组合 — 我顺手算人数 / 餐量 / 复杂度。最后一项可自定义。',
     multi: false,
     cols: 2,
     options: [
-      { value: 'solo',   label: '1 人',  desc: '一个人吃 · 简餐便当',       img: '/onboarding/q0_solo.jpg' },
-      { value: 'couple', label: '2 人',  desc: '夫妻 / 情侣 · 1 主菜 1 汤', img: '/onboarding/q0_couple.jpg' },
-      { value: 'family', label: '4 人',  desc: '家庭 · 3 菜 1 汤 正经家常', img: '/onboarding/q0_family.jpg' },
-      { value: 'gather', label: '10 人', desc: '大圆桌 · 6 菜 2 汤 聚餐',   img: '/onboarding/q0_gathering.jpg' },
+      // TODO(database-012): swap img: '/onboarding/q0_*.jpg' 回字段（6 张图 ship 后）
+      { value: 'solo_w_kid',   label: '1 大 1 小',     desc: '单亲家庭',  emoji: '👤👶' },
+      { value: 'couple_1kid',  label: '2 大 1 小',     desc: '三口之家',  emoji: '👫👶' },
+      { value: 'couple_2kids', label: '2 大 2 小',     desc: '四口之家',  emoji: '👫👶👶' },
+      { value: 'couple_3kids', label: '2 大 3 小',     desc: '多孩家庭',  emoji: '👫👶👶👶' },
+      { value: 'three_gen',    label: '4 大 2 小',     desc: '三代同堂',  emoji: '👴👵👶👶' },
+      { value: 'custom',       label: '自定义 N 大 M 小', desc: '点开调',  emoji: '✏️' },
     ],
   },
 
@@ -230,14 +237,18 @@ const QUESTIONS_V3: QuestionV3[] = [
   },
 ];
 
-// Q0 餐桌画面 → 人数 / 复杂度 解析表。UI 014 §A: 6 选项收敛为 4 选项
-// (solo / couple / family / gather)，去掉了"菜系"维度——hometown_cuisine 现在
-// 完全由 Q9 breakfast_cuisine + Q1 protein_main_class + Q8 oil_level 推断。
+// Q0 家庭组合 → 人数 / 复杂度 解析表。
+// UI 014: 6 → 4 收敛 (solo/couple/family/gather)。
+// UI 015 §A: 4 → 6 重写以家庭组合为 axis (solo_w_kid / couple_1kid / couple_2kids /
+// couple_3kids / three_gen / custom)。cuisine 维度仍由 Q9 + Q1 + Q8 推断，这里为 null。
+// custom 走特殊路径：adults / kids 从 state.customAdults / customKids 读，不查表。
 const TABLE_STYLE_MAP: Record<string, { adults: number; kids: number; elders: number; cuisine: string | null; complexity: string }> = {
-  solo:   { adults: 1, kids: 0, elders: 0, cuisine: null, complexity: 'simple'   },
-  couple: { adults: 2, kids: 0, elders: 0, cuisine: null, complexity: 'simple'   },
-  family: { adults: 3, kids: 1, elders: 0, cuisine: null, complexity: 'standard' },
-  gather: { adults: 6, kids: 1, elders: 2, cuisine: null, complexity: 'rich'     },
+  solo_w_kid:   { adults: 1, kids: 1, elders: 0, cuisine: null, complexity: 'simple'   },
+  couple_1kid:  { adults: 2, kids: 1, elders: 0, cuisine: null, complexity: 'standard' },
+  couple_2kids: { adults: 2, kids: 2, elders: 0, cuisine: null, complexity: 'standard' },
+  couple_3kids: { adults: 2, kids: 3, elders: 0, cuisine: null, complexity: 'rich'     },
+  three_gen:    { adults: 4, kids: 2, elders: 2, cuisine: null, complexity: 'rich'     },
+  // custom 在 finish() 里跳过查表
 };
 
 // dietary_goal fallback — v3 没有显式 goal 题，统一 'maintain'。Algorithm
@@ -296,6 +307,9 @@ export default function QuickSetup() {
   // Q10 "其他自填" 文本。仅在 strict_avoid 题 + multiSel.includes('other') 时
   // 用到；commit 时把 'other' 转写为 'other:<text>' 推入 strict_avoid 数组。
   const [otherText, setOtherText] = useState('');
+  // UI 015 §A — Q0 'custom' 家庭组合双 stepper（仅 table_style === 'custom' 显示）。
+  const [customAdults, setCustomAdults] = useState(2);
+  const [customKids, setCustomKids] = useState(0);
 
   // visibleIndices 根据当前 answers 动态计算 — 比如 Q1 没选海鲜，Q6 不会出现。
   // step 索引是 QUESTIONS_V3 绝对 index，currentVisiblePos 走 visible 序（已答过 / 跳过的题数）。
@@ -330,6 +344,8 @@ export default function QuickSetup() {
   const handleSingle = (id: string) => {
     const next = { ...answers, [q.id]: id };
     setAnswers(next);
+    // UI 015 §A — Q0 'custom' 不 auto-advance：等用户调好 stepper 再点"下一步 →"。
+    if (q.id === 'table_style' && id === 'custom') return;
     setTimeout(() => goToNext(next), 320);
   };
 
@@ -396,14 +412,29 @@ export default function QuickSetup() {
     });
 
     // ── Q0 table_style → 派生 household composition ──────────────────
-    const tableStyle = (finalAnswers.table_style as string) ?? 'family';
-    const tsMap = TABLE_STYLE_MAP[tableStyle] ?? TABLE_STYLE_MAP.family;
-    localStorage.setItem('nutri_adults', String(tsMap.adults));
-    localStorage.setItem('nutri_kids',   String(tsMap.kids));
+    // UI 015 §A: 'custom' 走 state.customAdults / customKids；其他 5 项查表。
+    // 'family' fallback 保留以 backward-compat（旧 quickPrefs 可能仍存 'family' 值）。
+    const tableStyle = (finalAnswers.table_style as string) ?? 'couple_2kids';
+    let resolvedAdults: number;
+    let resolvedKids: number;
+    let resolvedElders: number;
+    if (tableStyle === 'custom') {
+      resolvedAdults = customAdults;
+      resolvedKids   = customKids;
+      resolvedElders = 0;
+    } else {
+      const tsMap = TABLE_STYLE_MAP[tableStyle] ?? TABLE_STYLE_MAP.couple_2kids;
+      resolvedAdults = tsMap.adults;
+      resolvedKids   = tsMap.kids;
+      resolvedElders = tsMap.elders;
+    }
+    localStorage.setItem('nutri_adults', String(resolvedAdults));
+    localStorage.setItem('nutri_kids',   String(resolvedKids));
+    localStorage.setItem('nutri_family_pattern', tableStyle);
     const familyComp = {
-      adults: tsMap.adults,
-      elders: { count: tsMap.elders, conditions: [] as string[] },
-      kids:   Array.from({ length: tsMap.kids }, () => ({ age: '7-12' })),
+      adults: resolvedAdults,
+      elders: { count: resolvedElders, conditions: [] as string[] },
+      kids:   Array.from({ length: resolvedKids }, () => ({ age: '7-12' })),
     };
     localStorage.setItem('family_composition', JSON.stringify(familyComp));
 
@@ -557,9 +588,25 @@ export default function QuickSetup() {
           ) : q.multi ? (
             <ImageGrid options={q.options} multi selected={multiSel} onToggle={toggleMulti} cols={q.cols} />
           ) : (
-            <ImageGrid options={q.options} multi={false}
-              selected={answers[q.id] ? [answers[q.id]] : []}
-              onToggle={handleSingle} cols={q.cols} />
+            <>
+              <ImageGrid options={q.options} multi={false}
+                selected={answers[q.id] ? [answers[q.id]] : []}
+                onToggle={handleSingle} cols={q.cols} />
+              {/* UI 015 §A — Q0 'custom' 双 stepper：选中 custom 后展开调 N 大 M 小 */}
+              {q.id === 'table_style' && answers.table_style === 'custom' && (
+                <div className="mt-5">
+                  <div className="flex gap-3">
+                    <NumberStepper label="大人" value={customAdults} onChange={setCustomAdults} min={1} max={10} />
+                    <NumberStepper label="孩子" value={customKids}   onChange={setCustomKids}   min={0} max={6} />
+                  </div>
+                  <button onClick={() => goToNext(answers)}
+                    className="mt-4 w-full py-3 rounded-2xl font-bold text-white"
+                    style={{ background: '#FF5A1F', fontSize: 15, letterSpacing: '0.04em' }}>
+                    {customAdults} 大 {customKids} 小 · 下一步 →
+                  </button>
+                </div>
+              )}
+            </>
           )}
 
           {/* multi-select hint + skip 链接 */}
@@ -594,18 +641,19 @@ export default function QuickSetup() {
           {/* Skip 整个 onboarding（只在 Q0 出现） */}
           {currentVisiblePos === 0 && (
             <button onClick={() => {
-              const skipPrefs = { table_style: 'family', oil_level: 'medium', breakfast_cuisine: 'chinese', setupAt: Date.now() };
+              const skipPrefs = { table_style: 'couple_2kids', oil_level: 'medium', breakfast_cuisine: 'chinese', setupAt: Date.now() };
               localStorage.setItem('quickPrefs', JSON.stringify(skipPrefs));
               localStorage.setItem('onboarding_v3_done', 'true');
               localStorage.setItem('onboarding_v2_done', 'true');
               localStorage.removeItem('needs_v3_onboarding');
               localStorage.removeItem('needs_v2_onboarding');
-              localStorage.setItem('table_style', 'family');
+              localStorage.setItem('table_style', 'couple_2kids');
+              localStorage.setItem('nutri_family_pattern', 'couple_2kids');
               localStorage.setItem('oil_level', 'medium');
               localStorage.setItem('breakfast_cuisine', 'chinese');
-              localStorage.setItem('nutri_adults', '3');
-              localStorage.setItem('nutri_kids', '1');
-              localStorage.setItem('family_composition', JSON.stringify({ adults: 3, elders: { count: 0, conditions: [] }, kids: [{ age: '7-12' }] }));
+              localStorage.setItem('nutri_adults', '2');
+              localStorage.setItem('nutri_kids', '2');
+              localStorage.setItem('family_composition', JSON.stringify({ adults: 2, elders: { count: 0, conditions: [] }, kids: [{ age: '7-12' }, { age: '7-12' }] }));
               if (!localStorage.getItem('isLoggedIn')) {
                 localStorage.setItem('isLoggedIn', 'true');
                 localStorage.setItem('userId', crypto.randomUUID());
