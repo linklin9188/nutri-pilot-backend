@@ -833,7 +833,7 @@ export default function WeeklyMenu() {
                 营养雷达 · Pro
               </p>
               <p className="text-white/55 mt-1 mb-3" style={{ fontSize: 11, lineHeight: 1.5 }}>
-                看本周 6 维营养摄入分布 + 智能推荐补全菜
+                你选的菜单 vs 营养均衡匹配度 — 缺什么周末出门吃可以补
               </p>
               <span
                 className="inline-flex items-center gap-1 px-4 py-2 rounded-full font-bold text-white"
