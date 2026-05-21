@@ -346,6 +346,10 @@ export default function QuickSetup() {
   // UI 015 §A — Q0 'custom' 家庭组合双 stepper（仅 table_style === 'custom' 显示）。
   const [customAdults, setCustomAdults] = useState(2);
   const [customKids, setCustomKids] = useState(0);
+  // UI 015 §D — 进度过半（第 6 题完成 = wellness_goals 后）预览 toast。
+  // previewCount: null=未弹 / 0+=count；previewShown 防重复触发。
+  const [previewCount, setPreviewCount] = useState<number | null>(null);
+  const [previewShown, setPreviewShown] = useState(false);
 
   // visibleIndices 根据当前 answers 动态计算 — 比如 Q1 没选海鲜，Q6 不会出现。
   // step 索引是 QUESTIONS_V3 绝对 index，currentVisiblePos 走 visible 序（已答过 / 跳过的题数）。
@@ -411,6 +415,29 @@ export default function QuickSetup() {
       return [...prev, id];
     });
   };
+
+  // UI 015 §D — 进度过半触发预览 toast（visiblePos ≥ 6 第一次）。
+  // 静默 supabase count 查询，map UI pmc → DB pmc 后查 dishes.protein_main_class.
+  // count ≥ 100 显示 "100+"，否则显示具体数；空 pmc → 不弹。
+  useEffect(() => {
+    if (previewShown) return;
+    if (currentVisiblePos < 6) return;
+    const pmcUI = (answers.protein_main_class ?? []) as string[];
+    const pmcMap: Record<string, string> = { red_meat: 'red', white_meat: 'white', seafood: 'seafood', veggie: 'veg' };
+    const pmcDB = pmcUI.map(x => pmcMap[x]).filter(Boolean);
+    if (pmcDB.length === 0) return;
+    setPreviewShown(true);
+    (async () => {
+      try {
+        const { count } = await supabase.from('dishes')
+          .select('id', { count: 'exact', head: true })
+          .in('protein_main_class', pmcDB);
+        setPreviewCount(count ?? 0);
+        setTimeout(() => setPreviewCount(null), 3000);
+      } catch { /* offline-tolerant */ }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, previewShown]);
 
   // Debounced auto-advance (1.8s after last tap) for multi-select.
   // minSelect>0 时必须达到才允许 debounce（minSelect:0 的 Q10 也走 debounce
@@ -545,6 +572,33 @@ export default function QuickSetup() {
   return (
     <div className="min-h-screen flex flex-col max-w-md mx-auto relative overflow-hidden text-white"
       style={{ background: '#0a0a0a' }}>
+
+      {/* UI 015 §D — 预览 toast：进度过半 (visiblePos>=6) 一次性显示 3s。
+          位置 fixed top-20 z-50，居中 max-w-xs，淡入淡出。 */}
+      <AnimatePresence>
+        {previewCount !== null && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.3 }}
+            className="fixed top-20 left-1/2 z-50 px-5 py-4 rounded-2xl text-white"
+            style={{
+              transform: 'translateX(-50%)',
+              maxWidth: 320,
+              background: 'rgba(82,183,136,0.92)',
+              boxShadow: '0 8px 32px rgba(82,183,136,0.35)',
+              backdropFilter: 'blur(12px)',
+            }}>
+            <p className="font-bold" style={{ fontSize: 14 }}>
+              已为你挑出 {previewCount >= 100 ? '100+' : previewCount} 道可能爱吃的菜 ✨
+            </p>
+            <p className="mt-1 text-white/80 font-light" style={{ fontSize: 12 }}>
+              还有几题，最后给你定制本周菜单
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Background gradient */}
       <div className="absolute inset-0 z-0 pointer-events-none">
