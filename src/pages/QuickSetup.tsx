@@ -72,7 +72,7 @@ const QUESTIONS_V3: QuestionV3[] = [
   {
     id: 'staple_pref',
     emoji: '🍚',
-    question: '你更喜欢吃哪种主食？',
+    question: '主食吃米还是面？',
     sub: '可多选。',
     multi: true,
     minSelect: 1,
@@ -90,7 +90,7 @@ const QUESTIONS_V3: QuestionV3[] = [
   {
     id: 'protein_pref',
     emoji: '🐮',
-    question: '平时你更喜欢吃哪些肉？',
+    question: '平时爱吃哪些肉？',
     sub: '可多选，至少 1 个。',
     multi: true,
     minSelect: 1,
@@ -110,7 +110,7 @@ const QUESTIONS_V3: QuestionV3[] = [
   {
     id: 'beef_style',
     emoji: '🥩',
-    question: '牛肉你更喜欢怎么吃？',
+    question: '牛肉爱怎么做？',
     sub: '可多选 — 不同做法对应不同菜系。',
     multi: true,
     condition: 'has_beef',
@@ -154,7 +154,7 @@ const QUESTIONS_V3: QuestionV3[] = [
   {
     id: 'chicken_style',
     emoji: '🍗',
-    question: '鸡肉你更喜欢怎么吃？',
+    question: '鸡肉爱怎么做？',
     sub: '可多选。',
     multi: true,
     condition: 'has_chicken',
@@ -172,7 +172,7 @@ const QUESTIONS_V3: QuestionV3[] = [
   {
     id: 'seafood_style',
     emoji: '🦐',
-    question: '海鲜你更喜欢怎么做？',
+    question: '海鲜爱怎么做？',
     sub: '可多选。',
     multi: true,
     condition: 'has_seafood_class',
@@ -190,7 +190,7 @@ const QUESTIONS_V3: QuestionV3[] = [
   {
     id: 'veggie_method',
     emoji: '🥬',
-    question: '蔬菜你更喜欢怎么做？',
+    question: '蔬菜爱怎么做？',
     sub: '可多选。',
     multi: true,
     minSelect: 1,
@@ -208,7 +208,7 @@ const QUESTIONS_V3: QuestionV3[] = [
   {
     id: 'oil_level',
     emoji: '🥄',
-    question: '你更喜欢清淡还是浓郁？',
+    question: '口味清淡还是浓？',
     sub: '我按这个调味重轻。',
     multi: false,
     cols: 2,
@@ -224,7 +224,7 @@ const QUESTIONS_V3: QuestionV3[] = [
   {
     id: 'breakfast_cuisine',
     emoji: '🥯',
-    question: '早餐你更喜欢吃什么？',
+    question: '早餐爱吃什么？',
     sub: '早餐口味跟午晚常常不一样 — HK 妈妈早西午晚中很常见。',
     multi: false,
     cols: 2,
@@ -617,7 +617,7 @@ export default function QuickSetup() {
             style={{ background: 'rgba(255,90,31,0.10)', borderLeft: '4px solid #FF9054' }}>
             <p className="font-bold text-[#FF9054]" style={{ fontSize: 14 }}>🎨 升级了！我们用图片代替文字</p>
             <p className="mt-1 text-white/65 font-light" style={{ fontSize: 12, lineHeight: 1.5 }}>
-              请用 3 分钟看图选你喜欢的 — 比读字快 10 倍，让推荐更懂你。
+              用 3 分钟看图选爱吃的 — 比读字快 10 倍，让推荐更懂你。
             </p>
           </div>
         </div>
@@ -688,7 +688,7 @@ export default function QuickSetup() {
                     type="text"
                     value={otherText}
                     onChange={e => setOtherText(e.target.value)}
-                    placeholder="请输入其他过敏原（如：芒果 / 猕猴桃）"
+                    placeholder="自填过敏原（如：芒果 / 猕猴桃）"
                     className="w-full px-4 py-3 rounded-xl text-white placeholder-white/30 focus:outline-none"
                     style={{
                       background: 'rgba(255,255,255,0.06)',
@@ -778,7 +778,7 @@ export default function QuickSetup() {
                     </p>
                   ) : (
                     <p className="text-white/55" style={{ fontSize: 12, letterSpacing: '0.04em' }}>
-                      已选 {multiSel.length} 项 · 稍等带您往下走
+                      已选 {multiSel.length} 项 · 稍等带你往下走
                     </p>
                   )
                 ) : <span />}
