@@ -78,7 +78,8 @@ export interface WeeklyMenu {
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v46'; // §A+B (TICKET-007): 早餐 4 slot 营养结构 (carb/protein/vitamin_fiber/liquid) — pickBreakfastCombo 后 supplement vitamin_fiber + cooking complexity hardFilter (cook_complexity quick/normal/unlimited + cook_role helper 难菜过滤). stale user_weekly_menus 全用户重生成 (β UX 反馈)。
+export const ALGO_VERSION = 'v47'; // §A (TICKET-008): 撤销 cooking complexity hardFilter — 老板拍板"我没这个标准, 小于两小时的都可以". 简化为统一 cook_time_min > 120 (2h) 阈值, 取消 quick/normal/unlimited 分级 + 删 HARD_DISHES_FOR_HELPER. 75min 茶叶蛋 / 50min 小笼包 等中间值菜重新进 pool. stale user_weekly_menus 全用户重生成。
+// v46: §A+B (TICKET-007): 早餐 4 slot 营养结构 (carb/protein/vitamin_fiber/liquid) — pickBreakfastCombo 后 supplement vitamin_fiber + cooking complexity hardFilter (cook_complexity quick/normal/unlimited + cook_role helper 难菜过滤).
 // v45: §E (TICKET-005): v3 image-onboarding-driven scoring — axis 32-40 (9 新 axes 75% 权重) + hometown 30→5% + dietary_goal 25→15% + spice 删除。
 // v44: §D (TICKET-064): axis 31 fruit/veggie 应季强化 (+0.40 / -0.20) + INGREDIENT_SEASONALITY hybrid DB loader + explainScore 13 主轴。stale user_weekly_menus 全 β 用户重生成。
 // v43: §B (TICKET-053): axis 28 公式微调 — 3+ 应季食材整体 bonus +0.15 + 单菜 cap +0.5；INGREDIENT_SEASONALITY 扩至 60+ 食材。
@@ -87,30 +88,20 @@ export const ALGO_VERSION = 'v46'; // §A+B (TICKET-007): 早餐 4 slot 营养�
 // v40: Smell 1 阶段 2 合并双管道 + scoreForWeek 9-axis + sigmoid 学习曲线 + 周五"放纵日"。
 // v37: Western high-end bias. v36: pool-aware breakfast combo. v35: hometown 地域大区. v34: cook-method variety. v33: power curve.
 
-// §B (TICKET-007) cooking complexity hardFilter — 用户反馈"75min 茶叶蛋耗时太长" /
-// "小笼包 菲佣从零开始难度太大". cook_complexity 控制 cook_time_min 上限; cook_role
-// ='helper' 时排除高难度 dish. 当前 UI 未派单写入 cook_complexity / cook_role
-// localStorage key, helper 自然 short-circuit (null → return true) → 0 影响.
-// 等 UI 派单加 onboarding 写入后自动激活.
-const HARD_DISHES_FOR_HELPER = [
-  '小笼包', '灌汤包', '手擀面', '手抓饼', '烤鸭', '卤水',
-  '叉烧', '烧鹅', '北京烤鸭', '糖醋脆皮', '拔丝', '糖人',
-  '手工水饺', '现包饺子',
-];
+// §A (TICKET-008) cooking complexity hardFilter — 简化为统一 cook_time_min > 120
+// (2 小时) 阈值. 老板 2026-05-21 拍板"我没这个标准, 小于两小时的都可以".
+// 撤销原 TICKET-007 cook_complexity quick/normal/unlimited 分级 + cook_role
+// helper 难菜过滤 (HARD_DISHES_FOR_HELPER 删除). 极端长时间菜 (如 3h 老火汤 /
+// 隔夜卤水) 仍过滤. 茶叶蛋 75min 等中间值留 Database 数据层修.
+// 函数签名 (dish, cookComplexity, cookRole) 保留方便未来 v1.5 扩展 (e.g.
+// soft scoring 而非 hardFilter), 当前 cookComplexity / cookRole 参数 unused.
 export function passesCookingComplexity(
   dish: { cook_time_min?: number | null; title_zh?: string | null },
-  cookComplexity: string | null,
-  cookRole: string | null,
+  _cookComplexity: string | null,
+  _cookRole: string | null,
 ): boolean {
-  // cook_time_min 上限 (quick / normal / unlimited / null)
   const cookTime = dish.cook_time_min;
-  if (cookComplexity === 'quick' && typeof cookTime === 'number' && cookTime > 30) return false;
-  if (cookComplexity === 'normal' && typeof cookTime === 'number' && cookTime > 60) return false;
-  // cook_role='helper' 时过滤高难度 dish
-  if (cookRole === 'helper') {
-    const t = dish.title_zh ?? '';
-    if (HARD_DISHES_FOR_HELPER.some(kw => t.includes(kw))) return false;
-  }
+  if (typeof cookTime === 'number' && cookTime > 120) return false;
   return true;
 }
 
