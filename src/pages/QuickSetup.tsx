@@ -117,6 +117,33 @@ const QUESTIONS = [
     ],
   },
   {
+    // TICKET-004 §D — 生活习惯 1：谁做饭。单选。
+    id: "cook_role",
+    step: 4,
+    emoji: "🧑‍🍳",
+    question: "家里主要是谁做饭？",
+    sub: "我按真实做饭的人调难度。",
+    options: [
+      { id: 'self',   label: '我自己',      desc: '默认',                icon: '👩' },
+      { id: 'helper', label: '家政工人',    desc: '走 helper 菜谱',       icon: '🧑‍🍳' },
+      { id: 'family', label: '家人 / 长辈', desc: '熟练度高',             icon: '👨‍👩‍👦' },
+      { id: 'shared', label: '多人轮换',    desc: '不同人做不同顿',       icon: '🔄' },
+    ],
+  },
+  {
+    // TICKET-004 §D — 生活习惯 2：做饭时间。单选。
+    id: "cook_complexity",
+    step: 4,
+    emoji: "⏱",
+    question: "每天能花多少时间做饭？",
+    sub: "时间紧就推快手，余裕就慢炖。",
+    options: [
+      { id: 'quick',     label: '30 分钟以内', desc: '简单为主',         icon: '⏱' },
+      { id: 'normal',    label: '30-60 分钟',  desc: '有时炒有时煲',     icon: '🍳' },
+      { id: 'unlimited', label: '不限',        desc: '喜欢慢炖 / 煲汤',  icon: '🍲' },
+    ],
+  },
+  {
     // Hometown cuisine — contributes 30% to scoreDish; without it the
     // hometown axis is a no-op for every dish.
     id: "hometown",
@@ -339,6 +366,9 @@ export default function QuickSetup() {
     if (Array.isArray(prefs.mild_dislikes)) {
       localStorage.setItem("mild_dislikes", JSON.stringify(prefs.mild_dislikes));
     }
+    // TICKET-004 §D — 生活习惯（谁做饭 / 做饭时间）— 单选 string。
+    if (typeof prefs.cook_role === 'string')       localStorage.setItem("cook_role",       prefs.cook_role);
+    if (typeof prefs.cook_complexity === 'string') localStorage.setItem("cook_complexity", prefs.cook_complexity);
     // userHometown drives readHometownCuisine() in userPrefs.ts which is the
     // fallback path when the DB upsert hasn't resolved yet (fire-and-forget
     // promise). Without this, anonymous QuickSetup users had a 30% dead
