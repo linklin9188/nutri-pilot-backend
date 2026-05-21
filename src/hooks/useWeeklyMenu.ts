@@ -78,7 +78,8 @@ export interface WeeklyMenu {
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v47'; // §A (TICKET-008): 撤销 cooking complexity hardFilter — 老板拍板"我没这个标准, 小于两小时的都可以". 简化为统一 cook_time_min > 120 (2h) 阈值, 取消 quick/normal/unlimited 分级 + 删 HARD_DISHES_FOR_HELPER. 75min 茶叶蛋 / 50min 小笼包 等中间值菜重新进 pool. stale user_weekly_menus 全用户重生成。
+export const ALGO_VERSION = 'v48'; // §B (TICKET-009): v3 9 axes 值域桥接 — UI 写"用户语言" (rich/red_meat/spicy_stirfry) vs DB 推断"算法语言" (high/red/stirfry), 早期 v45 漏映射导致 6 axis (32/35/36/37/38/39) 90% 0 命中. 加 6 个 UI→DB map 让 axis 32-40 真消费 prefs. 老板"算法必须为用户选出他们想要的食材和菜品"指令 root cause. stale user_weekly_menus 全用户重生成。
+// v47: §A (TICKET-008): 撤销 cooking complexity hardFilter — 老板拍板"小于两小时的都可以". 统一 cook_time_min > 120 阈值。
 // v46: §A+B (TICKET-007): 早餐 4 slot 营养结构 (carb/protein/vitamin_fiber/liquid) — pickBreakfastCombo 后 supplement vitamin_fiber + cooking complexity hardFilter (cook_complexity quick/normal/unlimited + cook_role helper 难菜过滤).
 // v45: §E (TICKET-005): v3 image-onboarding-driven scoring — axis 32-40 (9 新 axes 75% 权重) + hometown 30→5% + dietary_goal 25→15% + spice 删除。
 // v44: §D (TICKET-064): axis 31 fruit/veggie 应季强化 (+0.40 / -0.20) + INGREDIENT_SEASONALITY hybrid DB loader + explainScore 13 主轴。stale user_weekly_menus 全 β 用户重生成。
@@ -267,6 +268,31 @@ function _breakfastCuisineOf(origin: string): string {
   return '';
 }
 
+// §B (TICKET-009) UI prefs 值域 ↔ DB 推断值域映射. v3 onboarding (QuickSetup.tsx)
+// UI 写"用户语言" (rich/red_meat/spicy_stirfry), DB schema 用"算法语言" (high/red/
+// stirfry). 早期 v45 漏映射导致 6 个 axis 90% 0 命中 — 用户填了 prefs 但算法不用,
+// 老板"算法必须为用户选出他们想要的食材和菜品"指令的真正 root cause.
+// 一个 UI 值 → 多个 DB 候选 (e.g. UI 'braised' 既匹配 DB 'braise' 也匹配 'redbraise'),
+// 用 string[] 让 _includes 多对一 match.
+const OIL_LEVEL_UI_TO_DB: Record<string, string> = {
+  rich: 'high', medium: 'mid', light: 'low',
+};
+const PROTEIN_CLASS_UI_TO_DB: Record<string, string> = {
+  red_meat: 'red', white_meat: 'white', veggie: 'veg', seafood: 'seafood',
+};
+const BEEF_STYLE_UI_TO_DB: Record<string, string[]> = {
+  spicy_stirfry: ['stirfry'], steak: ['steak'], stewed: ['stew'], braised: ['braise', 'redbraise'],
+};
+const CHICKEN_STYLE_UI_TO_DB: Record<string, string[]> = {
+  poached: ['poached'], spicy_diced: ['stirfry'], three_cup: ['sanbei'], yellow_braised: ['braise'],
+};
+const SEAFOOD_STYLE_UI_TO_DB: Record<string, string[]> = {
+  steamed: ['steam'], braised: ['redbraise'], salted: ['steam', 'stirfry'], blanched: ['steam'],
+};
+const VEGGIE_METHOD_UI_TO_DB: Record<string, string[]> = {
+  stirfry: ['stirfry'], dry_fried: ['drystir'], cold: ['cold'], soup: ['soup'],
+};
+
 /**
  * 9 axes 总加分函数 — caller pass mealType, hot path 单次调用.
  * 返回 number, 内部不构造对象, 不抛错.
@@ -282,44 +308,60 @@ export function imageOnboardingScore(dish: any, imagePrefs: ImagePrefs, mealType
   // protein_source ARRAY 备查 (axis 34/35/36/37 多源覆盖鸡蛋豆制品等组合)
   const psrc  = (Array.isArray(dish.protein_source) ? dish.protein_source : []) as string[];
 
-  // axis 32 — protein_main_class 15%
+  // axis 32 — protein_main_class 15% (UI red_meat/white_meat/veggie/seafood → DB red/white/veg/seafood)
   if (imagePrefs.protein_main_class?.length) {
     const cls = _proteinClassOf(mi);
-    if (cls && imagePrefs.protein_main_class.includes(cls)) s += 0.15;
+    const matchDb = imagePrefs.protein_main_class.some(ui =>
+      (PROTEIN_CLASS_UI_TO_DB[ui] ?? ui) === cls
+    );
+    if (cls && matchDb) s += 0.15;
   }
-  // axis 33 — staple_pref 8%
+  // axis 33 — staple_pref 8% (UI rice/noodle/congee/grain ↔ DB 同名, 无需映射)
   if (imagePrefs.staple_pref?.length && ct === 'staple') {
     const sc = _stapleClassOf(title, ct);
     if (sc && imagePrefs.staple_pref.includes(sc)) s += 0.08;
   }
-  // axis 34 — protein_pref 12%
+  // axis 34 — protein_pref 12% (UI pork/chicken/duck/lamb/beef ↔ DB main_ingredient 同名)
   if (imagePrefs.protein_pref?.length) {
     if (imagePrefs.protein_pref.includes(mi)) s += 0.12;
     else if (psrc.some(p => imagePrefs.protein_pref!.includes(p))) s += 0.06;  // 半分 (副蛋白源)
   }
-  // axis 35 — beef_style 7%, 仅含牛
+  // axis 35 — beef_style 7% (UI spicy_stirfry/steak/stewed/braised → DB stirfry/steak/stew/braise|redbraise)
   if (imagePrefs.beef_style?.length && (mi === 'beef' || psrc.includes('beef'))) {
     const bs = _beefStyleOf(title, cook);
-    if (bs && imagePrefs.beef_style.includes(bs)) s += 0.07;
+    const matchDb = imagePrefs.beef_style.some(ui =>
+      (BEEF_STYLE_UI_TO_DB[ui] ?? [ui]).includes(bs)
+    );
+    if (bs && matchDb) s += 0.07;
   }
-  // axis 36 — chicken_style 7%, 仅含鸡
+  // axis 36 — chicken_style 7% (UI poached/spicy_diced/three_cup/yellow_braised → DB poached/stirfry/sanbei/braise)
   if (imagePrefs.chicken_style?.length && (mi === 'chicken' || psrc.includes('chicken'))) {
     const cs = _chickenStyleOf(title, cook);
-    if (cs && imagePrefs.chicken_style.includes(cs)) s += 0.07;
+    const matchDb = imagePrefs.chicken_style.some(ui =>
+      (CHICKEN_STYLE_UI_TO_DB[ui] ?? [ui]).includes(cs)
+    );
+    if (cs && matchDb) s += 0.07;
   }
-  // axis 37 — seafood_style 6%, 仅海鲜
+  // axis 37 — seafood_style 6% (UI steamed/braised/salted/blanched → DB steam/redbraise/steam|stirfry/steam)
   if (imagePrefs.seafood_style?.length && _proteinClassOf(mi) === 'seafood') {
     const ss = _seafoodStyleOf(title, cook);
-    if (ss && imagePrefs.seafood_style.includes(ss)) s += 0.06;
+    const matchDb = imagePrefs.seafood_style.some(ui =>
+      (SEAFOOD_STYLE_UI_TO_DB[ui] ?? [ui]).includes(ss)
+    );
+    if (ss && matchDb) s += 0.06;
   }
-  // axis 38 — veggie_method 8%
+  // axis 38 — veggie_method 8% (UI stirfry/dry_fried/cold/soup → DB stirfry/drystir/cold/soup)
   if (imagePrefs.veggie_method?.length) {
     const vm = _veggieMethodOf(title, cook);
-    if (vm && imagePrefs.veggie_method.includes(vm)) s += 0.08;
+    const matchDb = imagePrefs.veggie_method.some(ui =>
+      (VEGGIE_METHOD_UI_TO_DB[ui] ?? [ui]).includes(vm)
+    );
+    if (vm && matchDb) s += 0.08;
   }
-  // axis 39 — oil_level 7%
-  if (imagePrefs.oil_level && dish.oil_level && imagePrefs.oil_level === dish.oil_level) {
-    s += 0.07;
+  // axis 39 — oil_level 7% (UI rich/medium/light → DB high/mid/low)
+  if (imagePrefs.oil_level && dish.oil_level) {
+    const prefsDb = OIL_LEVEL_UI_TO_DB[imagePrefs.oil_level] ?? imagePrefs.oil_level;
+    if (prefsDb === dish.oil_level) s += 0.07;
   }
   // axis 40 — breakfast_cuisine 5% 仅早餐
   if (mealType === '早餐' && imagePrefs.breakfast_cuisine) {
