@@ -293,15 +293,53 @@ export default function QuickSetup() {
     Math.max(1, parseInt(localStorage.getItem('nutri_adults') ?? '2', 10)));
   const [householdKids, setHouseholdKids] = useState<number>(() =>
     Math.max(0, parseInt(localStorage.getItem('nutri_kids') ?? '0', 10)));
+  // TICKET-004 §B — 家庭成员细分：老人 stepper + 慢病多选 + per-kid 年龄段。
+  const [householdElders, setHouseholdElders] = useState<number>(() => {
+    try {
+      const fc = JSON.parse(localStorage.getItem('family_composition') ?? 'null');
+      return Math.max(0, fc?.elders?.count ?? 0);
+    } catch { return 0; }
+  });
+  const [elderConditions, setElderConditions] = useState<string[]>(() => {
+    try {
+      const fc = JSON.parse(localStorage.getItem('family_composition') ?? 'null');
+      return Array.isArray(fc?.elders?.conditions) ? fc.elders.conditions : [];
+    } catch { return []; }
+  });
+  const [kidAges, setKidAges] = useState<string[]>(() => {
+    try {
+      const fc = JSON.parse(localStorage.getItem('family_composition') ?? 'null');
+      return Array.isArray(fc?.kids) ? fc.kids.map((k: any) => k.age ?? '7-12') : [];
+    } catch { return []; }
+  });
+  // 孩子 stepper 改变时同步 kidAges 数组长度（增减默认 '7-12'）。
+  useEffect(() => {
+    setKidAges(prev => {
+      if (prev.length === householdKids) return prev;
+      if (householdKids > prev.length) return [...prev, ...Array(householdKids - prev.length).fill('7-12')];
+      return prev.slice(0, householdKids);
+    });
+  }, [householdKids]);
 
   const q = QUESTIONS[step];
   const isLast = step === QUESTIONS.length - 1;
   const isHousehold = (q as any).custom === 'household';
 
   const commitHousehold = () => {
+    // legacy keys：nutri_adults 仍写中年大人数；老人不计入 nutri_adults（独立 stepper）。
     localStorage.setItem('nutri_adults', String(householdAdults));
     localStorage.setItem('nutri_kids',   String(householdKids));
-    const next = { ...answers, household: `${householdAdults}a${householdKids}k` };
+    // TICKET-004 §B — family_composition 细分 JSON。Algorithm 后续读这个 key。
+    const familyComp = {
+      adults: householdAdults,
+      elders: {
+        count: householdElders,
+        conditions: householdElders > 0 ? elderConditions : [],
+      },
+      kids: kidAges.map(age => ({ age })),
+    };
+    localStorage.setItem('family_composition', JSON.stringify(familyComp));
+    const next = { ...answers, household: `${householdAdults}a${householdKids}k${householdElders}e` };
     setAnswers(next);
     if (isLast) finish(next);
     else setStep(s => s + 1);
@@ -485,14 +523,14 @@ export default function QuickSetup() {
 
           {/* Options */}
           {isHousehold ? (
-            <div className="flex flex-col gap-5 flex-1">
-              {/* Adults stepper */}
+            <div className="flex flex-col gap-4 flex-1">
+              {/* Adults stepper (中年 30-60) */}
               <div className="rounded-2xl p-5"
                 style={{ background: 'rgba(255,255,255,0.06)', border: '1.5px solid rgba(255,255,255,0.09)' }}>
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-white font-semibold" style={{ fontSize: 15 }}>大人</p>
-                    <p className="text-white/45 font-light" style={{ fontSize: 12, marginTop: 2 }}>每位按 1 人计算</p>
+                    <p className="text-white/45 font-light" style={{ fontSize: 12, marginTop: 2 }}>中年 30-60 岁，每位按 1 人计算</p>
                   </div>
                   <div className="flex items-center gap-3">
                     <button
@@ -514,13 +552,70 @@ export default function QuickSetup() {
                 </div>
               </div>
 
-              {/* Kids stepper */}
+              {/* Elders stepper (60+) + conditions multi-chip */}
+              <div className="rounded-2xl p-5"
+                style={{ background: 'rgba(255,255,255,0.06)', border: '1.5px solid rgba(255,255,255,0.09)' }}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-white font-semibold" style={{ fontSize: 15 }}>老人</p>
+                    <p className="text-white/45 font-light" style={{ fontSize: 12, marginTop: 2 }}>60+ 岁，软烂少盐少糖</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => setHouseholdElders(n => Math.max(0, n - 1))}
+                      className="w-11 h-11 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+                      style={{ background: 'rgba(255,255,255,0.08)' }}>
+                      <span className="material-symbols-outlined text-white" style={{ fontSize: 22 }}>remove</span>
+                    </button>
+                    <span className="text-white font-black tabular-nums text-center" style={{ fontSize: 28, minWidth: 36 }}>
+                      {householdElders}
+                    </span>
+                    <button
+                      onClick={() => setHouseholdElders(n => Math.min(6, n + 1))}
+                      className="w-11 h-11 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+                      style={{ background: '#FF5A1F' }}>
+                      <span className="material-symbols-outlined text-white" style={{ fontSize: 22 }}>add</span>
+                    </button>
+                  </div>
+                </div>
+                {householdElders >= 1 && (
+                  <div className="mt-4 pt-4" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                    <p className="text-white/70 mb-2" style={{ fontSize: 12 }}>有慢病吗？（可多选）</p>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        { id: 'none',         label: '无慢病' },
+                        { id: 'hypertension', label: '高血压' },
+                        { id: 'diabetes',     label: '糖尿病' },
+                        { id: 'arthritis',    label: '关节炎' },
+                        { id: 'heart',        label: '心脏病' },
+                      ].map(c => {
+                        const on = elderConditions.includes(c.id);
+                        return (
+                          <button key={c.id} onClick={() => setElderConditions(prev => {
+                            if (c.id === 'none') return on ? [] : ['none'];
+                            const without = prev.filter(x => x !== 'none' && x !== c.id);
+                            return on ? without : [...without, c.id];
+                          })}
+                            className="px-3 py-1.5 rounded-full active:scale-95 transition-transform"
+                            style={on
+                              ? { background: 'rgba(255,90,31,0.20)', border: '1.5px solid #FF5A1F', fontSize: 12, color: '#fff' }
+                              : { background: 'rgba(255,255,255,0.06)', border: '1.5px solid rgba(255,255,255,0.09)', fontSize: 12, color: 'rgba(255,255,255,0.7)' }}>
+                            {c.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Kids stepper + per-kid age chip */}
               <div className="rounded-2xl p-5"
                 style={{ background: 'rgba(255,255,255,0.06)', border: '1.5px solid rgba(255,255,255,0.09)' }}>
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-white font-semibold" style={{ fontSize: 15 }}>孩子</p>
-                    <p className="text-white/45 font-light" style={{ fontSize: 12, marginTop: 2 }}>按 0.5 人计算，会触发儿童菜 slot</p>
+                    <p className="text-white/45 font-light" style={{ fontSize: 12, marginTop: 2 }}>按 0.5 人份，触发儿童菜 slot</p>
                   </div>
                   <div className="flex items-center gap-3">
                     <button
@@ -540,17 +635,46 @@ export default function QuickSetup() {
                     </button>
                   </div>
                 </div>
+                {householdKids >= 1 && (
+                  <div className="mt-4 pt-4 flex flex-col gap-2" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                    <p className="text-white/70" style={{ fontSize: 12 }}>每个孩子的年龄段</p>
+                    {kidAges.map((age, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <span className="text-white/55" style={{ fontSize: 12, minWidth: 48 }}>第 {idx + 1} 位</span>
+                        <div className="flex flex-wrap gap-2 flex-1">
+                          {[
+                            { id: '3-6',   label: '3-6 岁' },
+                            { id: '7-12',  label: '7-12 岁' },
+                            { id: '13-18', label: '13-18 岁' },
+                          ].map(a => {
+                            const on = age === a.id;
+                            return (
+                              <button key={a.id} onClick={() => setKidAges(prev =>
+                                prev.map((p, i) => i === idx ? a.id : p))}
+                                className="px-3 py-1.5 rounded-full active:scale-95 transition-transform"
+                                style={on
+                                  ? { background: 'rgba(255,90,31,0.20)', border: '1.5px solid #FF5A1F', fontSize: 12, color: '#fff' }
+                                  : { background: 'rgba(255,255,255,0.06)', border: '1.5px solid rgba(255,255,255,0.09)', fontSize: 12, color: 'rgba(255,255,255,0.7)' }}>
+                                {a.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Summary chip */}
               <div className="text-center text-white/60" style={{ fontSize: 13, letterSpacing: '0.04em' }}>
-                共 {householdAdults + householdKids} 人 · 等效 {(householdAdults + householdKids * 0.5).toFixed(1)} 人份
+                共 {householdAdults + householdElders + householdKids} 人 · 等效 {(householdAdults + householdElders + householdKids * 0.5).toFixed(1)} 人份
               </div>
 
               {/* Confirm button */}
               <button
                 onClick={commitHousehold}
-                className="mt-2 h-14 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform font-bold text-white"
+                className="mt-1 h-14 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform font-bold text-white"
                 style={{ background: 'linear-gradient(135deg, #FF5A1F, #FF9054)', fontSize: 15, boxShadow: '0 8px 24px rgba(255,90,31,0.35)' }}>
                 下一步
                 <span className="material-symbols-outlined text-white" style={{ fontSize: 20 }}>arrow_forward_ios</span>
