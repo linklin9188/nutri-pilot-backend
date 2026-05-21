@@ -269,11 +269,6 @@ export default function Login() {
     </div>
   );
 
-  const roleLabels: Record<Role, Record<Language, string>> = {
-    employer: { zh: "我是雇主", "zh-Hant": "我是僱主", en: "Employer", tl: "Ako ay employer", id: "Saya majikan" },
-    helper:   { zh: "我是工人", "zh-Hant": "我是工人", en: "Helper",   tl: "Ako ay katulong",  id: "Saya pekerja" },
-  };
-  const roleIcon: Record<Role, string> = { employer: "home", helper: "support_agent" };
   const roleHint = role === "helper"
     ? t("Sign in to view today's shopping & cooking tasks", "登录后即可查看今天的采买与烹饪任务")
     : t("Sign in to unlock your menu & smart shopping", "登录解锁完整菜单与智能采购");
@@ -528,36 +523,6 @@ export default function Login() {
                 {error}
               </p>
             )}
-
-            {/* Role pick — sits BELOW the login buttons per product spec.
-                Determines post-login destination (employer → /setup or /;
-                helper → /helper) and is persisted to localStorage.nutri_role
-                immediately so the OAuth redirect chain sees the right role
-                even after window.location.href. */}
-            <div className="mt-2 p-1 rounded-2xl flex gap-1"
-              style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.10)" }}>
-              {(["employer", "helper"] as Role[]).map(r => {
-                const active = role === r;
-                const label = roleLabels[r][language] ?? roleLabels[r].en;
-                return (
-                  <button key={r}
-                    onClick={() => setRole(r)}
-                    className="flex-1 py-2.5 rounded-xl flex items-center justify-center gap-1.5 transition-all active:scale-95"
-                    style={active
-                      ? { background: r === "helper" ? "#25D366" : "#FF5A1F", boxShadow: "0 4px 14px rgba(0,0,0,0.25)" }
-                      : { background: "transparent" }
-                    }>
-                    <span className="material-symbols-outlined text-white"
-                      style={{ fontSize: 18, fontVariationSettings: "'FILL' 1", opacity: active ? 1 : 0.65 }}>
-                      {roleIcon[r]}
-                    </span>
-                    <span className="font-bold text-white" style={{ fontSize: 13, opacity: active ? 1 : 0.65 }}>
-                      {label}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
           </motion.div>
           )}
 
