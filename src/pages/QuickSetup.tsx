@@ -63,6 +63,7 @@ const QUESTIONS_V3: QuestionV3[] = [
       { value: 'white_meat', label: '白肉拼盘', desc: '鸡 · 鸭',          img: '/onboarding/q1_chicken.jpg' },
       { value: 'seafood',    label: '海鲜拼盘', desc: '虾蟹 · 鱼 · 贝',   img: '/onboarding/q1_seafood.jpg' },
       { value: 'veggie',     label: '素食拼盘', desc: '豆腐 · 蔬菜',      img: '/onboarding/q1_veg.jpg' },
+      { value: 'other',      label: '✏️ 其他',  desc: '自填',             emoji: '✏️' },
     ],
   },
 
@@ -80,6 +81,7 @@ const QUESTIONS_V3: QuestionV3[] = [
       { value: 'noodle', label: '面条馒头', img: '/onboarding/q2_noodle.jpg' },
       { value: 'congee', label: '粥',       img: '/onboarding/q2_porridge.jpg' },
       { value: 'grain',  label: '杂粮',     desc: '红薯 · 玉米 · 燕麦', img: '/onboarding/q2_grain.jpg' },
+      { value: 'other',  label: '✏️ 其他',  desc: '自填',                emoji: '✏️' },
     ],
   },
 
@@ -99,6 +101,7 @@ const QUESTIONS_V3: QuestionV3[] = [
       { value: 'duck',    label: '鸭', img: '/onboarding/q1_duck.jpg' },
       { value: 'lamb',    label: '羊', img: '/onboarding/q1_lamb.jpg' },
       { value: 'beef',    label: '牛', img: '/onboarding/q1_beef.jpg' },
+      { value: 'other',   label: '✏️ 其他', emoji: '✏️' },
     ],
   },
 
@@ -116,6 +119,7 @@ const QUESTIONS_V3: QuestionV3[] = [
       { value: 'steak',         label: '煎牛排',     desc: '西 · 北',       img: '/onboarding/q4_beef_steak.jpg' },
       { value: 'stewed',        label: '炖牛腩',     desc: '粤 · 港清',     img: '/onboarding/q4_beef_stew.jpg' },
       { value: 'braised',       label: '红烧牛肉',   desc: '江浙 · 北家常', img: '/onboarding/q4_beef_braised.jpg' },
+      { value: 'other',         label: '✏️ 其他',     desc: '自填',          emoji: '✏️' },
     ],
   },
 
@@ -129,10 +133,11 @@ const QUESTIONS_V3: QuestionV3[] = [
     condition: 'has_chicken',
     cols: 2,
     options: [
-      { value: 'poached',     label: '白切鸡', desc: '粤式',     img: '/onboarding/q5_chicken_white.jpg' },
-      { value: 'spicy_diced', label: '辣子鸡', desc: '川式',     img: '/onboarding/q5_chicken_spicy.jpg' },
-      { value: 'three_cup',   label: '三杯鸡', desc: '台式',     img: '/onboarding/q5_chicken_threecup.jpg' },
+      { value: 'poached',        label: '白切鸡', desc: '粤式',     img: '/onboarding/q5_chicken_white.jpg' },
+      { value: 'spicy_diced',    label: '辣子鸡', desc: '川式',     img: '/onboarding/q5_chicken_spicy.jpg' },
+      { value: 'three_cup',      label: '三杯鸡', desc: '台式',     img: '/onboarding/q5_chicken_threecup.jpg' },
       { value: 'yellow_braised', label: '黄焖鸡', desc: '北 · 江浙', img: '/onboarding/q5_chicken_braised.jpg' },
+      { value: 'other',          label: '✏️ 其他', desc: '自填',     emoji: '✏️' },
     ],
   },
 
@@ -146,10 +151,11 @@ const QUESTIONS_V3: QuestionV3[] = [
     condition: 'has_seafood_class',
     cols: 2,
     options: [
-      { value: 'steamed',  label: '清蒸', img: '/onboarding/q6_seafood_steam.jpg' },
-      { value: 'braised',  label: '红烧', img: '/onboarding/q6_seafood_braise.jpg' },
-      { value: 'salted',   label: '椒盐', img: '/onboarding/q6_seafood_salt.jpg' },
-      { value: 'blanched', label: '白灼', img: '/onboarding/q6_seafood_boil.jpg' },
+      { value: 'steamed',  label: '清蒸',     img: '/onboarding/q6_seafood_steam.jpg' },
+      { value: 'braised',  label: '红烧',     img: '/onboarding/q6_seafood_braise.jpg' },
+      { value: 'salted',   label: '椒盐',     img: '/onboarding/q6_seafood_salt.jpg' },
+      { value: 'blanched', label: '白灼',     img: '/onboarding/q6_seafood_boil.jpg' },
+      { value: 'other',    label: '✏️ 其他',   desc: '自填', emoji: '✏️' },
     ],
   },
 
@@ -163,10 +169,11 @@ const QUESTIONS_V3: QuestionV3[] = [
     minSelect: 1,
     cols: 2,
     options: [
-      { value: 'stirfry',   label: '清炒', img: '/onboarding/q7_veg_stir.jpg' },
-      { value: 'dry_fried', label: '干煸', img: '/onboarding/q7_veg_dry.jpg' },
-      { value: 'cold',      label: '凉拌', img: '/onboarding/q7_veg_cold.jpg' },
-      { value: 'soup',      label: '煲汤', img: '/onboarding/q7_veg_soup.jpg' },
+      { value: 'stirfry',   label: '清炒',     img: '/onboarding/q7_veg_stir.jpg' },
+      { value: 'dry_fried', label: '干煸',     img: '/onboarding/q7_veg_dry.jpg' },
+      { value: 'cold',      label: '凉拌',     img: '/onboarding/q7_veg_cold.jpg' },
+      { value: 'soup',      label: '煲汤',     img: '/onboarding/q7_veg_soup.jpg' },
+      { value: 'other',     label: '✏️ 其他',   desc: '自填', emoji: '✏️' },
     ],
   },
 
@@ -179,9 +186,10 @@ const QUESTIONS_V3: QuestionV3[] = [
     multi: false,
     cols: 2,
     options: [
-      { value: 'rich',   label: '浓郁',   desc: '重油红烧肉',  img: '/onboarding/q8_oil_heavy.jpg' },
-      { value: 'medium', label: '中等',   desc: '日常家常',    img: '/onboarding/q8_oil_normal.jpg' },
-      { value: 'light',  label: '极清',   desc: '白灼 · 清蒸', img: '/onboarding/q8_oil_light.jpg' },
+      { value: 'rich',   label: '浓郁',     desc: '重油红烧肉',  img: '/onboarding/q8_oil_heavy.jpg' },
+      { value: 'medium', label: '中等',     desc: '日常家常',    img: '/onboarding/q8_oil_normal.jpg' },
+      { value: 'light',  label: '极清',     desc: '白灼 · 清蒸', img: '/onboarding/q8_oil_light.jpg' },
+      { value: 'other',  label: '✏️ 其他',   desc: '自填',        emoji: '✏️' },
     ],
   },
 
@@ -194,10 +202,11 @@ const QUESTIONS_V3: QuestionV3[] = [
     multi: false,
     cols: 2,
     options: [
-      { value: 'chinese', label: '中式', desc: '包子 · 粥 · 油条 · 豆浆', img: '/onboarding/q9_breakfast_chinese.jpg' },
-      { value: 'western', label: '西式', desc: '三明治 · 牛奶 · 麦片',    img: '/onboarding/q9_breakfast_western.jpg' },
-      { value: 'hk',      label: '港式', desc: '菠萝包 · 奶茶 · 多士',    img: '/onboarding/q9_breakfast_hk.jpg' },
-      { value: 'simple',  label: '简单', desc: '鸡蛋 · 燕麦',             img: '/onboarding/q9_breakfast_simple.jpg' },
+      { value: 'chinese', label: '中式',     desc: '包子 · 粥 · 油条 · 豆浆', img: '/onboarding/q9_breakfast_chinese.jpg' },
+      { value: 'western', label: '西式',     desc: '三明治 · 牛奶 · 麦片',    img: '/onboarding/q9_breakfast_western.jpg' },
+      { value: 'hk',      label: '港式',     desc: '菠萝包 · 奶茶 · 多士',    img: '/onboarding/q9_breakfast_hk.jpg' },
+      { value: 'simple',  label: '简单',     desc: '鸡蛋 · 燕麦',             img: '/onboarding/q9_breakfast_simple.jpg' },
+      { value: 'other',   label: '✏️ 其他',   desc: '自填',                    emoji: '✏️' },
     ],
   },
 
@@ -346,13 +355,16 @@ export default function QuickSetup() {
     setAnswers(next);
     // UI 015 §A — Q0 'custom' 不 auto-advance：等用户调好 stepper 再点"下一步 →"。
     if (q.id === 'table_style' && id === 'custom') return;
+    // UI 015 §B — 任何单选题选 'other' 也不 auto-advance：等用户输入自填文本再点"下一步 →"。
+    if (id === 'other') return;
     setTimeout(() => goToNext(next), 320);
   };
 
   const commitMulti = (sel: string[]) => {
     let finalSel = sel;
-    // Q10 strict_avoid: 把 'other' chip 转写为 'other:<用户输入>'，空文本则丢弃 chip。
-    if (q.id === 'strict_avoid' && sel.includes('other')) {
+    // UI 015 §B — 任意多选题选了 'other'：把 'other' chip 转写为 'other:<用户输入>'，
+    // 空文本则丢弃 chip。原 Q10 strict_avoid 的专属逻辑泛化到 Q1-Q7 所有多选题。
+    if (sel.includes('other')) {
       const trimmed = otherText.trim();
       finalSel = sel.filter(x => x !== 'other');
       if (trimmed) finalSel.push(`other:${trimmed}`);
@@ -379,9 +391,10 @@ export default function QuickSetup() {
     if (multiSel.length === 0) return;
     const minSel = q.minSelect ?? 1;
     if (multiSel.length < minSel) return;
-    // TICKET-006: 用户选了 'other'（其他自填）→ 必须等用户输入 + 显式点"完成 →"，
-    // 否则 1.8s debounce 会提前把 'other' commit 成空（trimmed=''→丢弃）。
-    if (q.id === 'strict_avoid' && multiSel.includes('other')) return;
+    // TICKET-006 + UI 015 §B: 用户选了 'other'（其他自填）→ 必须等用户输入 + 显式
+    // 点"完成 →"，否则 1.8s debounce 会提前把 'other' commit 成空（trimmed=''→丢弃）。
+    // 原 strict_avoid 专属泛化到任意 multi 题。
+    if (multiSel.includes('other')) return;
     debounceRef.current = setTimeout(() => commitMulti(multiSel), 1800);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -409,6 +422,22 @@ export default function QuickSetup() {
     v3Axes.forEach(([k, v]) => {
       if (v === undefined) return;
       localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v));
+    });
+
+    // UI 015 §B — 全题 'other:<text>' 拆解：从单选 string 或多选 array 中提取自填
+    // 文本，存到独立 key `${axis}_custom_text`，让 Algorithm 端 prefScores 可作为
+    // freeform tag 模糊匹配 dish.tags / dish.title。空文本 → removeItem。
+    v3Axes.forEach(([k, v]) => {
+      const ck = `${k}_custom_text`;
+      let customText = '';
+      if (typeof v === 'string' && v.startsWith('other:')) {
+        customText = v.slice('other:'.length);
+      } else if (Array.isArray(v)) {
+        const entry = v.find(x => typeof x === 'string' && x.startsWith('other:'));
+        if (entry) customText = entry.slice('other:'.length);
+      }
+      if (customText) localStorage.setItem(ck, customText);
+      else localStorage.removeItem(ck);
     });
 
     // ── Q0 table_style → 派生 household composition ──────────────────
@@ -586,7 +615,23 @@ export default function QuickSetup() {
               )}
             </div>
           ) : q.multi ? (
-            <ImageGrid options={q.options} multi selected={multiSel} onToggle={toggleMulti} cols={q.cols} />
+            <>
+              <ImageGrid options={q.options} multi selected={multiSel} onToggle={toggleMulti} cols={q.cols} />
+              {/* UI 015 §B — 多选 'other' input：multiSel 含 'other' 时显示文本框，
+                  commit 时由 commitMulti 把 'other' 转写为 'other:<text>'。 */}
+              {multiSel.includes('other') && (
+                <div className="mt-4">
+                  <input type="text" value={otherText} maxLength={30}
+                    onChange={e => setOtherText(e.target.value)}
+                    placeholder="自填（最多 30 字）"
+                    className="w-full px-4 py-3 rounded-xl text-white placeholder-white/30 focus:outline-none"
+                    style={{ background: 'rgba(255,255,255,0.06)', border: '1.5px solid rgba(255,90,31,0.4)', fontSize: 14 }} />
+                  <p className="mt-2 text-white/35 font-light" style={{ fontSize: 11 }}>
+                    输完后点下方"完成 →"，或留空跳过
+                  </p>
+                </div>
+              )}
+            </>
           ) : (
             <>
               <ImageGrid options={q.options} multi={false}
@@ -603,6 +648,28 @@ export default function QuickSetup() {
                     className="mt-4 w-full py-3 rounded-2xl font-bold text-white"
                     style={{ background: '#FF5A1F', fontSize: 15, letterSpacing: '0.04em' }}>
                     {customAdults} 大 {customKids} 小 · 下一步 →
+                  </button>
+                </div>
+              )}
+              {/* UI 015 §B — 单选 'other' input + 下一步：仅当选中 'other' 时显示。
+                  commit 时把 answers[q.id] 从 'other' 替换为 'other:<text>'，空 → 留 'other'。 */}
+              {q.id !== 'table_style' && answers[q.id] === 'other' && (
+                <div className="mt-4">
+                  <input type="text" value={otherText} maxLength={30}
+                    onChange={e => setOtherText(e.target.value)}
+                    placeholder="自填（最多 30 字）"
+                    className="w-full px-4 py-3 rounded-xl text-white placeholder-white/30 focus:outline-none"
+                    style={{ background: 'rgba(255,255,255,0.06)', border: '1.5px solid rgba(255,90,31,0.4)', fontSize: 14 }} />
+                  <button onClick={() => {
+                    const trimmed = otherText.trim();
+                    const next = { ...answers, [q.id]: trimmed ? `other:${trimmed}` : 'other' };
+                    setAnswers(next);
+                    setOtherText('');
+                    goToNext(next);
+                  }}
+                    className="mt-3 w-full py-3 rounded-2xl font-bold text-white"
+                    style={{ background: '#FF5A1F', fontSize: 15, letterSpacing: '0.04em' }}>
+                    {otherText.trim() ? `"${otherText.trim()}" · 下一步 →` : '跳过 · 下一步 →'}
                   </button>
                 </div>
               )}
