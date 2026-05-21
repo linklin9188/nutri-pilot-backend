@@ -141,27 +141,41 @@ export default function HelperHome() {
     //   2. household_id → households.employer_id
     //   3. employer_id → user_weekly_menus today's dinner dish_ids
     //   4. dish_ids → dishes (title, image, course_type, prep/cook steps)
+    //
+    // TICKET-009 — 每步加 console.warn 暴露真相。Smell 3 (household_members.
+    // helper_id 是 uuid 但 getUserId 返回 string) 在 prod 会让 step 1 静默返
+    // 回空，老板看到"界面空白"无法 diagnose。dev tools warn 给 CEO + 用户
+    // 留个明确足迹。
     (async () => {
       // 1. Find the helper's active household membership
-      const { data: member } = await supabase
+      const { data: member, error: memberErr } = await supabase
         .from("household_members")
         .select("household_id")
         .eq("helper_id", userId)
         .eq("status", "active")
         .order("joined_at", { ascending: false })
         .limit(1);
+      if (memberErr) console.warn("[HelperHome] household_members fetch error:", memberErr);
       const householdId = (member?.[0] as any)?.household_id;
-      if (!householdId) return;
+      if (!householdId) {
+        console.warn("[HelperHome] no household_members row for helper_id=", userId,
+                     "(Smell 3: helper_id uuid vs string mismatch or Login upsert RLS-denied)");
+        return;
+      }
       setIsLinked(true);
 
       // 2. Resolve household → employer
-      const { data: hh } = await supabase
+      const { data: hh, error: hhErr } = await supabase
         .from("households")
         .select("employer_id")
         .eq("id", householdId)
         .maybeSingle();
+      if (hhErr) console.warn("[HelperHome] households fetch error:", hhErr);
       const employerId = (hh as any)?.employer_id;
-      if (!employerId) return;
+      if (!employerId) {
+        console.warn("[HelperHome] household has no employer_id, household_id=", householdId);
+        return;
+      }
 
       // 3. Today's saved menu for the employer. user_weekly_menus is keyed by
       // (user_id, week_start, day_index, meal_type). Monday-start week + JS
@@ -172,14 +186,19 @@ export default function HelperHome() {
       monday.setDate(today.getDate() - dow);
       const weekStart = monday.toISOString().slice(0, 10);
 
-      const { data: menuRows } = await supabase
+      const { data: menuRows, error: menuErr } = await supabase
         .from("user_weekly_menus")
         .select("meal_type, dish_ids, swapped_dish_ids")
         .eq("user_id", employerId)
         .eq("week_start", weekStart)
         .eq("day_index", dow);
 
-      if (!menuRows || menuRows.length === 0) return;
+      if (menuErr) console.warn("[HelperHome] user_weekly_menus fetch error:", menuErr);
+      if (!menuRows || menuRows.length === 0) {
+        console.warn("[HelperHome] employer", employerId, "has no menu for", weekStart, "dow=", dow,
+                     "— employer 尚未生成本周菜单");
+        return;
+      }
 
       // Collect dish_ids per meal type — preferring swapped_dish_ids when
       // the employer swapped a dish. We keep the meal-type grouping so the
@@ -312,6 +331,30 @@ export default function HelperHome() {
           </span>
         </div>
       </div>
+
+      {/* TICKET-009 — empty state. dishes.length === 0 时整段 menu section
+          原本 gated 掉，header 下方+ banner 上方是空白，老板反馈"界面打开
+          是空的"。分两种情况：
+            (a) isLinked === true 但雇主没生成菜单 → 等雇主
+            (b) isLinked === false → 下面的"输入邀请码"卡已经处理
+          C 修复留给 DB 部门（Smell 3：household_members.helper_id type 改
+          text + RLS anon-first）。UI 这里加 placeholder 让用户至少看到原因。 */}
+      {dishes.length === 0 && isLinked && (
+        <div className="relative z-10 mx-5 mb-4 px-4 py-6 rounded-2xl text-center"
+          style={{ background: "rgba(255,255,255,0.04)", border: "1px dashed rgba(255,255,255,0.10)" }}>
+          <div style={{ fontSize: 36, marginBottom: 6 }}>📋</div>
+          <p className="font-semibold text-white" style={{ fontSize: 14, marginBottom: 4 }}>
+            {t3("Waiting for employer to plan today's menu",
+                "等雇主生成今日菜单",
+                "Hinihintay ang employer na gumawa ng menu ngayon")}
+          </p>
+          <p style={{ fontSize: 11, color: "rgba(255,255,255,0.40)", lineHeight: 1.5 }}>
+            {t3("Once the employer saves a menu, dishes will show up here automatically.",
+                "雇主一保存菜单就会自动出现",
+                "Kapag may menu na ang employer, lalabas dito ang mga ulam")}
+          </p>
+        </div>
+      )}
 
       {/* Today's dishes — grouped by meal (breakfast / 午餐 / 晚餐).
           Each section scrolls horizontally and shows the dish count next
