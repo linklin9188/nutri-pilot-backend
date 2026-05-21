@@ -35,12 +35,10 @@ const QUESTIONS_V3: QuestionV3[] = [
     multi: false,
     cols: 2,
     options: [
-      { value: 'cozy_2',    label: '2 椅小桌',       desc: '1 主菜 1 汤 简单家常',   emoji: '🍽️' },
-      { value: 'family_4',  label: '4 椅标准',       desc: '3 菜 1 汤 正经家常',     emoji: '🍱' },
-      { value: 'big_round', label: '大圆桌',         desc: '8-10 椅 6 菜 2 汤 粤式', emoji: '🥘' },
-      { value: 'western',   label: '西式长桌',       desc: '刀叉 沙拉 牛排 意面',    emoji: '🍴' },
-      { value: 'hk_diner',  label: '港式茶餐厅',     desc: '菠萝包 奶茶 多士',       emoji: '🥯' },
-      { value: 'solo',      label: '1 人小桌',       desc: '便当盒 简餐',            emoji: '🍙' },
+      { value: 'solo',   label: '1 人',  desc: '一个人吃 · 简餐便当',       img: '/onboarding/q0_solo.jpg' },
+      { value: 'couple', label: '2 人',  desc: '夫妻 / 情侣 · 1 主菜 1 汤', img: '/onboarding/q0_couple.jpg' },
+      { value: 'family', label: '4 人',  desc: '家庭 · 3 菜 1 汤 正经家常', img: '/onboarding/q0_family.jpg' },
+      { value: 'gather', label: '10 人', desc: '大圆桌 · 6 菜 2 汤 聚餐',   img: '/onboarding/q0_gathering.jpg' },
     ],
   },
 
@@ -232,17 +230,14 @@ const QUESTIONS_V3: QuestionV3[] = [
   },
 ];
 
-// Q0 餐桌画面 → 人数 / 菜系 / 复杂度 三个维度的解析表。
-// hometown_cuisine 只在能精准映射时给值（big_round/hk_diner 显然粤系），其余
-// 留 null 让 Algorithm 通过其他 axis（protein_main_class / oil_level / breakfast_cuisine）
-// 推断风格。
+// Q0 餐桌画面 → 人数 / 复杂度 解析表。UI 014 §A: 6 选项收敛为 4 选项
+// (solo / couple / family / gather)，去掉了"菜系"维度——hometown_cuisine 现在
+// 完全由 Q9 breakfast_cuisine + Q1 protein_main_class + Q8 oil_level 推断。
 const TABLE_STYLE_MAP: Record<string, { adults: number; kids: number; elders: number; cuisine: string | null; complexity: string }> = {
-  cozy_2:    { adults: 2, kids: 0, elders: 0, cuisine: null,        complexity: 'simple'   },
-  family_4:  { adults: 3, kids: 1, elders: 0, cuisine: null,        complexity: 'standard' },
-  big_round: { adults: 4, kids: 1, elders: 2, cuisine: 'cantonese', complexity: 'rich'     },
-  western:   { adults: 2, kids: 0, elders: 0, cuisine: null,        complexity: 'standard' },
-  hk_diner:  { adults: 2, kids: 0, elders: 0, cuisine: 'cantonese', complexity: 'simple'   },
-  solo:      { adults: 1, kids: 0, elders: 0, cuisine: null,        complexity: 'simple'   },
+  solo:   { adults: 1, kids: 0, elders: 0, cuisine: null, complexity: 'simple'   },
+  couple: { adults: 2, kids: 0, elders: 0, cuisine: null, complexity: 'simple'   },
+  family: { adults: 3, kids: 1, elders: 0, cuisine: null, complexity: 'standard' },
+  gather: { adults: 6, kids: 1, elders: 2, cuisine: null, complexity: 'rich'     },
 };
 
 // dietary_goal fallback — v3 没有显式 goal 题，统一 'maintain'。Algorithm
@@ -397,8 +392,8 @@ export default function QuickSetup() {
     });
 
     // ── Q0 table_style → 派生 household composition ──────────────────
-    const tableStyle = (finalAnswers.table_style as string) ?? 'family_4';
-    const tsMap = TABLE_STYLE_MAP[tableStyle] ?? TABLE_STYLE_MAP.family_4;
+    const tableStyle = (finalAnswers.table_style as string) ?? 'family';
+    const tsMap = TABLE_STYLE_MAP[tableStyle] ?? TABLE_STYLE_MAP.family;
     localStorage.setItem('nutri_adults', String(tsMap.adults));
     localStorage.setItem('nutri_kids',   String(tsMap.kids));
     const familyComp = {
@@ -594,13 +589,13 @@ export default function QuickSetup() {
           {/* Skip 整个 onboarding（只在 Q0 出现） */}
           {currentVisiblePos === 0 && (
             <button onClick={() => {
-              const skipPrefs = { table_style: 'family_4', oil_level: 'medium', breakfast_cuisine: 'chinese', setupAt: Date.now() };
+              const skipPrefs = { table_style: 'family', oil_level: 'medium', breakfast_cuisine: 'chinese', setupAt: Date.now() };
               localStorage.setItem('quickPrefs', JSON.stringify(skipPrefs));
               localStorage.setItem('onboarding_v3_done', 'true');
               localStorage.setItem('onboarding_v2_done', 'true');
               localStorage.removeItem('needs_v3_onboarding');
               localStorage.removeItem('needs_v2_onboarding');
-              localStorage.setItem('table_style', 'family_4');
+              localStorage.setItem('table_style', 'family');
               localStorage.setItem('oil_level', 'medium');
               localStorage.setItem('breakfast_cuisine', 'chinese');
               localStorage.setItem('nutri_adults', '3');
