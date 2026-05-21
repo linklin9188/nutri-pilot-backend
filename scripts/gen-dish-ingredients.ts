@@ -12,6 +12,8 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { Client } from 'pg';
+import { config } from 'dotenv';
+config();
 
 const SUPABASE_URL = 'https://qoyuafqqkfyrqlthsvws.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_pierNkIn2sr7JLbAe-zvuA_Go79HOyd';
