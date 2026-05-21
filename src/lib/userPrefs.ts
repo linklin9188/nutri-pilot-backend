@@ -27,6 +27,28 @@ export interface UserPrefs {
   tastePref:        string | null;  // 'light' | 'default' | 'veggie' | ...
   hometownCuisine:  string | null;  // matches dishes.origin_cuisine — cantonese / sichuan / jiangnan / …
 
+  // TICKET-008 — cooking complexity hardFilter (Algorithm 007 e64419e shipped).
+  // passesCookingComplexity() in useWeeklyMenu.ts currently reads localStorage
+  // directly; surfacing them here lets future scoreDish / hook callers do the
+  // same without each re-reading localStorage.
+  cookComplexity:   'quick' | 'normal' | 'unlimited' | null;
+  cookRole:         'self' | 'helper' | 'family' | 'shared' | null;
+
+  // TICKET-008 — v3 onboarding axes (QuickSetup writes each as its own
+  // localStorage key in finish(); see src/pages/QuickSetup.tsx:383-392).
+  // Arrays default to []; single-value strings default to null.
+  tableStyle:         string | null;
+  proteinMainClass:   string[];
+  staplePref:         string[];
+  proteinPref:        string[];
+  beefStyle:          string[];
+  chickenStyle:       string[];
+  seafoodStyle:       string[];
+  veggieMethod:       string[];
+  oilLevel:           string | null;
+  breakfastCuisine:   string | null;
+  strictAvoid:        string[];
+
   // Display helpers
   avoidLabels:      string[];       // human-readable labels for UI chips
 }
@@ -159,6 +181,44 @@ function readHometownCuisine(): string | null {
   return first || null;
 }
 
+// TICKET-008 — Read v3 onboarding axes from individual localStorage keys.
+// QuickSetup.finish() writes each axis as its own key (see line 383-392). We
+// hydrate them here so getUserPrefs() can hand a complete prefs object to
+// downstream scoring without each consumer re-reading localStorage. Empty /
+// missing keys collapse to null (single-value) or [] (array) — never throw.
+function readJsonArray(key: string): string[] {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function readV3Axes(): Pick<UserPrefs,
+  'cookComplexity' | 'cookRole' | 'tableStyle' | 'proteinMainClass' | 'staplePref' |
+  'proteinPref' | 'beefStyle' | 'chickenStyle' | 'seafoodStyle' | 'veggieMethod' |
+  'oilLevel' | 'breakfastCuisine' | 'strictAvoid'
+> {
+  return {
+    cookComplexity:    (localStorage.getItem('cook_complexity') as UserPrefs['cookComplexity']) || null,
+    cookRole:          (localStorage.getItem('cook_role')       as UserPrefs['cookRole'])       || null,
+    tableStyle:         localStorage.getItem('table_style')        || null,
+    proteinMainClass:   readJsonArray('protein_main_class'),
+    staplePref:         readJsonArray('staple_pref'),
+    proteinPref:        readJsonArray('protein_pref'),
+    beefStyle:          readJsonArray('beef_style'),
+    chickenStyle:       readJsonArray('chicken_style'),
+    seafoodStyle:       readJsonArray('seafood_style'),
+    veggieMethod:       readJsonArray('veggie_method'),
+    oilLevel:           localStorage.getItem('oil_level')          || null,
+    breakfastCuisine:   localStorage.getItem('breakfast_cuisine')  || null,
+    strictAvoid:        readJsonArray('strict_avoid'),
+  };
+}
+
 function readUserTaste(): { tastePref: UserPrefs['tastePref']; impliedSpice: UserPrefs['spiceLevel'] | null } {
   const raw = (localStorage.getItem('userTaste') ?? '').toLowerCase();
   const tastes = raw.split(',').map(s => s.trim()).filter(Boolean);
@@ -238,6 +298,7 @@ export function getUserPrefs(): UserPrefs {
         tastePref:    userTasteData.tastePref
                       ?? (prefs.goal === 'fatloss' || prefs.goal === 'nourish' ? 'light' : 'default'),
         hometownCuisine: readHometownCuisine(),
+        ...readV3Axes(),
         avoidLabels,
       };
     } catch { /* fall through */ }
@@ -286,6 +347,7 @@ export function getUserPrefs(): UserPrefs {
     tastePref:    userTasteData.tastePref
                   ?? (legacyDiet === 'fatloss' ? 'light' : 'default'),
     hometownCuisine: readHometownCuisine(),
+    ...readV3Axes(),
     avoidLabels,
   };
 }
