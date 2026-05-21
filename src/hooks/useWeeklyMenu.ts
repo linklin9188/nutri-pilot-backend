@@ -78,7 +78,8 @@ export interface WeeklyMenu {
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v48'; // §B (TICKET-009): v3 9 axes 值域桥接 — UI 写"用户语言" (rich/red_meat/spicy_stirfry) vs DB 推断"算法语言" (high/red/stirfry), 早期 v45 漏映射导致 6 axis (32/35/36/37/38/39) 90% 0 命中. 加 6 个 UI→DB map 让 axis 32-40 真消费 prefs. 老板"算法必须为用户选出他们想要的食材和菜品"指令 root cause. stale user_weekly_menus 全用户重生成。
+export const ALGO_VERSION = 'v49'; // TICKET-012: axis 32 + axis 37 双轨升级 — DB pmc 列优先 + helper fallback, 让 218 道 main_ingredient='other'/NULL 在 axis 32 (15% 权重) + 37 道 pmc='seafood' 但 mi≠seafood 在 axis 37 (6% 权重) 真正命中. 同时 bump 失效所有 v48 缓存让全用户立即拿到新菜单。
+// v48: §B (TICKET-009): v3 9 axes 值域桥接 — UI 写"用户语言" (rich/red_meat/spicy_stirfry) vs DB 推断"算法语言" (high/red/stirfry), 早期 v45 漏映射导致 6 axis (32/35/36/37/38/39) 90% 0 命中. 加 6 个 UI→DB map 让 axis 32-40 真消费 prefs. 老板"算法必须为用户选出他们想要的食材和菜品"指令 root cause. stale user_weekly_menus 全用户重生成。
 // v47: §A (TICKET-008): 撤销 cooking complexity hardFilter — 老板拍板"小于两小时的都可以". 统一 cook_time_min > 120 阈值。
 // v46: §A+B (TICKET-007): 早餐 4 slot 营养结构 (carb/protein/vitamin_fiber/liquid) — pickBreakfastCombo 后 supplement vitamin_fiber + cooking complexity hardFilter (cook_complexity quick/normal/unlimited + cook_role helper 难菜过滤).
 // v45: §E (TICKET-005): v3 image-onboarding-driven scoring — axis 32-40 (9 新 axes 75% 权重) + hometown 30→5% + dietary_goal 25→15% + spice 删除。
