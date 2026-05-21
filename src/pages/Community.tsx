@@ -74,7 +74,7 @@ const QUICK_REPLIES = [
 const MOCK_STORIES: StoryUser[] = [
   { name: "Ana M.",   avatar: "A", pts: 160, isTop: true,  photo: "https://images.unsplash.com/photo-1609501676725-7186f017a4b7?q=80&w=80" },
   { name: "Joy R.",   avatar: "J", pts: 118, isTop: false, photo: "https://images.unsplash.com/photo-1544025162-d76694265947?q=80&w=80" },
-  { name: "Maria S.", avatar: "M", pts: 66,  isTop: false, photo: "https://images.unsplash.com/photo-1565299585323-38d6b0865b47?q=80&w=80" },
+  { name: "Ika", avatar: "M", pts: 66,  isTop: false, photo: "https://images.unsplash.com/photo-1565299585323-38d6b0865b47?q=80&w=80" },
   { name: "Grace T.", avatar: "G", pts: 44,  isTop: false, photo: "https://images.unsplash.com/photo-1547592180-85f173990554?q=80&w=80" },
   { name: "Rose A.",  avatar: "R", pts: 38,  isTop: false, photo: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?q=80&w=80" },
 ];
@@ -91,7 +91,7 @@ const MOCK_POSTS: Post[] = [
     created_at: new Date(Date.now() - 2 * 3600000).toISOString(),
     comments: [
       { id: "c1", author: "Joy R.", text: "What's the recipe?", created_at: new Date(Date.now() - 3600000).toISOString() },
-      { id: "c2", author: "Maria S.", text: "My boss will love this!", created_at: new Date(Date.now() - 1800000).toISOString() },
+      { id: "c2", author: "Ika", text: "My boss will love this!", created_at: new Date(Date.now() - 1800000).toISOString() },
     ],
   },
   {
@@ -106,7 +106,7 @@ const MOCK_POSTS: Post[] = [
     comments: [],
   },
   {
-    id: "3", user_id: "u3", author_name: "Maria S.", author_avatar: "M",
+    id: "3", user_id: "u3", author_name: "Ika", author_avatar: "M",
     author_district: "Taikoo Shing",
     dish_name: "Garlic Steamed Prawns 蒜蓉蒸虾",
     caption: "Added extra garlic — boss said this is the best prawn dish ever! 🦐🧄",

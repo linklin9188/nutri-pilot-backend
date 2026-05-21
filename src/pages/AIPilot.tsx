@@ -62,7 +62,7 @@ export default function AIPilot() {
           <div className="flex flex-col gap-2 items-end relative z-10">
             <div className="bg-primary/5 border border-primary/20 rounded-2xl p-4 self-end max-w-[90%] shadow-sm">
               <p className="text-on-surface leading-relaxed text-[14px]">
-                <span className="font-bold text-primary block mb-1">To Helper (Maria):</span>
+                <span className="font-bold text-primary block mb-1">To Helper (Ika):</span>
                 "Please slice the Wagyu beef into 2mm uniform pieces and marinate with 1 tbsp starch and 1 tbsp water for 15 minutes before cooking. Reduce chili seeds to keep spice mild."
               </p>
               <div className="mt-3 pt-3 border-t border-primary/10">
@@ -73,7 +73,7 @@ export default function AIPilot() {
             </div>
             <div className="flex items-center gap-1 mr-2 mt-1">
               <span className="material-symbols-outlined text-green-500 text-[14px]">check_circle</span>
-              <span className="text-[11px] text-green-600 font-bold">Successfully synced to Maria's Prep Board</span>
+              <span className="text-[11px] text-green-600 font-bold">Successfully synced to Ika's Prep Board</span>
             </div>
           </div>
         </div>

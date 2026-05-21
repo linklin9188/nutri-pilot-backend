@@ -295,7 +295,7 @@ export default function Settings() {
     return opt ? `${opt.icon} ${opt.label}` : "未设置";
   };
 
-  const [helperName, setHelperName] = useState(() => localStorage.getItem("helperName") || "Maria Santos");
+  const [helperName, setHelperName] = useState(() => localStorage.getItem("helperName") || "Ika");
   const [helperLang, setHelperLang] = useState(() => localStorage.getItem("helperLang") || "tagalog");
   const [helperSaved, setHelperSaved] = useState(false);
   const [helperOpen,  setHelperOpen]  = useState(false);
