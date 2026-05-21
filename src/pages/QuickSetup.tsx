@@ -464,6 +464,11 @@ export default function QuickSetup() {
     // 是统一入口；两者写入同一 user_profiles 表字段一致，并存为无害冗余）。
     syncProfileToDB(getUserId()).catch(() => {/* non-blocking */});
 
+    // TICKET-004 §L — 标记 v2 onboarding 已完成 + 清掉升级提示。这俩 key 配合
+    // App.tsx RootRedirect 的 v2 检查使用，让走完新流程的用户不再被弹回 /setup。
+    localStorage.setItem('onboarding_v2_done', 'true');
+    localStorage.removeItem('needs_v2_onboarding');
+
     // Notify hooks that preferences changed
     window.dispatchEvent(new Event("nutri-prefs-changed"));
     navigate("/");
@@ -482,6 +487,22 @@ export default function QuickSetup() {
           position: "absolute", inset: 0,
         }} />
       </div>
+
+      {/* TICKET-004 §L — β 老用户升级 banner（needs_v2_onboarding 标记由 App.tsx
+          RootRedirect 在检测到旧 quickPrefs 且没 onboarding_v2_done 时写入；
+          QuickSetup.finish() 完工后会清除该标记）。 */}
+      {localStorage.getItem('needs_v2_onboarding') === 'true' && (
+        <div className="relative z-10 px-6 pt-14 pb-2">
+          <div className="rounded-r p-4"
+            style={{ background: 'rgba(255,90,31,0.10)', borderLeft: '4px solid #FF9054' }}>
+            <p className="font-bold text-[#FF9054]" style={{ fontSize: 14 }}>🎉 智能菜单引擎升级了</p>
+            <p className="mt-1 text-white/65 font-light" style={{ fontSize: 12, lineHeight: 1.5 }}>
+              我们让菜单推荐更懂你了，请用 2 分钟重新设置一下偏好（11 步小问题）。
+              之前选的会自动迁移，只需要补充新增的几题。
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Progress bar */}
       <div className="relative z-10 px-6 pt-14 pb-2">
@@ -756,10 +777,13 @@ export default function QuickSetup() {
             </div>
           )}
 
-          {/* Skip */}
+          {/* Skip — TICKET-004 §L：旧 'balanced' goal 已替换为 'comfort'；并写
+              onboarding_v2_done 防止 RootRedirect 把用户弹回 /setup 形成循环。 */}
           {step === 0 && (
             <button onClick={() => {
-              localStorage.setItem("quickPrefs", JSON.stringify({ goal: "balanced", spice: "mild", avoid: ["none"], setupAt: Date.now() }));
+              localStorage.setItem("quickPrefs", JSON.stringify({ goal: "comfort", spice: "mild", avoid: ["none"], setupAt: Date.now() }));
+              localStorage.setItem("onboarding_v2_done", "true");
+              localStorage.removeItem("needs_v2_onboarding");
               if (!localStorage.getItem("isLoggedIn")) {
                 localStorage.setItem("isLoggedIn", "true");
                 localStorage.setItem("userId", crypto.randomUUID());

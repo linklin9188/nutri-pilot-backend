@@ -62,6 +62,23 @@ function RootRedirect() {
     return <Navigate to="/login" replace />;
   }
 
+  // TICKET-004 §L — β 老用户 onboarding_v2 强制重做。onboarding 11 步新方案
+  // (8 goals / family_composition / mild_dislikes / cook_role / cook_complexity /
+  // seafood_freq / soup_freq) 让 prefs 必产生差异化；老 v1 用户的旧 prefs 让
+  // 算法读不出区分度，必须重走 /setup 才能进入新算法路径。
+  // - quickPrefs 存在 + 没 onboarding_v2_done → 触发：清掉 quickPrefs + 标记
+  //   needs_v2_onboarding（用于显示升级 banner）。userId / nutri_role / appLanguage
+  //   等纯认证 + 偏好 key 不动。
+  // - 完成 v2 后 QuickSetup.finish() 会写 onboarding_v2_done = true，本检查停止
+  //   再触发。
+  const hasV2 = localStorage.getItem('onboarding_v2_done') === 'true';
+  const hasOldPrefs = !!localStorage.getItem('quickPrefs');
+  if (hasOldPrefs && !hasV2) {
+    localStorage.removeItem('quickPrefs');
+    localStorage.setItem('needs_v2_onboarding', 'true');
+    return <Navigate to="/setup" replace />;
+  }
+
   // Silent re-auth for WeChat users who lost localStorage between sessions
   // (公众号 / 朋友圈 / 群聊 link clicks open in webview contexts whose
   // storage isn't always persisted). attemptSilent() redirects away, so
