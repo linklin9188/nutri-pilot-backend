@@ -220,6 +220,39 @@ export default function Login() {
     }
   };
 
+  // UI 013 §B — Learner helper signup (no invite code). For 还没找到雇主
+  // 的菲佣 / 学中国菜 path. Creates standalone user_profiles row, marks
+  // nutri_helper_mode='learner' so HelperHome can branch to LearnerHome.
+  const handleLearnerSignup = async () => {
+    const nickname = window.prompt(t("Your name?", "你的名字？"));
+    if (!nickname || !nickname.trim()) return;
+    const langInput = window.prompt(t("Language: en / tl / id?", "语言: en / tl / id?"), "en");
+    const lang = (langInput === "tl" || langInput === "id" || langInput === "en")
+      ? langInput : "en";
+
+    let helperId = getUserId();
+    if (!helperId) {
+      helperId = crypto.randomUUID();
+      setUserId(helperId);
+    }
+    try {
+      await supabase.from("user_profiles").upsert(
+        { id: helperId, display_name: nickname.trim() },
+        { onConflict: "id" },
+      );
+    } catch {
+      // upsert failure non-fatal — still persist locally so user can browse.
+    }
+    localStorage.setItem("isLoggedIn", "true");
+    localStorage.setItem("nutri_role", "helper");
+    localStorage.setItem("nutri_helper_mode", "learner");
+    localStorage.setItem("appLanguage", lang);
+    setLanguage(lang as Language);
+    markLogin();
+    window.dispatchEvent(new Event("nutri-prefs-changed"));
+    navigate("/helper");
+  };
+
   // ── 4-language switcher ──────────────────────────────────────────
   // Always 4-way (zh / en / tl / id) regardless of role — helpers may pick
   // their language before tapping a button, employers can keep zh.
@@ -445,7 +478,8 @@ export default function Login() {
             </p>
 
             {role === "helper" ? (
-              /* TICKET-068 §B — 菲佣邀请码登录入口（跳过 OAuth 直接进 /helper） */
+              <>
+              {/* TICKET-068 §B — 菲佣邀请码登录入口（跳过 OAuth 直接进 /helper） */}
               <div className="flex flex-col gap-3 rounded-2xl p-4"
                 style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.10)" }}>
                 <p className="text-white font-semibold text-center" style={{ fontSize: 14 }}>
@@ -497,6 +531,28 @@ export default function Login() {
                   </p>
                 )}
               </div>
+
+              {/* UI 013 §B — Learner helper signup (无 invite_code path) */}
+              <div className="flex items-center gap-3 my-1">
+                <div className="flex-1 h-px bg-white/15" />
+                <span className="text-white/45" style={{ fontSize: 12 }}>
+                  {t("or", "或者")}
+                </span>
+                <div className="flex-1 h-px bg-white/15" />
+              </div>
+              <button
+                onClick={handleLearnerSignup}
+                className="w-full h-[54px] rounded-2xl flex items-center justify-center gap-2 font-semibold transition-all active:scale-[0.98]"
+                style={{
+                  background: "rgba(255,255,255,0.05)",
+                  border: "1.5px dashed rgba(255,255,255,0.30)",
+                  fontSize: 14, color: "rgba(255,255,255,0.85)",
+                }}
+              >
+                <span style={{ fontSize: 18 }}>🌱</span>
+                {t("Not employed yet — Learn Chinese cooking", "我还没就职 — 先学中国菜")}
+              </button>
+              </>
             ) : (
             <>
             {/* WeChat — always shown */}
