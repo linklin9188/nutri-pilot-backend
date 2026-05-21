@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { getUserId } from "../lib/userId";
 import { useLanguage } from "../contexts/LanguageContext";
+import HelperBottomTabBar from "../components/HelperBottomTabBar";
 
 interface DayDish {
   title?: string;
@@ -289,7 +290,7 @@ export default function HelperHome() {
   return (
     <div
       className="min-h-screen flex flex-col max-w-md mx-auto relative overflow-hidden"
-      style={{ background: "#FEF7E5", paddingBottom: 40, color: "#1a1a1a" }}
+      style={{ background: "#FEF7E5", paddingBottom: 96, color: "#1a1a1a" }}
     >
       {/* Ambient glow — UI 014 §K: 米色背景下淡橙 0.06 烘托温暖感 (替代原黑底绿光) */}
       <div className="absolute inset-0 pointer-events-none z-0" style={{
@@ -529,6 +530,8 @@ export default function HelperHome() {
           {t3("Switch account", "切换账号", "Lumipat ng account")}
         </button>
       </div>
+
+      <HelperBottomTabBar />
     </div>
   );
 }

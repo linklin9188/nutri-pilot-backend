@@ -11,6 +11,7 @@ import { supabase } from "../lib/supabase";
 import { getUserId } from "../lib/userId";
 import exifr from "exifr";
 import BottomTabBar from "../components/BottomTabBar";
+import HelperBottomTabBar from "../components/HelperBottomTabBar";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -853,8 +854,8 @@ function CommunityTabBar({ tab, setTab, onPost, myRole }: {
   tab: Tab; setTab: (t: Tab) => void; onPost: () => void; myRole: string;
 }) {
   return (
-    <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md z-20 bg-white border-t flex items-center"
-      style={{ borderColor: "#f0f0f0", paddingBottom: "env(safe-area-inset-bottom, 8px)" }}>
+    <div className="fixed left-1/2 -translate-x-1/2 w-full max-w-md z-30 bg-white border-t flex items-center"
+      style={{ borderColor: "#f0f0f0", bottom: 60 /* UI 014 §L: leave space for HelperBottomTabBar */ }}>
 
       <button onClick={() => setTab("feed")}
         className="flex-1 py-3 flex flex-col items-center gap-0.5">
@@ -991,7 +992,7 @@ export default function Community() {
   }
 
   return (
-    <div className="min-h-screen max-w-md mx-auto relative" style={{ background: "#fafafa", paddingBottom: 80 }}>
+    <div className="min-h-screen max-w-md mx-auto relative" style={{ background: "#fafafa", paddingBottom: myRole === 'helper' ? 140 : 80 }}>
 
       {/* Header — Instagram style */}
       <div className="sticky top-0 z-10 bg-white border-b flex items-center justify-between px-4 py-3"
@@ -1066,6 +1067,8 @@ export default function Community() {
 
       {/* Employer: standard app bottom tab bar */}
       {myRole === "employer" && <BottomTabBar />}
+      {/* Helper: page-level tab bar (UI 014 §L). CommunityTabBar 在它上方 60px。 */}
+      <HelperBottomTabBar />
 
       {/* Create post */}
       <AnimatePresence>

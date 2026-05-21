@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { dishToIngredients, aggregateIngredients, type AggregatedIngredient } from "../lib/dishIngredients";
 import * as XLSX from "xlsx";
 import BottomTabBar from "../components/BottomTabBar";
+import HelperBottomTabBar from "../components/HelperBottomTabBar";
 import { useLanguage } from "../contexts/LanguageContext";
 import { getHKAlias } from "../lib/hkNames";
 import { ALGO_VERSION as WEEKLY_ALGO_VERSION } from "../hooks/useWeeklyMenu";
@@ -615,7 +616,9 @@ export default function VerifyIngredients() {
 
   const isHelper = localStorage.getItem("nutri_role") === "helper";
   // Employer view shows the bottom tab bar; lift the footer above it.
-  const footerBottomClass = isHelper ? 'bottom-0' : 'bottom-[60px]';
+  // UI 014 §L: helper 现在也有 page-level HelperBottomTabBar (~60px)，
+  // footer CTA 上推 60px 给 tab bar 让位；employer 走 BottomTabBar (~60px) 同 offset。
+  const footerBottomClass = 'bottom-[60px]';
 
   return (
     <div className="min-h-screen flex flex-col max-w-md mx-auto bg-[#f5f5f5]">
@@ -1012,6 +1015,7 @@ export default function VerifyIngredients() {
       )}
 
       <BottomTabBar />
+      <HelperBottomTabBar />
 
       {/* TICKET-074 §C — ProGate modal（复用 ProGate.tsx 设计语言：
           橙色渐变 emoji + 标题 + 副标题 + 升级 CTA）。点遮罩或「稍后再说」关闭。 */}

@@ -4,6 +4,7 @@ import { supabase } from "../lib/supabase";
 import { type CookStep } from "../hooks/useSupabaseMenu";
 import { useLanguage } from "../contexts/LanguageContext";
 import { getUserId } from "../lib/userId";
+import HelperBottomTabBar from "../components/HelperBottomTabBar";
 
 interface DishWithCook {
   id: string;
@@ -72,7 +73,7 @@ function DishListScreen({ dishes, loading, onSelect }: {
   const dishTitle = (d: DishWithCook) =>
     isChinese ? (d.title_zh || d.title_en || '') : (d.title_en || d.title_zh || '');
   return (
-    <div className="min-h-screen flex flex-col max-w-md mx-auto" style={{ background: '#FEF7E5' }}>
+    <div className="min-h-screen flex flex-col max-w-md mx-auto" style={{ background: '#FEF7E5', paddingBottom: 80 }}>
       {/* Header */}
       <header className="sticky top-0 z-50 px-5 pt-12 pb-4" style={{ background: '#FEF7E5' }}>
         <div className="flex items-center gap-3 mb-1">
@@ -187,6 +188,7 @@ function DishListScreen({ dishes, loading, onSelect }: {
           })
         )}
       </main>
+      <HelperBottomTabBar />
     </div>
   );
 }
