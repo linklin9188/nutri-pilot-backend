@@ -368,8 +368,8 @@ function LockedDayCard({ onUnlock }: { onUnlock: () => void }) {
             style={{ background: "rgba(255,90,31,0.15)", border: "1.5px solid rgba(255,90,31,0.35)" }}>
             <span className="material-symbols-outlined text-[#FF5A1F]" style={{ fontSize: 28 }}>workspace_premium</span>
           </div>
-          <p className="text-white font-bold mb-1" style={{ fontSize: 16 }}>会员解锁整周菜单</p>
-          <p className="text-white/40 mb-5" style={{ fontSize: 12 }}>每日菜单始终免费 · 整周规划 + 一步采购 需会员</p>
+          <p className="text-white font-bold mb-1" style={{ fontSize: 16 }}>会员解锁完整 5 天菜单</p>
+          <p className="text-white/40 mb-5" style={{ fontSize: 12 }}>每日菜单始终免费 · 5 天规划 + 周末外食 + 一步采购 需会员</p>
           <button onClick={onUnlock}
             className="px-8 h-11 rounded-2xl font-semibold flex items-center gap-2 transition-all active:scale-95"
             style={{
@@ -609,7 +609,7 @@ export default function WeeklyMenu() {
         </h1>
         <p className="text-white/45 mt-1" style={{ fontSize: 12 }}>
           {weeklyMenu
-            ? `7 天 · ${weeklyMenu.days.reduce((n,d) => n + (d.dishes?.length ?? 0) + (d.lunchDishes?.length ?? 0), 0)} 道菜`
+            ? `5 天家庭餐 + 周末外食 · ${weeklyMenu.days.reduce((n,d) => n + (d.dishes?.length ?? 0) + (d.lunchDishes?.length ?? 0), 0)} 道菜`
             : "AI 智能规划 · 每周更新"}
         </p>
 
@@ -717,7 +717,7 @@ export default function WeeklyMenu() {
         {/* Free tier hint */}
         {!isPro && (
           <p className="mt-2 text-white/30" style={{ fontSize: 11, letterSpacing: "0.04em" }}>
-            🔓 免费查看今天菜单 · 升级会员解锁完整 7 天 + 一步采购
+            🔓 免费查看今天菜单 · 升级解锁完整 5 天 + 周末餐厅推荐
           </p>
         )}
 
