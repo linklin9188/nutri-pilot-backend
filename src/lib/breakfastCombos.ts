@@ -205,6 +205,32 @@ function poolMatchesAvoid(pool: BreakfastPickInput['pool'], avoidIng: string[]):
   return pool.filter(d => !(d.main_ingredient && avoidIng.includes(d.main_ingredient)));
 }
 
+// §G (TICKET-20260521-005 / Algorithm 071 诊断) — 修茶叶蛋"独占输出" bug.
+// 既往: 14/16 combo 的 side[0]='茶叶蛋' + resolveSlot 顺序遍历 → 永远先返"茶叶蛋".
+// 修复: resolveSlot 用 mulberry32(seed) 对 keywords 数组 Fisher-Yates shuffle,
+//       seed = dayIndex × 31 + slotIndex (drink=0 / staple=1 / side=2).
+//       同 dayIndex 稳定 (一周 5 天每天不同 shuffle), 跨 day 5 种不同顺序 → 跨周
+//       配菜轮换不再永远第一个命中.
+function mulberry32(a: number): () => number {
+  return () => {
+    a |= 0;
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function shuffleSeeded<T>(arr: T[], seed: number): T[] {
+  const rng = mulberry32(seed);
+  const out = [...arr];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
 // (pickCombo removed 2026-05-17 — superseded by listEligibleCombos +
 // pool-aware rotation in pickBreakfastCombo. The old version returned a
 // combo without checking whether the pool could resolve any slot, which
@@ -215,8 +241,12 @@ function resolveSlot(
   pool: BreakfastPickInput['pool'],
   keywords: string[],
   used: Set<string>,
+  shuffleSeed?: number,
 ): ResolvedSlot['dish'] {
-  for (const kw of keywords) {
+  // §G (TICKET-005) shuffleSeed undefined → 老行为 (顺序遍历, 兼容遗留调用).
+  // 新调用从 resolveCombo 传入 dayIndex * 31 + slotIndex, 打散 keywords 顺序.
+  const order = shuffleSeed !== undefined ? shuffleSeeded(keywords, shuffleSeed) : keywords;
+  for (const kw of order) {
     const match = pool.find(d => !used.has(d.id) && d.title_zh.includes(kw));
     if (match) return match;
   }
@@ -242,11 +272,15 @@ function listEligibleCombos(
 }
 
 /** Internal: resolve a combo against a dish pool, returning the slots. */
-function resolveCombo(combo: BreakfastCombo, pool: BreakfastPickInput['pool']): ResolvedSlot[] {
+function resolveCombo(combo: BreakfastCombo, pool: BreakfastPickInput['pool'], dayIndex: number): ResolvedSlot[] {
   const used = new Set<string>();
-  return (['drink', 'staple', 'side'] as const).map(slot => {
+  return (['drink', 'staple', 'side'] as const).map((slot, slotIndex) => {
     const keywords = combo[slot];
-    const dish = resolveSlot(pool, keywords, used);
+    // §G (TICKET-005) seed = dayIndex * 31 + slotIndex → 同 dayIndex 稳定,
+    // 跨 day 自动轮换. slotIndex (drink=0 / staple=1 / side=2) 让 3 个 slot
+    // 之间不耦合 (不会出现 drink 和 side 同时移位同样次).
+    const seed = (dayIndex * 31 + slotIndex) | 0;
+    const dish = resolveSlot(pool, keywords, used, seed);
     if (dish) used.add(dish.id);
     return { slot, dish, candidates: keywords };
   });
@@ -272,7 +306,7 @@ export function pickBreakfastCombo(input: BreakfastPickInput): BreakfastPickResu
   if (eligible.length === 0) {
     // Should never happen because universal-safe is always eligible.
     const fallback = BREAKFAST_COMBOS[BREAKFAST_COMBOS.length - 1];
-    const slots = resolveCombo(fallback, pool);
+    const slots = resolveCombo(fallback, pool, dayIndex);
     return {
       combo: fallback, slots,
       dishes: slots.map(s => s.dish).filter(Boolean) as BreakfastPickInput['pool'],
@@ -281,13 +315,13 @@ export function pickBreakfastCombo(input: BreakfastPickInput): BreakfastPickResu
   }
 
   let chosen: BreakfastCombo = eligible[dayIndex % eligible.length];
-  let slots: ResolvedSlot[] = resolveCombo(chosen, pool);
+  let slots: ResolvedSlot[] = resolveCombo(chosen, pool, dayIndex);
   if (slots.every(s => !s.dish)) {
     // Zero hits on the preferred combo — rotate through the rest of
     // eligible looking for the first one that resolves at least one slot.
     for (let i = 1; i < eligible.length; i++) {
       const candidate = eligible[(dayIndex + i) % eligible.length];
-      const candidateSlots = resolveCombo(candidate, pool);
+      const candidateSlots = resolveCombo(candidate, pool, dayIndex);
       if (candidateSlots.some(s => s.dish)) {
         chosen = candidate;
         slots = candidateSlots;
