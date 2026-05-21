@@ -234,6 +234,70 @@ async function checkDauSnapshotCallable(): Promise<Record<string, unknown>> {
   }
 }
 
+// TICKET-20260521-002 §A. Real-call check against the Railway-hosted JSSDK
+// signature endpoint. Looking for a 40-char SHA1 hex string in the response —
+// anything else (errcode 40164 IP-whitelist, 503 Railway redeploying, network
+// timeout) flips ok=false → overall YELLOW.
+async function checkWechatJssdkAlive(): Promise<Record<string, unknown>> {
+  try {
+    const r = await fetch("https://nothinkeats.com/api/wechat-jssdk-signature", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ url: "https://nothinkeats.com/" }),
+      signal:  AbortSignal.timeout(5000),
+    });
+    const j = await r.json().catch(() => ({})) as Record<string, unknown>;
+    const signature = typeof j.signature === "string" ? j.signature : "";
+    const ok = r.ok && signature.length === 40;
+    return {
+      ok,
+      status:         r.status,
+      signature_len:  signature.length,
+      errcode:        (j.error as string | undefined) ?? null,
+      ts:             new Date().toISOString(),
+    };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+// TICKET-20260521-002 §B. Sanity check that the algo_version on weekly menus
+// generated in the last 24h is mostly v45. ok=true when (a) majority is v45,
+// or (b) total sample size ≤ 10 (per §C: under that threshold the check has
+// no statistical signal — don't flag YELLOW on noise).
+async function checkAlgoV45Adoption(): Promise<Record<string, unknown>> {
+  try {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data, error } = await supabase
+      .from("user_weekly_menus")
+      .select("algo_version")
+      .gte("created_at", since);
+    if (error) return { ok: false, error: error.message };
+
+    const versions: Record<string, number> = {};
+    for (const r of (data ?? []) as Array<{ algo_version: string | null }>) {
+      const k = r.algo_version ?? "NULL";
+      versions[k] = (versions[k] ?? 0) + 1;
+    }
+    const v45_count    = versions["v45"]            ?? 0;
+    const v44_count    = versions["v44"]            ?? 0;
+    const legacy_count = versions["legacy_pre_v44"] ?? 0;
+    const total        = v45_count + v44_count + legacy_count;
+    const v45_ratio    = total > 0 ? v45_count / total : 0;
+
+    // §C rule: only flag YELLOW when sample is statistically meaningful (>10).
+    // Encoding that threshold into ok keeps the overall scanner simple.
+    return {
+      ok:           v45_ratio >= 0.5 || total <= 10,
+      v45_count, v44_count, legacy_count, total,
+      v45_ratio:    Math.round(v45_ratio * 100) / 100,
+      distribution: versions,
+    };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
 // ── entry ───────────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
@@ -249,6 +313,8 @@ Deno.serve(async (req: Request) => {
     ingredient_seasonality_count,
     data_health_history_recent,
     dau_snapshot_callable,
+    wechat_jssdk_signature_alive,
+    algo_v45_adoption,
   ] = await Promise.all([
     checkStripePriceWhitelist(),
     checkGeminiQuotaRemaining(),
@@ -257,6 +323,8 @@ Deno.serve(async (req: Request) => {
     checkIngredientSeasonalityCount(),
     checkDataHealthHistoryRecent(),
     checkDauSnapshotCallable(),
+    checkWechatJssdkAlive(),
+    checkAlgoV45Adoption(),
   ]);
 
   const checks: Record<string, Record<string, unknown>> = {
@@ -267,6 +335,8 @@ Deno.serve(async (req: Request) => {
     ingredient_seasonality_count,
     data_health_history_recent,
     dau_snapshot_callable,
+    wechat_jssdk_signature_alive,
+    algo_v45_adoption,
   };
 
   // overall: RED if any of the 3 hard-fail checks ko; YELLOW if any other ko; else GREEN.
