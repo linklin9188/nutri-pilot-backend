@@ -6,7 +6,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
-import { useWeeklyMenu, isWeekend, todayDayIndex, isFruitVeggieInSeason, getCurrentSolarTermZh } from "../hooks/useWeeklyMenu";
+import { useWeeklyMenu, todayDayIndex, isFruitVeggieInSeason, getCurrentSolarTermZh } from "../hooks/useWeeklyMenu";
 import WeekendDiningReport from "../components/WeekendDiningReport";
 import { type SupabaseDish } from "../hooks/useSupabaseMenu";
 import { supabase } from "../lib/supabase";
@@ -27,7 +27,10 @@ import { useLanguage } from "../contexts/LanguageContext";
 
 // ── Day tabs ──────────────────────────────────────────────────────────────────
 
-const DAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+// UI 014 §C: 5 天工作日制 + 第 6 个 "周末" tab，点击展示 WeekendDiningReport。
+// Algorithm 014 已 ship WORKDAYS_PER_WEEK=5 + ALGO_VERSION v50，weeklyMenu.days.length === 5。
+const DAYS = ["周一", "周二", "周三", "周四", "周五", "周末"];
+const WEEKEND_TAB_IDX = 5;
 const MEALS = [
   { label: "早餐", icon: "☀️", color: "#FF9F43" },
   { label: "午餐", icon: "🌤️", color: "#FF5A1F" },
@@ -388,15 +391,13 @@ function LockedDayCard({ onUnlock }: { onUnlock: () => void }) {
 export default function WeeklyMenu() {
   const navigate = useNavigate();
   const { weeklyMenu, loading } = useWeeklyMenu();
-  // Default day for the weekly view. weeklyMenu.days only covers Mon-Fri
-  // (dayIndex 0-4), so on weekends (todayDayIndex returns 5 or 6) we
-  // showcase 周一 instead — otherwise weeklyMenu.days[5/6] is undefined
-  // and the whole content area renders "本周菜单正在生成中". The
-  // un-clamped "real today" is kept around for the Mon-Fri-only header
-  // (so周一's column still shows "周一" not "今天" when it isn't today).
+  // UI 014 §C: 周末 → 默认选第 6 tab "周末"（idx 5），渲染 WeekendDiningReport；
+  // 工作日 → 默认选当天 (0-4)。todayIdx 仍 clamp 到 0-4 给"今天" dot 高亮和 isDayLocked
+  // 用，因为算法层 (Algorithm 014 WORKDAYS_PER_WEEK=5) days 只有 0-4。
   const realTodayIdx = todayDayIndex();
   const todayIdx = realTodayIdx >= 5 ? 0 : realTodayIdx;
-  const [selectedDay, setSelectedDay] = useState(todayIdx);
+  const defaultSelectedDay = realTodayIdx >= 5 ? WEEKEND_TAB_IDX : realTodayIdx;
+  const [selectedDay, setSelectedDay] = useState(defaultSelectedDay);
 
   // Michelin-mode toggle. The toggle exists for everyone, but only Pro users
   // can actually activate it; free users tapping it land on /pricing.
@@ -453,7 +454,9 @@ export default function WeeklyMenu() {
   // TICKET-074 §D — freemium day window：非 Pro 用户免费看「今天 + 明天」
   // 两天菜单，第 3-5 天（周内剩余天）显示 blur preview + 升级 CTA。今+明
   // 给「即时可用」的体验，3-5 天作为「提前采购备料」卖点引导升级。
-  const isDayLocked = (i: number) => !isPro && i > todayIdx + 1;
+  // UI 014 §C: WEEKEND_TAB_IDX(5) 不锁——周末 tab 显示 WeekendDiningReport，
+  // 所有用户都能看（外食推荐是免费功能）。
+  const isDayLocked = (i: number) => !isPro && i !== WEEKEND_TAB_IDX && i > todayIdx + 1;
   const effectiveDay = isDayLocked(selectedDay) ? todayIdx : selectedDay;
 
   const dayMenu  = weeklyMenu?.days[effectiveDay];
@@ -549,32 +552,17 @@ export default function WeeklyMenu() {
 
   function handleDayClick(i: number) {
     setSelectedDay(i); // still updates state (used for locked-day overlay)
+    // UI 014 §C: WEEKEND_TAB_IDX 不滚动——content 区域整块替换为 WeekendDiningReport，
+    // day-5 element 不存在。
+    if (i === WEEKEND_TAB_IDX) return;
     // Smooth-scroll to that day's section in the all-week list
     const el = document.getElementById(`day-${i}`);
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  // 周末规则 (2026-05-17): 周六周日不生成菜单。WeeklyMenu 的两条过滤
-  // (day.dayIndex < todayIdx + day.dayIndex >= 5) 在 Sat/Sun 会把所有 7 天
-  // 都隐藏，整页空白。复用 WeekendDiningReport — 跟 Home 的周末展示一致，
-  // 不再让用户进入一个 dead-end 页面。
-  if (isWeekend()) {
-    return (
-      <div className="min-h-screen max-w-md mx-auto" style={{ background: "#fff7f2", paddingBottom: 140 }}>
-        <div className="flex items-center px-5 pt-12 pb-1">
-          <button
-            onClick={() => navigate("/")}
-            className="w-9 h-9 rounded-2xl flex items-center justify-center transition-all active:scale-90"
-            style={{ background: "rgba(0,0,0,0.04)" }}
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: 20, color: "rgba(0,0,0,0.7)" }}>arrow_back</span>
-          </button>
-        </div>
-        <WeekendDiningReport />
-        <BottomTabBar />
-      </div>
-    );
-  }
+  // UI 014 §C: 删除 isWeekend() 整页拦截。周末时默认 selectedDay=5 (周末 tab) →
+  // content 区域条件渲染 WeekendDiningReport，但保留 header + DAYS tabs，让用户能
+  // 切回工作日预览 (周一-周五 仍然渲染 weeklyMenu.days 上周菜单作为参考)。
 
   return (
     <div
@@ -690,9 +678,10 @@ export default function WeeklyMenu() {
       <div className="relative z-10 px-5 mb-5">
         <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
           {DAYS.map((day, i) => {
-            const isToday    = i === todayIdx;
-            const isSelected = i === selectedDay;
-            const locked     = isDayLocked(i);
+            const isWeekendTab = i === WEEKEND_TAB_IDX;
+            const isToday      = isWeekendTab ? realTodayIdx >= 5 : i === todayIdx;
+            const isSelected   = i === selectedDay;
+            const locked       = isDayLocked(i);
             return (
               <button
                 key={day}
@@ -702,7 +691,7 @@ export default function WeeklyMenu() {
                   locked
                     ? { background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)", opacity: 0.5 }
                     : isSelected
-                      ? { background: "#FF5A1F", boxShadow: "0 4px 16px rgba(255,90,31,0.35)" }
+                      ? { background: isWeekendTab ? "#6C5CE7" : "#FF5A1F", boxShadow: `0 4px 16px ${isWeekendTab ? "rgba(108,92,231,0.35)" : "rgba(255,90,31,0.35)"}` }
                       : { background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.09)" }
                 }
               >
@@ -717,7 +706,7 @@ export default function WeeklyMenu() {
                 ) : isToday ? (
                   <span className="rounded-full" style={{
                     width: 4, height: 4,
-                    background: isSelected ? "rgba(255,255,255,0.8)" : "#FF5A1F",
+                    background: isSelected ? "rgba(255,255,255,0.8)" : (isWeekendTab ? "#6C5CE7" : "#FF5A1F"),
                   }} />
                 ) : null}
               </button>
@@ -824,8 +813,9 @@ export default function WeeklyMenu() {
 
       {/* ── Nutrition radar (moved from Home — single source of truth) ──── */}
       {/* TICKET-074 §E — Pro gate：非 Pro 用户看到 RadarPreview placeholder，
-          Pro 用户看到完整 6 维营养雷达图。点击 placeholder 跳 /pricing 升级。 */}
-      {weeklyMenu && !loading && (
+          Pro 用户看到完整 6 维营养雷达图。点击 placeholder 跳 /pricing 升级。
+          UI 014 §C: 周末 tab 不显示 weekday radar（外食推荐是独立主题）。 */}
+      {selectedDay !== WEEKEND_TAB_IDX && weeklyMenu && !loading && (
         <div className="relative z-10 mx-5 mb-4">
           {isPro ? (
             <NutritionRadarCard weeklyMenu={weeklyMenu} dark />
@@ -862,8 +852,9 @@ export default function WeeklyMenu() {
       )}
 
       {/* ── 本周食材多样性 ── 中国居民膳食指南 2022 要求每周 25+ 种食物
-          (每日 12+)，避免一周吃来吃去就那 8 道菜 */}
-      {weeklyMenu && !loading && (() => {
+          (每日 12+)，避免一周吃来吃去就那 8 道菜
+          UI 014 §C: 周末 tab 不显示工作日维度的食材多样性指标。 */}
+      {selectedDay !== WEEKEND_TAB_IDX && weeklyMenu && !loading && (() => {
         const allDishes: any[] = [];
         for (const day of weeklyMenu.days ?? []) {
           for (const meal of ['breakfast','lunch','dinner'] as const) {
@@ -904,8 +895,13 @@ export default function WeeklyMenu() {
 
       {/* TICKET-074 §D — 删除"整页 LockedDayCard 切换"。改为 per-day 渲染：
           今+明 显示完整 meals，3-5 天 显示 ProGatePreview 占位卡。底部
-          统一 LockedDayCard CTA 引导升级（line ~967）。 */}
-      {/* ── 7-day overview: every day's 3 meals at a glance ───── */}
+          统一 LockedDayCard CTA 引导升级（line ~967）。
+          UI 014 §C: 周末 tab → 显示 WeekendDiningReport（外食推荐），不进入 day list。 */}
+      {selectedDay === WEEKEND_TAB_IDX ? (
+        <div className="relative z-10 flex-1">
+          <WeekendDiningReport />
+        </div>
+      ) : (
       <div className="relative z-10 flex-1">
         <AnimatePresence mode="wait">
               {loading ? (
@@ -1039,6 +1035,7 @@ export default function WeeklyMenu() {
           )}
         </AnimatePresence>
       </div>
+      )}
 
       {/* ── Bottom CTA ───────────────────────────────────────────── */}
       {/* ── Shopping list CTA (above tab bar) ─────────────────── */}
