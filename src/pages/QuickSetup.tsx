@@ -20,6 +20,7 @@ interface QuestionV3 {
   sub: string;
   multi: boolean;
   minSelect?: number;
+  maxSelect?: number;  // UI 015 §C — 上限 (Q5 wellness 限 3 个)
   cols?: 2 | 3;
   chips?: boolean;
   condition?: Condition;
@@ -123,7 +124,33 @@ const QUESTIONS_V3: QuestionV3[] = [
     ],
   },
 
-  // Q5 — 鸡肉做法（仅 Q3 含鸡显示）
+  // Q5 — 健康目标（UI 015 §C 新增，Q4 后插入，原 Q5/Q6/... 序号视觉后移）
+  // 多选可空，最多 3 个。Algorithm 016 detectChannels 用 wellness_goals 数据驱动
+  // 💪 weekly_补 channel（备孕→叶酸蛋白；增肌→高蛋白；控糖→is_low_sugar；…）。
+  // 8 项 emoji chip 风格（与 strict_avoid 同 chip 路径），保持视觉一致。
+  {
+    id: 'wellness_goals',
+    emoji: '💪',
+    question: '有什么是身体特别想补的吗？',
+    sub: '可不选；最多选 3 个。',
+    multi: true,
+    minSelect: 0,
+    maxSelect: 3,
+    chips: true,
+    cols: 2,
+    options: [
+      { value: 'prenatal',    emoji: '🤰', label: '备孕',     desc: '叶酸 + 优质蛋白' },
+      { value: 'lactation',   emoji: '👶', label: '哺乳',     desc: '补钙 + 蛋白质' },
+      { value: 'muscle_gain', emoji: '💪', label: '增肌',     desc: '高蛋白' },
+      { value: 'fat_loss',    emoji: '🥗', label: '减脂',     desc: '低油 + 高纤' },
+      { value: 'low_sugar',   emoji: '🩸', label: '控糖',     desc: '糖尿病 / 餐后稳' },
+      { value: 'low_sodium',  emoji: '🧂', label: '控盐',     desc: '高血压' },
+      { value: 'low_purine',  emoji: '🦴', label: '控嘌呤',   desc: '痛风 / 高尿酸' },
+      { value: 'skip',        emoji: '⚪', label: '都行',     desc: '没特别需求' },
+    ],
+  },
+
+  // Q6 — 鸡肉做法（仅 Q3 含鸡显示）
   {
     id: 'chicken_style',
     emoji: '🍗',
@@ -377,7 +404,12 @@ export default function QuickSetup() {
   };
 
   const toggleMulti = (id: string) => {
-    setMultiSel(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+    setMultiSel(prev => {
+      if (prev.includes(id)) return prev.filter(x => x !== id);
+      // UI 015 §C — maxSelect 上限保护（Q5 wellness 限 3 个）
+      if (q.maxSelect && prev.length >= q.maxSelect) return prev;
+      return [...prev, id];
+    });
   };
 
   // Debounced auto-advance (1.8s after last tap) for multi-select.
@@ -406,13 +438,14 @@ export default function QuickSetup() {
     // Legacy quickPrefs — downstream useWeeklyMenu / userPrefs.ts 仍读这个 key。
     localStorage.setItem('quickPrefs', JSON.stringify(prefs));
 
-    // ── v3 9 个 axis localStorage（Algorithm 073 axis 32-40） ──────────
+    // ── v3 axis localStorage（Algorithm 073 axis 32-40 + UI 015 §C 加 wellness_goals）─
     const v3Axes: Array<[string, any]> = [
       ['table_style',         finalAnswers.table_style],
       ['protein_main_class',  finalAnswers.protein_main_class],
       ['staple_pref',         finalAnswers.staple_pref],
       ['protein_pref',        finalAnswers.protein_pref],
       ['beef_style',          finalAnswers.beef_style],
+      ['wellness_goals',      finalAnswers.wellness_goals],
       ['chicken_style',       finalAnswers.chicken_style],
       ['seafood_style',       finalAnswers.seafood_style],
       ['veggie_method',       finalAnswers.veggie_method],
@@ -590,6 +623,7 @@ export default function QuickSetup() {
                       }>
                       <span>{opt.emoji}</span>
                       <span>{opt.label}</span>
+                      {opt.desc && <span style={{ opacity: 0.55, fontSize: 11 }}>· {opt.desc}</span>}
                     </button>
                   );
                 })}
