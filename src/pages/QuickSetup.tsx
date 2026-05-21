@@ -144,6 +144,34 @@ const QUESTIONS = [
     ],
   },
   {
+    // TICKET-004 §E — 食材偏好 1：海鲜频率。单选。
+    id: "seafood_freq",
+    step: 5,
+    emoji: "🦐",
+    question: "一周吃几次海鲜？",
+    sub: "我按你家节奏排海鲜 / 河鲜 / 禽肉。",
+    options: [
+      { id: 'often',     label: '每周 3+ 次', desc: '海鲜爱好者',      icon: '🦐' },
+      { id: 'sometimes', label: '每周 1-2 次', desc: '偶尔来一次',     icon: '🐟' },
+      { id: 'rare',      label: '偶尔',       desc: '一个月几次',      icon: '🐠' },
+      { id: 'never',     label: '几乎不吃',   desc: '不爱海鲜 / 过敏', icon: '🚫' },
+    ],
+  },
+  {
+    // TICKET-004 §E — 食材偏好 2：汤水习惯。单选。
+    id: "soup_freq",
+    step: 5,
+    emoji: "🍲",
+    question: "喜欢喝汤吗？",
+    sub: "广东家庭 daily / 北方家庭 weekend，我按你家的来。",
+    options: [
+      { id: 'daily',     label: '每天必须有汤', desc: '广东 / 港式家庭', icon: '🥣' },
+      { id: 'alternate', label: '隔天喝',       desc: '有汤更好',         icon: '🍲' },
+      { id: 'weekend',   label: '周末才煲',     desc: '平时太忙',         icon: '📅' },
+      { id: 'rare',      label: '不爱喝汤',     desc: '更爱面食 / 干菜', icon: '🍜' },
+    ],
+  },
+  {
     // Hometown cuisine — contributes 30% to scoreDish; without it the
     // hometown axis is a no-op for every dish.
     id: "hometown",
@@ -369,6 +397,9 @@ export default function QuickSetup() {
     // TICKET-004 §D — 生活习惯（谁做饭 / 做饭时间）— 单选 string。
     if (typeof prefs.cook_role === 'string')       localStorage.setItem("cook_role",       prefs.cook_role);
     if (typeof prefs.cook_complexity === 'string') localStorage.setItem("cook_complexity", prefs.cook_complexity);
+    // TICKET-004 §E — 食材偏好（海鲜频率 / 汤水习惯）— 单选 string。
+    if (typeof prefs.seafood_freq === 'string')    localStorage.setItem("seafood_freq",    prefs.seafood_freq);
+    if (typeof prefs.soup_freq === 'string')       localStorage.setItem("soup_freq",       prefs.soup_freq);
     // userHometown drives readHometownCuisine() in userPrefs.ts which is the
     // fallback path when the DB upsert hasn't resolved yet (fire-and-forget
     // promise). Without this, anonymous QuickSetup users had a 30% dead
