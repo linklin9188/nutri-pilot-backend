@@ -298,11 +298,15 @@ export default function QuickSetup() {
   const [otherText, setOtherText] = useState('');
 
   // visibleIndices 根据当前 answers 动态计算 — 比如 Q1 没选海鲜，Q6 不会出现。
-  // step 索引是 QUESTIONS_V3 绝对 index，但 progress / navigation 用 visible 序。
+  // step 索引是 QUESTIONS_V3 绝对 index，currentVisiblePos 走 visible 序（已答过 / 跳过的题数）。
+  // UI 014 §D fix: totalVisible 固定为 QUESTIONS_V3.length，不再 = visibleIndices.length。
+  // 之前：Q1 选了红肉触发 Q3 显示 → 分母从 7 跳到 8 → 用户看到 "1/7" 然后突然 "3/8"，体感算法
+  // 在偷题。现在分母恒为 11，分子按 visible 序递增（单调），即使有 conditional 题被跳过也只是
+  // 让分子最终停在 7/11 ~ 11/11 之间——比"分母跳"友好。
   const visibleIndices = QUESTIONS_V3
     .map((_, i) => (shouldShow(QUESTIONS_V3[i], answers) ? i : -1))
     .filter(i => i !== -1);
-  const totalVisible = visibleIndices.length;
+  const totalVisible = QUESTIONS_V3.length;
   const currentVisiblePos = Math.max(0, visibleIndices.indexOf(step));
 
   const q = QUESTIONS_V3[step];
@@ -472,11 +476,12 @@ export default function QuickSetup() {
         </div>
       )}
 
-      {/* Progress bar — 基于 visible step 数（不是 QUESTIONS_V3 总长） */}
+      {/* Progress bar — UI 014 §D: 固定 11 段 (QUESTIONS_V3.length)，不再因
+          conditional 题动态增减导致 dot 数跳。currentVisiblePos 跟分母锚定。 */}
       <div className="relative z-10 px-6 pt-14 pb-2">
         <div className="flex items-center gap-2 mb-2">
-          {visibleIndices.map((vi, i) => (
-            <div key={vi} className="flex-1 h-1 rounded-full overflow-hidden"
+          {QUESTIONS_V3.map((_, i) => (
+            <div key={i} className="flex-1 h-1 rounded-full overflow-hidden"
               style={{ background: 'rgba(255,255,255,0.10)' }}>
               <motion.div className="h-full rounded-full"
                 style={{ background: '#FF5A1F' }}
