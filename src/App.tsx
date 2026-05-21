@@ -51,15 +51,37 @@ import { useWeChatShare } from './hooks/useWeChatShare';
 //  • No quickPrefs yet                         → /setup (anonymous onboarding)
 //  • Has quickPrefs                            → Home
 function RootRedirect() {
-  // TICKET-070 §C — ?fresh=1 强制走 Login 流程（清登录态保留偏好）
-  // 用途：老板/用户已登录设备想看 Login 页（无痕浏览替代），访问
-  // /?fresh=1 自动清 nutri_user_id / userId / nutri_role / isLoggedIn /
-  // quickPrefs / familyPrefs → /login。不清 appLanguage / nutri_audience
-  // 等纯偏好 key。
+  // TICKET-070 §C + UI 015 §M — ?fresh=1 强制 fresh restart（清登录态 + 偏好 +
+  // onboarding 状态），用于 Chrome 自动化 20 profile QA 测试 + CEO 看 Login 页。
+  // 用途：访问 /?fresh=1 后清空所有上次留下的 user state，跳 /login → 用户重做
+  // 整个 onboarding 流程（v3 11 题图片驱动）。
+  // 不清 appLanguage / nutri_audience / nutri_helper_mode / nutri_learner_* 等纯偏好 key。
   const [params] = useSearchParams();
   if (params.get('fresh') === '1') {
-    ['nutri_user_id', 'userId', 'nutri_role', 'isLoggedIn',
-     'quickPrefs', 'familyPrefs'].forEach(k => localStorage.removeItem(k));
+    [
+      // 认证
+      'nutri_user_id', 'userId', 'nutri_role', 'isLoggedIn',
+      // legacy / v2 偏好
+      'quickPrefs', 'familyPrefs',
+      // onboarding 完成态标记（清掉强制重做）
+      'onboarding_v3_done', 'onboarding_v2_done', 'needs_v3_onboarding',
+      // v3 10 axes localStorage（按 finish() 写入顺序）
+      'table_style', 'protein_main_class', 'staple_pref', 'protein_pref',
+      'beef_style', 'wellness_goals', 'chicken_style', 'seafood_style',
+      'veggie_method', 'oil_level', 'breakfast_cuisine',
+      // Q0 派生 + UI 015 §A custom stepper
+      'nutri_adults', 'nutri_kids', 'nutri_family_pattern', 'family_composition',
+      // Q10 strict_avoid + UI 015 §B 各题 other 文本
+      'strict_avoid', 'strict_avoid_other_text',
+      // Legacy compat keys（finish 里写）
+      'userTaste', 'userDiet', 'userSpice', 'userAvoid',
+    ].forEach(k => localStorage.removeItem(k));
+    // UI 015 §B — 各 axis 自填 'other:<text>' 拆出的 custom text 独立 key
+    [
+      'table_style', 'protein_main_class', 'staple_pref', 'protein_pref',
+      'beef_style', 'wellness_goals', 'chicken_style', 'seafood_style',
+      'veggie_method', 'oil_level', 'breakfast_cuisine',
+    ].forEach(axis => localStorage.removeItem(`${axis}_custom_text`));
     return <Navigate to="/login" replace />;
   }
 
