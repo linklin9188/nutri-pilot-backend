@@ -3,271 +3,269 @@ import { motion, AnimatePresence } from "motion/react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { getUserId } from "../lib/userId";
-import { hometownToDbBucket } from "../lib/hometownBuckets";
 import { syncProfileToDB } from "../lib/profileSync";
+import ImageGrid, { ImageGridOption } from "../components/ImageGrid";
 
-// Quick 5-question onboarding — no login required
-// Saves to localStorage as "quickPrefs"
+// TICKET-005 v3 — 图片驱动 onboarding（11 题，条件渲染实际 8-9 步）。
+// 文案铁律：所有标题都是问句 + "怎么吃 / 喜欢" 视角，绕过用户自我描述偏差。
+// 收集 9 个 axis（Algorithm 073 axis 32-40），不动 schema，全 localStorage。
 
-const QUESTIONS = [
+type Condition = 'has_red_or_white' | 'has_beef' | 'has_chicken' | 'has_seafood_class';
+
+interface QuestionV3 {
+  id: string;
+  emoji: string;
+  question: string;
+  sub: string;
+  multi: boolean;
+  minSelect?: number;
+  cols?: 2 | 3;
+  chips?: boolean;
+  condition?: Condition;
+  options: ImageGridOption[];
+}
+
+const QUESTIONS_V3: QuestionV3[] = [
+  // Q0 — 餐桌画面，一图三用：人数 + 中西餐 + 复杂度
   {
-    // 用餐人数 first — drives dishCount + portion scaling for every
-    // recommendation downstream. The phrasing is "今天几位用餐" not
-    // "家里几口人" because the same number is editable inline on Home
-    // every day (用户周三 vs 周日 人数可以不同). Onboarding answer
-    // becomes the default; daily override lives on Home.
-    id: "household",
-    step: 1,
-    emoji: "🍽",
-    question: "今天几位用餐？",
-    sub: "我按这个安排菜量，孩子算半位。之后随时能改。",
-    // No options — rendered as a 2-stepper (adults / kids) in the page.
-    // Kept here so progress bar + question header reuse the same metadata.
-    custom: "household" as const,
-    options: [] as const,
+    id: 'table_style',
+    emoji: '🍽',
+    question: '你家餐桌更像哪个？',
+    sub: '一眼挑出最像你家用餐的画面 — 我顺手算出人数、风格、复杂度。',
+    multi: false,
+    cols: 2,
+    options: [
+      { value: 'cozy_2',    label: '2 椅小桌',       desc: '1 主菜 1 汤 简单家常',   emoji: '🍽️' },
+      { value: 'family_4',  label: '4 椅标准',       desc: '3 菜 1 汤 正经家常',     emoji: '🍱' },
+      { value: 'big_round', label: '大圆桌',         desc: '8-10 椅 6 菜 2 汤 粤式', emoji: '🥘' },
+      { value: 'western',   label: '西式长桌',       desc: '刀叉 沙拉 牛排 意面',    emoji: '🍴' },
+      { value: 'hk_diner',  label: '港式茶餐厅',     desc: '菠萝包 奶茶 多士',       emoji: '🥯' },
+      { value: 'solo',      label: '1 人小桌',       desc: '便当盒 简餐',            emoji: '🍙' },
+    ],
   },
+
+  // Q1 — 蛋白大类（多选 ≥1）
   {
-    id: "goal",
-    step: 2,
-    emoji: "🎯",
-    question: "这阵子，您想怎么吃？",
-    sub: "可多选，至少选 1 个（不强制选'营养均衡'）。",
+    id: 'protein_main_class',
+    emoji: '🥩',
+    question: '平时你家更喜欢吃哪些类？',
+    sub: '可多选，至少 1 个。',
     multi: true,
+    minSelect: 1,
+    cols: 2,
     options: [
-      { id: "kid_growth",  label: "给孩子长高",        desc: "钙 + 蛋白 + DHA",           icon: "🌱" },
-      { id: "elder_care",  label: "给老人养护",        desc: "养胃 / 三高管理",            icon: "🍵" },
-      { id: "fatloss",     label: "控制体重",          desc: "低卡 + 高饱腹",             icon: "🔥" },
-      { id: "pregnancy",   label: "备孕 / 孕期 / 月子", desc: "叶酸 + 铁 + 钙",           icon: "🤰" },
-      { id: "muscle",      label: "健身增肌",          desc: "高蛋白 + 促恢复",            icon: "💪" },
-      { id: "chronic",     label: "三高管理",          desc: "低钠 + 低糖 + 低嘌呤",       icon: "❤️‍🩹" },
-      { id: "anti_inflam", label: "抗炎 / 抗衰",       desc: "Omega-3 + 多酚",            icon: "🌿" },
-      { id: "comfort",     label: "单纯吃舒服点",      desc: "无特别需求，按节气换样",     icon: "🥢" },
+      { value: 'red_meat',   label: '红肉拼盘', desc: '牛 · 羊 · 猪',     emoji: '🥩' },
+      { value: 'white_meat', label: '白肉拼盘', desc: '鸡 · 鸭',          emoji: '🍗' },
+      { value: 'seafood',    label: '海鲜拼盘', desc: '虾蟹 · 鱼 · 贝',   emoji: '🦐' },
+      { value: 'veggie',     label: '素食拼盘', desc: '豆腐 · 蔬菜',      emoji: '🥦' },
     ],
   },
+
+  // Q2 — 主食偏好（多选 ≥1）
   {
-    id: "spice",
-    step: 2,
-    emoji: "🌶️",
-    question: "您能吃多辣？",
-    sub: "告诉我实在的口味，我照着挑。",
-    options: [
-      { id: "none",   label: "完全不辣", desc: "一点辣都不行", icon: "🥛" },
-      { id: "mild",   label: "微微辣",   desc: "可以接受轻微辛辣", icon: "🫑" },
-      { id: "medium", label: "中辣",     desc: "日常能吃辣", icon: "🌶️" },
-      { id: "hot",    label: "越辣越好", desc: "无辣不欢", icon: "🔥" },
-    ],
-  },
-  {
-    // TICKET-004 §C step A — 不喜欢但勉强能吃。强制选 ≥2 ⇒ 让 prefs 必产生差异化。
-    id: "mild_dislikes",
-    step: 3,
-    emoji: "🥢",
-    question: "哪些食材你不喜欢，但勉强能吃？",
-    sub: "至少选 2 个（每个家庭都有不爱吃的食材，这一步会让推荐更懂你）。",
+    id: 'staple_pref',
+    emoji: '🍚',
+    question: '你更喜欢吃哪种主食？',
+    sub: '可多选。',
     multi: true,
-    minSelect: 2,
+    minSelect: 1,
+    cols: 2,
     options: [
-      { id: 'bitter_melon', label: '苦瓜',     icon: '🥒' },
-      { id: 'eggplant',     label: '茄子',     icon: '🍆' },
-      { id: 'cilantro',     label: '香菜',     icon: '🌿' },
-      { id: 'innards',      label: '内脏',     icon: '🫀' },
-      { id: 'green_onion',  label: '大葱',     icon: '🧅' },
-      { id: 'garlic',       label: '大蒜',     icon: '🧄' },
-      { id: 'sea_cucumber', label: '海参',     icon: '🥢' },
-      { id: 'chives',       label: '韭菜',     icon: '🌱' },
-      { id: 'wood_ear',     label: '木耳',     icon: '🍄' },
-      { id: 'mutton_smell', label: '羊肉膻味', icon: '🐑' },
-      { id: 'celery',       label: '香芹',     icon: '🥬' },
-      { id: 'fish_smell',   label: '鱼腥味',   icon: '🐟' },
+      { value: 'rice',   label: '米饭',     emoji: '🍚' },
+      { value: 'noodle', label: '面条馒头', emoji: '🍜' },
+      { value: 'congee', label: '粥',       emoji: '🥣' },
+      { value: 'grain',  label: '杂粮',     desc: '红薯 · 玉米 · 燕麦', emoji: '🌽' },
     ],
   },
+
+  // Q3 — 肉类（仅 Q1 含红/白显示）
   {
-    // TICKET-004 §C step B — 完全不能吃（真过敏 / 宗教，可空）。去掉默认 'none'。
-    id: "avoid",
-    step: 3,
-    emoji: "🚫",
-    question: "完全不能吃（过敏 / 宗教，可空）",
-    sub: "可多选 — 真过敏 / 戒口的才选。",
+    id: 'protein_pref',
+    emoji: '🐮',
+    question: '平时你更喜欢吃哪些肉？',
+    sub: '可多选，至少 1 个。',
+    multi: true,
+    minSelect: 1,
+    condition: 'has_red_or_white',
+    cols: 3,
+    options: [
+      { value: 'pork',    label: '猪', emoji: '🐷' },
+      { value: 'chicken', label: '鸡', emoji: '🐔' },
+      { value: 'duck',    label: '鸭', emoji: '🦆' },
+      { value: 'lamb',    label: '羊', emoji: '🐑' },
+      { value: 'beef',    label: '牛', emoji: '🐮' },
+    ],
+  },
+
+  // Q4 — 牛肉做法（仅 Q3 含牛显示）
+  {
+    id: 'beef_style',
+    emoji: '🥩',
+    question: '牛肉你更喜欢怎么吃？',
+    sub: '可多选 — 不同做法对应不同菜系。',
+    multi: true,
+    condition: 'has_beef',
+    cols: 2,
+    options: [
+      { value: 'spicy_stirfry', label: '小炒黄牛肉', desc: '湘 · 川辣',     emoji: '🌶️' },
+      { value: 'steak',         label: '煎牛排',     desc: '西 · 北',       emoji: '🥩' },
+      { value: 'stewed',        label: '炖牛腩',     desc: '粤 · 港清',     emoji: '🍲' },
+      { value: 'braised',       label: '红烧牛肉',   desc: '江浙 · 北家常', emoji: '🥘' },
+    ],
+  },
+
+  // Q5 — 鸡肉做法（仅 Q3 含鸡显示）
+  {
+    id: 'chicken_style',
+    emoji: '🍗',
+    question: '鸡肉你更喜欢怎么吃？',
+    sub: '可多选。',
+    multi: true,
+    condition: 'has_chicken',
+    cols: 2,
+    options: [
+      { value: 'poached',     label: '白切鸡', desc: '粤式',     emoji: '🍗' },
+      { value: 'spicy_diced', label: '辣子鸡', desc: '川式',     emoji: '🌶️' },
+      { value: 'three_cup',   label: '三杯鸡', desc: '台式',     emoji: '🍶' },
+      { value: 'yellow_braised', label: '黄焖鸡', desc: '北 · 江浙', emoji: '🍛' },
+    ],
+  },
+
+  // Q6 — 海鲜做法（仅 Q1 含海鲜显示）
+  {
+    id: 'seafood_style',
+    emoji: '🦐',
+    question: '海鲜你更喜欢怎么做？',
+    sub: '可多选。',
+    multi: true,
+    condition: 'has_seafood_class',
+    cols: 2,
+    options: [
+      { value: 'steamed',  label: '清蒸', emoji: '♨️' },
+      { value: 'braised',  label: '红烧', emoji: '🥘' },
+      { value: 'salted',   label: '椒盐', emoji: '🧂' },
+      { value: 'blanched', label: '白灼', emoji: '💧' },
+    ],
+  },
+
+  // Q7 — 蔬菜做法（多选 ≥1）
+  {
+    id: 'veggie_method',
+    emoji: '🥬',
+    question: '蔬菜你更喜欢怎么做？',
+    sub: '可多选。',
+    multi: true,
+    minSelect: 1,
+    cols: 2,
+    options: [
+      { value: 'stirfry',   label: '清炒', emoji: '🥬' },
+      { value: 'dry_fried', label: '干煸', emoji: '🔥' },
+      { value: 'cold',      label: '凉拌', emoji: '🥗' },
+      { value: 'soup',      label: '煲汤', emoji: '🍲' },
+    ],
+  },
+
+  // Q8 — 浓淡（单选）
+  {
+    id: 'oil_level',
+    emoji: '🥄',
+    question: '你更喜欢清淡还是浓郁？',
+    sub: '我按这个调味重轻。',
+    multi: false,
+    cols: 2,
+    options: [
+      { value: 'rich',   label: '浓郁',   desc: '重油红烧肉',  emoji: '🥘' },
+      { value: 'medium', label: '中等',   desc: '日常家常',    emoji: '🍱' },
+      { value: 'light',  label: '极清',   desc: '白灼 · 清蒸', emoji: '💧' },
+    ],
+  },
+
+  // Q9 — 早餐风格（独立 axis，单选）
+  {
+    id: 'breakfast_cuisine',
+    emoji: '🥯',
+    question: '早餐你更喜欢吃什么？',
+    sub: '早餐口味跟午晚常常不一样 — HK 妈妈早西午晚中很常见。',
+    multi: false,
+    cols: 2,
+    options: [
+      { value: 'chinese', label: '中式', desc: '包子 · 粥 · 油条 · 豆浆', emoji: '🥟' },
+      { value: 'western', label: '西式', desc: '三明治 · 牛奶 · 麦片',    emoji: '🥪' },
+      { value: 'hk',      label: '港式', desc: '菠萝包 · 奶茶 · 多士',    emoji: '🥯' },
+      { value: 'simple',  label: '简单', desc: '鸡蛋 · 燕麦',             emoji: '🥚' },
+    ],
+  },
+
+  // Q10 — 完全不能吃（chips 多选可空）
+  {
+    id: 'avoid',
+    emoji: '🚫',
+    question: '有什么是完全不能吃的吗？',
+    sub: '可空 — 真过敏 / 戒口的才选。',
     multi: true,
     minSelect: 0,
+    chips: true,
+    cols: 2,
     options: [
-      { id: "seafood",   label: "不吃海鲜",  icon: "🦐" },
-      { id: "veggie",    label: "素食",      icon: "🥦" },
-      { id: "cilantro",  label: "不吃香菜",  icon: "🌿" },
-      { id: "onion",     label: "不吃葱蒜",  icon: "🧄" },
-      { id: "beef",      label: "忌牛羊肉",  icon: "🐄" },
-      { id: "peanut",    label: "花生过敏",  icon: "🥜" },
-      { id: "dairy",     label: "忌乳制品",  icon: "🥛" },
+      { value: 'seafood',   label: '海鲜过敏',   emoji: '🦐' },
+      { value: 'pork',      label: '宗教不吃猪', emoji: '🐖' },
+      { value: 'beef_lamb', label: '不吃牛羊',   emoji: '🐄' },
+      { value: 'all_meat',  label: '全素',       emoji: '🥦' },
+      { value: 'peanut',    label: '花生',       emoji: '🥜' },
+      { value: 'dairy',     label: '乳制品',     emoji: '🥛' },
+      { value: 'cilantro',  label: '香菜',       emoji: '🌿' },
+      { value: 'innards',   label: '内脏',       emoji: '🫀' },
     ],
   },
-  {
-    id: "health",
-    step: 4,
-    emoji: "🩺",
-    question: "身子有什么要照顾的？",
-    sub: "我挑合适的食材，温温和和地养着。",
-    multi: true,
-    options: [
-      { id: "none",          label: "没有特殊情况", icon: "✅" },
-      { id: "hypertension",  label: "高血压",       icon: "❤️‍🩹" },
-      { id: "diabetes",      label: "糖尿病",       icon: "🩸" },
-      { id: "gout",          label: "痛风",         icon: "🦵" },
-      { id: "low_blood_pressure", label: "低血压",  icon: "💙" },
-      { id: "anemia",        label: "贫血/补气血",  icon: "🩷" },
-    ],
-  },
-  {
-    // TICKET-004 §D — 生活习惯 1：谁做饭。单选。
-    id: "cook_role",
-    step: 4,
-    emoji: "🧑‍🍳",
-    question: "家里主要是谁做饭？",
-    sub: "我按真实做饭的人调难度。",
-    options: [
-      { id: 'self',   label: '我自己',      desc: '默认',                icon: '👩' },
-      { id: 'helper', label: '家政工人',    desc: '走 helper 菜谱',       icon: '🧑‍🍳' },
-      { id: 'family', label: '家人 / 长辈', desc: '熟练度高',             icon: '👨‍👩‍👦' },
-      { id: 'shared', label: '多人轮换',    desc: '不同人做不同顿',       icon: '🔄' },
-    ],
-  },
-  {
-    // TICKET-004 §D — 生活习惯 2：做饭时间。单选。
-    id: "cook_complexity",
-    step: 4,
-    emoji: "⏱",
-    question: "每天能花多少时间做饭？",
-    sub: "时间紧就推快手，余裕就慢炖。",
-    options: [
-      { id: 'quick',     label: '30 分钟以内', desc: '简单为主',         icon: '⏱' },
-      { id: 'normal',    label: '30-60 分钟',  desc: '有时炒有时煲',     icon: '🍳' },
-      { id: 'unlimited', label: '不限',        desc: '喜欢慢炖 / 煲汤',  icon: '🍲' },
-    ],
-  },
-  {
-    // TICKET-004 §E — 食材偏好 1：海鲜频率。单选。
-    id: "seafood_freq",
-    step: 5,
-    emoji: "🦐",
-    question: "一周吃几次海鲜？",
-    sub: "我按你家节奏排海鲜 / 河鲜 / 禽肉。",
-    options: [
-      { id: 'often',     label: '每周 3+ 次', desc: '海鲜爱好者',      icon: '🦐' },
-      { id: 'sometimes', label: '每周 1-2 次', desc: '偶尔来一次',     icon: '🐟' },
-      { id: 'rare',      label: '偶尔',       desc: '一个月几次',      icon: '🐠' },
-      { id: 'never',     label: '几乎不吃',   desc: '不爱海鲜 / 过敏', icon: '🚫' },
-    ],
-  },
-  {
-    // TICKET-004 §E — 食材偏好 2：汤水习惯。单选。
-    id: "soup_freq",
-    step: 5,
-    emoji: "🍲",
-    question: "喜欢喝汤吗？",
-    sub: "广东家庭 daily / 北方家庭 weekend，我按你家的来。",
-    options: [
-      { id: 'daily',     label: '每天必须有汤', desc: '广东 / 港式家庭', icon: '🥣' },
-      { id: 'alternate', label: '隔天喝',       desc: '有汤更好',         icon: '🍲' },
-      { id: 'weekend',   label: '周末才煲',     desc: '平时太忙',         icon: '📅' },
-      { id: 'rare',      label: '不爱喝汤',     desc: '更爱面食 / 干菜', icon: '🍜' },
-    ],
-  },
-  {
-    // Hometown cuisine — contributes 30% to scoreDish; without it the
-    // hometown axis is a no-op for every dish.
-    id: "hometown",
-    step: 5,
-    emoji: "🏠",
-    question: "您最惦记哪一方水土的味道？",
-    sub: "可多选 — 混合背景的家庭都能照顾到。",
-    multi: true,
-    options: [
-      // 地域大区 — 用户决策 2026-05-17：八大菜系覆盖率不足（北方人没选项），
-      // 改成 7 大区 + 港澳台 + 都行。每个大区的认知摩擦接近 0，且跟 DB
-      // 4 bucket 自然 N:1 对应（见 hometownBuckets.ts）。
-      { id: "south",       label: "华南",   desc: "粤 · 闽 · 桂 · 琼 — 清淡靓汤、海味为主",      icon: "🦞" },
-      { id: "east",        label: "华东",   desc: "沪 · 苏 · 浙 · 皖 — 江南本帮、鲜甜浓油",      icon: "🍤" },
-      { id: "north",       label: "华北",   desc: "京 · 津 · 冀 · 晋 · 蒙 — 面食为主、咸鲜厚重", icon: "🥟" },
-      { id: "northeast",   label: "东北",   desc: "辽 · 吉 · 黑 — 炖菜 · 锅包肉 · 酸菜",         icon: "🍖" },
-      { id: "northwest",   label: "西北",   desc: "陕 · 甘 · 宁 · 青 · 新 — 面食 · 牛羊肉 · 香料", icon: "🌾" },
-      { id: "southwest",   label: "西南",   desc: "川 · 渝 · 湘 · 黔 · 滇 — 麻辣鲜香",           icon: "🌶️" },
-      { id: "central",     label: "华中",   desc: "鄂 · 赣 · 豫 — 偏南方家常",                    icon: "🍲" },
-      { id: "hk_macau_tw", label: "港澳台", desc: "茶餐厅 · 烧腊 · 点心",                         icon: "🍵" },
-      { id: "no_preference", label: "都行 / 没偏好", desc: "什么都吃", icon: "🤷" },
-    ],
-  },
-] as const;
-// Age question was previously here; removed at user's request because
-// 主要做饭对象 is ambiguous in households with mixed ages. resolveAgeModifiers
-// downstream is null-safe so age_group=NULL is fine. Family-member level
-// life-stage in family_members still drives per-member adjustments.
+];
 
-// Map QuickSetup answers → valid user_profiles columns. Values are chosen
-// to match the actual tags present in dishes (health_benefit_tags +
-// flavor_tags) so scoreDish can hit them.
-const GOAL_TO_DIETARY_GOAL: Record<string, string> = {
-  // TICKET-004 — new 8-goal scheme (replaces fatloss/muscle/balanced/nourish/pregnancy/growth/low_carb).
-  // schema single-value column so head [0] only; tail goals stay in localStorage.
-  kid_growth:  'muscle_gain',
-  elder_care:  'maintain',
-  fatloss:     'lose_weight',
-  pregnancy:   'maintain',
-  muscle:      'muscle_gain',
-  chronic:     'maintain',
-  anti_inflam: 'maintain',
-  comfort:     'maintain',
-};
-const SPICE_TO_TASTE_PREF: Record<string, string | null> = {
-  none:   'light',
-  mild:   'light',
-  medium: null,
-  hot:    'spicy',
+// Q0 餐桌画面 → 人数 / 菜系 / 复杂度 三个维度的解析表。
+// hometown_cuisine 只在能精准映射时给值（big_round/hk_diner 显然粤系），其余
+// 留 null 让 Algorithm 通过其他 axis（protein_main_class / oil_level / breakfast_cuisine）
+// 推断风格。
+const TABLE_STYLE_MAP: Record<string, { adults: number; kids: number; elders: number; cuisine: string | null; complexity: string }> = {
+  cozy_2:    { adults: 2, kids: 0, elders: 0, cuisine: null,        complexity: 'simple'   },
+  family_4:  { adults: 3, kids: 1, elders: 0, cuisine: null,        complexity: 'standard' },
+  big_round: { adults: 4, kids: 1, elders: 2, cuisine: 'cantonese', complexity: 'rich'     },
+  western:   { adults: 2, kids: 0, elders: 0, cuisine: null,        complexity: 'standard' },
+  hk_diner:  { adults: 2, kids: 0, elders: 0, cuisine: 'cantonese', complexity: 'simple'   },
+  solo:      { adults: 1, kids: 0, elders: 0, cuisine: null,        complexity: 'simple'   },
 };
 
-// HOMETOWN_TO_CUISINE removed — onboarding now uses 八大菜系 IDs
-// (guangdong/sichuan/shandong/jiangsu/zhejiang/fujian/hunan/anhui). The old
-// map only knew legacy DB IDs (cantonese/jiangnan/...) so post-八大菜系
-// rollout it returned undefined for 7/9 picks and silently wrote NULL,
-// killing the 30% hometown axis. Use hometownToDbBucket() instead — it
-// maps the new ID to the existing DB bucket (粤→cantonese / 鲁→northern /
-// 苏→jiangnan / 浙→jiangnan / 闽→cantonese / 湘→sichuan / 徽→jiangnan).
-// AGE_TO_GROUP removed with the age question. resolveAgeModifiers
-// gracefully no-ops when age_group is null on user_profiles.
+// dietary_goal fallback — v3 没有显式 goal 题，统一 'maintain'。Algorithm
+// 通过 9 个新 axis 推断个性化，不再依赖 goal 单值列做核心区分。
+function deriveDietaryGoal(_answers: Record<string, any>): string | null {
+  return 'maintain';
+}
 
-async function persistProfileToDb(prefs: Record<string, unknown>): Promise<void> {
-  // TICKET-075 §H — goal / hometown 可能是 string (legacy single-select)
-  // 或 string[] (新版 multi-select)。统一拆 head + tail：head 进 schema 单值列
-  // (dietary_goal / hometown_cuisine)，tail 存 localStorage 供 Algorithm 后续读。
-  const goalArr = Array.isArray(prefs.goal) ? prefs.goal as string[]
-                : prefs.goal ? [prefs.goal as string] : [];
-  const hometownArr = Array.isArray(prefs.hometown) ? prefs.hometown as string[]
-                    : prefs.hometown ? [prefs.hometown as string] : [];
+// taste_pref fallback — 从 oil_level 推。light→light, rich→null (default), medium→null。
+function deriveTastePref(answers: Record<string, any>): string | null {
+  if (answers.oil_level === 'light') return 'light';
+  return null;
+}
 
-  // Persist low-carb flag for the lunch / breakfast templates and hardFilter
-  // to read at score time. Skip the staple slot when this is on. Multi-goal:
-  // 任一目标含 low_carb 即触发。
-  localStorage.setItem('nutri_low_carb', goalArr.includes('low_carb') ? '1' : '0');
-  // Pregnancy override — multi-goal: 任一目标含 pregnancy 即触发。
-  // familyPrefs.ts ORs this with member.lifeStage='孕期'.
-  localStorage.setItem('nutri_has_pregnant_override', goalArr.includes('pregnancy') ? '1' : '0');
-  // Secondary goals / hometowns — Algorithm 后续可读取做评分广度求和。
-  localStorage.setItem('nutri_secondary_goals',
-    JSON.stringify(goalArr.slice(1)));
-  localStorage.setItem('nutri_secondary_hometowns',
-    JSON.stringify(hometownArr.slice(1)));
+function shouldShow(q: QuestionV3, answers: Record<string, any>): boolean {
+  if (!q.condition) return true;
+  const pmc = (answers.protein_main_class ?? []) as string[];
+  const pp  = (answers.protein_pref ?? []) as string[];
+  if (q.condition === 'has_red_or_white')  return pmc.includes('red_meat') || pmc.includes('white_meat');
+  if (q.condition === 'has_beef')          return pp.includes('beef');
+  if (q.condition === 'has_chicken')       return pp.includes('chicken');
+  if (q.condition === 'has_seafood_class') return pmc.includes('seafood');
+  return true;
+}
 
+async function persistProfileToDb(answers: Record<string, any>): Promise<void> {
   const userId = getUserId();
   if (!userId) return;
-
-  const dietary_goal    = GOAL_TO_DIETARY_GOAL[goalArr[0] ?? ''] ?? null;
-  const taste_pref      = SPICE_TO_TASTE_PREF[(prefs.spice as string) ?? '']   ?? null;
-  const hometown_cuisine = hometownToDbBucket(hometownArr[0] ?? '');
-  // Pass through avoid + health as taste/avoid hints. Only 'seafood' from
-  // the avoid list maps cleanly to a flavor_tag; ingredient-level avoids
-  // (cilantro/onion/beef/peanut/dairy) keep flowing through the
-  // localStorage path consumed by getUserPrefs().
-  const avoid_tags = ((prefs.avoid as string[]) ?? [])
-    .filter(a => a !== 'none' && a !== 'veggie');
-
+  const dietary_goal     = deriveDietaryGoal(answers);
+  const taste_pref       = deriveTastePref(answers);
+  const tableStyle       = answers.table_style as string | undefined;
+  const hometown_cuisine = (tableStyle && TABLE_STYLE_MAP[tableStyle]?.cuisine) ?? null;
+  // avoid_tags — schema 期望 flavor_tag 兼容值，过滤掉 v3 新 id（pork/beef_lamb/all_meat）
+  // 这些通过 localStorage avoid 走 ingredient-level 过滤路径。
+  const avoidArr = (answers.avoid ?? []) as string[];
+  const avoid_tags = avoidArr.filter(a => a === 'seafood' || a === 'peanut' || a === 'dairy' || a === 'cilantro' || a === 'innards');
   await supabase.from('user_profiles').upsert(
     {
       id:               userId,
@@ -284,514 +282,281 @@ async function persistProfileToDb(prefs: Record<string, unknown>): Promise<void>
 export default function QuickSetup() {
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
+  const [answers, setAnswers] = useState<Record<string, any>>({});
   const [multiSel, setMultiSel] = useState<string[]>([]);
-  // Household stepper state — defaults match nutri_adults / nutri_kids
-  // localStorage to keep existing users' previously-set values across a
-  // re-run of QuickSetup.
-  const [householdAdults, setHouseholdAdults] = useState<number>(() =>
-    Math.max(1, parseInt(localStorage.getItem('nutri_adults') ?? '2', 10)));
-  const [householdKids, setHouseholdKids] = useState<number>(() =>
-    Math.max(0, parseInt(localStorage.getItem('nutri_kids') ?? '0', 10)));
-  // TICKET-004 §B — 家庭成员细分：老人 stepper + 慢病多选 + per-kid 年龄段。
-  const [householdElders, setHouseholdElders] = useState<number>(() => {
-    try {
-      const fc = JSON.parse(localStorage.getItem('family_composition') ?? 'null');
-      return Math.max(0, fc?.elders?.count ?? 0);
-    } catch { return 0; }
-  });
-  const [elderConditions, setElderConditions] = useState<string[]>(() => {
-    try {
-      const fc = JSON.parse(localStorage.getItem('family_composition') ?? 'null');
-      return Array.isArray(fc?.elders?.conditions) ? fc.elders.conditions : [];
-    } catch { return []; }
-  });
-  const [kidAges, setKidAges] = useState<string[]>(() => {
-    try {
-      const fc = JSON.parse(localStorage.getItem('family_composition') ?? 'null');
-      return Array.isArray(fc?.kids) ? fc.kids.map((k: any) => k.age ?? '7-12') : [];
-    } catch { return []; }
-  });
-  // 孩子 stepper 改变时同步 kidAges 数组长度（增减默认 '7-12'）。
-  useEffect(() => {
-    setKidAges(prev => {
-      if (prev.length === householdKids) return prev;
-      if (householdKids > prev.length) return [...prev, ...Array(householdKids - prev.length).fill('7-12')];
-      return prev.slice(0, householdKids);
-    });
-  }, [householdKids]);
 
-  const q = QUESTIONS[step];
-  const isLast = step === QUESTIONS.length - 1;
-  const isHousehold = (q as any).custom === 'household';
+  // visibleIndices 根据当前 answers 动态计算 — 比如 Q1 没选海鲜，Q6 不会出现。
+  // step 索引是 QUESTIONS_V3 绝对 index，但 progress / navigation 用 visible 序。
+  const visibleIndices = QUESTIONS_V3
+    .map((_, i) => (shouldShow(QUESTIONS_V3[i], answers) ? i : -1))
+    .filter(i => i !== -1);
+  const totalVisible = visibleIndices.length;
+  const currentVisiblePos = Math.max(0, visibleIndices.indexOf(step));
 
-  const commitHousehold = () => {
-    // legacy keys：nutri_adults 仍写中年大人数；老人不计入 nutri_adults（独立 stepper）。
-    localStorage.setItem('nutri_adults', String(householdAdults));
-    localStorage.setItem('nutri_kids',   String(householdKids));
-    // TICKET-004 §B — family_composition 细分 JSON。Algorithm 后续读这个 key。
-    const familyComp = {
-      adults: householdAdults,
-      elders: {
-        count: householdElders,
-        conditions: householdElders > 0 ? elderConditions : [],
-      },
-      kids: kidAges.map(age => ({ age })),
-    };
-    localStorage.setItem('family_composition', JSON.stringify(familyComp));
-    const next = { ...answers, household: `${householdAdults}a${householdKids}k${householdElders}e` };
-    setAnswers(next);
-    if (isLast) finish(next);
-    else setStep(s => s + 1);
+  const q = QUESTIONS_V3[step];
+
+  const goToNext = (latestAnswers: Record<string, any>) => {
+    // Recompute visible list with latest answers — Q1/Q3 多选可能新增或删除
+    // 后续条件题。
+    const fresh = QUESTIONS_V3
+      .map((_, i) => (shouldShow(QUESTIONS_V3[i], latestAnswers) ? i : -1))
+      .filter(i => i !== -1);
+    const pos = fresh.indexOf(step);
+    if (pos < 0 || pos === fresh.length - 1) {
+      finish(latestAnswers);
+      return;
+    }
+    setStep(fresh[pos + 1]);
+    setMultiSel([]);
   };
 
   const handleSingle = (id: string) => {
     const next = { ...answers, [q.id]: id };
     setAnswers(next);
-    setTimeout(() => {
-      if (isLast) finish(next);
-      else setStep(s => s + 1);
-    }, 320);
+    setTimeout(() => goToNext(next), 320);
   };
 
-  // Commit a multi-select answer and advance. Extracted so both the explicit
-  // "none → instant jump" path and the debounced "user paused after picking"
-  // path land in the same place.
   const commitMulti = (sel: string[]) => {
-    const next = { ...answers, [q.id]: sel.length ? sel : ["none"] };
+    const next = { ...answers, [q.id]: sel };
     setAnswers(next);
     setMultiSel([]);
-    if (isLast) finish(next);
-    else setStep(s => s + 1);
+    goToNext(next);
   };
 
   const toggleMulti = (id: string) => {
-    // Picking "无忌口 / 没有特殊情况 / 都行没偏好" is an end-of-question signal —
-    // auto-advance immediately at the single-select cadence (320ms). TICKET-075 §H：
-    // 'no_preference' (hometown 题独有) 跟 'none' 等价 — 一选就跳。
-    if (id === "none" || id === "no_preference") {
-      setMultiSel([id]);
-      setTimeout(() => commitMulti([id]), 320);
-      return;
-    }
-    setMultiSel(p =>
-      (p.includes("none") || p.includes("no_preference")) ? [id] :
-      p.includes(id) ? p.filter(x => x !== id) : [...p, id]
-    );
+    setMultiSel(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
 
-  // Debounced auto-advance for multi-select pages: 1.8s after the user's last
-  // tap, commit whatever's selected. Every new tap restarts the timer so they
-  // can deselect / add without losing the page. "none" path short-circuits
-  // through toggleMulti above and never hits this debounce.
-  // TICKET-004 §C — 若题目有 minSelect，必须 sel.length >= minSelect 才允许 auto-advance。
+  // Debounced auto-advance (1.8s after last tap) for multi-select.
+  // minSelect>0 时必须达到才允许 debounce（minSelect:0 的 Q10 也走 debounce
+  // 但首选时间窗会被 commit timer 走 — 如果用户什么都不选，下方"完成 →" 链接
+  // 是出口）。
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (!("multi" in q) || !q.multi) return;
+    if (!q.multi) return;
     if (multiSel.length === 0) return;
-    if (multiSel.includes("none") || multiSel.includes("no_preference")) return; // toggleMulti handles this path
-    const minSel = (q as any).minSelect ?? 1;
+    const minSel = q.minSelect ?? 1;
     if (multiSel.length < minSel) return;
     debounceRef.current = setTimeout(() => commitMulti(multiSel), 1800);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [multiSel, step]);
 
-  const finish = (finalAnswers?: Record<string, string | string[]>) => {
-    const merged = finalAnswers ?? answers;
-    const prefs = {
-      ...merged,
-      avoid:  (merged.avoid  as string[] | undefined) ?? ["none"],
-      health: (merged.health as string[] | undefined) ?? ["none"],
-      setupAt: Date.now(),
+  const finish = (finalAnswers: Record<string, any>) => {
+    const prefs = { ...finalAnswers, setupAt: Date.now() };
+
+    // Legacy quickPrefs — downstream useWeeklyMenu / userPrefs.ts 仍读这个 key。
+    localStorage.setItem('quickPrefs', JSON.stringify(prefs));
+
+    // ── v3 9 个 axis localStorage（Algorithm 073 axis 32-40） ──────────
+    const v3Axes: Array<[string, any]> = [
+      ['table_style',         finalAnswers.table_style],
+      ['protein_main_class',  finalAnswers.protein_main_class],
+      ['staple_pref',         finalAnswers.staple_pref],
+      ['protein_pref',        finalAnswers.protein_pref],
+      ['beef_style',          finalAnswers.beef_style],
+      ['chicken_style',       finalAnswers.chicken_style],
+      ['seafood_style',       finalAnswers.seafood_style],
+      ['veggie_method',       finalAnswers.veggie_method],
+      ['oil_level',           finalAnswers.oil_level],
+      ['breakfast_cuisine',   finalAnswers.breakfast_cuisine],
+    ];
+    v3Axes.forEach(([k, v]) => {
+      if (v === undefined) return;
+      localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v));
+    });
+
+    // ── Q0 table_style → 派生 household composition ──────────────────
+    const tableStyle = (finalAnswers.table_style as string) ?? 'family_4';
+    const tsMap = TABLE_STYLE_MAP[tableStyle] ?? TABLE_STYLE_MAP.family_4;
+    localStorage.setItem('nutri_adults', String(tsMap.adults));
+    localStorage.setItem('nutri_kids',   String(tsMap.kids));
+    const familyComp = {
+      adults: tsMap.adults,
+      elders: { count: tsMap.elders, conditions: [] as string[] },
+      kids:   Array.from({ length: tsMap.kids }, () => ({ age: '7-12' })),
     };
-    localStorage.setItem("quickPrefs", JSON.stringify(prefs));
-    // TICKET-075 §H — goal / hometown 可能是 string[] (multi-select)。
-    // 主项 (index 0) 进 legacy single-string localStorage keys（保持下游
-    // useWeeklyMenu / userPrefs.ts 读取兼容）；副项已由 persistProfileToDb
-    // 存 nutri_secondary_goals / nutri_secondary_hometowns。
-    const goalArr = Array.isArray(prefs.goal) ? prefs.goal as string[]
-                  : prefs.goal ? [prefs.goal as string] : [];
-    const hometownArr = Array.isArray(prefs.hometown) ? prefs.hometown as string[]
-                      : prefs.hometown ? [prefs.hometown as string] : [];
-    const primaryGoal = goalArr[0] ?? "comfort";
-    const primaryHometown = hometownArr[0];
+    localStorage.setItem('family_composition', JSON.stringify(familyComp));
 
-    // Map to existing taste system. comfort = 兜底 default。kid_growth / elder_care
-    // / chronic / anti_inflam fall back to "default" via ??. fatloss / muscle 保持原映射。
-    const goalToTaste: Record<string, string> = {
-      fatloss: "veggie", muscle: "default", elder_care: "light", comfort: "default",
-    };
-    localStorage.setItem("userTaste", goalToTaste[primaryGoal] ?? "default");
-    localStorage.setItem("userDiet", primaryGoal);
-    localStorage.setItem("userSpice", prefs.spice as string);
-    localStorage.setItem("userAvoid", (prefs.avoid as string[]).join(","));
-    // TICKET-004 §C — 新字段 mild_dislikes（"不喜欢但勉强能吃"，强制 2+ 项）
-    // 全存 localStorage 给 Algorithm 后续做差异化 scoring（不动 schema）。
-    if (Array.isArray(prefs.mild_dislikes)) {
-      localStorage.setItem("mild_dislikes", JSON.stringify(prefs.mild_dislikes));
+    // ── Legacy compat keys（下游 readers expect these） ──────────────
+    const oilLevel  = finalAnswers.oil_level as string | undefined;
+    const tastePref = deriveTastePref(finalAnswers);
+    localStorage.setItem('userTaste', tastePref === 'light' ? 'light' : 'default');
+    localStorage.setItem('userDiet',  'comfort');  // v3 没显式 goal 题
+    localStorage.setItem('userSpice', oilLevel === 'rich' ? 'medium' : 'mild');
+    const avoidArr = (finalAnswers.avoid ?? []) as string[];
+    localStorage.setItem('userAvoid', avoidArr.length ? avoidArr.join(',') : 'none');
+
+    // 匿名 userId
+    if (!localStorage.getItem('isLoggedIn')) {
+      localStorage.setItem('isLoggedIn', 'true');
+      localStorage.setItem('userId', crypto.randomUUID());
     }
-    // TICKET-004 §D — 生活习惯（谁做饭 / 做饭时间）— 单选 string。
-    if (typeof prefs.cook_role === 'string')       localStorage.setItem("cook_role",       prefs.cook_role);
-    if (typeof prefs.cook_complexity === 'string') localStorage.setItem("cook_complexity", prefs.cook_complexity);
-    // TICKET-004 §E — 食材偏好（海鲜频率 / 汤水习惯）— 单选 string。
-    if (typeof prefs.seafood_freq === 'string')    localStorage.setItem("seafood_freq",    prefs.seafood_freq);
-    if (typeof prefs.soup_freq === 'string')       localStorage.setItem("soup_freq",       prefs.soup_freq);
-    // userHometown drives readHometownCuisine() in userPrefs.ts which is the
-    // fallback path when the DB upsert hasn't resolved yet (fire-and-forget
-    // promise). Without this, anonymous QuickSetup users had a 30% dead
-    // hometown axis until the upsert returned — often 1-2 weeks if they
-    // never came back online.
-    if (primaryHometown) localStorage.setItem("userHometown", primaryHometown);
-    // Set family defaults if not already configured
-    if (!localStorage.getItem("nutri_adults")) localStorage.setItem("nutri_adults", "2");
-    if (!localStorage.getItem("nutri_kids"))   localStorage.setItem("nutri_kids",   "0");
-    // Mark as logged in (test phase: completing setup = logged in)
-    if (!localStorage.getItem("isLoggedIn")) {
-      localStorage.setItem("isLoggedIn", "true");
-      localStorage.setItem("userId", crypto.randomUUID());
+    if (!localStorage.getItem('nutri_user_id')) {
+      const uid = localStorage.getItem('userId');
+      if (uid) localStorage.setItem('nutri_user_id', uid);
     }
 
-    // Persist to user_profiles so the scoring algorithm's profile-side
-    // signals (dietary_goal 40%, taste_pref 30%) actually have data. Before
-    // this, only localStorage was written, leaving DB profile all NULL and
-    // making 70% of the score collapse to 0.
-    persistProfileToDb(prefs).catch(() => {/* non-blocking */});
+    // upsert user_profiles + 全局同步（fire-and-forget）
+    persistProfileToDb(finalAnswers).catch(() => {/* offline-tolerant */});
+    syncProfileToDB(getUserId()).catch(() => {/* offline-tolerant */});
 
-    // §A (TICKET-039 Smell 2 阶段 2) — 走统一同步层让任何后续 sync←DB
-    // 拉到一致结果（persistProfileToDb 是 QuickSetup 特化路径，syncProfileToDB
-    // 是统一入口；两者写入同一 user_profiles 表字段一致，并存为无害冗余）。
-    syncProfileToDB(getUserId()).catch(() => {/* non-blocking */});
-
-    // TICKET-004 §L — 标记 v2 onboarding 已完成 + 清掉升级提示。这俩 key 配合
-    // App.tsx RootRedirect 的 v2 检查使用，让走完新流程的用户不再被弹回 /setup。
+    // mark v3 done + 清所有升级标记（v3 是 v2 的超集，v3 done 隐含 v2 done）
+    localStorage.setItem('onboarding_v3_done', 'true');
     localStorage.setItem('onboarding_v2_done', 'true');
+    localStorage.removeItem('needs_v3_onboarding');
     localStorage.removeItem('needs_v2_onboarding');
 
-    // Notify hooks that preferences changed
-    window.dispatchEvent(new Event("nutri-prefs-changed"));
-    navigate("/");
+    window.dispatchEvent(new Event('nutri-prefs-changed'));
+    navigate('/');
   };
-
-  const progress = ((step) / QUESTIONS.length) * 100;
 
   return (
     <div className="min-h-screen flex flex-col max-w-md mx-auto relative overflow-hidden text-white"
-      style={{ background: "#0a0a0a" }}>
+      style={{ background: '#0a0a0a' }}>
 
       {/* Background gradient */}
       <div className="absolute inset-0 z-0 pointer-events-none">
         <div style={{
-          background: "radial-gradient(ellipse at 50% 0%, rgba(255,90,31,0.18) 0%, transparent 65%)",
-          position: "absolute", inset: 0,
+          background: 'radial-gradient(ellipse at 50% 0%, rgba(255,90,31,0.18) 0%, transparent 65%)',
+          position: 'absolute', inset: 0,
         }} />
       </div>
 
-      {/* TICKET-004 §L — β 老用户升级 banner（needs_v2_onboarding 标记由 App.tsx
-          RootRedirect 在检测到旧 quickPrefs 且没 onboarding_v2_done 时写入；
-          QuickSetup.finish() 完工后会清除该标记）。 */}
-      {localStorage.getItem('needs_v2_onboarding') === 'true' && (
+      {/* TICKET-005 §E — v3 upgrade banner（needs_v3_onboarding 标记由 App.tsx
+          RootRedirect 在检测到旧 quickPrefs 且没 onboarding_v3_done 时写入；
+          QuickSetup.finish() 完工后清除）。 */}
+      {localStorage.getItem('needs_v3_onboarding') === 'true' && (
         <div className="relative z-10 px-6 pt-14 pb-2">
           <div className="rounded-r p-4"
             style={{ background: 'rgba(255,90,31,0.10)', borderLeft: '4px solid #FF9054' }}>
-            <p className="font-bold text-[#FF9054]" style={{ fontSize: 14 }}>🎉 智能菜单引擎升级了</p>
+            <p className="font-bold text-[#FF9054]" style={{ fontSize: 14 }}>🎨 升级了！我们用图片代替文字</p>
             <p className="mt-1 text-white/65 font-light" style={{ fontSize: 12, lineHeight: 1.5 }}>
-              我们让菜单推荐更懂你了，请用 2 分钟重新设置一下偏好（11 步小问题）。
-              之前选的会自动迁移，只需要补充新增的几题。
+              请用 3 分钟看图选你喜欢的 — 比读字快 10 倍，让推荐更懂你。
             </p>
           </div>
         </div>
       )}
 
-      {/* Progress bar */}
+      {/* Progress bar — 基于 visible step 数（不是 QUESTIONS_V3 总长） */}
       <div className="relative z-10 px-6 pt-14 pb-2">
-        <div className="flex items-center gap-3 mb-2">
-          {QUESTIONS.map((_, i) => (
-            <div key={i} className="flex-1 h-1 rounded-full overflow-hidden"
-              style={{ background: "rgba(255,255,255,0.10)" }}>
+        <div className="flex items-center gap-2 mb-2">
+          {visibleIndices.map((vi, i) => (
+            <div key={vi} className="flex-1 h-1 rounded-full overflow-hidden"
+              style={{ background: 'rgba(255,255,255,0.10)' }}>
               <motion.div className="h-full rounded-full"
-                style={{ background: "#FF5A1F" }}
-                animate={{ width: i < step ? "100%" : i === step ? "50%" : "0%" }}
+                style={{ background: '#FF5A1F' }}
+                animate={{ width: i < currentVisiblePos ? '100%' : i === currentVisiblePos ? '50%' : '0%' }}
                 transition={{ duration: 0.4 }} />
             </div>
           ))}
         </div>
-        <p className="text-white/30 text-[12px]" style={{ letterSpacing: "0.06em" }}>
-          {step + 1} / {QUESTIONS.length}
+        <p className="text-white/30 text-[12px]" style={{ letterSpacing: '0.06em' }}>
+          {currentVisiblePos + 1} / {totalVisible}
         </p>
       </div>
 
-      {/* Question */}
+      {/* Question body */}
       <AnimatePresence mode="wait">
         <motion.div key={step}
           initial={{ opacity: 0, x: 40 }}
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: -40 }}
-          transition={{ duration: 0.28, ease: "easeOut" }}
+          transition={{ duration: 0.28, ease: 'easeOut' }}
           className="flex-1 flex flex-col px-6 pt-6 pb-10 relative z-10">
 
-          <div className="mb-8">
+          <div className="mb-6">
             <span className="text-[40px] leading-none">{q.emoji}</span>
             <h2 className="mt-3 font-serif font-black text-white leading-tight"
-              style={{ fontSize: 28, letterSpacing: "0.01em" }}>
+              style={{ fontSize: 26, letterSpacing: '0.01em' }}>
               {q.question}
             </h2>
-            <p className="mt-2 text-white/40 font-light" style={{ fontSize: 13, letterSpacing: "0.04em" }}>
+            <p className="mt-2 text-white/40 font-light" style={{ fontSize: 13, letterSpacing: '0.04em' }}>
               {q.sub}
             </p>
           </div>
 
-          {/* Options */}
-          {isHousehold ? (
-            <div className="flex flex-col gap-4 flex-1">
-              {/* Adults stepper (中年 30-60) */}
-              <div className="rounded-2xl p-5"
-                style={{ background: 'rgba(255,255,255,0.06)', border: '1.5px solid rgba(255,255,255,0.09)' }}>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-white font-semibold" style={{ fontSize: 15 }}>大人</p>
-                    <p className="text-white/45 font-light" style={{ fontSize: 12, marginTop: 2 }}>中年 30-60 岁，每位按 1 人计算</p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => setHouseholdAdults(n => Math.max(1, n - 1))}
-                      className="w-11 h-11 rounded-full flex items-center justify-center active:scale-90 transition-transform"
-                      style={{ background: 'rgba(255,255,255,0.08)' }}>
-                      <span className="material-symbols-outlined text-white" style={{ fontSize: 22 }}>remove</span>
-                    </button>
-                    <span className="text-white font-black tabular-nums text-center" style={{ fontSize: 28, minWidth: 36 }}>
-                      {householdAdults}
-                    </span>
-                    <button
-                      onClick={() => setHouseholdAdults(n => Math.min(12, n + 1))}
-                      className="w-11 h-11 rounded-full flex items-center justify-center active:scale-90 transition-transform"
-                      style={{ background: '#FF5A1F' }}>
-                      <span className="material-symbols-outlined text-white" style={{ fontSize: 22 }}>add</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Elders stepper (60+) + conditions multi-chip */}
-              <div className="rounded-2xl p-5"
-                style={{ background: 'rgba(255,255,255,0.06)', border: '1.5px solid rgba(255,255,255,0.09)' }}>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-white font-semibold" style={{ fontSize: 15 }}>老人</p>
-                    <p className="text-white/45 font-light" style={{ fontSize: 12, marginTop: 2 }}>60+ 岁，软烂少盐少糖</p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => setHouseholdElders(n => Math.max(0, n - 1))}
-                      className="w-11 h-11 rounded-full flex items-center justify-center active:scale-90 transition-transform"
-                      style={{ background: 'rgba(255,255,255,0.08)' }}>
-                      <span className="material-symbols-outlined text-white" style={{ fontSize: 22 }}>remove</span>
-                    </button>
-                    <span className="text-white font-black tabular-nums text-center" style={{ fontSize: 28, minWidth: 36 }}>
-                      {householdElders}
-                    </span>
-                    <button
-                      onClick={() => setHouseholdElders(n => Math.min(6, n + 1))}
-                      className="w-11 h-11 rounded-full flex items-center justify-center active:scale-90 transition-transform"
-                      style={{ background: '#FF5A1F' }}>
-                      <span className="material-symbols-outlined text-white" style={{ fontSize: 22 }}>add</span>
-                    </button>
-                  </div>
-                </div>
-                {householdElders >= 1 && (
-                  <div className="mt-4 pt-4" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-                    <p className="text-white/70 mb-2" style={{ fontSize: 12 }}>有慢病吗？（可多选）</p>
-                    <div className="flex flex-wrap gap-2">
-                      {[
-                        { id: 'none',         label: '无慢病' },
-                        { id: 'hypertension', label: '高血压' },
-                        { id: 'diabetes',     label: '糖尿病' },
-                        { id: 'arthritis',    label: '关节炎' },
-                        { id: 'heart',        label: '心脏病' },
-                      ].map(c => {
-                        const on = elderConditions.includes(c.id);
-                        return (
-                          <button key={c.id} onClick={() => setElderConditions(prev => {
-                            if (c.id === 'none') return on ? [] : ['none'];
-                            const without = prev.filter(x => x !== 'none' && x !== c.id);
-                            return on ? without : [...without, c.id];
-                          })}
-                            className="px-3 py-1.5 rounded-full active:scale-95 transition-transform"
-                            style={on
-                              ? { background: 'rgba(255,90,31,0.20)', border: '1.5px solid #FF5A1F', fontSize: 12, color: '#fff' }
-                              : { background: 'rgba(255,255,255,0.06)', border: '1.5px solid rgba(255,255,255,0.09)', fontSize: 12, color: 'rgba(255,255,255,0.7)' }}>
-                            {c.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Kids stepper + per-kid age chip */}
-              <div className="rounded-2xl p-5"
-                style={{ background: 'rgba(255,255,255,0.06)', border: '1.5px solid rgba(255,255,255,0.09)' }}>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-white font-semibold" style={{ fontSize: 15 }}>孩子</p>
-                    <p className="text-white/45 font-light" style={{ fontSize: 12, marginTop: 2 }}>按 0.5 人份，触发儿童菜 slot</p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => setHouseholdKids(n => Math.max(0, n - 1))}
-                      className="w-11 h-11 rounded-full flex items-center justify-center active:scale-90 transition-transform"
-                      style={{ background: 'rgba(255,255,255,0.08)' }}>
-                      <span className="material-symbols-outlined text-white" style={{ fontSize: 22 }}>remove</span>
-                    </button>
-                    <span className="text-white font-black tabular-nums text-center" style={{ fontSize: 28, minWidth: 36 }}>
-                      {householdKids}
-                    </span>
-                    <button
-                      onClick={() => setHouseholdKids(n => Math.min(8, n + 1))}
-                      className="w-11 h-11 rounded-full flex items-center justify-center active:scale-90 transition-transform"
-                      style={{ background: '#FF5A1F' }}>
-                      <span className="material-symbols-outlined text-white" style={{ fontSize: 22 }}>add</span>
-                    </button>
-                  </div>
-                </div>
-                {householdKids >= 1 && (
-                  <div className="mt-4 pt-4 flex flex-col gap-2" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-                    <p className="text-white/70" style={{ fontSize: 12 }}>每个孩子的年龄段</p>
-                    {kidAges.map((age, idx) => (
-                      <div key={idx} className="flex items-center gap-2">
-                        <span className="text-white/55" style={{ fontSize: 12, minWidth: 48 }}>第 {idx + 1} 位</span>
-                        <div className="flex flex-wrap gap-2 flex-1">
-                          {[
-                            { id: '3-6',   label: '3-6 岁' },
-                            { id: '7-12',  label: '7-12 岁' },
-                            { id: '13-18', label: '13-18 岁' },
-                          ].map(a => {
-                            const on = age === a.id;
-                            return (
-                              <button key={a.id} onClick={() => setKidAges(prev =>
-                                prev.map((p, i) => i === idx ? a.id : p))}
-                                className="px-3 py-1.5 rounded-full active:scale-95 transition-transform"
-                                style={on
-                                  ? { background: 'rgba(255,90,31,0.20)', border: '1.5px solid #FF5A1F', fontSize: 12, color: '#fff' }
-                                  : { background: 'rgba(255,255,255,0.06)', border: '1.5px solid rgba(255,255,255,0.09)', fontSize: 12, color: 'rgba(255,255,255,0.7)' }}>
-                                {a.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Summary chip */}
-              <div className="text-center text-white/60" style={{ fontSize: 13, letterSpacing: '0.04em' }}>
-                共 {householdAdults + householdElders + householdKids} 人 · 等效 {(householdAdults + householdElders + householdKids * 0.5).toFixed(1)} 人份
-              </div>
-
-              {/* Confirm button */}
-              <button
-                onClick={commitHousehold}
-                className="mt-1 h-14 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform font-bold text-white"
-                style={{ background: 'linear-gradient(135deg, #FF5A1F, #FF9054)', fontSize: 15, boxShadow: '0 8px 24px rgba(255,90,31,0.35)' }}>
-                下一步
-                <span className="material-symbols-outlined text-white" style={{ fontSize: 20 }}>arrow_forward_ios</span>
-              </button>
-            </div>
-          ) : "multi" in q && q.multi ? (
-            <>
-              <div className="grid grid-cols-2 gap-3 flex-1">
+          {q.chips ? (
+            // Q10 — chips 风格（avoid 更紧凑）
+            <div className="flex-1">
+              <div className="flex flex-wrap gap-2">
                 {q.options.map(opt => {
-                  const sel = multiSel.includes(opt.id);
+                  const sel = multiSel.includes(opt.value);
                   return (
-                    <button key={opt.id} onClick={() => toggleMulti(opt.id)}
-                      className="flex flex-col items-start p-4 rounded-2xl transition-all active:scale-95"
+                    <button key={opt.value} onClick={() => toggleMulti(opt.value)}
+                      className="px-4 py-2.5 rounded-full active:scale-95 transition-transform flex items-center gap-2"
                       style={sel
-                        ? { background: "rgba(255,90,31,0.20)", border: "1.5px solid #FF5A1F", boxShadow: "0 0 20px rgba(255,90,31,0.15)" }
-                        : { background: "rgba(255,255,255,0.06)", border: "1.5px solid rgba(255,255,255,0.09)" }
+                        ? { background: 'rgba(255,90,31,0.20)', border: '1.5px solid #FF5A1F', fontSize: 13, color: '#fff' }
+                        : { background: 'rgba(255,255,255,0.06)', border: '1.5px solid rgba(255,255,255,0.09)', fontSize: 13, color: 'rgba(255,255,255,0.75)' }
                       }>
-                      <span className="text-[24px] mb-2">{opt.icon}</span>
-                      <span className="text-white font-semibold" style={{ fontSize: 14 }}>{opt.label}</span>
+                      <span>{opt.emoji}</span>
+                      <span>{opt.label}</span>
                     </button>
                   );
                 })}
               </div>
-              {/* No "下一步" button — multi-select auto-advances 1.8s after the
-                  user's last tap (debounce in useEffect above). The hint line
-                  below tells the user what's happening; the skip link is the
-                  escape hatch when they want "no preference" without picking
-                  the "none" chip.
-                  TICKET-004 §C — 若 minSelect>0：hint 改"再选 N 项"；skip 链接隐藏
-                  (强制差异化的题不能跳过)。 */}
-              {(() => {
-                const minSel = (q as any).minSelect ?? 1;
-                const remaining = Math.max(0, minSel - multiSel.length);
-                const allowSkip = minSel === 0;
-                return (
-                  <div className="mt-6 flex items-center justify-between" style={{ minHeight: 36 }}>
-                    {multiSel.length > 0 && !multiSel.includes("none") && !multiSel.includes("no_preference") ? (
-                      remaining > 0 ? (
-                        <p className="text-[#FF9054]" style={{ fontSize: 12, letterSpacing: "0.04em" }}>
-                          再选 {remaining} 项继续
-                        </p>
-                      ) : (
-                        <p className="text-white/55" style={{ fontSize: 12, letterSpacing: "0.04em" }}>
-                          已选 {multiSel.length} 项 · 稍等带您往下走
-                        </p>
-                      )
-                    ) : <span />}
-                    {allowSkip ? (
-                      <button onClick={() => commitMulti([])}
-                        className="text-white/35 hover:text-white/65 transition-colors"
-                        style={{ fontSize: 12, letterSpacing: "0.04em" }}>
-                        这题先放一放 →
-                      </button>
-                    ) : <span />}
-                  </div>
-                );
-              })()}
-            </>
-          ) : (
-            <div className="flex flex-col gap-3 flex-1">
-              {q.options.map(opt => (
-                <button key={opt.id} onClick={() => handleSingle(opt.id)}
-                  className="flex items-center gap-4 p-4 rounded-2xl text-left transition-all active:scale-[0.98]"
-                  style={{
-                    background: answers[q.id] === opt.id
-                      ? "rgba(255,90,31,0.20)" : "rgba(255,255,255,0.06)",
-                    border: answers[q.id] === opt.id
-                      ? "1.5px solid #FF5A1F" : "1.5px solid rgba(255,255,255,0.09)",
-                  }}>
-                  <span className="text-[28px] w-10 text-center">{opt.icon}</span>
-                  <div>
-                    <p className="text-white font-semibold" style={{ fontSize: 15 }}>{opt.label}</p>
-                    {"desc" in opt && (
-                      <p className="text-white/40 font-light" style={{ fontSize: 12 }}>{opt.desc}</p>
-                    )}
-                  </div>
-                </button>
-              ))}
             </div>
+          ) : q.multi ? (
+            <ImageGrid options={q.options} multi selected={multiSel} onToggle={toggleMulti} cols={q.cols} />
+          ) : (
+            <ImageGrid options={q.options} multi={false}
+              selected={answers[q.id] ? [answers[q.id]] : []}
+              onToggle={handleSingle} cols={q.cols} />
           )}
 
-          {/* Skip — TICKET-004 §L：旧 'balanced' goal 已替换为 'comfort'；并写
-              onboarding_v2_done 防止 RootRedirect 把用户弹回 /setup 形成循环。 */}
-          {step === 0 && (
+          {/* multi-select hint + skip 链接 */}
+          {q.multi && (() => {
+            const minSel = q.minSelect ?? 1;
+            const remaining = Math.max(0, minSel - multiSel.length);
+            const allowSkip = minSel === 0;
+            return (
+              <div className="mt-6 flex items-center justify-between" style={{ minHeight: 36 }}>
+                {multiSel.length > 0 ? (
+                  remaining > 0 ? (
+                    <p className="text-[#FF9054]" style={{ fontSize: 12, letterSpacing: '0.04em' }}>
+                      再选 {remaining} 项继续
+                    </p>
+                  ) : (
+                    <p className="text-white/55" style={{ fontSize: 12, letterSpacing: '0.04em' }}>
+                      已选 {multiSel.length} 项 · 稍等带您往下走
+                    </p>
+                  )
+                ) : <span />}
+                {allowSkip ? (
+                  <button onClick={() => commitMulti(multiSel)}
+                    className="text-white/45 hover:text-white/75 transition-colors"
+                    style={{ fontSize: 13, letterSpacing: '0.04em' }}>
+                    {multiSel.length > 0 ? '完成' : '这题先放一放'} →
+                  </button>
+                ) : <span />}
+              </div>
+            );
+          })()}
+
+          {/* Skip 整个 onboarding（只在 Q0 出现） */}
+          {currentVisiblePos === 0 && (
             <button onClick={() => {
-              localStorage.setItem("quickPrefs", JSON.stringify({ goal: "comfort", spice: "mild", avoid: ["none"], setupAt: Date.now() }));
-              localStorage.setItem("onboarding_v2_done", "true");
-              localStorage.removeItem("needs_v2_onboarding");
-              if (!localStorage.getItem("isLoggedIn")) {
-                localStorage.setItem("isLoggedIn", "true");
-                localStorage.setItem("userId", crypto.randomUUID());
+              const skipPrefs = { table_style: 'family_4', oil_level: 'medium', breakfast_cuisine: 'chinese', setupAt: Date.now() };
+              localStorage.setItem('quickPrefs', JSON.stringify(skipPrefs));
+              localStorage.setItem('onboarding_v3_done', 'true');
+              localStorage.setItem('onboarding_v2_done', 'true');
+              localStorage.removeItem('needs_v3_onboarding');
+              localStorage.removeItem('needs_v2_onboarding');
+              localStorage.setItem('table_style', 'family_4');
+              localStorage.setItem('oil_level', 'medium');
+              localStorage.setItem('breakfast_cuisine', 'chinese');
+              localStorage.setItem('nutri_adults', '3');
+              localStorage.setItem('nutri_kids', '1');
+              localStorage.setItem('family_composition', JSON.stringify({ adults: 3, elders: { count: 0, conditions: [] }, kids: [{ age: '7-12' }] }));
+              if (!localStorage.getItem('isLoggedIn')) {
+                localStorage.setItem('isLoggedIn', 'true');
+                localStorage.setItem('userId', crypto.randomUUID());
               }
-              navigate("/");
+              navigate('/');
             }}
               className="mt-4 text-center text-white/25 hover:text-white/50 transition-colors"
-              style={{ fontSize: 12, letterSpacing: "0.06em" }}>
+              style={{ fontSize: 12, letterSpacing: '0.06em' }}>
               先随便看看
             </button>
           )}
