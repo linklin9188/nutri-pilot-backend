@@ -103,6 +103,18 @@ export default function Login() {
     localStorage.setItem("nutri_role", role);
   }, [role]);
 
+  // TICKET-010 §H — role 选择强化：默认无预选 → 2 大卡片优先（"先选 role 再
+  // 走对应路径"老板补充反馈）。三种情况已确认无需手选：
+  //   1. URL 带 ?role=helper / ?invite=XXX (Settings 分享链接 / 一键 WhatsApp)
+  //   2. localStorage 已存 nutri_role (老用户回头登录)
+  // 其余情况（首次匿名访客 / fresh=1 清登录态）→ 用户必须先在 2 大卡片 grid
+  // 选一次才进入登录方式 UI。
+  const [roleConfirmed, setRoleConfirmed] = useState<boolean>(() => {
+    if (searchParams.get("role") === "helper" || searchParams.get("invite")) return true;
+    const saved = localStorage.getItem("nutri_role");
+    return saved === "employer" || saved === "helper";
+  });
+
   const [error, setError] = useState("");
 
   // TICKET-068 §B — 菲佣邀请码登录 state
@@ -343,10 +355,67 @@ export default function Login() {
             </p>
           </motion.div>
 
-          {/* Login buttons */}
+          {/* TICKET-010 §H — role 选择优先：未确认 → 2 大卡片 grid（雇主 +
+              工人）取代登录方式 UI；确认 → 原 login buttons block + 顶部
+              "← 重新选择" 按钮让用户回到 picker。一键 WhatsApp / 老用户路径
+              roleConfirmed 直接为 true（见 useState initializer），不打扰。 */}
+          {!roleConfirmed ? (
+            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.35, duration: 0.6, ease: "easeOut" }}
+              className="flex flex-col gap-4">
+              <p className="text-center text-white/65" style={{ fontSize: 14, letterSpacing: "0.04em" }}>
+                {t("Tell us who you are first", "先告诉我们您的身份")}
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => { setRole("employer"); setRoleConfirmed(true); }}
+                  className="flex flex-col items-center justify-center rounded-2xl py-7 px-3 gap-2 active:scale-[0.97] transition-all"
+                  style={{
+                    background: "rgba(255,90,31,0.10)",
+                    border: "1.5px solid rgba(255,90,31,0.45)",
+                    boxShadow: "0 6px 22px rgba(255,90,31,0.18)",
+                  }}>
+                  <span style={{ fontSize: 36, lineHeight: 1 }}>🏠</span>
+                  <span className="font-bold text-white" style={{ fontSize: 15 }}>
+                    {t("I'm an employer", "我是雇主")}
+                  </span>
+                  <span className="text-white/55 text-center" style={{ fontSize: 11, lineHeight: 1.4 }}>
+                    {t("Plan weekly menus for family", "为家人安排每周菜单")}
+                  </span>
+                </button>
+                <button
+                  onClick={() => { setRole("helper"); setRoleConfirmed(true); }}
+                  className="flex flex-col items-center justify-center rounded-2xl py-7 px-3 gap-2 active:scale-[0.97] transition-all"
+                  style={{
+                    background: "rgba(37,211,102,0.10)",
+                    border: "1.5px solid rgba(37,211,102,0.45)",
+                    boxShadow: "0 6px 22px rgba(37,211,102,0.18)",
+                  }}>
+                  <span style={{ fontSize: 36, lineHeight: 1 }}>👩‍🍳</span>
+                  <span className="font-bold text-white" style={{ fontSize: 15 }}>
+                    {t("I'm a helper", "我是工人")}
+                  </span>
+                  <span className="text-white/55 text-center" style={{ fontSize: 11, lineHeight: 1.4 }}>
+                    {t("Enter with employer's invite code", "用雇主给的邀请码进入")}
+                  </span>
+                </button>
+              </div>
+            </motion.div>
+          ) : (
+          /* Login buttons */
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.35, duration: 0.6, ease: "easeOut" }}
             className="flex flex-col gap-3">
+
+            <button
+              onClick={() => setRoleConfirmed(false)}
+              className="self-start flex items-center gap-1 px-3 py-1.5 rounded-full active:scale-95 transition-transform mb-1"
+              style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.10)" }}>
+              <span className="material-symbols-outlined text-white/65" style={{ fontSize: 14 }}>arrow_back</span>
+              <span className="text-white/65 font-semibold" style={{ fontSize: 11 }}>
+                {t("Switch role", "重新选择")}
+              </span>
+            </button>
 
             {/* Floating food emojis */}
             <div className="relative w-full flex justify-center mb-2 h-[8px]">
@@ -490,6 +559,7 @@ export default function Login() {
               })}
             </div>
           </motion.div>
+          )}
 
           <p className="mt-5 text-center text-white/45" style={{ fontSize: 12, letterSpacing: "0.04em", lineHeight: 1.5 }}>
             {t("By continuing you agree to our ", "继续即同意")}
