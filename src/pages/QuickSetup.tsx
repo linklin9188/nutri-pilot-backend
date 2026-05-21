@@ -58,14 +58,39 @@ const QUESTIONS = [
     ],
   },
   {
+    // TICKET-004 §C step A — 不喜欢但勉强能吃。强制选 ≥2 ⇒ 让 prefs 必产生差异化。
+    id: "mild_dislikes",
+    step: 3,
+    emoji: "🥢",
+    question: "哪些食材你不喜欢，但勉强能吃？",
+    sub: "至少选 2 个（每个家庭都有不爱吃的食材，这一步会让推荐更懂你）。",
+    multi: true,
+    minSelect: 2,
+    options: [
+      { id: 'bitter_melon', label: '苦瓜',     icon: '🥒' },
+      { id: 'eggplant',     label: '茄子',     icon: '🍆' },
+      { id: 'cilantro',     label: '香菜',     icon: '🌿' },
+      { id: 'innards',      label: '内脏',     icon: '🫀' },
+      { id: 'green_onion',  label: '大葱',     icon: '🧅' },
+      { id: 'garlic',       label: '大蒜',     icon: '🧄' },
+      { id: 'sea_cucumber', label: '海参',     icon: '🥢' },
+      { id: 'chives',       label: '韭菜',     icon: '🌱' },
+      { id: 'wood_ear',     label: '木耳',     icon: '🍄' },
+      { id: 'mutton_smell', label: '羊肉膻味', icon: '🐑' },
+      { id: 'celery',       label: '香芹',     icon: '🥬' },
+      { id: 'fish_smell',   label: '鱼腥味',   icon: '🐟' },
+    ],
+  },
+  {
+    // TICKET-004 §C step B — 完全不能吃（真过敏 / 宗教，可空）。去掉默认 'none'。
     id: "avoid",
     step: 3,
     emoji: "🚫",
-    question: "有什么忌口的吗？",
-    sub: "可多选，我帮您一一绕开。",
+    question: "完全不能吃（过敏 / 宗教，可空）",
+    sub: "可多选 — 真过敏 / 戒口的才选。",
     multi: true,
+    minSelect: 0,
     options: [
-      { id: "none",      label: "没有忌口",  icon: "✅" },
       { id: "seafood",   label: "不吃海鲜",  icon: "🦐" },
       { id: "veggie",    label: "素食",      icon: "🥦" },
       { id: "cilantro",  label: "不吃香菜",  icon: "🌿" },
@@ -266,12 +291,15 @@ export default function QuickSetup() {
   // tap, commit whatever's selected. Every new tap restarts the timer so they
   // can deselect / add without losing the page. "none" path short-circuits
   // through toggleMulti above and never hits this debounce.
+  // TICKET-004 §C — 若题目有 minSelect，必须 sel.length >= minSelect 才允许 auto-advance。
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (!("multi" in q) || !q.multi) return;
     if (multiSel.length === 0) return;
     if (multiSel.includes("none") || multiSel.includes("no_preference")) return; // toggleMulti handles this path
+    const minSel = (q as any).minSelect ?? 1;
+    if (multiSel.length < minSel) return;
     debounceRef.current = setTimeout(() => commitMulti(multiSel), 1800);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -306,6 +334,11 @@ export default function QuickSetup() {
     localStorage.setItem("userDiet", primaryGoal);
     localStorage.setItem("userSpice", prefs.spice as string);
     localStorage.setItem("userAvoid", (prefs.avoid as string[]).join(","));
+    // TICKET-004 §C — 新字段 mild_dislikes（"不喜欢但勉强能吃"，强制 2+ 项）
+    // 全存 localStorage 给 Algorithm 后续做差异化 scoring（不动 schema）。
+    if (Array.isArray(prefs.mild_dislikes)) {
+      localStorage.setItem("mild_dislikes", JSON.stringify(prefs.mild_dislikes));
+    }
     // userHometown drives readHometownCuisine() in userPrefs.ts which is the
     // fallback path when the DB upsert hasn't resolved yet (fire-and-forget
     // promise). Without this, anonymous QuickSetup users had a 30% dead
@@ -484,19 +517,36 @@ export default function QuickSetup() {
                   user's last tap (debounce in useEffect above). The hint line
                   below tells the user what's happening; the skip link is the
                   escape hatch when they want "no preference" without picking
-                  the "none" chip. */}
-              <div className="mt-6 flex items-center justify-between" style={{ minHeight: 36 }}>
-                {multiSel.length > 0 && !multiSel.includes("none") && !multiSel.includes("no_preference") ? (
-                  <p className="text-white/55" style={{ fontSize: 12, letterSpacing: "0.04em" }}>
-                    已选 {multiSel.length} 项 · 稍等带您往下走
-                  </p>
-                ) : <span />}
-                <button onClick={() => commitMulti(["none"])}
-                  className="text-white/35 hover:text-white/65 transition-colors"
-                  style={{ fontSize: 12, letterSpacing: "0.04em" }}>
-                  这题先放一放 →
-                </button>
-              </div>
+                  the "none" chip.
+                  TICKET-004 §C — 若 minSelect>0：hint 改"再选 N 项"；skip 链接隐藏
+                  (强制差异化的题不能跳过)。 */}
+              {(() => {
+                const minSel = (q as any).minSelect ?? 1;
+                const remaining = Math.max(0, minSel - multiSel.length);
+                const allowSkip = minSel === 0;
+                return (
+                  <div className="mt-6 flex items-center justify-between" style={{ minHeight: 36 }}>
+                    {multiSel.length > 0 && !multiSel.includes("none") && !multiSel.includes("no_preference") ? (
+                      remaining > 0 ? (
+                        <p className="text-[#FF9054]" style={{ fontSize: 12, letterSpacing: "0.04em" }}>
+                          再选 {remaining} 项继续
+                        </p>
+                      ) : (
+                        <p className="text-white/55" style={{ fontSize: 12, letterSpacing: "0.04em" }}>
+                          已选 {multiSel.length} 项 · 稍等带您往下走
+                        </p>
+                      )
+                    ) : <span />}
+                    {allowSkip ? (
+                      <button onClick={() => commitMulti([])}
+                        className="text-white/35 hover:text-white/65 transition-colors"
+                        style={{ fontSize: 12, letterSpacing: "0.04em" }}>
+                        这题先放一放 →
+                      </button>
+                    ) : <span />}
+                  </div>
+                );
+              })()}
             </>
           ) : (
             <div className="flex flex-col gap-3 flex-1">
