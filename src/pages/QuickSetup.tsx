@@ -793,6 +793,27 @@ export default function QuickSetup() {
             );
           })()}
 
+          {/* UI 015 §F — ⏭️ 都行 / 跳过这题 chip:
+              · Q0 table_style 必填，不加
+              · Q10 strict_avoid 安全题（过敏），不加
+              · minSelect=0 已有 "这题先放一放 →" 链接（allowSkip），不重复
+              · 其他全题（Q1-Q4/Q6-Q9 + Q5 wellness 已 minSelect=0 走 allowSkip）加
+              skipQuestion: multi 题 commit 空数组；single 题 setAnswers null 不阻塞。 */}
+          {q.id !== 'table_style' && q.id !== 'strict_avoid'
+           && !(q.multi && (q.minSelect ?? 1) === 0) && (
+            <button onClick={() => {
+              setMultiSel([]);
+              setOtherText('');
+              const next = { ...answers, [q.id]: q.multi ? [] : null };
+              setAnswers(next);
+              goToNext(next);
+            }}
+              className="mt-3 mx-auto block text-white/40 hover:text-white/65 transition-colors"
+              style={{ fontSize: 13, letterSpacing: '0.04em' }}>
+              ⏭️ 都行 / 跳过这题
+            </button>
+          )}
+
           {/* Skip 整个 onboarding（只在 Q0 出现） */}
           {currentVisiblePos === 0 && (
             <button onClick={() => {
