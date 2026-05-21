@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { type CookStep } from "../hooks/useSupabaseMenu";
 import { useLanguage } from "../contexts/LanguageContext";
@@ -310,7 +310,37 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
     setCurrentIdx(idx);
   }
 
-  if (!step) return null;
+  // β hotfix — cook_steps_json NULL / empty 时 step 为 undefined。原代码
+  // `return null` → 白屏。改成 friendly placeholder，把 Backend dish-seed
+  // pipeline 还没跑到的 dish 暴露成"正在准备"提示而不是空白页。
+  if (!step) {
+    return (
+      <div className="min-h-screen flex flex-col max-w-md mx-auto" style={{ background: '#0a0a0a' }}>
+        <header className="sticky top-0 z-50 px-5 pt-12 pb-4" style={{ background: '#0a0a0a' }}>
+          <div className="flex items-center gap-3">
+            <button onClick={onBack}
+              className="w-9 h-9 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+              style={{ background: 'rgba(255,255,255,0.08)' }}>
+              <span className="material-symbols-outlined text-white" style={{ fontSize: 20 }}>arrow_back</span>
+            </button>
+            <h1 className="text-white font-black" style={{ fontSize: 17 }}>{dishTitle(dish)}</h1>
+          </div>
+        </header>
+        <main className="flex-1 flex flex-col items-center justify-center px-8 text-center gap-3">
+          <span style={{ fontSize: 56 }}>👩‍🍳</span>
+          <p className="text-white font-bold" style={{ fontSize: 16 }}>
+            {t4('Recipe is being prepared…', '小厨师正在准备菜谱…', 'Hinahanda ang recipe…', 'Resep sedang disiapkan…')}
+          </p>
+          <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13, lineHeight: 1.5 }}>
+            {t4('New recipes ship daily — check back tomorrow.',
+                '每天都有新菜谱上线，明天再来看看。',
+                'Bago ang mga recipe araw-araw — bumalik bukas.',
+                'Resep baru setiap hari — cek lagi besok.')}
+          </p>
+        </main>
+      </div>
+    );
+  }
 
   const durationSec = Math.round(step.duration_min * 60);
   const hasTimer = durationSec > 0;
@@ -606,11 +636,31 @@ export default function HelperCook() {
   const [loading, setLoading] = useState(true);
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const singleDishId = searchParams.get('dish_id');
 
   useEffect(() => {
     async function load() {
       setLoading(true);
       try {
+        // β hotfix — 从 Home 直接点 dish 或 /prep 的"开始烹饪"按钮会带
+        // `?dish_id=X` 跳到这里。原代码只读 localStorage.generatedMenu，
+        // 单 dish 路径直接拿不到数据→空列表→白屏。补 singleDishId path
+        // 跟 HelperPrep 对齐。
+        if (singleDishId) {
+          const { data } = await supabase
+            .from('dishes')
+            .select('id, title_zh, title_en, image_url, cook_steps_json')
+            .eq('id', singleDishId)
+            .single();
+          if (data) {
+            setDishes([data as DishWithCook]);
+            setSelectedIdx(0);  // 单 dish 路径直接进入 CookingScreen
+          }
+          setLoading(false);
+          return;
+        }
+
         const raw = localStorage.getItem('generatedMenu');
         if (!raw) { setLoading(false); return; }
         const todayDishes: any[] = JSON.parse(raw);
@@ -635,7 +685,7 @@ export default function HelperCook() {
       setLoading(false);
     }
     load();
-  }, []);
+  }, [singleDishId]);
 
   if (selectedIdx !== null && dishes[selectedIdx]) {
     return (
