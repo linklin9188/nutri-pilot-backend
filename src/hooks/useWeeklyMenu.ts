@@ -74,6 +74,11 @@ export interface WeeklyMenu {
   days: WeeklyDayMenu[];
 }
 
+// §A (TICKET-014) 5 天工作日制 — 周菜单只覆盖周一到周五。菲佣 + 用户家庭
+// 工作日做饭，周末家庭自由发挥（外出 / 外卖 / 简餐）。改成常量便于未来 toggle，
+// 也让 generateWeekPlan 主循环 + eating_by_day cache key 一处定义。
+const WORKDAYS_PER_WEEK = 5;
+
 // ── Cache version — bump this whenever the algorithm changes significantly ─────
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
@@ -758,7 +763,7 @@ export function getCacheKey(weekStart: string): string {
     if (byDayRaw) {
       const byDay = JSON.parse(byDayRaw) as Record<string, string[]>;
       const parts: string[] = [];
-      for (let i = 0; i < 7; i++) {
+      for (let i = 0; i < WORKDAYS_PER_WEEK; i++) {
         const ids = byDay[String(i)];
         if (Array.isArray(ids) && ids.length > 0) {
           parts.push(`${i}:${ids.slice().sort().join(',')}`);
@@ -904,11 +909,11 @@ function extractTitleKeyword(titleZh: string): string | null {
   return TITLE_KEYWORDS.find(kw => titleZh.includes(kw)) ?? null;
 }
 
-// Max times any single category may appear per 7-day week.
-// Caps are at least 7 (= 1/day) for the macro categories the user wants
-// every day (肉/海鲜/蔬菜/汤), so v17's strict per-slot enforcement can
-// actually find candidates all 7 days. Daily diversity is handled by the
-// same-category-in-same-day penalty in scoreForWeek (-0.45 / repeat), so
+// Max times any single category may appear per 5-day workweek.
+// Caps are at least 7 (历史 = 1/day for 7 天周) for the macro categories the
+// user wants every day (肉/海鲜/蔬菜/汤), so v17's strict per-slot enforcement
+// can actually find candidates all 5 workdays. Daily diversity is handled by
+// the same-category-in-same-day penalty in scoreForWeek (-0.45 / repeat), so
 // you still get rotation within a day.
 // Formula: max(7, base × scale) — loosens for bigger families.
 function getMaxPerCategory(dishesPerDay: number): Record<string, number> {
@@ -1550,7 +1555,7 @@ function scoreForWeek({
 //   │ HOT PATH (高频)                                                      │
 //   │   scoreForWeek(): 仅返 number，不构造对象、不 push breakdown 数组。   │
 //   │   每次 generateWeekPlan 抽样调用 ~100 次（dinner 主循环 25 candidates │
-//   │   × 5-7 days + lunch + kid + 微调）。函数纯算 → JIT 优化、无 GC 抖动。│
+//   │   × 5 days + lunch + kid + 微调）。函数纯算 → JIT 优化、无 GC 抖动。   │
 //   ├─────────────────────────────────────────────────────────────────────┤
 //   │ SLOW PATH (低频)                                                     │
 //   │   explainScore(): 构造 AxisHit[] + push 12 主轴 + 中文 reason 拼接。  │
@@ -1929,7 +1934,7 @@ function generateWeekPlan(
   const weekStart = getMondayISO();
   const days: WeeklyDayMenu[] = [];
   const usedIds = new Set<string>();
-  // Track lunch picks across all 7 days so the same staple/veggie/soup
+  // Track lunch picks across all 5 workdays so the same staple/veggie/soup
   // doesn't repeat in another lunch (previously 干炒牛河 / 日式味噌汤 etc.
   // showed up 3× per week because lunch only filtered by today's dinner).
   const lunchUsedIds = new Set<string>();
@@ -1967,11 +1972,10 @@ function generateWeekPlan(
   const MAX_PER_CATEGORY = getMaxPerCategory(dishesPerDay);
   const weeklyCatCounts: Record<string, number> = {};
 
-  for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
-    // 周六周日不生成菜单 (user-confirmed 2026-05-17)：让用户周末出门换换
-    // 口味。Home 在周末展示"外食营养报告" (Phase #4) 而不是空菜单。
-    // 0-4 = Mon-Fri, 5 = Sat, 6 = Sun.
-    if (dayIndex >= 5) continue;
+  // TICKET-014: 5 天工作日制 — 周菜单只覆盖周一到周五 (0-4 = Mon-Fri)。
+  // 菲佣 + 用户家庭工作日做饭，周末家庭自由发挥 (外出 / 外卖 / 简餐)。
+  // Home 周末展示"外食营养报告" (Phase #4) 而不是空菜单。
+  for (let dayIndex = 0; dayIndex < WORKDAYS_PER_WEEK; dayIndex++) {
 
     // Per-day headcount override. If the user toggled who's eating on a
     // specific day (e.g. only the couple on Wed), this day's adults/kids
