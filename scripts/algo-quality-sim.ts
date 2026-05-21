@@ -45,22 +45,57 @@ interface Profile {
   imagePrefs: ImagePrefs;
 }
 const PROFILES: Profile[] = [
-  { name: 'meatlover',   hometown: 'southwest', dietary_goal: 'muscle_gain', taste_pref: 'spicy',
+  // 原 5 profile 保留 (回归对照)
+  { name: '1-meatlover-川菜增肌',     hometown: 'southwest', dietary_goal: 'muscle_gain', taste_pref: 'spicy',
     imagePrefs: { protein_main_class: ['red'], oil_level: 'high',
                   beef_style: ['stirfry','braise'], staple_pref: ['rice'],
                   protein_pref: ['beef','pork'] } },
-  { name: 'pescetarian', hometown: 'east', dietary_goal: 'maintain', taste_pref: 'light',
+  { name: '2-pescetarian-江浙清淡',   hometown: 'east', dietary_goal: 'maintain', taste_pref: 'light',
     imagePrefs: { protein_main_class: ['seafood'], oil_level: 'low',
                   seafood_style: ['steam','cold'], staple_pref: ['rice','noodle'] } },
-  { name: 'vegan',       hometown: 'jiangnan', dietary_goal: 'lose_weight', taste_pref: 'light',
+  { name: '3-vegan-江浙减脂',         hometown: 'jiangnan', dietary_goal: 'lose_weight', taste_pref: 'light',
     imagePrefs: { protein_main_class: ['veg'], oil_level: 'low',
                   veggie_method: ['stirfry','cold','soup'] } },
-  { name: 'cantonese',   hometown: 'cantonese', dietary_goal: 'maintain', taste_pref: 'light',
+  { name: '4-cantonese-港式清淡',     hometown: 'cantonese', dietary_goal: 'maintain', taste_pref: 'light',
     imagePrefs: { protein_main_class: ['white','seafood'], oil_level: 'mid',
                   breakfast_cuisine: 'hk' } },
-  { name: 'northerner',  hometown: 'north', dietary_goal: 'muscle_gain', taste_pref: 'savory',
+  { name: '5-northerner-北方面食',    hometown: 'north', dietary_goal: 'muscle_gain', taste_pref: 'savory',
     imagePrefs: { protein_main_class: ['red'], staple_pref: ['noodle','bread','bun'],
                   oil_level: 'mid' } },
+  // ── TICKET-016 §C 扩 20 profile ──────────────────────────────────────────
+  // 三口 / 四口
+  { name: '6-三口-北方红肉',          hometown: 'north', dietary_goal: 'maintain', taste_pref: 'savory',
+    imagePrefs: { protein_main_class: ['red'], oil_level: 'mid', staple_pref: ['noodle','bread'] } },
+  { name: '7-三口-港式白肉清淡',      hometown: 'hk_macau_tw', dietary_goal: 'maintain', taste_pref: 'light',
+    imagePrefs: { protein_main_class: ['white'], oil_level: 'low', breakfast_cuisine: 'hk' } },
+  { name: '8-三口-粤菜海鲜增肌',      hometown: 'cantonese', dietary_goal: 'muscle_gain', taste_pref: 'light',
+    imagePrefs: { protein_main_class: ['seafood'], oil_level: 'mid', seafood_style: ['steam','stirfry'] } },
+  { name: '9-四口-川菜鸡中等',        hometown: 'southwest', dietary_goal: 'maintain', taste_pref: 'spicy',
+    imagePrefs: { protein_main_class: ['white'], oil_level: 'mid', chicken_style: ['braise','stirfry'] } },
+  { name: '10-四口-粤菜海鲜哺乳',     hometown: 'cantonese', dietary_goal: 'maintain', taste_pref: 'light',
+    imagePrefs: { protein_main_class: ['seafood'], oil_level: 'low', seafood_style: ['steam'] } },
+  { name: '11-四口-川菜红肉重油',      hometown: 'southwest', dietary_goal: 'maintain', taste_pref: 'spicy',
+    imagePrefs: { protein_main_class: ['red'], oil_level: 'high', beef_style: ['stirfry'] } },
+  // 多孩 / 三代
+  { name: '12-多孩-北方面食',          hometown: 'north', dietary_goal: 'maintain', taste_pref: 'savory',
+    imagePrefs: { protein_main_class: ['red','white'], oil_level: 'mid', staple_pref: ['noodle','bun'] } },
+  { name: '13-三代-粤菜白肉老人',      hometown: 'cantonese', dietary_goal: 'maintain', taste_pref: 'light',
+    imagePrefs: { protein_main_class: ['white'], oil_level: 'low', breakfast_cuisine: 'hk' } },
+  { name: '14-三代-港式白切鸡',        hometown: 'hk_macau_tw', dietary_goal: 'maintain', taste_pref: 'light',
+    imagePrefs: { protein_main_class: ['white'], oil_level: 'mid', chicken_style: ['braise'] } },
+  { name: '15-大家庭-红肉重油北方',    hometown: 'north', dietary_goal: 'muscle_gain', taste_pref: 'savory',
+    imagePrefs: { protein_main_class: ['red'], oil_level: 'high', beef_style: ['stirfry','braise'] } },
+  { name: '16-大家庭-杂粮鸡鸭控糖',    hometown: 'central', dietary_goal: 'maintain', taste_pref: 'light',
+    imagePrefs: { protein_main_class: ['white'], oil_level: 'mid', staple_pref: ['grain'] } },
+  // 单亲 / 独居老人
+  { name: '17-单亲-江浙海鲜减脂',     hometown: 'east', dietary_goal: 'lose_weight', taste_pref: 'light',
+    imagePrefs: { protein_main_class: ['seafood'], oil_level: 'low', seafood_style: ['steam'] } },
+  { name: '18-单亲-川菜素重油',        hometown: 'southwest', dietary_goal: 'maintain', taste_pref: 'spicy',
+    imagePrefs: { protein_main_class: ['veg'], oil_level: 'high', veggie_method: ['stirfry'] } },
+  { name: '19-独居老人-港式海鲜',     hometown: 'hk_macau_tw', dietary_goal: 'maintain', taste_pref: 'light',
+    imagePrefs: { protein_main_class: ['seafood'], oil_level: 'low', seafood_style: ['steam','soup'] } },
+  { name: '20-独居老人-粤菜白肉',     hometown: 'cantonese', dietary_goal: 'maintain', taste_pref: 'light',
+    imagePrefs: { protein_main_class: ['white'], oil_level: 'low', breakfast_cuisine: 'hk' } },
 ];
 
 // ── Hometown → DB bucket (镜像 src/lib/hometownBuckets.ts) ────────────────
@@ -158,7 +193,7 @@ function imageOnboardingScore(d: any, p: ImagePrefs, meal: '早餐'|'午餐'|'�
     const pmcDb = (d.protein_main_class ?? '') as string;
     const cls = pmcDb || _proteinClassOf(mi);
     const matchDb = p.protein_main_class.some(ui => (PROTEIN_CLASS_UI_TO_DB[ui] ?? ui) === cls);
-    if (cls && matchDb) { s += 0.15; breaks.push({axis:'a32_pmc',delta:0.15}); }
+    if (cls && matchDb) { s += 0.30; breaks.push({axis:'a32_pmc',delta:0.30}); } // TICKET-016 §D Option α
   }
   if (p.staple_pref?.length && ct === 'staple') {
     const sc = _stapleClassOf(title, ct);
@@ -225,10 +260,23 @@ function score(
   // axis 7 diversity penalty
   const sameIng = pickedIngredients.filter(i => i === ingredient).length;
   if (sameIng > 0) { const dd = -0.55*sameIng; s += dd; breaks.push({axis:'a7_div_ing',delta:dd}); }
-  // axis 30 cold-start diversity (sim 默认新用户 learnedSignals=0 < 10)
-  const sameCu = pickedCuisines.filter(c => c === origin).length;
-  if (sameCu > 0) { const dd = -0.20*sameCu; s += dd; breaks.push({axis:'a30_div_cu',delta:dd}); }
-  if (sameIng > 0) { const dd = -0.20*sameIng; s += dd; breaks.push({axis:'a30_div_ing',delta:dd}); }
+  // axis 30 cold-start diversity — TICKET-016 §A: imagePrefs 任一非空时 early-return
+  const ip = p.imagePrefs;
+  const hasImagePrefs = !!(ip && (
+    (ip.protein_main_class?.length ?? 0) > 0 ||
+    (ip.staple_pref?.length ?? 0) > 0 ||
+    (ip.protein_pref?.length ?? 0) > 0 ||
+    (ip.beef_style?.length ?? 0) > 0 ||
+    (ip.chicken_style?.length ?? 0) > 0 ||
+    (ip.seafood_style?.length ?? 0) > 0 ||
+    (ip.veggie_method?.length ?? 0) > 0 ||
+    !!ip.oil_level || !!ip.breakfast_cuisine
+  ));
+  if (!hasImagePrefs) {
+    const sameCu = pickedCuisines.filter(c => c === origin).length;
+    if (sameCu > 0) { const dd = -0.20*sameCu; s += dd; breaks.push({axis:'a30_div_cu',delta:dd}); }
+    if (sameIng > 0) { const dd = -0.20*sameIng; s += dd; breaks.push({axis:'a30_div_ing',delta:dd}); }
+  }
 
   // axis 8 day-of-week
   if (dayIndex === 0 && (d.is_vegan || flavorTags.includes('light'))) { s += 0.10; }
@@ -306,7 +354,13 @@ function simulateWeek(profile: Profile, breakfastPool: any[], lunchDinnerPool: a
 // ── Hit rate metrics ─────────────────────────────────────────────────────
 function computeMetrics(picks: PickRecord[], profile: Profile) {
   const N = picks.length;
-  if (N === 0) return { N: 0, red: 0, seafood: 0, veg: 0, white: 0, high_oil: 0, low_oil: 0, mid_oil: 0, cuisine_match: 0, target_pmc: 0, target_oil: 0, target_cuisine: 0 };
+  // TICKET-016: main slot 分母 — 只算午餐 main + 晚餐 main1/main2 (不含 staple/side/veg/soup
+  // /breakfast). 这才是用户对"主菜偏好"的真实感知; 全 35 道分母含 10 staple 天然非主蛋白。
+  const mainPicks = picks.filter(pk => ['lu_main','di_main1','di_main2'].includes(pk.slot));
+  const Nm = mainPicks.length;
+  if (N === 0) return { N: 0, Nm: 0, red: 0, seafood: 0, veg: 0, white: 0, high_oil: 0, low_oil: 0, mid_oil: 0, cuisine_match: 0,
+    target_pmc: 0, target_oil: 0, target_cuisine: 0,
+    target_pmc_main: 0, target_oil_main: 0 };
   let red = 0, seafood = 0, veg = 0, white = 0, high_oil = 0, low_oil = 0, mid_oil = 0, cuisine_match = 0;
   for (const pk of picks) {
     const d = pk.dish;
@@ -320,24 +374,38 @@ function computeMetrics(picks: PickRecord[], profile: Profile) {
     if (d.oil_level === 'mid') mid_oil++;
     if (hometownMatches(profile.hometown, d.origin_cuisine ?? '')) cuisine_match++;
   }
-  // Target hit rate — 用户偏好的相应 metric
+  // Main slot 分母独立计算
+  let mRed = 0, mSeafood = 0, mVeg = 0, mWhite = 0, mHigh = 0, mLow = 0, mMid = 0;
+  for (const pk of mainPicks) {
+    const d = pk.dish;
+    const pmc = (d.protein_main_class ?? _proteinClassOf(d.main_ingredient ?? '')) as string;
+    if (pmc === 'red') mRed++;
+    if (pmc === 'seafood') mSeafood++;
+    if (pmc === 'veg') mVeg++;
+    if (pmc === 'white') mWhite++;
+    if (d.oil_level === 'high') mHigh++;
+    if (d.oil_level === 'low') mLow++;
+    if (d.oil_level === 'mid') mMid++;
+  }
   const wantPmc = profile.imagePrefs.protein_main_class ?? [];
-  let target_pmc = 0;
-  if (wantPmc.includes('red')) target_pmc += red;
-  if (wantPmc.includes('seafood')) target_pmc += seafood;
-  if (wantPmc.includes('veg')) target_pmc += veg;
-  if (wantPmc.includes('white')) target_pmc += white;
+  let target_pmc = 0, target_pmc_main = 0;
+  if (wantPmc.includes('red'))     { target_pmc += red;     target_pmc_main += mRed; }
+  if (wantPmc.includes('seafood')) { target_pmc += seafood; target_pmc_main += mSeafood; }
+  if (wantPmc.includes('veg'))     { target_pmc += veg;     target_pmc_main += mVeg; }
+  if (wantPmc.includes('white'))   { target_pmc += white;   target_pmc_main += mWhite; }
   const wantOil = profile.imagePrefs.oil_level;
-  let target_oil = 0;
-  if (wantOil === 'high') target_oil = high_oil;
-  else if (wantOil === 'low') target_oil = low_oil;
-  else if (wantOil === 'mid') target_oil = mid_oil;
+  let target_oil = 0, target_oil_main = 0;
+  if (wantOil === 'high')      { target_oil = high_oil; target_oil_main = mHigh; }
+  else if (wantOil === 'low')  { target_oil = low_oil;  target_oil_main = mLow; }
+  else if (wantOil === 'mid')  { target_oil = mid_oil;  target_oil_main = mMid; }
   return {
-    N, red: red/N, seafood: seafood/N, veg: veg/N, white: white/N,
+    N, Nm, red: red/N, seafood: seafood/N, veg: veg/N, white: white/N,
     high_oil: high_oil/N, low_oil: low_oil/N, mid_oil: mid_oil/N,
     cuisine_match: cuisine_match/N,
     target_pmc: target_pmc/N, target_oil: target_oil/N,
     target_cuisine: cuisine_match/N,
+    target_pmc_main: Nm > 0 ? target_pmc_main/Nm : 0,
+    target_oil_main: Nm > 0 ? target_oil_main/Nm : 0,
   };
 }
 
@@ -362,7 +430,7 @@ async function main() {
               oil_level, cook_method, is_vegan, health_score, times_kept_in_menu, meal_type
        FROM dishes WHERE title_zh IS NOT NULL AND meal_type IN ('lunch','dinner','all') LIMIT 1200`
     );
-    console.log(`\n=== algo-quality-sim — TICKET-015 5-user A/B simulation ===`);
+    console.log(`\n=== algo-quality-sim — TICKET-016 20-profile A/B simulation (ALGO_VERSION v51) ===`);
     console.log(`pool: breakfast=${breakfastPool.length} | lunch+dinner=${lunchDinnerPool.length}\n`);
 
     // baseline: 看 DB 整体 protein_main_class / oil_level 分布
@@ -391,23 +459,28 @@ async function main() {
     }
 
     // 输出对比表
-    console.log(`【5 profile × 6 metric 命中率对比表 (35 道菜/profile 期望)】\n`);
-    console.log(`profile      | N  | red    | seafood| veg    | white  | high_oil| low_oil| mid_oil| cuisine`);
-    console.log(`─────────────┼────┼────────┼────────┼────────┼────────┼────────┼────────┼────────┼────────`);
+    console.log(`【20 profile × 9 metric 命中率对比表 (35 道菜/profile 期望)】\n`);
+    console.log(`profile                     | N  | red  | sf   | veg  | wht  | h_oil| l_oil| m_oil| cui`);
+    console.log(`────────────────────────────┼────┼──────┼──────┼──────┼──────┼──────┼──────┼──────┼─────`);
     for (const r of results) {
-      console.log(`${r.profile.name.padEnd(12)} | ${String(r.m.N).padStart(2)} | ${pct(r.m.red)}   | ${pct(r.m.seafood)}   | ${pct(r.m.veg)}   | ${pct(r.m.white)}   | ${pct(r.m.high_oil)}   | ${pct(r.m.low_oil)}   | ${pct(r.m.mid_oil)}   | ${pct(r.m.cuisine_match)}`);
+      console.log(`${r.profile.name.padEnd(27)} | ${String(r.m.N).padStart(2)} | ${pct(r.m.red)} | ${pct(r.m.seafood)} | ${pct(r.m.veg)} | ${pct(r.m.white)} | ${pct(r.m.high_oil)} | ${pct(r.m.low_oil)} | ${pct(r.m.mid_oil)} | ${pct(r.m.cuisine_match)}`);
     }
 
-    // Target hit rate (用户对应偏好命中)
-    console.log(`\n【对应偏好命中率 — 判定算法生效 (target ≥ 50%)】\n`);
-    console.log(`profile      | want_pmc                        | hit_pmc | want_oil | hit_oil | want_cuisine        | hit_cuisine | verdict`);
-    console.log(`─────────────┼─────────────────────────────────┼─────────┼──────────┼─────────┼─────────────────────┼─────────────┼─────────`);
+    // Target hit rate — TICKET-016 双分母 (all 35 道 + main 15 道) + 70% target
+    console.log(`\n【对应偏好命中率 — main slot 分母 (15 道午晚主菜) 才是真实感知】\n`);
+    console.log(`profile                     | want_pmc      | pmc/all| pmc/main| want_oil| oil/all| oil/main| cuisine| verdict`);
+    console.log(`────────────────────────────┼───────────────┼────────┼─────────┼─────────┼────────┼─────────┼────────┼─────────`);
     for (const r of results) {
       const wantPmc = (r.profile.imagePrefs.protein_main_class ?? []).join('+');
       const wantOil = r.profile.imagePrefs.oil_level ?? '-';
-      const cuisineBucket = (HOMETOWN_TO_DB_BUCKETS[r.profile.hometown] ?? []).join('+');
-      const verdict = (r.m.target_pmc >= 0.5 && (r.m.target_oil >= 0.4 || wantOil === '-')) ? '✓ PASS' : '✗ FAIL';
-      console.log(`${r.profile.name.padEnd(12)} | ${wantPmc.padEnd(31)} | ${pct(r.m.target_pmc)}    | ${wantOil.padEnd(8)} | ${pct(r.m.target_oil)}    | ${cuisineBucket.padEnd(19)} | ${pct(r.m.target_cuisine)}        | ${verdict}`);
+      const pmcMainOk = r.m.target_pmc_main >= 0.70;
+      const oilMainOk = wantOil === '-' || r.m.target_oil_main >= 0.60;
+      const cuiOk = r.m.target_cuisine >= 0.50;
+      const verdict = (pmcMainOk && oilMainOk && cuiOk) ? '✓ PASS'
+                    : (pmcMainOk && oilMainOk) ? '~ no cui'
+                    : pmcMainOk ? '~ pmc-only'
+                    : '✗ FAIL';
+      console.log(`${r.profile.name.padEnd(27)} | ${wantPmc.padEnd(13)} | ${pct(r.m.target_pmc)}   | ${pct(r.m.target_pmc_main)}    | ${wantOil.padEnd(7)} | ${pct(r.m.target_oil)}   | ${pct(r.m.target_oil_main)}    | ${pct(r.m.target_cuisine)}   | ${verdict}`);
     }
 
     // axis 命中分布 (找谁主导)
@@ -421,25 +494,66 @@ async function main() {
       console.log(`  ${r.profile.name.padEnd(12)}: ${sorted.map(([k,v]) => `${k}=${v.toFixed(2)}`).join('  ')}`);
     }
 
-    // sample dishes — 看每个 profile 真的选出了什么
-    console.log(`\n【sample picks — 前 8 道菜的 title + pmc + oil + origin】\n`);
-    for (const r of results) {
+    // sample dishes — 仅看 4 个代表 profile (节省 stdout)
+    console.log(`\n【sample picks — 4 代表 profile 前 6 道】\n`);
+    const sampleIdx = [0, 2, 4, 14];  // meatlover, vegan, northerner, 大家庭红肉
+    for (const i of sampleIdx) {
+      const r = results[i];
       console.log(`  ${r.profile.name} (want_pmc=${(r.profile.imagePrefs.protein_main_class ?? []).join(',')}, want_oil=${r.profile.imagePrefs.oil_level}):`);
-      for (const pk of r.picks.slice(0, 8)) {
+      for (const pk of r.picks.slice(0, 6)) {
         const d = pk.dish;
         const pmc = d.protein_main_class ?? _proteinClassOf(d.main_ingredient ?? '');
         console.log(`    [${pk.meal}/${pk.slot.padEnd(9)}] ${(d.title_zh ?? '').padEnd(20)} pmc=${(pmc||'-').padEnd(8)} oil=${(d.oil_level||'-').padEnd(5)} origin=${(d.origin_cuisine||'-').padEnd(12)} score=${pk.score.toFixed(2)}`);
       }
     }
 
-    // 整体 verdict
-    const passCount = results.filter(r => r.m.target_pmc >= 0.5).length;
-    console.log(`\n【整体 verdict】`);
-    console.log(`  ${passCount}/${results.length} profile pmc 命中率 ≥ 50% — ${passCount === results.length ? '算法生效' : '算法部分/完全失效'}`);
+    // 多样性 + profile 间差异 — TICKET-016 §C 新指标
+    console.log(`\n【菜单多样性 — unique cuisine + main_ingredient 数】\n`);
+    console.log(`profile                     | uq_cuisine | uq_ingredient | dish_titles_uq`);
+    console.log(`────────────────────────────┼────────────┼───────────────┼────────────────`);
+    for (const r of results) {
+      const cu = new Set(r.picks.map(pk => pk.dish.origin_cuisine || '-'));
+      const ing = new Set(r.picks.map(pk => pk.dish.main_ingredient || '-'));
+      const ti = new Set(r.picks.map(pk => pk.dish.id));
+      console.log(`${r.profile.name.padEnd(27)} | ${String(cu.size).padStart(10)} | ${String(ing.size).padStart(13)} | ${String(ti.size).padStart(14)}`);
+    }
+
+    // profile 间 Jaccard 差异 (相邻 4 对)
+    console.log(`\n【profile 间差异 — dish ID Jaccard (≥ 0.3 = 偏好分化不足)】\n`);
+    const pairs = [[0,4], [1,2], [2,17], [5,11], [14,11]];
+    for (const [a,b] of pairs) {
+      const A = new Set(results[a].picks.map(pk => pk.dish.id));
+      const B = new Set(results[b].picks.map(pk => pk.dish.id));
+      const inter = [...A].filter(x => B.has(x)).length;
+      const union = A.size + B.size - inter;
+      const j = union === 0 ? 0 : inter / union;
+      console.log(`  ${results[a].profile.name.padEnd(27)} vs ${results[b].profile.name.padEnd(27)}: Jaccard=${(j*100).toFixed(0)}%`);
+    }
+
+    // 整体 verdict — TICKET-016 target 用 main slot 分母 70% pmc / 60% oil + 50% cuisine
+    const passPmc = results.filter(r => r.m.target_pmc_main >= 0.70).length;
+    const passOil = results.filter(r => {
+      const w = r.profile.imagePrefs.oil_level;
+      return !w || r.m.target_oil_main >= 0.60;
+    }).length;
+    const passCui = results.filter(r => r.m.target_cuisine >= 0.50).length;
+    const passAll = results.filter(r => {
+      const w = r.profile.imagePrefs.oil_level;
+      return r.m.target_pmc_main >= 0.70 && (!w || r.m.target_oil_main >= 0.60) && r.m.target_cuisine >= 0.50;
+    }).length;
+    console.log(`\n【整体 verdict — TICKET-016 main slot 分母 70% pmc / 60% oil + 全菜 50% cuisine】`);
+    console.log(`  pass_pmc_main: ${passPmc}/${results.length} (≥ 70%)`);
+    console.log(`  pass_oil_main: ${passOil}/${results.length} (≥ 60%)`);
+    console.log(`  pass_cuisine:  ${passCui}/${results.length} (≥ 50%)`);
+    console.log(`  pass_all:      ${passAll}/${results.length} (三项全通过)`);
+    const meanPmcMain = results.reduce((s,r) => s + r.m.target_pmc_main, 0) / results.length;
+    const meanOilMain = results.reduce((s,r) => s + r.m.target_oil_main, 0) / results.length;
+    const meanCui = results.reduce((s,r) => s + r.m.target_cuisine, 0) / results.length;
+    const meanPmcAll = results.reduce((s,r) => s + r.m.target_pmc, 0) / results.length;
+    console.log(`  mean: pmc_main=${pct(meanPmcMain)} oil_main=${pct(meanOilMain)} cui=${pct(meanCui)} (ref pmc_all=${pct(meanPmcAll)})`);
 
     // stability check — 同 profile 跑 3 次, 命中率方差
     console.log(`\n【随机性 / 稳定性检查 — meatlover 跑 3 次】`);
-    // 注: sim 无随机源 (sort by score → 确定性), 此处 expected 3 次完全相同
     for (let i = 0; i < 3; i++) {
       const picks = simulateWeek(PROFILES[0], breakfastPool, lunchDinnerPool);
       const m = computeMetrics(picks, PROFILES[0]);

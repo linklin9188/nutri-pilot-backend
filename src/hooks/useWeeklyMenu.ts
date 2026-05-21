@@ -83,7 +83,9 @@ const WORKDAYS_PER_WEEK = 5;
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v50'; // TICKET-014: 5 天工作日制 — generateWeekPlan 主循环 7→5 (WORKDAYS_PER_WEEK=5), 周菜单只覆盖周一到周五。老板真测发现 algo 层仍 7 天循环 (line 1970 旧逻辑用 `if (dayIndex >= 5) continue;` 在 7 循环内 skip 周末, 半截改造)。bump 让所有 v49 缓存 (含 7 天 days 数组) 失效, 全用户重生成 5 天版本。菲佣 + 用户家庭工作日做饭, 周末家庭自由发挥。
+export const ALGO_VERSION = 'v52'; // TICKET-016 §D Option α: axis 32 protein_main_class 0.15 → 0.30. v51 sim 显示 axis 30 修复后 pmc 命中率仍 mean 30% (target 70%), 因 a32 量级 0.15 落后 a3_taste 0.25 / a23_newuser 0.45/dish, want_pmc=red 但算法选了 spicy+white. 0.30 让 pmc 与 taste 同量级, 让用户填的"主蛋白"偏好真主导。bump 让 v51 缓存失效。
+// v51: TICKET-016 §A: axis 30 cold-start diversity early-return for known-pref users (imagePrefs 任一非空 → 跳过强制多样性)。TICKET-015 sim 诊断 axis 30 累计 -13~-14 压倒 imageOnboardingScore +1~+2.7 (设计 75% 主导), meatlover red 命中率 20% = baseline DB 19%, 算法没把偏好推上来。Root cause: 已填 image onboarding 时仍按"未知偏好"逻辑硬推多样性。bump 让所有 v50 缓存失效, 已填 image 用户立即拿到偏好菜单。
+// v50: TICKET-014: 5 天工作日制 — generateWeekPlan 主循环 7→5 (WORKDAYS_PER_WEEK=5), 周菜单只覆盖周一到周五。老板真测发现 algo 层仍 7 天循环 (line 1970 旧逻辑用 `if (dayIndex >= 5) continue;` 在 7 循环内 skip 周末, 半截改造)。bump 让所有 v49 缓存 (含 7 天 days 数组) 失效, 全用户重生成 5 天版本。菲佣 + 用户家庭工作日做饭, 周末家庭自由发挥。
 // v49: TICKET-012: axis 32 + axis 37 双轨升级 — DB pmc 列优先 + helper fallback, 让 218 道 main_ingredient='other'/NULL 在 axis 32 (15% 权重) + 37 道 pmc='seafood' 但 mi≠seafood 在 axis 37 (6% 权重) 真正命中. 同时 bump 失效所有 v48 缓存让全用户立即拿到新菜单。
 // v48: §B (TICKET-009): v3 9 axes 值域桥接 — UI 写"用户语言" (rich/red_meat/spicy_stirfry) vs DB 推断"算法语言" (high/red/stirfry), 早期 v45 漏映射导致 6 axis (32/35/36/37/38/39) 90% 0 命中. 加 6 个 UI→DB map 让 axis 32-40 真消费 prefs. 老板"算法必须为用户选出他们想要的食材和菜品"指令 root cause. stale user_weekly_menus 全用户重生成。
 // v47: §A (TICKET-008): 撤销 cooking complexity hardFilter — 老板拍板"小于两小时的都可以". 统一 cook_time_min > 120 阈值。
@@ -315,17 +317,20 @@ export function imageOnboardingScore(dish: any, imagePrefs: ImagePrefs, mealType
   // protein_source ARRAY 备查 (axis 34/35/36/37 多源覆盖鸡蛋豆制品等组合)
   const psrc  = (Array.isArray(dish.protein_source) ? dish.protein_source : []) as string[];
 
-  // axis 32 — protein_main_class 15% (UI red_meat/white_meat/veggie/seafood → DB red/white/veg/seafood)
+  // axis 32 — protein_main_class 30% (UI red_meat/white_meat/veggie/seafood → DB red/white/veg/seafood)
   // TICKET-011: 优先读 dishes.protein_main_class DB 列 (Database 060 backfill 已 100% 填充),
   // fallback _proteinClassOf 推断. 218 道 main_ingredient='other'/NULL 在旧路径上 0 命中,
-  // 改读 DB 列后 198 道命中 (axis 32 是 15% 最大权重).
+  // 改读 DB 列后 198 道命中.
+  // TICKET-016 §D Option α: 0.15 → 0.30. 量级 audit (sim) 显示 axis 32 0.15 单道
+  // 加分在 a3_taste 0.25 / a23_newuser 0.45/道 之下, 用户 want_pmc=red 但算法选了
+  // spicy+white 因 a3_taste 主导. bump 到 0.30 让 pmc 与 taste 同量级.
   if (imagePrefs.protein_main_class?.length) {
     const pmcDb = (dish.protein_main_class ?? '') as string;
     const cls = pmcDb || _proteinClassOf(mi);
     const matchDb = imagePrefs.protein_main_class.some(ui =>
       (PROTEIN_CLASS_UI_TO_DB[ui] ?? ui) === cls
     );
-    if (cls && matchDb) s += 0.15;
+    if (cls && matchDb) s += 0.30;
   }
   // axis 33 — staple_pref 8% (UI rice/noodle/congee/grain ↔ DB 同名, 无需映射)
   if (imagePrefs.staple_pref?.length && ct === 'staple') {
@@ -1530,7 +1535,26 @@ function scoreForWeek({
   // 留出空间。老用户 (≥ 10 信号) → axis 30 = 0 自然退出，已有充足偏好自塑造。
   // learnedSignals 已在 axis 4 sigmoid 计算时算过，直接复用避免重复 reduce。
   // sameIngCount 同样来自 axis 7。pickedCuisines 默认 [] → 老路径零影响。
-  if (learnedSignals < 10) {
+  //
+  // §A (TICKET-016) early-return for known-pref users:
+  // TICKET-015 sim 诊断: axis 30 量级 -13~-14 压倒 imageOnboardingScore +1~+2.7
+  // (设计 75% 主导), meatlover red 命中率 20% = baseline DB red 19% → 算法完全
+  // 没把偏好推上来。Root cause: 当用户已填 image onboarding (强偏好已知),
+  // axis 30 仍按"未知偏好"逻辑硬推多样性, 把用户偏好菜系/主料挤出。
+  // 修复: hasImagePrefs=true → 跳过 axis 30 强制多样性 (axis 7 已 -0.55/次
+  // ingredient diversity 兜底, 不会全周同一菜)。
+  const hasImagePrefs = !!(imagePrefs && (
+    (imagePrefs.protein_main_class?.length ?? 0) > 0 ||
+    (imagePrefs.staple_pref?.length ?? 0) > 0 ||
+    (imagePrefs.protein_pref?.length ?? 0) > 0 ||
+    (imagePrefs.beef_style?.length ?? 0) > 0 ||
+    (imagePrefs.chicken_style?.length ?? 0) > 0 ||
+    (imagePrefs.seafood_style?.length ?? 0) > 0 ||
+    (imagePrefs.veggie_method?.length ?? 0) > 0 ||
+    !!imagePrefs.oil_level ||
+    !!imagePrefs.breakfast_cuisine
+  ));
+  if (learnedSignals < 10 && !hasImagePrefs) {
     const sameCuisineCount = pickedCuisines.filter(c => c === origin).length;
     if (sameCuisineCount > 0) score -= 0.20 * sameCuisineCount;
     if (sameIngCount > 0)     score -= 0.20 * sameIngCount;
