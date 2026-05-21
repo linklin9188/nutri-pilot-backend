@@ -62,20 +62,22 @@ function RootRedirect() {
     return <Navigate to="/login" replace />;
   }
 
-  // TICKET-004 §L — β 老用户 onboarding_v2 强制重做。onboarding 11 步新方案
-  // (8 goals / family_composition / mild_dislikes / cook_role / cook_complexity /
-  // seafood_freq / soup_freq) 让 prefs 必产生差异化；老 v1 用户的旧 prefs 让
-  // 算法读不出区分度，必须重走 /setup 才能进入新算法路径。
-  // - quickPrefs 存在 + 没 onboarding_v2_done → 触发：清掉 quickPrefs + 标记
-  //   needs_v2_onboarding（用于显示升级 banner）。userId / nutri_role / appLanguage
+  // TICKET-005 §E — β 老用户 onboarding_v3 强制重做。v3 图片驱动 onboarding
+  // 引入 9 个新 axis（table_style / protein_main_class / staple_pref / protein_pref /
+  // beef_style / chicken_style / seafood_style / veggie_method / oil_level /
+  // breakfast_cuisine），让 prefs 在图片选择中自然产生强差异化；v1/v2 用户的旧
+  // prefs 让 Algorithm 073 axis 32-40 读不到值，必须重走 /setup 进入新算法路径。
+  // v3 是 v2 的超集（保留所有 v2 字段语义），v3 done 隐含 v2 done。
+  // - quickPrefs 存在 + 没 onboarding_v3_done → 触发：清 quickPrefs + 标记
+  //   needs_v3_onboarding（升级 banner 显示）。userId / nutri_role / appLanguage
   //   等纯认证 + 偏好 key 不动。
-  // - 完成 v2 后 QuickSetup.finish() 会写 onboarding_v2_done = true，本检查停止
-  //   再触发。
-  const hasV2 = localStorage.getItem('onboarding_v2_done') === 'true';
+  // - 完成 v3 后 QuickSetup.finish() 写 onboarding_v3_done=true（同时写
+  //   onboarding_v2_done 兜底），本检查停止再触发。
+  const hasV3 = localStorage.getItem('onboarding_v3_done') === 'true';
   const hasOldPrefs = !!localStorage.getItem('quickPrefs');
-  if (hasOldPrefs && !hasV2) {
+  if (hasOldPrefs && !hasV3) {
     localStorage.removeItem('quickPrefs');
-    localStorage.setItem('needs_v2_onboarding', 'true');
+    localStorage.setItem('needs_v3_onboarding', 'true');
     return <Navigate to="/setup" replace />;
   }
 
