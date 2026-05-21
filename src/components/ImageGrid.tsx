@@ -33,11 +33,11 @@ export default function ImageGrid({ options, multi, selected, onToggle, cols = 2
             whileTap={{ scale: 0.96 }}
             className="flex flex-col items-center justify-center text-center p-4 rounded-2xl transition-all relative overflow-hidden"
             style={sel
-              ? { background: 'rgba(255,90,31,0.20)', border: '1.5px solid #FF5A1F', boxShadow: '0 0 20px rgba(255,90,31,0.15)', minHeight: 132 }
-              : { background: 'rgba(255,255,255,0.06)', border: '1.5px solid rgba(255,255,255,0.09)', minHeight: 132 }
+              ? { background: 'rgba(255,90,31,0.20)', border: '1.5px solid #FF5A1F', boxShadow: '0 0 20px rgba(255,90,31,0.15)', minHeight: opt.img ? 168 : 132 }
+              : { background: 'rgba(255,255,255,0.06)', border: '1.5px solid rgba(255,255,255,0.09)', minHeight: opt.img ? 168 : 132 }
             }>
             {opt.img ? (
-              <img src={opt.img} alt={opt.label} className="w-full h-16 object-cover rounded-lg mb-2" />
+              <img src={opt.img} alt={opt.label} className="w-full h-24 object-cover rounded-xl mb-2" />
             ) : (
               <span className="text-[44px] leading-none mb-2">{opt.emoji ?? '🍽'}</span>
             )}

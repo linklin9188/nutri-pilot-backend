@@ -52,10 +52,10 @@ const QUESTIONS_V3: QuestionV3[] = [
     minSelect: 1,
     cols: 2,
     options: [
-      { value: 'red_meat',   label: '红肉拼盘', desc: '牛 · 羊 · 猪',     emoji: '🥩' },
-      { value: 'white_meat', label: '白肉拼盘', desc: '鸡 · 鸭',          emoji: '🍗' },
-      { value: 'seafood',    label: '海鲜拼盘', desc: '虾蟹 · 鱼 · 贝',   emoji: '🦐' },
-      { value: 'veggie',     label: '素食拼盘', desc: '豆腐 · 蔬菜',      emoji: '🥦' },
+      { value: 'red_meat',   label: '红肉拼盘', desc: '牛 · 羊 · 猪',     img: '/onboarding/q1_beef.jpg' },
+      { value: 'white_meat', label: '白肉拼盘', desc: '鸡 · 鸭',          img: '/onboarding/q1_chicken.jpg' },
+      { value: 'seafood',    label: '海鲜拼盘', desc: '虾蟹 · 鱼 · 贝',   img: '/onboarding/q1_seafood.jpg' },
+      { value: 'veggie',     label: '素食拼盘', desc: '豆腐 · 蔬菜',      img: '/onboarding/q1_veg.jpg' },
     ],
   },
 
@@ -69,10 +69,10 @@ const QUESTIONS_V3: QuestionV3[] = [
     minSelect: 1,
     cols: 2,
     options: [
-      { value: 'rice',   label: '米饭',     emoji: '🍚' },
-      { value: 'noodle', label: '面条馒头', emoji: '🍜' },
-      { value: 'congee', label: '粥',       emoji: '🥣' },
-      { value: 'grain',  label: '杂粮',     desc: '红薯 · 玉米 · 燕麦', emoji: '🌽' },
+      { value: 'rice',   label: '米饭',     img: '/onboarding/q2_rice.jpg' },
+      { value: 'noodle', label: '面条馒头', img: '/onboarding/q2_noodle.jpg' },
+      { value: 'congee', label: '粥',       img: '/onboarding/q2_porridge.jpg' },
+      { value: 'grain',  label: '杂粮',     desc: '红薯 · 玉米 · 燕麦', img: '/onboarding/q2_grain.jpg' },
     ],
   },
 
@@ -87,11 +87,11 @@ const QUESTIONS_V3: QuestionV3[] = [
     condition: 'has_red_or_white',
     cols: 3,
     options: [
-      { value: 'pork',    label: '猪', emoji: '🐷' },
-      { value: 'chicken', label: '鸡', emoji: '🐔' },
-      { value: 'duck',    label: '鸭', emoji: '🦆' },
-      { value: 'lamb',    label: '羊', emoji: '🐑' },
-      { value: 'beef',    label: '牛', emoji: '🐮' },
+      { value: 'pork',    label: '猪', img: '/onboarding/q1_pork.jpg' },
+      { value: 'chicken', label: '鸡', img: '/onboarding/q1_chicken.jpg' },
+      { value: 'duck',    label: '鸭', img: '/onboarding/q1_duck.jpg' },
+      { value: 'lamb',    label: '羊', img: '/onboarding/q1_lamb.jpg' },
+      { value: 'beef',    label: '牛', img: '/onboarding/q1_beef.jpg' },
     ],
   },
 
@@ -105,10 +105,10 @@ const QUESTIONS_V3: QuestionV3[] = [
     condition: 'has_beef',
     cols: 2,
     options: [
-      { value: 'spicy_stirfry', label: '小炒黄牛肉', desc: '湘 · 川辣',     emoji: '🌶️' },
-      { value: 'steak',         label: '煎牛排',     desc: '西 · 北',       emoji: '🥩' },
-      { value: 'stewed',        label: '炖牛腩',     desc: '粤 · 港清',     emoji: '🍲' },
-      { value: 'braised',       label: '红烧牛肉',   desc: '江浙 · 北家常', emoji: '🥘' },
+      { value: 'spicy_stirfry', label: '小炒黄牛肉', desc: '湘 · 川辣',     img: '/onboarding/q4_beef_stir.jpg' },
+      { value: 'steak',         label: '煎牛排',     desc: '西 · 北',       img: '/onboarding/q4_beef_steak.jpg' },
+      { value: 'stewed',        label: '炖牛腩',     desc: '粤 · 港清',     img: '/onboarding/q4_beef_stew.jpg' },
+      { value: 'braised',       label: '红烧牛肉',   desc: '江浙 · 北家常', img: '/onboarding/q4_beef_braised.jpg' },
     ],
   },
 
@@ -122,10 +122,10 @@ const QUESTIONS_V3: QuestionV3[] = [
     condition: 'has_chicken',
     cols: 2,
     options: [
-      { value: 'poached',     label: '白切鸡', desc: '粤式',     emoji: '🍗' },
-      { value: 'spicy_diced', label: '辣子鸡', desc: '川式',     emoji: '🌶️' },
-      { value: 'three_cup',   label: '三杯鸡', desc: '台式',     emoji: '🍶' },
-      { value: 'yellow_braised', label: '黄焖鸡', desc: '北 · 江浙', emoji: '🍛' },
+      { value: 'poached',     label: '白切鸡', desc: '粤式',     img: '/onboarding/q5_chicken_white.jpg' },
+      { value: 'spicy_diced', label: '辣子鸡', desc: '川式',     img: '/onboarding/q5_chicken_spicy.jpg' },
+      { value: 'three_cup',   label: '三杯鸡', desc: '台式',     img: '/onboarding/q5_chicken_threecup.jpg' },
+      { value: 'yellow_braised', label: '黄焖鸡', desc: '北 · 江浙', img: '/onboarding/q5_chicken_braised.jpg' },
     ],
   },
 
@@ -139,10 +139,10 @@ const QUESTIONS_V3: QuestionV3[] = [
     condition: 'has_seafood_class',
     cols: 2,
     options: [
-      { value: 'steamed',  label: '清蒸', emoji: '♨️' },
-      { value: 'braised',  label: '红烧', emoji: '🥘' },
-      { value: 'salted',   label: '椒盐', emoji: '🧂' },
-      { value: 'blanched', label: '白灼', emoji: '💧' },
+      { value: 'steamed',  label: '清蒸', img: '/onboarding/q6_seafood_steam.jpg' },
+      { value: 'braised',  label: '红烧', img: '/onboarding/q6_seafood_braise.jpg' },
+      { value: 'salted',   label: '椒盐', img: '/onboarding/q6_seafood_salt.jpg' },
+      { value: 'blanched', label: '白灼', img: '/onboarding/q6_seafood_boil.jpg' },
     ],
   },
 
@@ -156,10 +156,10 @@ const QUESTIONS_V3: QuestionV3[] = [
     minSelect: 1,
     cols: 2,
     options: [
-      { value: 'stirfry',   label: '清炒', emoji: '🥬' },
-      { value: 'dry_fried', label: '干煸', emoji: '🔥' },
-      { value: 'cold',      label: '凉拌', emoji: '🥗' },
-      { value: 'soup',      label: '煲汤', emoji: '🍲' },
+      { value: 'stirfry',   label: '清炒', img: '/onboarding/q7_veg_stir.jpg' },
+      { value: 'dry_fried', label: '干煸', img: '/onboarding/q7_veg_dry.jpg' },
+      { value: 'cold',      label: '凉拌', img: '/onboarding/q7_veg_cold.jpg' },
+      { value: 'soup',      label: '煲汤', img: '/onboarding/q7_veg_soup.jpg' },
     ],
   },
 
@@ -172,9 +172,9 @@ const QUESTIONS_V3: QuestionV3[] = [
     multi: false,
     cols: 2,
     options: [
-      { value: 'rich',   label: '浓郁',   desc: '重油红烧肉',  emoji: '🥘' },
-      { value: 'medium', label: '中等',   desc: '日常家常',    emoji: '🍱' },
-      { value: 'light',  label: '极清',   desc: '白灼 · 清蒸', emoji: '💧' },
+      { value: 'rich',   label: '浓郁',   desc: '重油红烧肉',  img: '/onboarding/q8_oil_heavy.jpg' },
+      { value: 'medium', label: '中等',   desc: '日常家常',    img: '/onboarding/q8_oil_normal.jpg' },
+      { value: 'light',  label: '极清',   desc: '白灼 · 清蒸', img: '/onboarding/q8_oil_light.jpg' },
     ],
   },
 
@@ -187,10 +187,10 @@ const QUESTIONS_V3: QuestionV3[] = [
     multi: false,
     cols: 2,
     options: [
-      { value: 'chinese', label: '中式', desc: '包子 · 粥 · 油条 · 豆浆', emoji: '🥟' },
-      { value: 'western', label: '西式', desc: '三明治 · 牛奶 · 麦片',    emoji: '🥪' },
-      { value: 'hk',      label: '港式', desc: '菠萝包 · 奶茶 · 多士',    emoji: '🥯' },
-      { value: 'simple',  label: '简单', desc: '鸡蛋 · 燕麦',             emoji: '🥚' },
+      { value: 'chinese', label: '中式', desc: '包子 · 粥 · 油条 · 豆浆', img: '/onboarding/q9_breakfast_chinese.jpg' },
+      { value: 'western', label: '西式', desc: '三明治 · 牛奶 · 麦片',    img: '/onboarding/q9_breakfast_western.jpg' },
+      { value: 'hk',      label: '港式', desc: '菠萝包 · 奶茶 · 多士',    img: '/onboarding/q9_breakfast_hk.jpg' },
+      { value: 'simple',  label: '简单', desc: '鸡蛋 · 燕麦',             img: '/onboarding/q9_breakfast_simple.jpg' },
     ],
   },
 
