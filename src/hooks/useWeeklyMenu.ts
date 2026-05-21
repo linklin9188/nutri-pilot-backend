@@ -78,7 +78,8 @@ export interface WeeklyMenu {
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v44'; // §D (TICKET-064): axis 31 fruit/veggie 应季强化 (+0.40 / -0.20) + INGREDIENT_SEASONALITY hybrid DB loader + explainScore 13 主轴。stale user_weekly_menus 全 β 用户重生成。
+export const ALGO_VERSION = 'v45'; // §E (TICKET-005): v3 image-onboarding-driven scoring — axis 32-40 (9 新 axes 75% 权重) + hometown 30→5% + dietary_goal 25→15% + spice 删除。stale user_weekly_menus 全用户重生成。
+// v44: §D (TICKET-064): axis 31 fruit/veggie 应季强化 (+0.40 / -0.20) + INGREDIENT_SEASONALITY hybrid DB loader + explainScore 13 主轴。stale user_weekly_menus 全 β 用户重生成。
 // v43: §B (TICKET-053): axis 28 公式微调 — 3+ 应季食材整体 bonus +0.15 + 单菜 cap +0.5；INGREDIENT_SEASONALITY 扩至 60+ 食材。
 // v42: §C3 (TICKET-032 / SPEC_smell1_phase3 收尾): 跨日 dedup 3 天 hard-block + fruit 进 9-axis + breakfast combo 二次 scoreForWeek 排序。
 // v41: §C (TICKET-015) generateWeekPlan seed PRNG + weightedRandom rng 参数。
