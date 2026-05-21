@@ -30,7 +30,7 @@ import { applyCuisineFilter, loadCuisineMode } from '../lib/cuisineFilter';
 import { DISH_FIELDS } from '../lib/dishFields';
 import { hometownMatches, hometownToDbBucket } from '../lib/hometownBuckets';
 import { isNewUserSession } from '../lib/userLifecycle';
-import { pickBreakfastCombo } from '../lib/breakfastCombos';
+import { pickBreakfastCombo, classifyBreakfastSlot, WET_DRINK_KEYWORDS } from '../lib/breakfastCombos';
 import { syncProfileFromDB } from '../lib/profileSync';
 import { loadPantryItems } from './usePantry';
 
@@ -78,13 +78,41 @@ export interface WeeklyMenu {
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v45'; // §E (TICKET-005): v3 image-onboarding-driven scoring — axis 32-40 (9 新 axes 75% 权重) + hometown 30→5% + dietary_goal 25→15% + spice 删除。stale user_weekly_menus 全用户重生成。
+export const ALGO_VERSION = 'v46'; // §A+B (TICKET-007): 早餐 4 slot 营养结构 (carb/protein/vitamin_fiber/liquid) — pickBreakfastCombo 后 supplement vitamin_fiber + cooking complexity hardFilter (cook_complexity quick/normal/unlimited + cook_role helper 难菜过滤). stale user_weekly_menus 全用户重生成 (β UX 反馈)。
+// v45: §E (TICKET-005): v3 image-onboarding-driven scoring — axis 32-40 (9 新 axes 75% 权重) + hometown 30→5% + dietary_goal 25→15% + spice 删除。
 // v44: §D (TICKET-064): axis 31 fruit/veggie 应季强化 (+0.40 / -0.20) + INGREDIENT_SEASONALITY hybrid DB loader + explainScore 13 主轴。stale user_weekly_menus 全 β 用户重生成。
 // v43: §B (TICKET-053): axis 28 公式微调 — 3+ 应季食材整体 bonus +0.15 + 单菜 cap +0.5；INGREDIENT_SEASONALITY 扩至 60+ 食材。
 // v42: §C3 (TICKET-032 / SPEC_smell1_phase3 收尾): 跨日 dedup 3 天 hard-block + fruit 进 9-axis + breakfast combo 二次 scoreForWeek 排序。
 // v41: §C (TICKET-015) generateWeekPlan seed PRNG + weightedRandom rng 参数。
 // v40: Smell 1 阶段 2 合并双管道 + scoreForWeek 9-axis + sigmoid 学习曲线 + 周五"放纵日"。
 // v37: Western high-end bias. v36: pool-aware breakfast combo. v35: hometown 地域大区. v34: cook-method variety. v33: power curve.
+
+// §B (TICKET-007) cooking complexity hardFilter — 用户反馈"75min 茶叶蛋耗时太长" /
+// "小笼包 菲佣从零开始难度太大". cook_complexity 控制 cook_time_min 上限; cook_role
+// ='helper' 时排除高难度 dish. 当前 UI 未派单写入 cook_complexity / cook_role
+// localStorage key, helper 自然 short-circuit (null → return true) → 0 影响.
+// 等 UI 派单加 onboarding 写入后自动激活.
+const HARD_DISHES_FOR_HELPER = [
+  '小笼包', '灌汤包', '手擀面', '手抓饼', '烤鸭', '卤水',
+  '叉烧', '烧鹅', '北京烤鸭', '糖醋脆皮', '拔丝', '糖人',
+  '手工水饺', '现包饺子',
+];
+export function passesCookingComplexity(
+  dish: { cook_time_min?: number | null; title_zh?: string | null },
+  cookComplexity: string | null,
+  cookRole: string | null,
+): boolean {
+  // cook_time_min 上限 (quick / normal / unlimited / null)
+  const cookTime = dish.cook_time_min;
+  if (cookComplexity === 'quick' && typeof cookTime === 'number' && cookTime > 30) return false;
+  if (cookComplexity === 'normal' && typeof cookTime === 'number' && cookTime > 60) return false;
+  // cook_role='helper' 时过滤高难度 dish
+  if (cookRole === 'helper') {
+    const t = dish.title_zh ?? '';
+    if (HARD_DISHES_FOR_HELPER.some(kw => t.includes(kw))) return false;
+  }
+  return true;
+}
 
 // ── 周末规则 (Weekend rule) — user-confirmed 2026-05-17 ───────────────────────
 // Weekly menu only covers Mon-Fri. Generation skips Sat/Sun; display layers
@@ -2427,6 +2455,26 @@ function generateWeekPlan(
           avoidTags: [],
         });
         const rawDishes = result.dishes ?? [];
+        // §A (TICKET-007) 4 slot 营养结构 — combo 返 3 slot (drink/staple/side) 已覆盖
+        // carb + protein + liquid, 但 vitamin_fiber 经常缺. 检查覆盖, 缺则从 breakfastPool
+        // 抽 1 道 supplement 加上, 凑齐 4 slot 营养均衡 (碳水+蛋白+维生素纤维+液体).
+        const hasVitFib = rawDishes.some((d: any) => classifyBreakfastSlot(d) === 'vitamin_fiber');
+        if (!hasVitFib && breakfastPool.length > 0) {
+          const usedIds = new Set(rawDishes.map((d: any) => d.id));
+          const vitFibPool = breakfastPool.filter((d: any) => {
+            if (usedIds.has(d.id)) return false;
+            if (classifyBreakfastSlot(d) !== 'vitamin_fiber') return false;
+            // §G (TICKET-006) wet drink mutex 守门 — supplement 不能引入"红薯粥/玉米汁"
+            // 类 wet drink 破坏一顿早餐最多 1 个 wet drink 的约束
+            const t = d.title_zh || '';
+            if (WET_DRINK_KEYWORDS.some(kw => t.includes(kw))) return false;
+            return true;
+          });
+          if (vitFibPool.length > 0) {
+            // dayIndex % len 稳定抽样, 跨 day 自动轮换
+            rawDishes.push(vitFibPool[dayIndex % vitFibPool.length] as any);
+          }
+        }
         // §C3 scoreForWeek 二次评分（mealTime='早餐'）—— 不改 hometown 模板
         // 选出的 dish 集合，仅按分数稳定排序 + 同步学习信号 / 9-axis 状态
         // 到主评分链。当 combo 内只有 1 个候选时排序无副作用。
@@ -2846,6 +2894,9 @@ export function useWeeklyMenu(weekOffset: number = 0) {
         // Keyword safety nets for avoid options where DB tags may be missing
         const DAIRY_KEYWORDS = ['芝士', '奶酪', '奶油', '黄油', '牛奶', '乳酪', 'cheese', 'cream', 'butter', 'milk', 'dairy'];
         const avoidDairy = localPrefs.avoidTags.includes('dairy') || localPrefs.avoidTags.includes('milk');
+        // §B (TICKET-007) cook complexity / role — UI 未派单写入时为 null → passesCookingComplexity short-circuit
+        const cookComplexity = localStorage.getItem('cook_complexity');
+        const cookRole = localStorage.getItem('cook_role');
 
         // Apply hard filters from user prefs
         const pool = rawPool.filter(dish => {
@@ -2863,6 +2914,8 @@ export function useWeeklyMenu(weekOffset: number = 0) {
             const titleText = ((dish.title_zh ?? '') + ' ' + (dish.title_en ?? '') + ' ' + (dish.description_zh ?? '')).toLowerCase();
             if (DAIRY_KEYWORDS.some(kw => titleText.includes(kw.toLowerCase()))) return false;
           }
+          // §B (TICKET-007) cook complexity / role hardFilter
+          if (!passesCookingComplexity(dish, cookComplexity, cookRole)) return false;
           return true;
         });
 
@@ -2945,6 +2998,8 @@ export function useWeeklyMenu(weekOffset: number = 0) {
             const titleText = ((dish.title_zh ?? '') + ' ' + (dish.title_en ?? '') + ' ' + (dish.description_zh ?? '')).toLowerCase();
             if (DAIRY_KEYWORDS.some(kw => titleText.includes(kw.toLowerCase()))) return false;
           }
+          // §B (TICKET-007) cook complexity / role hardFilter
+          if (!passesCookingComplexity(dish, cookComplexity, cookRole)) return false;
           return true;
         });
 
@@ -2959,6 +3014,8 @@ export function useWeeklyMenu(weekOffset: number = 0) {
             const allTags = [...(dish.flavor_tags ?? []), ...(dish.health_benefit_tags ?? [])];
             if (allTags.some((t: string) => localPrefs.avoidTags.includes(t))) return false;
           }
+          // §B (TICKET-007) cook complexity / role hardFilter (fruit pool 通常 cook_time 短 + 简单, 但保留兜底)
+          if (!passesCookingComplexity(dish, cookComplexity, cookRole)) return false;
           return true;
         });
 

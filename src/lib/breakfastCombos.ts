@@ -233,6 +233,38 @@ function shuffleSeeded<T>(arr: T[], seed: number): T[] {
   return out;
 }
 
+// §A (TICKET-007) 早餐 4 slot 营养结构 — 用户反馈早餐缺维生素/纤维.
+// 在 pickBreakfastCombo 返 3 slot (drink/staple/side) 之后, 调用方 (useWeeklyMenu)
+// 检查覆盖, 缺 vitamin_fiber slot → 从 breakfast pool 抽 1 道补上.
+// keyword 顺序: protein > vitamin_fiber > liquid > carb (先判更具体的)
+export const BREAKFAST_CARB_KEYWORDS = [
+  '包子','馒头','花卷','面包','吐司','粥','麦片','燕麦','米饭','米线',
+  '面条','面','饭团','三明治','油条','烧饼','锅贴','饺','春饼','米糕','薯',
+];
+export const BREAKFAST_PROTEIN_KEYWORDS = [
+  '蛋','蛋羹','鸡蛋','培根','火腿','瘦肉','牛奶','酸奶','豆浆','豆腐脑',
+  '腐竹','鸡丝','鱼片','虾','瘦肉粥','皮蛋','奶酪','芝士','肠','肉',
+];
+export const BREAKFAST_VITAMIN_FIBER_KEYWORDS = [
+  '蔬菜','青菜','番茄','黄瓜','胡萝卜','菠菜','油菜','生菜','沙拉',
+  '苹果','香蕉','橙','梨','蓝莓','草莓','水果','果','果汁','蔬果汁',
+  '杂粮','坚果','核桃','杏仁','南瓜','红薯','玉米',
+];
+export const BREAKFAST_LIQUID_KEYWORDS = [
+  '温水','果汁','豆浆','米浆','汤','茶','奶茶','咖啡','柠檬水','蜂蜜水','米汤',
+];
+
+export type BreakfastNutritionSlot = 'carb' | 'protein' | 'vitamin_fiber' | 'liquid' | 'unknown';
+
+export function classifyBreakfastSlot(dish: { title_zh?: string | null }): BreakfastNutritionSlot {
+  const t = dish.title_zh || '';
+  if (BREAKFAST_PROTEIN_KEYWORDS.some(kw => t.includes(kw))) return 'protein';
+  if (BREAKFAST_VITAMIN_FIBER_KEYWORDS.some(kw => t.includes(kw))) return 'vitamin_fiber';
+  if (BREAKFAST_LIQUID_KEYWORDS.some(kw => t.includes(kw))) return 'liquid';
+  if (BREAKFAST_CARB_KEYWORDS.some(kw => t.includes(kw))) return 'carb';
+  return 'unknown';
+}
+
 // §G (TICKET-006) wet drink mutex — 老板反馈早餐"粥+玉米汁同框" bug.
 // root cause: combo staple/side keywords 误命中 wet drink 类菜 (如 '红薯粥'
 // 串在 staple slot). 修复 A 已删 staple 里的 '红薯粥', B 这层在 resolveCombo
@@ -240,7 +272,7 @@ function shuffleSeeded<T>(arr: T[], seed: number): T[] {
 // null 让 missingSlots backfill 路径替换. 关键词覆盖粥/汁/浆/糊/羹 5 类
 // (不含'汤' 因 '汤圆' 是甜点; 不含'羹' 因 '鸡蛋羹' 是蛋类 side, 真正 wet drink
 // 的 '银耳莲子羹' 已在 drink slot 不触发 mutex).
-const WET_DRINK_KEYWORDS = ['粥', '汁', '浆', '糊'];
+export const WET_DRINK_KEYWORDS = ['粥', '汁', '浆', '糊'];
 function isWetDrink(titleZh: string): boolean {
   return WET_DRINK_KEYWORDS.some(kw => titleZh.includes(kw));
 }
