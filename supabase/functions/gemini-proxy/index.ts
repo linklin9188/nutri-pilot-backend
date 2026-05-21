@@ -29,6 +29,7 @@ const ENDPOINT_LIMITS: Record<string, number> = {
   recipe:         30,  // AI 菜谱生成
   chat:           30,  // Day 2 ChatAgent — dispatch goes through handleChatEndpoint (5-rule throttling, SSE stream)
   translate:      50,  // Day 4 cook-step translation (zh → en/tl/id) — dispatch via handleTranslateEndpoint
+  health_tag:     2000, // TICKET-20260521-010 — dishes.health_benefit_tags 12 wellness backfill (script-only, dedicated user_id 'backfill-bot')
 };
 
 const DEFAULT_MODEL = "gemini-2.5-flash";
