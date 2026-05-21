@@ -12,6 +12,11 @@ interface DishWithCook {
   title_en?: string;
   image_url?: string;
   cook_steps_json?: CookStep[] | null;
+  // UI 015 §K — Database 012 §B 添加的 3 列。Backend 011 ship 后约 500-600 道菜
+  // 灌入 video_url；其他菜 NULL → 显示 "Tutorial coming soon" 灰色占位。
+  video_url?: string | null;
+  video_lang?: string | null;
+  video_platform?: string | null;
 }
 
 interface TimerState {
@@ -410,6 +415,27 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
 
       <main className="flex-1 px-5 pb-6 flex flex-col gap-4">
 
+        {/* UI 015 §K — Watch tutorial video 按钮：dish.video_url 存在时红色显示
+            外链 YouTube/Bilibili 教程；NULL → 灰色 "Tutorial coming soon" 占位。
+            Database 012 §B 加 3 列；Backend 011 ship 灌入 ~500-600 道菜的 video_url。 */}
+        {dish.video_url ? (
+          <a href={dish.video_url} target="_blank" rel="noopener noreferrer"
+            className="block py-3 px-5 rounded-2xl text-center font-bold active:scale-95 transition-transform"
+            style={{
+              background: 'linear-gradient(135deg, #FF4757, #FF6B6B)',
+              color: '#FFFFFF', fontSize: 15,
+              boxShadow: '0 4px 16px rgba(255,71,87,0.3)',
+            }}>
+            🎬 {t4('Watch tutorial', '看视频教程', 'Manood ng tutorial', 'Tonton tutorial')}
+            {dish.video_lang && <span className="opacity-80 ml-1" style={{ fontSize: 12 }}> · {dish.video_lang.toUpperCase()}</span>}
+          </a>
+        ) : (
+          <div className="block py-3 px-5 rounded-2xl text-center"
+            style={{ background: 'rgba(0,0,0,0.04)', color: 'rgba(0,0,0,0.35)', fontSize: 13 }}>
+            {t4('Tutorial coming soon', '视频教程稍后上架', 'Susunod ang tutorial', 'Tutorial segera')}
+          </div>
+        )}
+
         {/* Heat level indicator — labels come from a 4-language table
             keyed by heat.level so 大火/中火/小火 etc. translate properly. */}
         {heatCfg && (() => {
@@ -667,7 +693,7 @@ export default function HelperCook() {
         if (singleDishId) {
           const { data } = await supabase
             .from('dishes')
-            .select('id, title_zh, title_en, image_url, cook_steps_json')
+            .select('id, title_zh, title_en, image_url, cook_steps_json, video_url, video_lang, video_platform')
             .eq('id', singleDishId)
             .single();
           if (data) {
@@ -686,7 +712,7 @@ export default function HelperCook() {
 
         const { data } = await supabase
           .from('dishes')
-          .select('id, title_zh, title_en, image_url, cook_steps_json')
+          .select('id, title_zh, title_en, image_url, cook_steps_json, video_url, video_lang, video_platform')
           .in('id', ids);
 
         if (data && data.length > 0) {
