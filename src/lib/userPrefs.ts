@@ -255,7 +255,14 @@ export function getUserPrefs(): UserPrefs {
       // selecting 'spicy' as a taste implies spiceLevel='hot'.
       const userTasteData = readUserTaste();
       const spiceLevel = (prefs.spice ?? userTasteData.impliedSpice ?? 'medium') as UserPrefs['spiceLevel'];
-      const avoidList  = prefs.avoid ?? ['none'];
+      // TICKET-010 §B — array coercion. Legacy quickPrefs may carry avoid /
+      // health as a plain string (single value pre-multi-select migration); a
+      // raw for-of on a string then iterates *characters* and crashes
+      // resolveHealthFilters / AVOID_OPTION_MAP lookup. Force array shape so
+      // getUserPrefs never throws on a stale localStorage payload.
+      const avoidList: string[] = Array.isArray(prefs.avoid)
+        ? prefs.avoid
+        : (typeof prefs.avoid === 'string' && prefs.avoid ? [prefs.avoid] : ['none']);
 
       const avoidTags:        string[] = [];
       const avoidIngredients: string[] = [];
@@ -276,8 +283,11 @@ export function getUserPrefs(): UserPrefs {
         avoidLabels.push(mapping.label);
       }
 
-      // Health conditions
-      const healthConditions = (prefs.health ?? ['none']).filter(h => h !== 'none');
+      // Health conditions — same defensive coercion as avoidList above.
+      const healthList: string[] = Array.isArray(prefs.health)
+        ? prefs.health
+        : (typeof prefs.health === 'string' && prefs.health ? [prefs.health] : ['none']);
+      const healthConditions = healthList.filter(h => h !== 'none');
       const healthFilters = resolveHealthFilters(healthConditions);
 
       return {
@@ -301,7 +311,14 @@ export function getUserPrefs(): UserPrefs {
         ...readV3Axes(),
         avoidLabels,
       };
-    } catch { /* fall through */ }
+    } catch (e) {
+      // TICKET-010 §B — was silent fall-through. Surface to dev tools so
+      // a corrupt quickPrefs payload (e.g. user edited localStorage, prefs
+      // schema drift, JSON.parse on truncated string) is at least visible
+      // when老板 / β user reports "menu won't load". Still falls through to
+      // legacy branch.
+      console.warn('[getUserPrefs] quickPrefs parse failed, falling back to legacy:', e);
+    }
   }
 
   // ── Legacy nutri_prefs fallback ───────────────────────────────────────────
