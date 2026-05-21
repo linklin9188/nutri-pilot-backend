@@ -51,6 +51,7 @@ export const DISH_FIELDS = [
   'salt_level',
   'sugar_level',
   'protein_source',
+  'protein_main_class',
   'cook_method',
   'cultural_note',
   'is_kid_friendly',

@@ -309,8 +309,12 @@ export function imageOnboardingScore(dish: any, imagePrefs: ImagePrefs, mealType
   const psrc  = (Array.isArray(dish.protein_source) ? dish.protein_source : []) as string[];
 
   // axis 32 — protein_main_class 15% (UI red_meat/white_meat/veggie/seafood → DB red/white/veg/seafood)
+  // TICKET-011: 优先读 dishes.protein_main_class DB 列 (Database 060 backfill 已 100% 填充),
+  // fallback _proteinClassOf 推断. 218 道 main_ingredient='other'/NULL 在旧路径上 0 命中,
+  // 改读 DB 列后 198 道命中 (axis 32 是 15% 最大权重).
   if (imagePrefs.protein_main_class?.length) {
-    const cls = _proteinClassOf(mi);
+    const pmcDb = (dish.protein_main_class ?? '') as string;
+    const cls = pmcDb || _proteinClassOf(mi);
     const matchDb = imagePrefs.protein_main_class.some(ui =>
       (PROTEIN_CLASS_UI_TO_DB[ui] ?? ui) === cls
     );
