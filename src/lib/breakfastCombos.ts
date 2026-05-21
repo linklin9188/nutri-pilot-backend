@@ -138,7 +138,8 @@ export const BREAKFAST_COMBOS: BreakfastCombo[] = [
     name: '养生家常 · 燕麦小米',
     hometowns: ['*'],
     drink:  ['燕麦粥', '小米粥', '八宝粥', '银耳莲子', '黑芝麻糊'],
-    staple: ['蒸红薯', '红薯粥', '玉米', '蒸南瓜', '全麦馒头', '馒头'],
+    // §G (TICKET-006) wet drink mutex — '红薯粥' 移走 (粥类归 drink slot, 避免 staple/drink 同框双粥)
+    staple: ['蒸红薯', '玉米', '蒸南瓜', '全麦馒头', '馒头'],
     side:   ['鸡蛋羹', '蒸蛋', '茶叶蛋', '凉拌黄瓜'],
     description: '清淡养胃，适合老人 / 孕妇 / 病后恢复',
   },
@@ -147,7 +148,8 @@ export const BREAKFAST_COMBOS: BreakfastCombo[] = [
     name: '养生轻早餐 · 银耳莲子',
     hometowns: ['*'],
     drink:  ['银耳莲子', '银耳莲子羹', '燕麦粥', '小米粥', '汤圆'],
-    staple: ['蒸南瓜', '红糖馒头', '红薯粥'],
+    // §G (TICKET-006) wet drink mutex — '红薯粥' 移走 (drink slot 已含 5 个粥/羹/汤圆)
+    staple: ['蒸南瓜', '红糖馒头', '蒸红薯'],
     side:   ['茶叶蛋', '鸡蛋羹'],
     description: '温和滋补，养脾胃',
   },
@@ -231,6 +233,18 @@ function shuffleSeeded<T>(arr: T[], seed: number): T[] {
   return out;
 }
 
+// §G (TICKET-006) wet drink mutex — 老板反馈早餐"粥+玉米汁同框" bug.
+// root cause: combo staple/side keywords 误命中 wet drink 类菜 (如 '红薯粥'
+// 串在 staple slot). 修复 A 已删 staple 里的 '红薯粥', B 这层在 resolveCombo
+// 内做兜底: drink slot 已 resolve 后, staple/side 若也是 wet drink 类 → 置
+// null 让 missingSlots backfill 路径替换. 关键词覆盖粥/汁/浆/糊/羹 5 类
+// (不含'汤' 因 '汤圆' 是甜点; 不含'羹' 因 '鸡蛋羹' 是蛋类 side, 真正 wet drink
+// 的 '银耳莲子羹' 已在 drink slot 不触发 mutex).
+const WET_DRINK_KEYWORDS = ['粥', '汁', '浆', '糊'];
+function isWetDrink(titleZh: string): boolean {
+  return WET_DRINK_KEYWORDS.some(kw => titleZh.includes(kw));
+}
+
 // (pickCombo removed 2026-05-17 — superseded by listEligibleCombos +
 // pool-aware rotation in pickBreakfastCombo. The old version returned a
 // combo without checking whether the pool could resolve any slot, which
@@ -274,7 +288,7 @@ function listEligibleCombos(
 /** Internal: resolve a combo against a dish pool, returning the slots. */
 function resolveCombo(combo: BreakfastCombo, pool: BreakfastPickInput['pool'], dayIndex: number): ResolvedSlot[] {
   const used = new Set<string>();
-  return (['drink', 'staple', 'side'] as const).map((slot, slotIndex) => {
+  const slots = (['drink', 'staple', 'side'] as const).map((slot, slotIndex) => {
     const keywords = combo[slot];
     // §G (TICKET-005) seed = dayIndex * 31 + slotIndex → 同 dayIndex 稳定,
     // 跨 day 自动轮换. slotIndex (drink=0 / staple=1 / side=2) 让 3 个 slot
@@ -282,8 +296,23 @@ function resolveCombo(combo: BreakfastCombo, pool: BreakfastPickInput['pool'], d
     const seed = (dayIndex * 31 + slotIndex) | 0;
     const dish = resolveSlot(pool, keywords, used, seed);
     if (dish) used.add(dish.id);
-    return { slot, dish, candidates: keywords };
+    return { slot, dish, candidates: keywords } as ResolvedSlot;
   });
+
+  // §G (TICKET-006) wet drink mutex — drink slot 已 resolve, staple/side
+  // 若也命中 wet drink 类菜 (粥/汁/浆/糊/羹) → 置 null, missingSlots backfill 替换.
+  const drinkDish = slots[0].dish;
+  if (drinkDish) {
+    for (let i = 1; i < slots.length; i++) {
+      const d = slots[i].dish;
+      if (d && isWetDrink(d.title_zh)) {
+        used.delete(d.id);
+        slots[i].dish = null;
+      }
+    }
+  }
+
+  return slots;
 }
 
 export function pickBreakfastCombo(input: BreakfastPickInput): BreakfastPickResult {
