@@ -196,25 +196,38 @@ const QUESTIONS_V3: QuestionV3[] = [
     ],
   },
 
-  // Q10 — 完全不能吃（chips 多选可空）
+  // Q10 — 完全不能吃（chips 多选可空，14 chips：海鲜系 + 8 大食物过敏原 +
+  // 宗教文化 + 个人不喜欢 + 其他自填）。'other' chip 选中后在 chip 网格下方
+  // 显示 input，commit 时把 'other' 转写成 'other:<用户文本>'。
   {
-    id: 'avoid',
+    id: 'strict_avoid',
     emoji: '🚫',
     question: '有什么是完全不能吃的吗？',
-    sub: '可空 — 真过敏 / 戒口的才选。',
+    sub: '可空可多选（真过敏 / 宗教 / 不喜欢）。',
     multi: true,
     minSelect: 0,
     chips: true,
     cols: 2,
     options: [
-      { value: 'seafood',   label: '海鲜过敏',   emoji: '🦐' },
-      { value: 'pork',      label: '宗教不吃猪', emoji: '🐖' },
-      { value: 'beef_lamb', label: '不吃牛羊',   emoji: '🐄' },
-      { value: 'all_meat',  label: '全素',       emoji: '🥦' },
-      { value: 'peanut',    label: '花生',       emoji: '🥜' },
-      { value: 'dairy',     label: '乳制品',     emoji: '🥛' },
-      { value: 'cilantro',  label: '香菜',       emoji: '🌿' },
-      { value: 'innards',   label: '内脏',       emoji: '🫀' },
+      // 海鲜系
+      { value: 'seafood',       label: '海鲜过敏（虾蟹贝）',          emoji: '🦐' },
+      { value: 'fish',          label: '鱼过敏',                      emoji: '🐟' },
+      // 8 大食物过敏原
+      { value: 'dairy',         label: '牛奶/乳制品过敏',             emoji: '🥛' },
+      { value: 'eggs',          label: '鸡蛋过敏',                    emoji: '🥚' },
+      { value: 'gluten',        label: '麸质过敏（小麦大麦）',        emoji: '🌾' },
+      { value: 'soy',           label: '大豆过敏',                    emoji: '🫘' },
+      { value: 'tree_nuts',     label: '树坚果过敏（杏仁核桃腰果）',  emoji: '🌰' },
+      { value: 'peanut',        label: '花生过敏',                    emoji: '🥜' },
+      // 宗教 / 文化
+      { value: 'pork_religion', label: '宗教不吃猪',                  emoji: '🚫' },
+      { value: 'no_beef_lamb',  label: '不吃牛羊',                    emoji: '🐄' },
+      { value: 'vegetarian',    label: '严格素食',                    emoji: '🥦' },
+      // 个人不喜欢
+      { value: 'cilantro',      label: '香菜',                        emoji: '🌿' },
+      { value: 'innards',       label: '内脏',                        emoji: '🫀' },
+      // 兜底自填
+      { value: 'other',         label: '其他（自填）',                emoji: '➕' },
     ],
   },
 ];
@@ -262,10 +275,11 @@ async function persistProfileToDb(answers: Record<string, any>): Promise<void> {
   const taste_pref       = deriveTastePref(answers);
   const tableStyle       = answers.table_style as string | undefined;
   const hometown_cuisine = (tableStyle && TABLE_STYLE_MAP[tableStyle]?.cuisine) ?? null;
-  // avoid_tags — schema 期望 flavor_tag 兼容值，过滤掉 v3 新 id（pork/beef_lamb/all_meat）
-  // 这些通过 localStorage avoid 走 ingredient-level 过滤路径。
-  const avoidArr = (answers.avoid ?? []) as string[];
-  const avoid_tags = avoidArr.filter(a => a === 'seafood' || a === 'peanut' || a === 'dairy' || a === 'cilantro' || a === 'innards');
+  // avoid_tags — TICKET-006 §C：user_profiles.avoid_tags 是 text[]（v2 schema），
+  // 直接写 strict_avoid 数组，不再做 enum 白名单过滤。新 axis（fish/eggs/gluten/
+  // soy/tree_nuts/pork_religion/no_beef_lamb/vegetarian/other:*）由 Algorithm 006
+  // 后续解析。
+  const avoid_tags = (answers.strict_avoid ?? []) as string[];
   await supabase.from('user_profiles').upsert(
     {
       id:               userId,
@@ -284,6 +298,9 @@ export default function QuickSetup() {
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [multiSel, setMultiSel] = useState<string[]>([]);
+  // Q10 "其他自填" 文本。仅在 strict_avoid 题 + multiSel.includes('other') 时
+  // 用到；commit 时把 'other' 转写为 'other:<text>' 推入 strict_avoid 数组。
+  const [otherText, setOtherText] = useState('');
 
   // visibleIndices 根据当前 answers 动态计算 — 比如 Q1 没选海鲜，Q6 不会出现。
   // step 索引是 QUESTIONS_V3 绝对 index，但 progress / navigation 用 visible 序。
@@ -308,6 +325,7 @@ export default function QuickSetup() {
     }
     setStep(fresh[pos + 1]);
     setMultiSel([]);
+    setOtherText('');
   };
 
   const handleSingle = (id: string) => {
@@ -317,9 +335,17 @@ export default function QuickSetup() {
   };
 
   const commitMulti = (sel: string[]) => {
-    const next = { ...answers, [q.id]: sel };
+    let finalSel = sel;
+    // Q10 strict_avoid: 把 'other' chip 转写为 'other:<用户输入>'，空文本则丢弃 chip。
+    if (q.id === 'strict_avoid' && sel.includes('other')) {
+      const trimmed = otherText.trim();
+      finalSel = sel.filter(x => x !== 'other');
+      if (trimmed) finalSel.push(`other:${trimmed}`);
+    }
+    const next = { ...answers, [q.id]: finalSel };
     setAnswers(next);
     setMultiSel([]);
+    setOtherText('');
     goToNext(next);
   };
 
@@ -338,6 +364,9 @@ export default function QuickSetup() {
     if (multiSel.length === 0) return;
     const minSel = q.minSelect ?? 1;
     if (multiSel.length < minSel) return;
+    // TICKET-006: 用户选了 'other'（其他自填）→ 必须等用户输入 + 显式点"完成 →"，
+    // 否则 1.8s debounce 会提前把 'other' commit 成空（trimmed=''→丢弃）。
+    if (q.id === 'strict_avoid' && multiSel.includes('other')) return;
     debounceRef.current = setTimeout(() => commitMulti(multiSel), 1800);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -385,8 +414,17 @@ export default function QuickSetup() {
     localStorage.setItem('userTaste', tastePref === 'light' ? 'light' : 'default');
     localStorage.setItem('userDiet',  'comfort');  // v3 没显式 goal 题
     localStorage.setItem('userSpice', oilLevel === 'rich' ? 'medium' : 'mild');
-    const avoidArr = (finalAnswers.avoid ?? []) as string[];
-    localStorage.setItem('userAvoid', avoidArr.length ? avoidArr.join(',') : 'none');
+    // TICKET-006: strict_avoid 数组直接写入 localStorage（含 'other:<text>' 形式），
+    // 同时把 other 文本拆出存独立 key 供 UI 回填 / 调试。
+    const strictAvoidArr = (finalAnswers.strict_avoid ?? []) as string[];
+    localStorage.setItem('strict_avoid', JSON.stringify(strictAvoidArr));
+    const otherEntry = strictAvoidArr.find(x => x.startsWith('other:'));
+    if (otherEntry) {
+      localStorage.setItem('strict_avoid_other_text', otherEntry.slice('other:'.length));
+    } else {
+      localStorage.removeItem('strict_avoid_other_text');
+    }
+    localStorage.setItem('userAvoid', strictAvoidArr.length ? strictAvoidArr.join(',') : 'none');
 
     // 匿名 userId
     if (!localStorage.getItem('isLoggedIn')) {
@@ -478,7 +516,7 @@ export default function QuickSetup() {
           </div>
 
           {q.chips ? (
-            // Q10 — chips 风格（avoid 更紧凑）
+            // Q10 — chips 风格（strict_avoid 更紧凑 + other 自填 input）
             <div className="flex-1">
               <div className="flex flex-wrap gap-2">
                 {q.options.map(opt => {
@@ -496,6 +534,25 @@ export default function QuickSetup() {
                   );
                 })}
               </div>
+              {q.id === 'strict_avoid' && multiSel.includes('other') && (
+                <div className="mt-4">
+                  <input
+                    type="text"
+                    value={otherText}
+                    onChange={e => setOtherText(e.target.value)}
+                    placeholder="请输入其他过敏原（如：芒果 / 猕猴桃）"
+                    className="w-full px-4 py-3 rounded-xl text-white placeholder-white/30 focus:outline-none"
+                    style={{
+                      background: 'rgba(255,255,255,0.06)',
+                      border: '1.5px solid rgba(255,90,31,0.4)',
+                      fontSize: 14,
+                    }}
+                  />
+                  <p className="mt-2 text-white/35 font-light" style={{ fontSize: 11 }}>
+                    输完后点下方"完成 →"
+                  </p>
+                </div>
+              )}
             </div>
           ) : q.multi ? (
             <ImageGrid options={q.options} multi selected={multiSel} onToggle={toggleMulti} cols={q.cols} />
