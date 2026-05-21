@@ -40,13 +40,13 @@ const QUESTIONS_V3: QuestionV3[] = [
     multi: false,
     cols: 2,
     options: [
-      // TODO(database-012): swap img: '/onboarding/q0_*.jpg' 回字段（6 张图 ship 后）
-      { value: 'solo_w_kid',   label: '1 大 1 小',     desc: '单亲家庭',  emoji: '👤👶' },
-      { value: 'couple_1kid',  label: '2 大 1 小',     desc: '三口之家',  emoji: '👫👶' },
-      { value: 'couple_2kids', label: '2 大 2 小',     desc: '四口之家',  emoji: '👫👶👶' },
-      { value: 'couple_3kids', label: '2 大 3 小',     desc: '多孩家庭',  emoji: '👫👶👶👶' },
-      { value: 'three_gen',    label: '4 大 2 小',     desc: '三代同堂',  emoji: '👴👵👶👶' },
-      { value: 'custom',       label: '自定义 N 大 M 小', desc: '点开调',  emoji: '✏️' },
+      // Database 012 ship 6 张 q0_* placeholder (复制路径)；真图待 ship。
+      { value: 'solo_w_kid',   label: '1 大 1 小',     desc: '单亲家庭',  emoji: '👤👶',       img: '/onboarding/q0_solo_w_kid.jpg' },
+      { value: 'couple_1kid',  label: '2 大 1 小',     desc: '三口之家',  emoji: '👫👶',       img: '/onboarding/q0_couple_1kid.jpg' },
+      { value: 'couple_2kids', label: '2 大 2 小',     desc: '四口之家',  emoji: '👫👶👶',     img: '/onboarding/q0_couple_2kids.jpg' },
+      { value: 'couple_3kids', label: '2 大 3 小',     desc: '多孩家庭',  emoji: '👫👶👶👶',   img: '/onboarding/q0_couple_3kids.jpg' },
+      { value: 'three_gen',    label: '4 大 2 小',     desc: '三代同堂',  emoji: '👴👵👶👶',   img: '/onboarding/q0_three_gen.jpg' },
+      { value: 'custom',       label: '自定义 N 大 M 小', desc: '点开调',  emoji: '✏️',         img: '/onboarding/q0_custom.jpg' },
     ],
   },
 
