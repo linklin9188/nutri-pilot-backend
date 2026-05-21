@@ -34,6 +34,8 @@ const LIMIT_ARG = process.argv.find(a => a.startsWith('--limit='));
 const LIMIT     = LIMIT_ARG ? parseInt(LIMIT_ARG.split('=')[1], 10) : Infinity;
 const DRY_RUN   = process.argv.includes('--dry-run');
 const RESUME    = process.argv.includes('--resume'); // skip dishes that already have any health_benefit_tags
+const LT_ARG    = process.argv.find(a => a.startsWith('--lt=')); // TICKET-011 §A — fill dishes WHERE array_length<N (NULL counts as 0)
+const LT_THRESH = LT_ARG ? parseInt(LT_ARG.split('=')[1], 10) : null;
 const PAUSE     = 600; // ms between calls — gemini-proxy is rate-limited, be polite
 
 const WELLNESS_TAGS = [
@@ -203,11 +205,20 @@ async function main() {
   }));
 
   // --resume: drop dishes that already have ≥1 health_benefit_tag (only fill the truly empty rows)
-  const candidates = RESUME
-    ? dishes.filter(d => !d.health_benefit_tags || d.health_benefit_tags.length === 0)
-    : dishes;
+  // --lt=N (TICKET-011 §A): drop dishes whose tag count is already ≥ N (NULL counts as 0)
+  let candidates: DishRow[];
+  let mode = '';
+  if (LT_THRESH !== null) {
+    candidates = dishes.filter(d => (d.health_benefit_tags?.length ?? 0) < LT_THRESH);
+    mode = ` (lt=${LT_THRESH} mode — array_length<${LT_THRESH} only)`;
+  } else if (RESUME) {
+    candidates = dishes.filter(d => !d.health_benefit_tags || d.health_benefit_tags.length === 0);
+    mode = ' (resume mode — NULL/empty only)';
+  } else {
+    candidates = dishes;
+  }
   const subset = isFinite(LIMIT) ? candidates.slice(0, LIMIT) : candidates;
-  console.log(`📊 Total: ${dishes.length} | Candidates: ${candidates.length}${RESUME ? ' (resume mode — NULL/empty only)' : ''} | Processing: ${subset.length}\n`);
+  console.log(`📊 Total: ${dishes.length} | Candidates: ${candidates.length}${mode} | Processing: ${subset.length}\n`);
 
   if (DRY_RUN) {
     console.log('🔍 DRY RUN — preview tags only, no DB writes\n');
