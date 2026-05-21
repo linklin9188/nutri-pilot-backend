@@ -289,19 +289,19 @@ export default function HelperHome() {
   return (
     <div
       className="min-h-screen flex flex-col max-w-md mx-auto relative overflow-hidden"
-      style={{ background: "#0a0a0a", paddingBottom: 40 }}
+      style={{ background: "#FEF7E5", paddingBottom: 40, color: "#1a1a1a" }}
     >
-      {/* Ambient glow */}
+      {/* Ambient glow — UI 014 §K: 米色背景下淡橙 0.06 烘托温暖感 (替代原黑底绿光) */}
       <div className="absolute inset-0 pointer-events-none z-0" style={{
-        background: "radial-gradient(ellipse at 50% 0%, rgba(37,211,102,0.12) 0%, transparent 55%)",
+        background: "radial-gradient(ellipse at 50% 0%, rgba(255,90,31,0.06) 0%, transparent 55%)",
       }} />
 
       {/* Header */}
       <div className="relative z-10 px-5 pt-14 pb-5">
         <div className="flex items-center justify-between mb-3">
           <div>
-            <p style={{ fontSize: 13, color: "rgba(255,255,255,0.38)" }}>{greeting}</p>
-            <h1 className="font-serif font-black text-white mt-0.5" style={{ fontSize: 28 }}>
+            <p style={{ fontSize: 13, color: "rgba(0,0,0,0.55)" }}>{greeting}</p>
+            <h1 className="font-serif font-black mt-0.5" style={{ fontSize: 28, color: "#1a1a1a" }}>
               {helperName || t3("My Tasks", "我的任务", "Mga Gawain Ko")}
             </h1>
           </div>
@@ -321,10 +321,10 @@ export default function HelperHome() {
 
         {/* Date + dish count */}
         <div className="flex items-center gap-2 px-3 py-2 rounded-xl"
-          style={{ background: "rgba(255,255,255,0.05)" }}>
-          <span className="material-symbols-outlined text-white/40" style={{ fontSize: 14 }}>calendar_today</span>
-          <span style={{ fontSize: 12, color: "rgba(255,255,255,0.45)" }}>{dateLabel}</span>
-          <span className="ml-auto" style={{ fontSize: 11, color: "rgba(255,255,255,0.28)" }}>
+          style={{ background: "rgba(0,0,0,0.04)" }}>
+          <span className="material-symbols-outlined" style={{ fontSize: 14, color: "rgba(0,0,0,0.45)" }}>calendar_today</span>
+          <span style={{ fontSize: 12, color: "rgba(0,0,0,0.6)" }}>{dateLabel}</span>
+          <span className="ml-auto" style={{ fontSize: 11, color: "rgba(0,0,0,0.45)" }}>
             {dishes.length > 0
               ? t3(`${dishes.length} dishes today`, `今日 ${dishes.length} 道菜`, `${dishes.length} ulam ngayon`)
               : t3("No menu yet", "还没有菜单", "Wala pang menu")}
@@ -341,14 +341,14 @@ export default function HelperHome() {
           text + RLS anon-first）。UI 这里加 placeholder 让用户至少看到原因。 */}
       {dishes.length === 0 && isLinked && (
         <div className="relative z-10 mx-5 mb-4 px-4 py-6 rounded-2xl text-center"
-          style={{ background: "rgba(255,255,255,0.04)", border: "1px dashed rgba(255,255,255,0.10)" }}>
+          style={{ background: "rgba(0,0,0,0.04)", border: "1px dashed rgba(0,0,0,0.12)" }}>
           <div style={{ fontSize: 36, marginBottom: 6 }}>📋</div>
-          <p className="font-semibold text-white" style={{ fontSize: 14, marginBottom: 4 }}>
+          <p className="font-semibold" style={{ fontSize: 14, marginBottom: 4, color: "#1a1a1a" }}>
             {t3("Waiting for employer to plan today's menu",
                 "等雇主生成今日菜单",
                 "Hinihintay ang employer na gumawa ng menu ngayon")}
           </p>
-          <p style={{ fontSize: 11, color: "rgba(255,255,255,0.40)", lineHeight: 1.5 }}>
+          <p style={{ fontSize: 11, color: "rgba(0,0,0,0.55)", lineHeight: 1.5 }}>
             {t3("Once the employer saves a menu, dishes will show up here automatically.",
                 "雇主一保存菜单就会自动出现",
                 "Kapag may menu na ang employer, lalabas dito ang mga ulam")}
@@ -371,10 +371,10 @@ export default function HelperHome() {
             return (
               <div key={key}>
                 <div className="flex items-baseline gap-2 mb-2">
-                  <p style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", letterSpacing: "0.10em", fontWeight: 700 }}>
+                  <p style={{ fontSize: 11, color: "rgba(0,0,0,0.65)", letterSpacing: "0.10em", fontWeight: 700 }}>
                     {label}
                   </p>
-                  <span style={{ fontSize: 10, color: "rgba(255,255,255,0.30)" }}>
+                  <span style={{ fontSize: 10, color: "rgba(0,0,0,0.45)" }}>
                     {list.length} {t3(list.length > 1 ? 'dishes' : 'dish', '道', 'ulam')}
                   </span>
                 </div>
@@ -417,9 +417,9 @@ export default function HelperHome() {
           </div>
         ) : isLinked ? (
           <div className="flex items-center gap-3 px-4 py-3 rounded-2xl"
-            style={{ background: "rgba(37,211,102,0.08)", border: "1px solid rgba(37,211,102,0.15)" }}>
+            style={{ background: "rgba(37,211,102,0.10)", border: "1px solid rgba(37,211,102,0.25)" }}>
             <span className="material-symbols-outlined text-[#25D366]" style={{ fontSize: 18, fontVariationSettings: "'FILL' 1" }}>link</span>
-            <p style={{ fontSize: 12, color: "rgba(255,255,255,0.55)" }}>
+            <p style={{ fontSize: 12, color: "rgba(0,0,0,0.6)" }}>
               {t3("Connected to employer household",
                   "已连接雇主家庭",
                   "Konektado sa employer")}
@@ -427,8 +427,8 @@ export default function HelperHome() {
           </div>
         ) : showCodeInput ? (
           <div className="flex flex-col gap-2 px-4 py-4 rounded-2xl"
-            style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)" }}>
-            <p style={{ fontSize: 12, color: "rgba(255,255,255,0.6)", marginBottom: 4 }}>
+            style={{ background: "rgba(0,0,0,0.04)", border: "1px solid rgba(0,0,0,0.10)" }}>
+            <p style={{ fontSize: 12, color: "rgba(0,0,0,0.65)", marginBottom: 4 }}>
               {t3("Enter the 6-digit code from your employer:",
                   "输入雇主的 6 位邀请码：",
                   "Ilagay ang 6-digit code mula sa employer:")}
@@ -440,7 +440,7 @@ export default function HelperHome() {
                 placeholder="000000"
                 maxLength={6}
                 className="flex-1 rounded-xl px-4 py-2.5 font-black text-center tracking-[0.25em]"
-                style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.15)", color: "white", fontSize: 20, outline: "none" }}
+                style={{ background: "rgba(0,0,0,0.04)", border: "1px solid rgba(0,0,0,0.15)", color: "#1a1a1a", fontSize: 20, outline: "none" }}
               />
               <button
                 onClick={handleJoinHousehold}
@@ -450,8 +450,8 @@ export default function HelperHome() {
                 {codeLoading ? "..." : t3("Join", "加入", "Sumali")}
               </button>
             </div>
-            {codeError && <p style={{ fontSize: 11, color: "#ff6b6b" }}>{codeError}</p>}
-            <button onClick={() => setShowCodeInput(false)} style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", marginTop: 2 }}>
+            {codeError && <p style={{ fontSize: 11, color: "#d63838" }}>{codeError}</p>}
+            <button onClick={() => setShowCodeInput(false)} style={{ fontSize: 11, color: "rgba(0,0,0,0.45)", marginTop: 2 }}>
               {t3("Cancel", "取消", "Kanselahin")}
             </button>
           </div>
@@ -459,19 +459,19 @@ export default function HelperHome() {
           <button
             onClick={() => setShowCodeInput(true)}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl active:scale-[0.98] transition-all"
-            style={{ background: "rgba(255,255,255,0.04)", border: "1px dashed rgba(255,255,255,0.12)" }}>
-            <span className="material-symbols-outlined text-white/30" style={{ fontSize: 18 }}>link</span>
-            <p style={{ fontSize: 13, color: "rgba(255,255,255,0.35)" }}>
+            style={{ background: "rgba(0,0,0,0.03)", border: "1px dashed rgba(0,0,0,0.18)" }}>
+            <span className="material-symbols-outlined" style={{ fontSize: 18, color: "rgba(0,0,0,0.4)" }}>link</span>
+            <p style={{ fontSize: 13, color: "rgba(0,0,0,0.55)" }}>
               {t3("Enter employer invite code", "输入雇主邀请码", "Ilagay ang employer invite code")}
             </p>
-            <span className="ml-auto" style={{ fontSize: 11, color: "rgba(255,255,255,0.2)" }}>›</span>
+            <span className="ml-auto" style={{ fontSize: 11, color: "rgba(0,0,0,0.35)" }}>›</span>
           </button>
         )}
       </div>
 
       {/* Task cards */}
       <div className="relative z-10 px-5 flex flex-col gap-3 mb-6">
-        <p style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", letterSpacing: "0.08em" }}>
+        <p style={{ fontSize: 10, color: "rgba(0,0,0,0.5)", letterSpacing: "0.08em" }}>
           {t3("TODAY'S TASKS", "今日任务", "MGA GAWAIN NGAYON")}
         </p>
         {TASKS.map(task => (
@@ -479,7 +479,7 @@ export default function HelperHome() {
             key={task.id}
             onClick={() => navigate(task.route)}
             className="w-full flex items-center gap-4 p-5 rounded-3xl transition-all active:scale-[0.97]"
-            style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}
+            style={{ background: "#FFFFFF", border: "1px solid rgba(0,0,0,0.06)", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}
           >
             <div className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0"
               style={{ background: task.gradient, boxShadow: `0 6px 20px ${task.shadow}` }}>
@@ -487,10 +487,10 @@ export default function HelperHome() {
                 style={{ fontSize: 26, fontVariationSettings: "'FILL' 1" }}>{task.icon}</span>
             </div>
             <div className="flex-1 text-left">
-              <p className="font-bold text-white" style={{ fontSize: 16 }}>{task.label}</p>
-              <p className="mt-0.5" style={{ fontSize: 12, color: "rgba(255,255,255,0.38)" }}>{task.desc}</p>
+              <p className="font-bold" style={{ fontSize: 16, color: "#1a1a1a" }}>{task.label}</p>
+              <p className="mt-0.5" style={{ fontSize: 12, color: "rgba(0,0,0,0.55)" }}>{task.desc}</p>
             </div>
-            <span className="material-symbols-outlined text-white/20" style={{ fontSize: 20 }}>chevron_right</span>
+            <span className="material-symbols-outlined" style={{ fontSize: 20, color: "rgba(0,0,0,0.3)" }}>chevron_right</span>
           </button>
         ))}
       </div>
@@ -500,14 +500,14 @@ export default function HelperHome() {
         <button
           onClick={handleInvite}
           className="w-full py-4 rounded-2xl flex items-center gap-3 active:scale-[0.98] transition-all"
-          style={{ background: "rgba(37,211,102,0.09)", border: "1px solid rgba(37,211,102,0.2)" }}
+          style={{ background: "rgba(37,211,102,0.12)", border: "1px solid rgba(37,211,102,0.30)" }}
         >
           <span style={{ fontSize: 22 }}>📲</span>
           <div className="flex-1 text-left">
-            <p className="font-semibold text-white" style={{ fontSize: 13 }}>
+            <p className="font-semibold" style={{ fontSize: 13, color: "#1a1a1a" }}>
               {t3("Invite helper friends", "邀请其他工人朋友", "Mag-imbita ng kaibigang helper")}
             </p>
-            <p style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>
+            <p style={{ fontSize: 11, color: "rgba(0,0,0,0.55)" }}>
               {t3("Share via WhatsApp · Earn 50 pts per referral",
                   "WhatsApp 分享 · 每位 50 分",
                   "WhatsApp · 50 puntos kada imbita")}
@@ -524,7 +524,7 @@ export default function HelperHome() {
       <div className="relative z-10 flex justify-center">
         <button
           onClick={() => { localStorage.removeItem("nutri_role"); navigate("/login"); }}
-          style={{ fontSize: 12, color: "rgba(255,255,255,0.18)" }}
+          style={{ fontSize: 12, color: "rgba(0,0,0,0.35)" }}
         >
           {t3("Switch account", "切换账号", "Lumipat ng account")}
         </button>

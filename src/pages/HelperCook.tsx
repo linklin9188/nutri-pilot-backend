@@ -72,20 +72,20 @@ function DishListScreen({ dishes, loading, onSelect }: {
   const dishTitle = (d: DishWithCook) =>
     isChinese ? (d.title_zh || d.title_en || '') : (d.title_en || d.title_zh || '');
   return (
-    <div className="min-h-screen flex flex-col max-w-md mx-auto" style={{ background: '#0a0a0a' }}>
+    <div className="min-h-screen flex flex-col max-w-md mx-auto" style={{ background: '#FEF7E5' }}>
       {/* Header */}
-      <header className="sticky top-0 z-50 px-5 pt-12 pb-4" style={{ background: '#0a0a0a' }}>
+      <header className="sticky top-0 z-50 px-5 pt-12 pb-4" style={{ background: '#FEF7E5' }}>
         <div className="flex items-center gap-3 mb-1">
           <button onClick={() => navigate(localStorage.getItem('nutri_role') === 'helper' ? '/helper' : '/')}
             className="w-9 h-9 rounded-full flex items-center justify-center active:scale-90 transition-transform"
-            style={{ background: 'rgba(255,255,255,0.08)' }}>
-            <span className="material-symbols-outlined text-white" style={{ fontSize: 20 }}>arrow_back</span>
+            style={{ background: 'rgba(0,0,0,0.06)' }}>
+            <span className="material-symbols-outlined" style={{ fontSize: 20, color: '#1a1a1a' }}>arrow_back</span>
           </button>
           <div>
-            <h1 className="text-white font-black" style={{ fontSize: 22 }}>
+            <h1 className="font-black" style={{ fontSize: 22, color: '#1a1a1a' }}>
               {t4("Today's Cooking", "今日烹饪", "Pagluluto Ngayon", "Masakan Hari Ini")}
             </h1>
-            <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>
+            <p style={{ fontSize: 11, color: 'rgba(0,0,0,0.55)' }}>
               {t4("Choose a dish to start", "选一道菜开始", "Pumili ng ulam", "Pilih hidangan untuk mulai")}
             </p>
           </div>
@@ -104,7 +104,7 @@ function DishListScreen({ dishes, loading, onSelect }: {
           return (
             <div className="flex flex-col items-center justify-center py-24 gap-3 px-8 text-center">
               <span className="text-5xl">🍽</span>
-              <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: 14, fontWeight: 600 }}>
+              <p style={{ color: 'rgba(0,0,0,0.65)', fontSize: 14, fontWeight: 600 }}>
                 {isEmployer
                   ? t4("No menu for today yet",
                        "今日还没有菜单",
@@ -132,7 +132,7 @@ function DishListScreen({ dishes, loading, onSelect }: {
             return (
               <button key={dish.id} onClick={() => onSelect(dish)}
                 className="w-full rounded-3xl overflow-hidden active:scale-[0.97] transition-transform text-left"
-                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                style={{ background: '#FFFFFF', border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
                 {/* Dish image */}
                 <div className="relative w-full" style={{ height: 140 }}>
                   {dish.image_url ? (
@@ -140,7 +140,7 @@ function DishListScreen({ dishes, loading, onSelect }: {
                       className="w-full h-full object-cover"
                       onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.04)' }}>
+                    <div className="w-full h-full flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.03)' }}>
                       <span style={{ fontSize: 40 }}>🍳</span>
                     </div>
                   )}
@@ -164,18 +164,18 @@ function DishListScreen({ dishes, loading, onSelect }: {
                 {/* Footer */}
                 <div className="px-4 py-3 flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined" style={{ fontSize: 15, color: hasSteps ? '#25D366' : 'rgba(255,255,255,0.3)' }}>
+                    <span className="material-symbols-outlined" style={{ fontSize: 15, color: hasSteps ? '#25D366' : 'rgba(0,0,0,0.4)' }}>
                       {hasSteps ? 'check_circle' : 'hourglass_empty'}
                     </span>
-                    <span style={{ fontSize: 12, color: hasSteps ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)' }}>
+                    <span style={{ fontSize: 12, color: hasSteps ? 'rgba(0,0,0,0.65)' : 'rgba(0,0,0,0.45)' }}>
                       {hasSteps
                         ? `${steps.length} ${t4('steps', '步', 'hakbang', 'langkah')}`
                         : t4('Steps generating…', '步骤生成中…', 'Ginagawa ang hakbang…', 'Sedang membuat langkah…')}
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full"
-                    style={{ background: hasSteps ? 'rgba(255,90,31,0.2)' : 'rgba(255,255,255,0.06)' }}>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: hasSteps ? '#FF5A1F' : 'rgba(255,255,255,0.25)' }}>
+                    style={{ background: hasSteps ? 'rgba(255,90,31,0.18)' : 'rgba(0,0,0,0.05)' }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: hasSteps ? '#FF5A1F' : 'rgba(0,0,0,0.35)' }}>
                       {hasSteps
                         ? t4('Start cooking ›', '开始烹饪 ›', 'Magsimulang magluto ›', 'Mulai memasak ›')
                         : t4('Not ready', '尚未准备', 'Hindi pa handa', 'Belum siap')}
@@ -330,23 +330,23 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
   // pipeline 还没跑到的 dish 暴露成"正在准备"提示而不是空白页。
   if (!step) {
     return (
-      <div className="min-h-screen flex flex-col max-w-md mx-auto" style={{ background: '#0a0a0a' }}>
-        <header className="sticky top-0 z-50 px-5 pt-12 pb-4" style={{ background: '#0a0a0a' }}>
+      <div className="min-h-screen flex flex-col max-w-md mx-auto" style={{ background: '#FEF7E5' }}>
+        <header className="sticky top-0 z-50 px-5 pt-12 pb-4" style={{ background: '#FEF7E5' }}>
           <div className="flex items-center gap-3">
             <button onClick={onBack}
               className="w-9 h-9 rounded-full flex items-center justify-center active:scale-90 transition-transform"
               style={{ background: 'rgba(255,255,255,0.08)' }}>
               <span className="material-symbols-outlined text-white" style={{ fontSize: 20 }}>arrow_back</span>
             </button>
-            <h1 className="text-white font-black" style={{ fontSize: 17 }}>{dishTitle(dish)}</h1>
+            <h1 className="font-black" style={{ fontSize: 17, color: '#1a1a1a' }}>{dishTitle(dish)}</h1>
           </div>
         </header>
         <main className="flex-1 flex flex-col items-center justify-center px-8 text-center gap-3">
           <span style={{ fontSize: 56 }}>👩‍🍳</span>
-          <p className="text-white font-bold" style={{ fontSize: 16 }}>
+          <p className="font-bold" style={{ fontSize: 16, color: '#1a1a1a' }}>
             {t4('Recipe is being prepared…', '小厨师正在准备菜谱…', 'Hinahanda ang recipe…', 'Resep sedang disiapkan…')}
           </p>
-          <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13, lineHeight: 1.5 }}>
+          <p style={{ color: 'rgba(0,0,0,0.55)', fontSize: 13, lineHeight: 1.5 }}>
             {t4('New recipes ship daily — check back tomorrow.',
                 '每天都有新菜谱上线，明天再来看看。',
                 'Bago ang mga recipe araw-araw — bumalik bukas.',
@@ -361,10 +361,10 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
   const hasTimer = durationSec > 0;
 
   return (
-    <div className="min-h-screen flex flex-col max-w-md mx-auto" style={{ background: '#0a0a0a' }}>
+    <div className="min-h-screen flex flex-col max-w-md mx-auto" style={{ background: '#FEF7E5' }}>
 
       {/* Header */}
-      <header className="sticky top-0 z-50 px-5 pt-12 pb-4" style={{ background: '#0a0a0a' }}>
+      <header className="sticky top-0 z-50 px-5 pt-12 pb-4" style={{ background: '#FEF7E5' }}>
         <div className="flex items-center gap-3 mb-3">
           <button onClick={onBack}
             className="w-9 h-9 rounded-full flex items-center justify-center active:scale-90 transition-transform"
@@ -372,10 +372,10 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
             <span className="material-symbols-outlined text-white" style={{ fontSize: 20 }}>arrow_back</span>
           </button>
           <div className="flex-1 min-w-0">
-            <h1 className="text-white font-black leading-tight" style={{ fontSize: 17 }}>
+            <h1 className="font-black leading-tight" style={{ fontSize: 17, color: '#1a1a1a' }}>
               {dishTitle(dish)}
             </h1>
-            <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>
+            <p style={{ fontSize: 11, color: 'rgba(0,0,0,0.55)' }}>
               {t4(
                 `Step ${currentIdx + 1} of ${steps.length} · ${completedCount} done`,
                 `第 ${currentIdx + 1} 步 / 共 ${steps.length} · 已完成 ${completedCount}`,
@@ -387,7 +387,7 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
         </div>
 
         {/* Progress bar */}
-        <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.1)' }}>
+        <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(0,0,0,0.08)' }}>
           <div className="h-full rounded-full transition-all duration-500"
             style={{ width: `${(completedCount / steps.length) * 100}%`, background: '#25D366' }} />
         </div>
@@ -400,7 +400,7 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
               style={{
                 width: i === currentIdx ? 24 : 8,
                 height: 8,
-                background: completed.has(i) ? '#25D366' : i === currentIdx ? '#FF5A1F' : 'rgba(255,255,255,0.15)',
+                background: completed.has(i) ? '#25D366' : i === currentIdx ? '#FF5A1F' : 'rgba(0,0,0,0.15)',
               }} />
           ))}
         </div>
@@ -449,19 +449,19 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
 
         {/* Step action text */}
         <div className="rounded-3xl px-5 py-5 flex-1"
-          style={{ background: isDone ? 'rgba(37,211,102,0.08)' : 'rgba(255,255,255,0.06)', border: `1.5px solid ${isDone ? 'rgba(37,211,102,0.25)' : 'rgba(255,255,255,0.1)'}` }}>
+          style={{ background: isDone ? 'rgba(37,211,102,0.10)' : '#FFFFFF', border: `1.5px solid ${isDone ? 'rgba(37,211,102,0.30)' : 'rgba(0,0,0,0.08)'}`, boxShadow: isDone ? 'none' : '0 2px 10px rgba(0,0,0,0.04)' }}>
           <div className="flex items-center gap-2 mb-3">
             <div className="w-8 h-8 rounded-full flex items-center justify-center font-black text-white text-[14px]"
               style={{ background: isDone ? '#25D366' : '#FF5A1F' }}>
               {isDone ? '✓' : step.step}
             </div>
-            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontWeight: 600 }}>
+            <span style={{ fontSize: 12, color: 'rgba(0,0,0,0.55)', fontWeight: 600 }}>
               {isDone
                 ? t4('Done ✓', '已完成 ✓', 'Tapos ✓', 'Selesai ✓')
                 : t4('Current step', '当前步骤', 'Kasalukuyang hakbang', 'Langkah saat ini')}
             </span>
           </div>
-          <p className="text-white leading-relaxed" style={{ fontSize: 17, fontWeight: 500, lineHeight: 1.6 }}>
+          <p className="leading-relaxed" style={{ fontSize: 17, fontWeight: 500, lineHeight: 1.6, color: '#1a1a1a' }}>
             {/* Single-language per i18n cleanup. zh / 繁 → action_zh;
                 en / tl / id → action_en (fallback to action_zh when EN
                 hasn't been translated). The old code rendered EN on top
@@ -481,10 +481,10 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
                 target
               </span>
               <div className="flex-1 min-w-0">
-                <div style={{ fontSize: 10, color: 'rgba(255,200,0,0.7)', fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 2 }}>
+                <div style={{ fontSize: 10, color: 'rgba(180,140,0,1)', fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 2 }}>
                   {t4('Done when', '完成标志', 'Tapos kapag', 'Selesai saat')}
                 </div>
-                <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.88)', fontWeight: 500, lineHeight: 1.5 }}>
+                <p style={{ fontSize: 14, color: 'rgba(0,0,0,0.85)', fontWeight: 500, lineHeight: 1.5 }}>
                   {isChinese ? (step.state_target_zh || step.state_target_en) : (step.state_target_en || step.state_target_zh)}
                 </p>
               </div>
@@ -515,13 +515,13 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
                   <button key={type} onClick={() => sendStepFeedback(type)}
                     className="rounded-2xl py-2.5 px-2 flex flex-col items-center gap-1 active:scale-95 transition-transform"
                     style={{
-                      background: acked ? 'rgba(37,211,102,0.16)' : 'rgba(255,255,255,0.05)',
-                      border: `1px solid ${acked ? 'rgba(37,211,102,0.35)' : 'rgba(255,255,255,0.10)'}`,
+                      background: acked ? 'rgba(37,211,102,0.16)' : '#FFFFFF',
+                      border: `1px solid ${acked ? 'rgba(37,211,102,0.35)' : 'rgba(0,0,0,0.08)'}`,
                     }}>
                     <span style={{ fontSize: 20, lineHeight: 1 }}>{acked ? '✓' : emoji}</span>
                     <span style={{
                       fontSize: 11, fontWeight: 600,
-                      color: acked ? '#25D366' : 'rgba(255,255,255,0.65)',
+                      color: acked ? '#25D366' : 'rgba(0,0,0,0.7)',
                       lineHeight: 1.2, textAlign: 'center',
                     }}>
                       {t4(label.en, label.zh, label.tl, label.id)}
@@ -538,13 +538,13 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
           <button onClick={handleTimer}
             className="w-full rounded-3xl py-5 flex flex-col items-center gap-2 active:scale-[0.97] transition-transform"
             style={{
-              background: timerDone ? 'rgba(37,211,102,0.12)' : timerRunning ? 'rgba(255,90,31,0.12)' : 'rgba(255,255,255,0.05)',
-              border: `1.5px solid ${timerDone ? 'rgba(37,211,102,0.3)' : timerRunning ? 'rgba(255,90,31,0.3)' : 'rgba(255,255,255,0.1)'}`,
+              background: timerDone ? 'rgba(37,211,102,0.12)' : timerRunning ? 'rgba(255,90,31,0.12)' : '#FFFFFF',
+              border: `1.5px solid ${timerDone ? 'rgba(37,211,102,0.3)' : timerRunning ? 'rgba(255,90,31,0.3)' : 'rgba(0,0,0,0.08)'}`,
             }}>
             <div className="font-black tabular-nums" style={{
               fontSize: 52,
               letterSpacing: 2,
-              color: timerDone ? '#25D366' : timerRunning ? '#FF5A1F' : 'rgba(255,255,255,0.6)',
+              color: timerDone ? '#25D366' : timerRunning ? '#FF5A1F' : 'rgba(0,0,0,0.7)',
               fontVariantNumeric: 'tabular-nums',
             }}>
               {timerDone ? t4('Done!', '完成！', 'Tapos na!', 'Selesai!') : formatTime(timerRemaining)}
@@ -552,14 +552,14 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined" style={{
                 fontSize: 18,
-                color: timerDone ? '#25D366' : timerRunning ? '#FF5A1F' : 'rgba(255,255,255,0.4)',
+                color: timerDone ? '#25D366' : timerRunning ? '#FF5A1F' : 'rgba(0,0,0,0.55)',
                 fontVariationSettings: "'FILL' 1",
               }}>
                 {timerDone ? 'check_circle' : timerRunning ? 'pause_circle' : 'play_circle'}
               </span>
               <span style={{
                 fontSize: 13, fontWeight: 700,
-                color: timerDone ? '#25D366' : timerRunning ? '#FF5A1F' : 'rgba(255,255,255,0.4)',
+                color: timerDone ? '#25D366' : timerRunning ? '#FF5A1F' : 'rgba(0,0,0,0.55)',
               }}>
                 {timerDone
                   ? t4('Timer done ✓', '计时结束 ✓', 'Tapos na ang oras ✓', 'Waktu habis ✓')
@@ -578,12 +578,12 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
         /* All steps complete — offer next dish or return to list */
         <div className="px-5 pb-10 flex flex-col gap-3">
           <div className="rounded-3xl p-5 text-center"
-            style={{ background: 'rgba(37,211,102,0.12)', border: '1.5px solid rgba(37,211,102,0.3)' }}>
+            style={{ background: 'rgba(37,211,102,0.14)', border: '1.5px solid rgba(37,211,102,0.35)' }}>
             <p className="text-3xl mb-2">🎉</p>
-            <p className="font-black text-white" style={{ fontSize: 18 }}>
+            <p className="font-black" style={{ fontSize: 18, color: '#1a1a1a' }}>
               {dishTitle(dish)} {t4('done!', '完成！', 'tapos na!', 'selesai!')}
             </p>
-            <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', marginTop: 4 }}>
+            <p style={{ fontSize: 13, color: 'rgba(0,0,0,0.55)', marginTop: 4 }}>
               {dishIndex + 1} / {dishes.length} {t4('dishes', '道菜', 'ulam', 'hidangan')}
             </p>
           </div>
@@ -596,8 +596,8 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
             </button>
           ) : (
             <div className="rounded-2xl p-4 text-center"
-              style={{ background: 'rgba(37,211,102,0.08)', border: '1px solid rgba(37,211,102,0.2)' }}>
-              <p className="font-black text-white" style={{ fontSize: 16 }}>
+              style={{ background: 'rgba(37,211,102,0.10)', border: '1px solid rgba(37,211,102,0.30)' }}>
+              <p className="font-black" style={{ fontSize: 16, color: '#1a1a1a' }}>
                 {t4(
                   'All done! Today’s menu is ready 🍽️',
                   '全部完成！今日菜肴上桌 🍽️',
@@ -609,7 +609,7 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
           )}
           <button onClick={onBack}
             className="w-full h-12 rounded-2xl flex items-center justify-center font-semibold"
-            style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.5)', fontSize: 14 }}>
+            style={{ background: 'rgba(0,0,0,0.05)', color: 'rgba(0,0,0,0.6)', fontSize: 14 }}>
             {t4('Back to menu', '返回菜单列表', 'Bumalik sa menu', 'Kembali ke menu')}
           </button>
         </div>
@@ -617,9 +617,9 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
         <div className="px-5 pb-10 flex gap-3">
           <button onClick={() => goTo(currentIdx - 1)} disabled={isFirst}
             className="flex-1 h-14 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-30"
-            style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)' }}>
-            <span className="material-symbols-outlined text-white" style={{ fontSize: 20 }}>arrow_back_ios</span>
-            <span className="text-white font-bold" style={{ fontSize: 14 }}>
+            style={{ background: 'rgba(0,0,0,0.05)', border: '1px solid rgba(0,0,0,0.08)' }}>
+            <span className="material-symbols-outlined" style={{ fontSize: 20, color: '#1a1a1a' }}>arrow_back_ios</span>
+            <span className="font-bold" style={{ fontSize: 14, color: '#1a1a1a' }}>
               {t4('Back', '上一步', 'Bumalik', 'Kembali')}
             </span>
           </button>
