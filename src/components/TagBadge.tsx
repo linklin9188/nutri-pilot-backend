@@ -12,7 +12,12 @@
  *   💪 weekly_balance — 周营养补
  *
  * Algorithm pre-sorts by priority; UI only shows top 2 per dish to avoid clutter.
+ *
+ * TICKET-019 §C i18n: labels resolve via labelFor (zh-CN / zh-HK / en) when
+ * badge.label is empty. Algorithm 018 may set badge.label explicitly with
+ * context-aware phrasing — that wins.
  */
+import { labelFor } from '../lib/tagBadgeLabels';
 
 export type TagBadgeKind =
   | 'preference'
@@ -24,6 +29,7 @@ export type TagBadgeKind =
 export interface TagBadge {
   kind:    TagBadgeKind;
   icon:    string;
+  /** Caller-supplied label takes precedence; if empty, labelFor resolves via i18n templates (zh-CN / zh-HK / en). */
   label:   string;
   reason?: string;
 }
@@ -37,13 +43,15 @@ const COLOR_MAP: Record<TagBadgeKind, string> = {
 };
 
 export function TagBadgeChip({ badge }: { badge: TagBadge }) {
+  // i18n: caller-supplied label wins; otherwise resolve via lang-aware template.
+  const label = labelFor(badge);
   return (
     <span
       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border ${COLOR_MAP[badge.kind]}`}
       title={badge.reason}
     >
       <span>{badge.icon}</span>
-      <span className="font-medium">{badge.label}</span>
+      <span className="font-medium">{label}</span>
     </span>
   );
 }
