@@ -120,7 +120,8 @@ const WORKDAYS_PER_WEEK = 5;
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v57'; // TICKET-019 §A v55 pref_scores jsonb unwrap (Backend rollup 实际写 {score, n} 而非 flat number, reader 加 unwrapPrefScoresJsonb 用 confWeight= n>=30 ? 1.50 : 0.35 转 flat 给下游 scoreForWeek) + §B Smell 1 阶段 2 收口 Home.tsx fruit/breakfast 切到 slots[].find(slotType==='fruit'|'breakfast') primary 投影 + fallback 旧 fruitDish/breakfastDishes (loadFromDB 命中 slots=undefined 时不破)。跳 v56 因 §A + §B 同棒 ship。bump 让所有 v55 缓存失效。
+export const ALGO_VERSION = 'v58'; // TICKET-020 §A lunch/dinner 切 slots[].primary 投影 (Home.tsx + WeeklyMenu.tsx, fallback 旧 dishes/lunchDishes 保 loadFromDB) + §B weekStats edge fn 真接口接入: prefetchWeekStats() useWeeklyMenu hook mount 时 fire-and-forget fetch /functions/v1/weekStats?user_id&week_start → sessionStorage 30min, deriveBadges 💪 channel: weekDeficits 非空 → nutrient match (atomic_nutrition 优先 + NUTRIENT_BOOL_FALLBACK 兜底), 空 → 退 v55 placeholder (is_qi_tonic 等). bump 让全 v57 缓存失效。
+// v57: TICKET-019 §A v55 pref_scores jsonb unwrap (Backend rollup 实际写 {score, n} 而非 flat number, reader 加 unwrapPrefScoresJsonb 用 confWeight= n>=30 ? 1.50 : 0.35 转 flat 给下游 scoreForWeek) + §B Smell 1 阶段 2 收口 Home.tsx fruit/breakfast 切到 slots[].find(slotType==='fruit'|'breakfast') primary 投影 + fallback 旧 fruitDish/breakfastDishes (loadFromDB 命中 slots=undefined 时不破)。跳 v56 因 §A + §B 同棒 ship。bump 让所有 v55 缓存失效。
 // v55: TICKET-018 §H 5-channel 接口大改: generateWeekPlan 每 slot 含 candidates[] + tagBadges[] (5 channel: 🌶️ preference / 🌿 seasonal / 🎋 festival / 🎒 school_balance / 💪 weekly_balance). WeeklyDayMenu 加 slots?: SlotPlan[], 旧字段 (dishes/lunchDishes/breakfastDishes/fruitDish) 维持 slot.primary 投影保 backward compat。候选池采样: breakfast top6→3 / main top12→5 / side top8→5 / fruit top4→3, Option δ 硬过滤产生的 topCandidates 复用于 candidates 截取 (CEO TICKET-017 拍板"接受极端化菜单"延续)。bump 让所有 v54 缓存失效。
 // v54: TICKET-017 §A Option δ + §B festival API + §C DB pref_scores. CEO 拍板 Option δ "接受极端化菜单": imagePrefs.protein_main_class.length===1 + main protein slot → 候选池 prefilter dish.protein_main_class === wantDb, 过滤后 < 15 自动放宽避免空 slot。§B axis 27 festival 接入 backend /functions/v1/festival-now (sessionStorage 30min 缓存), 缺失退本地公历兜底。§C user_profiles.pref_scores (rollup) 优先读, 缺失退 user_preference_scores。bump 让所有 v52/v53 缓存失效。
 // v52: TICKET-016 §D Option α: axis 32 protein_main_class 0.15 → 0.30. v51 sim 显示 axis 30 修复后 pmc 命中率仍 mean 30% (target 70%), 因 a32 量级 0.15 落后 a3_taste 0.25 / a23_newuser 0.45/dish, want_pmc=red 但算法选了 spicy+white. 0.30 让 pmc 与 taste 同量级, 让用户填的"主蛋白"偏好真主导。bump 让 v51 缓存失效。
@@ -1138,6 +1139,44 @@ async function prefetchFestivalTags(): Promise<void> {
 // 模块加载即 fire-and-forget。首次 generateWeekPlan 可能仍读空, 落 axis 27 fallback。
 if (typeof window !== 'undefined') prefetchFestivalTags();
 
+// ── §B (TICKET-020) weekStats API cache ─────────────────────────────────────
+// fire-and-forget fetch /functions/v1/weekStats?user_id&week_start at module
+// load (uid 已知时), 写 sessionStorage 30min TTL. generateWeekPlan 读 cache, 命中
+// 时把 deficits[].nutrient 透传给 deriveBadges 💪 channel; 缺失 → fallback 旧
+// placeholder (is_qi_tonic / is_mood_boost / is_anti_aging)。Backend 020 已 ship,
+// 当前 meal_logs 表未建 → deficits=[] graceful degrade, Database 021 后真生效。
+const WEEKSTATS_CACHE_KEY_PREFIX = 'weekstats_cache_';
+const WEEKSTATS_CACHE_TTL_MS = 30 * 60 * 1000;
+function weekStatsCacheKey(weekStart: string): string {
+  return `${WEEKSTATS_CACHE_KEY_PREFIX}${weekStart}`;
+}
+function loadWeekDeficitsFromSession(weekStart: string): string[] {
+  try {
+    const raw = sessionStorage.getItem(weekStatsCacheKey(weekStart));
+    if (!raw) return [];
+    const obj = JSON.parse(raw) as { ts: number; deficits: string[] };
+    if (!obj || typeof obj.ts !== 'number') return [];
+    if (Date.now() - obj.ts > WEEKSTATS_CACHE_TTL_MS) return [];
+    return Array.isArray(obj.deficits) ? obj.deficits : [];
+  } catch { return []; }
+}
+async function prefetchWeekStats(weekStart: string, userId: string): Promise<void> {
+  try {
+    if (!userId || !weekStart) return;
+    if (loadWeekDeficitsFromSession(weekStart).length > 0) return;
+    const supabaseUrl = (import.meta as any)?.env?.VITE_SUPABASE_URL;
+    if (!supabaseUrl) return;
+    const url = `${supabaseUrl}/functions/v1/weekStats?user_id=${encodeURIComponent(userId)}&week_start=${encodeURIComponent(weekStart)}`;
+    const res = await fetch(url);
+    if (!res.ok) return;
+    const data = await res.json() as { deficits?: Array<{ nutrient: string; current?: number; target?: number; deficit_pct?: number }> };
+    const deficits = Array.isArray(data?.deficits)
+      ? data.deficits.map(d => d?.nutrient).filter((n): n is string => typeof n === 'string')
+      : [];
+    sessionStorage.setItem(weekStatsCacheKey(weekStart), JSON.stringify({ ts: Date.now(), deficits }));
+  } catch { /* fetch 失败 → deriveBadges 💪 退 placeholder */ }
+}
+
 function getCurrentFestival(today: Date): string | null {
   const year = today.getFullYear();
   const todayMs = today.getTime();
@@ -2034,7 +2073,30 @@ interface BadgeContext {
   festivalTags: string[];   // sessionStorage 优先, fallback getCurrentFestival
   today: Date;
   hasKid: boolean;
+  // §B (TICKET-020) weekStats edge fn returned deficits[].nutrient. 非空 → 💪
+  // channel 用真接口 (nutrient match dish.atomic_nutrition / wellness bool);
+  // 空 → 退 v55 placeholder (is_qi_tonic / is_mood_boost / is_anti_aging)。
+  weekDeficits: string[];
 }
+
+// §B (TICKET-020) nutrient → 中文 label (用于 💪 channel badge 文案)
+const NUTRIENT_ZH_LABEL: Record<string, string> = {
+  iron: '铁', calcium: '钙', vitamin_d: '维 D', vitamin_d3: '维 D',
+  omega3: 'Ω3', omega_3: 'Ω3', zinc: '锌',
+  protein: '蛋白', fiber: '纤维', magnesium: '镁', vitamin_c: '维 C',
+  vitamin_b12: '维 B12', folate: '叶酸', potassium: '钾',
+};
+// §B (TICKET-020) Wellness bool column fallback per nutrient — 让 atomic_nutrition
+// 缺数据时仍能凭 boolean tag 标 💪 badge (Database 021 后切到真 atomic 数据)。
+const NUTRIENT_BOOL_FALLBACK: Record<string, (d: any) => boolean> = {
+  iron:       d => !!d.is_blood_tonic,
+  calcium:    d => !!d.is_blood_tonic || !!d.is_eye_care,
+  vitamin_d:  d => !!d.is_eye_care,
+  omega3:     d => !!d.is_anti_aging || !!d.is_anti_inflammation,
+  zinc:       d => !!d.is_qi_tonic,
+  protein:    d => !!d.is_qi_tonic,
+  fiber:      d => !!d.is_low_sugar,
+};
 
 const SEASON_LABEL: Record<string, string> = {
   spring: '春', summer: '夏', autumn: '秋', winter: '冬',
@@ -2115,10 +2177,30 @@ export function deriveBadges(dish: any, ctx: BadgeContext): TagBadge[] {
     }
   }
 
-  // 5. 💪 weekly_balance (placeholder — 待 Backend 019 weekStats 真接口)
-  if (dish.is_qi_tonic) out.push({ kind: 'weekly_balance', icon: '💪', label: '本周补气' });
-  else if (dish.is_mood_boost) out.push({ kind: 'weekly_balance', icon: '💪', label: '本周解压' });
-  else if (dish.is_anti_aging) out.push({ kind: 'weekly_balance', icon: '💪', label: '本周抗衰' });
+  // 5. 💪 weekly_balance — Backend 020 weekStats 真接口优先, placeholder fallback。
+  // ctx.weekDeficits 非空 → 用 nutrient match: 先查 dish.atomic_nutrition[nutrient]
+  // > 0 (真原子营养), 再查 NUTRIENT_BOOL_FALLBACK[nutrient] (wellness bool 兜底);
+  // 空 → fallback v55 placeholder (qi_tonic / mood_boost / anti_aging)。
+  if (ctx.weekDeficits.length > 0) {
+    const an = (dish.atomic_nutrition ?? {}) as Record<string, number>;
+    let hitNutrient: string | null = null;
+    for (const nut of ctx.weekDeficits) {
+      const atomicVal = an[nut];
+      if (typeof atomicVal === 'number' && atomicVal > 0) { hitNutrient = nut; break; }
+      const boolFn = NUTRIENT_BOOL_FALLBACK[nut];
+      if (boolFn && boolFn(dish)) { hitNutrient = nut; break; }
+    }
+    if (hitNutrient) {
+      out.push({
+        kind: 'weekly_balance', icon: '💪',
+        label: `本周补${NUTRIENT_ZH_LABEL[hitNutrient] ?? hitNutrient}`,
+      });
+    }
+  } else {
+    if (dish.is_qi_tonic) out.push({ kind: 'weekly_balance', icon: '💪', label: '本周补气' });
+    else if (dish.is_mood_boost) out.push({ kind: 'weekly_balance', icon: '💪', label: '本周解压' });
+    else if (dish.is_anti_aging) out.push({ kind: 'weekly_balance', icon: '💪', label: '本周抗衰' });
+  }
 
   // dedup by kind + cap 2 + sort by priority
   const priority: Record<TagBadgeKind, number> = {
@@ -2212,6 +2294,10 @@ function generateWeekPlan(
   // §B (TICKET-017) 节庆 axis 27 数据流: sessionStorage 命中 → API 路径 (backend
   // 提供 active festival_tags 集合); 未命中 → axis 27 退本地 getCurrentFestival 公历推断。
   const festivalTags: string[] = loadFestivalTagsFromSession();
+  // §B (TICKET-020) weekStats deficits — 来自 sessionStorage cache (模块加载或
+  // useWeeklyMenu hook 触发 prefetchWeekStats 写入). 空 = meal_logs 未建/fetch
+  // 失败/无 deficits, deriveBadges 💪 channel 退 v55 placeholder。
+  const weekDeficits: string[] = loadWeekDeficitsFromSession(getMondayISO());
   // 粥 / 稀饭 are breakfast-only in Chinese cuisine — user direction
   // 2026-05-17. Stripped once at function entry so every lunch + dinner
   // pool below inherits the ban (the previous per-slot filter only ran
@@ -2290,7 +2376,7 @@ function generateWeekPlan(
     const daySlots: SlotPlan[] = [];
     // BadgeContext 复用 imagePrefs / festivalTags / prefScores（一次构造跨 slot 共享）
     const badgeCtx: BadgeContext = {
-      imagePrefs, profile, prefScores, festivalTags,
+      imagePrefs, profile, prefScores, festivalTags, weekDeficits,
       today: new Date(),
       hasKid: dayKids > 0,
     };
@@ -3224,6 +3310,11 @@ export function useWeeklyMenu(weekOffset: number = 0) {
     // §B (TICKET-064) 钩子 mount 时 hybrid 刷新 — 5 min cache 命中则 no-op,
     // miss 则覆盖 INGREDIENT_SEASONALITY. fire-and-forget, 不阻塞 menu 生成.
     fetchIngredientSeasonality().catch(() => {/* offline-tolerant */});
+    // §B (TICKET-020) weekStats prefetch — uid 已知时 fire-and-forget /functions/v1/
+    // weekStats?user_id&week_start. 30min sessionStorage TTL. Backend 020 当前
+    // 返 deficits=[] (meal_logs 未建), 不阻塞 menu; Database 021 后真生效。
+    const uid = getUserId();
+    if (uid) prefetchWeekStats(getMondayISO(), uid).catch(() => {/* offline-tolerant */});
   }, []);
 
   // Re-generate when user updates preferences or eating selection changes

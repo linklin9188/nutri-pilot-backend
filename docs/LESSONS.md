@@ -339,3 +339,27 @@
   2. reader 端 unwrap helper + smoke test (含 edge cases: null / malformed / boundary / legacy)
   3. 双方 PR 互 review 至少 shape 部分
 - **来源**：2026-05-22 HKT 11:50 TICKET-019 §A unwrap fix commit (Algorithm 019)
+
+### slots-projection-replaces-flat-dishes — slot[].primary 投影替换 flat dishes[] 旧路径
+- **场景**：2026-05-22 HKT TICKET-020。v55 ship 5-channel SlotPlan[] 接口后, Home.tsx + WeeklyMenu.tsx 仍读 `day.dishes` / `day.lunchDishes` flat 数组 (旧 v40 路径)。两 page 各 3 处 fallback, 与 v55 新接口并存导致"接口已升级, UI 没拿到 candidates/badges"。
+- **踩坑**：新接口 ship 后没立刻在所有消费方切换 — TICKET-018 只切了 slots[] 数据结构, TICKET-019 切了 fruit/breakfast, lunch/dinner 留到 020 才收口。3 棒拉到才完成 = candidates/badges 信号 1 周内对 UI 不可见。
+- **代价**：UI 端 chip 渲染 / "换一道" 候选选择只能用 fallback 路径 (无 tagBadges 信号), 直到 lunch/dinner 也切完。
+- **教训**：
+  - 新接口 ship 与所有消费方切换最好**同棒**完成 (即使是大棒拆 1-2 commits), 避免 N 棒后才收齐
+  - 切换时双路径并存 (`const x = newSource && newSource.length > 0 ? newSource : oldSource`) 是必须的, loadFromDB 旧缓存命中场景不能让 UI 崩
+  - 切到一半时要在 ticket / changelog 明示"哪 N 处已切, 哪 M 处留下一棒"避免下一棒接手时漏点
+- **复用避免**：未来"新接口 + 多消费方迁移"类 ticket, 拆 commits 而不拆 ticket。一个 ticket 完成"接口 + UI 全切 + fallback"。
+- **来源**：2026-05-22 HKT 14:30 TICKET-020 §A lunch/dinner slots 切换 commit (Algorithm 020)
+
+### cross-dept-api-data-driven-graceful-degrade — 跨部门接口 ship 顺序倒置时的 graceful degrade
+- **场景**：2026-05-22 HKT TICKET-020 §B 接 weekStats edge fn 真接口。Backend 020 已 ship 接口 ACTIVE v1, 但 Database 021 (meal_logs 表 + zinc/vitD/omega3 列) 未 ship → weekStats 永远返回 `deficits: []`。
+- **踩坑**：跨部门接口的"接口 vs 数据源"两层依赖容易踩 — Backend 先 ship 接口契约, Database 后 ship 数据源。如果 Algorithm 接接口时假设"接口必有数据", 那 N 天内 N 用户拿到 null / 崩溃。
+- **代价**：weekStats 永远空 → 💪 channel 用真接口标 0 dish → 一旦没 fallback placeholder, 用户看不到 💪 badge。但因为本棒**显式 fallback v55 placeholder** (deficits 空时跑 is_qi_tonic/is_mood_boost/is_anti_aging), 用户体验持平 v55, Database 021 ship 后自动 upgrade。
+- **教训**：
+  - 跨部门接口接入时必须**两层 graceful degrade**:
+    1. fetch 失败 → 退本地 / fallback
+    2. fetch 成功但 data 空 → 退 fallback (不要假设"接口 200 = 数据可用")
+  - "Backend ship 接口 + Database 还没 ship 数据源"是常见时序倒置, 要预期
+  - sim 加 unit smoke 覆盖"接口空"和"接口有数据"两种 case (本棒 weekStats smoke 6 case 含两种)
+- **复用避免**：接任何外部接口 (跨部门 / 跨服务), 默认实现 fetch-fail + data-empty 两层 fallback, 单元 smoke 同时覆盖两种 case。
+- **来源**：2026-05-22 HKT 14:35 TICKET-020 §B weekStats 接入 commit (Algorithm 020)

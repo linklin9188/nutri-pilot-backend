@@ -441,7 +441,7 @@ async function main() {
               oil_level, cook_method, is_vegan, health_score, times_kept_in_menu, meal_type
        FROM dishes WHERE title_zh IS NOT NULL AND meal_type IN ('lunch','dinner','all') LIMIT 1200`
     );
-    console.log(`\n=== algo-quality-sim — TICKET-019 20-profile A/B simulation (ALGO_VERSION v57: pref_scores jsonb unwrap + Smell 1 phase 2) ===`);
+    console.log(`\n=== algo-quality-sim — TICKET-020 20-profile A/B simulation (ALGO_VERSION v58: lunch/dinner 切 slots[] + weekStats edge fn 真接口) ===`);
     console.log(`pool: breakfast=${breakfastPool.length} | lunch+dinner=${lunchDinnerPool.length}\n`);
 
     // baseline: 看 DB 整体 protein_main_class / oil_level 分布
@@ -569,6 +569,54 @@ async function main() {
       const picks = simulateWeek(PROFILES[0], breakfastPool, lunchDinnerPool);
       const m = computeMetrics(picks, PROFILES[0]);
       console.log(`  run ${i+1}: target_pmc=${pct(m.target_pmc)}  target_oil=${pct(m.target_oil)}  target_cuisine=${pct(m.target_cuisine)}`);
+    }
+
+    // ─── TICKET-020 §B weekStats deriveBadges 💪 channel unit smoke ───
+    console.log(`\n【TICKET-020 §B weekStats 💪 channel smoke — nutrient match + fallback】`);
+    const NUTRIENT_ZH: Record<string, string> = {
+      iron: '铁', calcium: '钙', vitamin_d: '维 D', omega3: 'Ω3', zinc: '锌',
+      protein: '蛋白', fiber: '纤维',
+    };
+    const NUTRIENT_BOOL: Record<string, (d: any) => boolean> = {
+      iron:      d => !!d.is_blood_tonic,
+      calcium:   d => !!d.is_blood_tonic || !!d.is_eye_care,
+      vitamin_d: d => !!d.is_eye_care,
+      omega3:    d => !!d.is_anti_aging || !!d.is_anti_inflammation,
+      zinc:      d => !!d.is_qi_tonic,
+    };
+    function simWeeklyBadge(dish: any, weekDeficits: string[]): { label: string } | null {
+      if (weekDeficits.length > 0) {
+        const an = (dish.atomic_nutrition ?? {}) as Record<string, number>;
+        for (const nut of weekDeficits) {
+          const v = an[nut];
+          if (typeof v === 'number' && v > 0) {
+            return { label: `本周补${NUTRIENT_ZH[nut] ?? nut}` };
+          }
+          const boolFn = NUTRIENT_BOOL[nut];
+          if (boolFn && boolFn(dish)) {
+            return { label: `本周补${NUTRIENT_ZH[nut] ?? nut}` };
+          }
+        }
+        return null;
+      }
+      // fallback v55 placeholder
+      if (dish.is_qi_tonic) return { label: '本周补气' };
+      if (dish.is_mood_boost) return { label: '本周解压' };
+      if (dish.is_anti_aging) return { label: '本周抗衰' };
+      return null;
+    }
+    const weekStatsTests: Array<{ case: string; dish: any; deficits: string[]; want: string | null }> = [
+      { case: '真接口 atomic',  dish: { atomic_nutrition: { iron: 4.2 } }, deficits: ['iron'], want: '本周补铁' },
+      { case: '真接口 bool 兜底', dish: { is_blood_tonic: true }, deficits: ['iron'], want: '本周补铁' },
+      { case: '真接口 多 deficit 选首', dish: { is_eye_care: true }, deficits: ['vitamin_d', 'iron'], want: '本周补维 D' },
+      { case: '真接口 dish 不命中',   dish: { is_qi_tonic: true }, deficits: ['iron'], want: null },
+      { case: '空 deficits → fallback', dish: { is_qi_tonic: true }, deficits: [], want: '本周补气' },
+      { case: '空 deficits 无 wellness', dish: {}, deficits: [], want: null },
+    ];
+    for (const t of weekStatsTests) {
+      const got = simWeeklyBadge(t.dish, t.deficits);
+      const ok = (got?.label ?? null) === t.want;
+      console.log(`  ${t.case.padEnd(30)}: ${ok ? '✅' : '❌'} got=${got?.label ?? 'null'} want=${t.want ?? 'null'}`);
     }
 
     // ─── TICKET-019 §A pref_scores jsonb unwrap 单元 smoke ───

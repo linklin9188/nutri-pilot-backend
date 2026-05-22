@@ -418,6 +418,18 @@ export default function Home() {
   // Smell 1 阶段 2 (v40): useRecommendDishes 链路已彻底删除；
   // useWeeklyMenu 是 Home 唯一菜单源（breakfast/lunch/dinner/fruit 全管）。
   const { weeklyMenu, loading: weeklyLoading, regenerate: regenerateWeekly } = useWeeklyMenu();
+  // TICKET-022 §B — 5-channel TagBadge chip 上 production. Lookup keyed by
+  // dish.id → SlotPlan from today's slots[]. Used to render badges on each
+  // dish row in displayMenu so users see "为什么推这道" reasoning chips.
+  const todaySlotsByDishId = useMemo(() => {
+    const map: Record<string, { tagBadges: { kind: string; icon: string; label: string; reason?: string }[] }> = {};
+    const today = weeklyMenu?.days?.[todayDayIndex() >= 5 ? 0 : todayDayIndex()];
+    for (const sp of today?.slots ?? []) {
+      if (sp.primary?.dish?.id) map[sp.primary.dish.id] = { tagBadges: sp.primary.tagBadges ?? [] };
+    }
+    return map;
+    // weeklyMenu identity changes on regenerate / swap; that's the right cadence.
+  }, [weeklyMenu]);
 
   // ── Language + cuisine prefs ─────────────────────────────────────
   const { language, cycleLanguage, isChinese, setLanguage, t4 } = useLanguage();
@@ -813,19 +825,37 @@ export default function Home() {
   const fruitFromSlots = todayWeekly?.slots?.find(s => s.slotType === 'fruit')?.primary?.dish;
   const fruitFromWeekly = fruitFromSlots ?? todayWeekly?.fruitDish;
 
+  // §A (TICKET-020) lunch / dinner 也切 slots[].primary 投影. slots 命中 → 取
+  // primary list (顺序按 generateWeekPlan 采样顺序), 缺失 fallback 旧字段 (loadFromDB
+  // 命中旧 v57 缓存或 generateWeekPlan 未填 slots 时不破)。
+  const lunchFromSlots = todayWeekly?.slots
+    ?.filter(s => s.slotType === 'lunch_main' || s.slotType === 'lunch_side')
+    .map(s => s.primary.dish);
+  const lunchDishes = (lunchFromSlots && lunchFromSlots.length > 0)
+    ? lunchFromSlots
+    : (todayWeekly?.lunchDishes ?? []);
+  const dinnerFromSlots = todayWeekly?.slots
+    ?.filter(s =>
+      s.slotType === 'dinner_main' ||
+      s.slotType === 'dinner_side' ||
+      s.slotType === 'dinner_kid'
+    )
+    .map(s => s.primary.dish);
+  const dinnerDishes = (dinnerFromSlots && dinnerFromSlots.length > 0)
+    ? dinnerFromSlots
+    : (todayWeekly?.dishes ?? []);
+
   const baseMenu: any[] = (() => {
     if (mealTime === "早餐") {
       return breakfastDishes;
     }
     if (mealTime === "午餐") {
-      const lunch = todayWeekly?.lunchDishes ?? [];
-      if (lunch.length === 0) return [];
-      return fruitFromWeekly ? [...lunch, fruitFromWeekly] : lunch;
+      if (lunchDishes.length === 0) return [];
+      return fruitFromWeekly ? [...lunchDishes, fruitFromWeekly] : lunchDishes;
     }
     // 晚餐
-    const dinner = todayWeekly?.dishes ?? [];
-    if (dinner.length === 0) return [];
-    return fruitFromWeekly ? [...dinner, fruitFromWeekly] : dinner;
+    if (dinnerDishes.length === 0) return [];
+    return fruitFromWeekly ? [...dinnerDishes, fruitFromWeekly] : dinnerDishes;
   })();
 
   // Manual additions from /favorites "+ 菜单" — keyed by date + mealTime so
