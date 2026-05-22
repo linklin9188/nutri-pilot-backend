@@ -1,35 +1,45 @@
 /**
- * feedback-rollup.ts — TICKET-20260522-012 §B (skeleton, dry-run only)
+ * feedback-rollup.ts — TICKET-20260522-018 §B (live: --commit writes pref_scores)
  *
  * Aggregates user_feedback_helper rows over a sliding window (default 7d), then
- * computes per-user × per-axis signal strength, ready to be persisted as
- * user_profiles.pref_scores jsonb. Axis definition (per CEO 工单 §B):
+ * computes per-user × per-axis score, persists to user_profiles.pref_scores jsonb.
  *
- *   axis     = dish.protein_main_class | dish.origin_cuisine | dish.health_benefit_tags[*]
+ *   axis     = pmc:* | cuisine:* | tag:*   (CEO ack 2026-05-22, TICKET-018)
  *   signal   = +1 for rating_good, -1 for rating_bad, 0 for rating_okay
  *              cant_understand/too_hard/missing_ingredient are step-level —
  *              skipped here (Day-2 prep_steps pipeline owns them, see
  *              feedback-to-prompt.ts).
- *   strength = mean(signal) over axis bucket (matches "mean signal strength" 工单语义)
- *   confidence(axis) = 1.50 if axis row count ≥ 30 else 0.35   (matches algo prefScores cold-start/learned split)
+ *   score(axis) = mean(signal) over axis bucket
+ *   n(axis)     = row count in bucket — algo uses n>=30 as learned threshold
  *
- * BLOCKER (真跑前置, 见 §F of telepot_response):
- *   1. user_profiles.pref_scores jsonb 列不存在 (commit 292c6eb 写了 reader 但 DB
- *      migration 缺) → 真跑 INSERT/UPDATE pref_scores 会 PostgREST 4xx.
- *   2. 工单 "axis" 一词在 user_feedback_helper schema 里无对应列 (只有 feedback_type) —
- *      本骨架按 dish JOIN 推导 axis (上文规则), 待 CEO/Algorithm 确认是否一致.
- *   3. cron edge function 暂不部署 — 部署后会每天 03:30 HKT 写空 jsonb, 等
- *      上面 2 点 ack 后再 deploy 为 edge function + 加 Supabase Scheduler.
+ * Persisted jsonb format (matches migration 070 COMMENT):
+ *   user_profiles.pref_scores = {
+ *     "pmc:red":          {"score": 0.8, "n": 42},
+ *     "cuisine:cantonese":{"score":-0.5, "n": 12},
+ *     "tag:low_sodium":   {"score": 1.0, "n":  5}
+ *   }
+ *
+ * Algorithm consumption (useWeeklyMenu.ts:3122-3134) reads this jsonb and
+ * passes to scoreForWeek as Record<string, number>. NOTE: current v54 reader
+ * casts to `Record<string, number>` directly — axis keys here use the
+ * pmc / cuisine / tag prefixed convention agreed with CEO, so Algorithm reader will
+ * receive object-typed values until v55 adds the unwrap step. Until then,
+ * useWeeklyMenu falls back to user_preference_scores cold-start. Backend's
+ * rollup write is correct per CEO contract; Algorithm reader update is a
+ * separate phase. See _bridge/telepot_response_backend.md TICKET-018 §B.
  *
  * Run:
  *   npx tsx scripts/feedback-rollup.ts                # default: 7d window, dry-run
  *   npx tsx scripts/feedback-rollup.ts --window-days=14
- *   npx tsx scripts/feedback-rollup.ts --commit       # blocked — will error out with note
+ *   npx tsx scripts/feedback-rollup.ts --commit       # writes pref_scores
  */
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = 'https://qoyuafqqkfyrqlthsvws.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_pierNkIn2sr7JLbAe-zvuA_Go79HOyd';
+// GHA cron passes SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY as env secrets;
+// local dev falls back to the bundled anon-publishable key (RLS USING(true) allows
+// user_profiles UPDATE either way — service-role just bypasses RLS for safety).
+const SUPABASE_URL = process.env.SUPABASE_URL ?? 'https://qoyuafqqkfyrqlthsvws.supabase.co';
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? 'sb_publishable_pierNkIn2sr7JLbAe-zvuA_Go79HOyd';
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const COMMIT     = process.argv.includes('--commit');
@@ -50,16 +60,8 @@ function signalOf(fbType: string): number | null {
 }
 
 (async () => {
-  console.log(`[feedback-rollup] mode=${COMMIT ? 'COMMIT (blocked)' : 'DRY-RUN'}  window=${WINDOW_DAYS}d`);
+  console.log(`[feedback-rollup] mode=${COMMIT ? 'COMMIT (live writes)' : 'DRY-RUN'}  window=${WINDOW_DAYS}d`);
   console.log();
-
-  if (COMMIT) {
-    console.error('[BLOCKER] --commit refused: user_profiles.pref_scores jsonb column does not exist yet.');
-    console.error('          See telepot_response_backend.md §F. Awaiting Database migration that adds:');
-    console.error('            ALTER TABLE user_profiles ADD COLUMN pref_scores JSONB DEFAULT \'{}\'::jsonb;');
-    console.error('          AND CEO/Algorithm ack on axis derivation rule (see top-of-file comment).');
-    process.exit(2);
-  }
 
   const sinceISO = new Date(Date.now() - WINDOW_DAYS * 86400_000).toISOString();
   console.log(`[feedback-rollup] window since ${sinceISO}`);
@@ -111,32 +113,67 @@ function signalOf(fbType: string): number | null {
   console.log(`[feedback-rollup] step-level skipped=${skippedStep} dishless skipped=${skippedDishless}`);
   console.log(`[feedback-rollup] users with rollup data: ${perUser.size}`);
 
-  // 4) compute pref_scores jsonb per user.
-  const userPrefScores: Record<string, Record<string, { strength: number; n: number; confidence: number }>> = {};
+  // 4) compute pref_scores jsonb per user — format matches migration 070 COMMENT.
+  const userPrefScores: Record<string, Record<string, { score: number; n: number }>> = {};
   let totalAxesUpdated = 0;
   for (const [userId, axes] of perUser) {
     userPrefScores[userId] = {};
     for (const [axisKey, bucket] of axes) {
       const n = bucket.signals.length;
       const mean = n === 0 ? 0 : bucket.signals.reduce((a, b) => a + b, 0) / n;
-      const confidence = n >= SIGNAL_THRESHOLD ? LEARNED_CONF : COLDSTART_CONF;
-      userPrefScores[userId][axisKey] = { strength: +mean.toFixed(3), n, confidence };
+      userPrefScores[userId][axisKey] = { score: +mean.toFixed(3), n };
       totalAxesUpdated++;
     }
   }
   console.log(`[feedback-rollup] total (user × axis) rows computed: ${totalAxesUpdated}`);
 
-  // 5) DRY-RUN: print first 3 users' rollup for sanity check.
+  // 5) preview first 3 users' rollup for sanity check.
   const previewUsers = [...perUser.keys()].slice(0, 3);
   for (const u of previewUsers) {
-    console.log(`\n[DRY] user=${u.slice(0, 12)}…  axes=${Object.keys(userPrefScores[u]).length}`);
+    console.log(`\n[preview] user=${u.slice(0, 12)}…  axes=${Object.keys(userPrefScores[u]).length}`);
     const sorted = Object.entries(userPrefScores[u]).sort((a, b) => b[1].n - a[1].n).slice(0, 8);
     for (const [k, v] of sorted) {
-      console.log(`   ${k.padEnd(28)} n=${String(v.n).padStart(3)}  strength=${String(v.strength).padStart(6)}  conf=${v.confidence}`);
+      const learned = v.n >= SIGNAL_THRESHOLD ? 'learned' : 'cold';
+      console.log(`   ${k.padEnd(28)} n=${String(v.n).padStart(3)}  score=${String(v.score).padStart(6)}  (${learned})`);
     }
   }
 
-  console.log(`\n[DRY-RUN] no UPDATE on user_profiles.pref_scores (column doesn't exist).`);
-  console.log(`[DRY-RUN] no INSERT into feedback_rollup_runs (would write run_at + users_affected=${perUser.size} + axes_updated=${totalAxesUpdated}).`);
-  console.log(`[DRY-RUN] cron edge function NOT deployed — see telepot_response_backend.md §F blocker.`);
+  if (!COMMIT) {
+    console.log(`\n[DRY-RUN] no UPDATE on user_profiles.pref_scores; no audit row inserted.`);
+    console.log(`[DRY-RUN] would write ${perUser.size} users × ${totalAxesUpdated} axes total.`);
+    return;
+  }
+
+  // 6) COMMIT — UPDATE user_profiles.pref_scores per user.
+  console.log(`\n[COMMIT] writing pref_scores for ${perUser.size} users…`);
+  let okUsers = 0;
+  let errUsers = 0;
+  for (const [userId, jsonb] of Object.entries(userPrefScores)) {
+    const { error: upErr } = await sb
+      .from('user_profiles')
+      .update({ pref_scores: jsonb })
+      .eq('id', userId);
+    if (upErr) {
+      errUsers++;
+      console.error(`   UPDATE failed for user=${userId.slice(0, 12)}…: ${upErr.message}`);
+    } else {
+      okUsers++;
+    }
+  }
+  console.log(`[COMMIT] user_profiles.pref_scores written — ok=${okUsers} err=${errUsers}`);
+
+  // 7) audit INSERT into feedback_rollup_runs (graceful degrade if table missing).
+  const { error: auditErr } = await sb
+    .from('feedback_rollup_runs')
+    .insert({
+      run_at:           new Date().toISOString(),
+      users_affected:   okUsers,
+      axes_updated:     totalAxesUpdated,
+    });
+  if (auditErr) {
+    console.warn(`[AUDIT-DEGRADED] feedback_rollup_runs INSERT skipped: ${auditErr.message}`);
+    console.warn(`                 (Database task pending: CREATE TABLE feedback_rollup_runs (id uuid PK, run_at timestamptz, users_affected int, axes_updated int);)`);
+  } else {
+    console.log(`[AUDIT] feedback_rollup_runs row inserted — users=${okUsers} axes=${totalAxesUpdated}`);
+  }
 })();
