@@ -183,20 +183,22 @@ Deno.serve((req: Request) => {
     const lunar = pickLunarFestival(today);
     if (lunar) {
       return json({
-        festival:  lunar.name,
-        kind:      "lunar",
-        date:      lunar.date,
-        tags:      lunar.tags,
-        as_of:     isoDay(today),
+        festival:      lunar.name,
+        kind:          "lunar",
+        date:          lunar.date,
+        tags:          lunar.tags,            // legacy field (Algorithm v54 axis 27)
+        festival_tags: lunar.tags,            // TICKET-012 §D — explicit name for new consumers + dishes.festival_tags ∩ match
+        as_of:         isoDay(today),
       });
     }
 
     const term = pickSolarTerm(today);
     return json({
-      festival:  term.term,
-      kind:      "solar_term",
-      tags:      term.tags,
-      as_of:     isoDay(today),
+      festival:      term.term,
+      kind:          "solar_term",
+      tags:          term.tags,
+      festival_tags: term.tags,
+      as_of:         isoDay(today),
     });
   } catch (e) {
     console.error("festival-now failed:", e);
