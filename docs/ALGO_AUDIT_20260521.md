@@ -97,6 +97,47 @@ main slot 分母 = 午餐 main + 晚餐 main1 + 晚餐 main2 = 15 道/week
 
 5 channel 已在数据层流通, 只是未独立标签化输出。
 
+## §3.5 TICKET-017 v54 (Option δ + festival API + DB pref_scores) — 命中率突破
+
+实施 (1 commit 待 push):
+- §A Option δ: generateWeekPlan main loop candidate pool prefilter.
+  imagePrefs.protein_main_class.length===1 && main protein slot →
+  `strict = allCandidates.filter(pmcDb === wantDb); if (strict.length >= 15) use strict`
+- §B festival API axis 27 改造: scoreForWeek 新增 ctx.festivalTags 入参,
+  caller 优先注入 sessionStorage 30min 缓存的 backend /functions/v1/festival-now
+  返回的 tags; 缺失退本地公历 getCurrentFestival 兜底。axis 27 量级保持 +0.4。
+- §C user_profiles.pref_scores (rollup jsonb) 优先读, 缺失退现有
+  user_preference_scores feedback 行。
+- ALGO_VERSION v52 → v54 (合并 bump)
+
+v54 20 profile sim 结果:
+
+| metric                | v52 (TICKET-016 完工) | v54 (TICKET-017 完工) | delta |
+|-----------------------|----------------------|----------------------|-------|
+| pass_pmc_main (≥70%)  | **1/20**             | **19/20**            | +18 ✅ |
+| pass_oil_main (≥60%)  | 5/20                 | 7/20                 | +2 |
+| pass_cuisine (≥50%)   | 9/20                 | 8/20                 | -1 (Option δ 后 cuisine 略让位 pmc, acceptable) |
+| pass_all (三项全通)    | 0/20                 | **3/20**             | +3 |
+| mean pmc_main         | 39%                  | **96%**              | +57pt 🚀 |
+| mean pmc_all (35 分母) | 35%                  | 56%                  | +21pt |
+| mean oil_main         | 54%                  | 53%                  | -1 |
+| mean cuisine          | 54%                  | 48%                  | -6 |
+
+**关键结论**: Option δ 候选池硬过滤把 single-pmc 偏好 main 命中率从 ~30% 推到
+100% (19/20 profile main slot 全是偏好 pmc 类), pmc_main 19/20 通过 70% 目标。
+未通过的 1 个 (12-多孩-北方面食 want red+white 双 pmc) 不触发 Option δ
+(length===1 才触发), main 命中 40%。**老板要的"meatlover 出红肉"已落地**。
+
+副作用 (符合 CEO 拍板"接受极端化菜单"):
+- meatlover main slot 100% red — 一周午晚主菜全是牛肉/猪肉/羊肉, 没素菜主菜
+- vegan main slot 100% veg — 一周主菜全是豆腐/蔬菜/菌菇
+- 这是预期行为, 用户填了 single-pmc 偏好就承诺了极端化菜单
+
+降级保护:
+- 过滤后 candidates < 15 → 自动放宽到全集, 避免空 slot
+- 双 pmc 偏好 (length===2) 跳过过滤, 维持 axis 32-driven mix (cantonese 仍 80%)
+- staple / side / soup / breakfast 等非 main slot 不受影响, 维持营养均衡
+
 ## §4. 二次调优决策 + 理由
 
 ### §D Option α (实施) — axis 32 protein_main_class 0.15 → 0.30
@@ -136,6 +177,7 @@ main slot 分母 = 午餐 main + 晚餐 main1 + 晚餐 main2 = 15 道/week
 | v50 | TICKET-014 — 5 天工作日制 (WORKDAYS_PER_WEEK=5) |
 | v51 | **TICKET-016 §A** — axis 30 cold-start diversity early-return for image-known users (root cause of TICKET-015 诊断) |
 | v52 | **TICKET-016 §D Option α** — axis 32 protein_main_class 0.15 → 0.30 |
+| v54 | **TICKET-017 §A Option δ + §B festival API + §C DB pref_scores** — main slot candidate pool 硬过滤 / axis 27 接 backend festival-now / user_profiles.pref_scores 优先 |
 
 ## §6. 未来 audit 自动化建议
 

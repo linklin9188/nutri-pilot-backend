@@ -83,7 +83,8 @@ const WORKDAYS_PER_WEEK = 5;
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v52'; // TICKET-016 §D Option α: axis 32 protein_main_class 0.15 → 0.30. v51 sim 显示 axis 30 修复后 pmc 命中率仍 mean 30% (target 70%), 因 a32 量级 0.15 落后 a3_taste 0.25 / a23_newuser 0.45/dish, want_pmc=red 但算法选了 spicy+white. 0.30 让 pmc 与 taste 同量级, 让用户填的"主蛋白"偏好真主导。bump 让 v51 缓存失效。
+export const ALGO_VERSION = 'v54'; // TICKET-017 §A Option δ + §B festival API + §C DB pref_scores. CEO 拍板 Option δ "接受极端化菜单": imagePrefs.protein_main_class.length===1 + main protein slot → 候选池 prefilter dish.protein_main_class === wantDb, 过滤后 < 15 自动放宽避免空 slot。§B axis 27 festival 接入 backend /functions/v1/festival-now (sessionStorage 30min 缓存), 缺失退本地公历兜底。§C user_profiles.pref_scores (rollup) 优先读, 缺失退 user_preference_scores。bump 让所有 v52/v53 缓存失效。
+// v52: TICKET-016 §D Option α: axis 32 protein_main_class 0.15 → 0.30. v51 sim 显示 axis 30 修复后 pmc 命中率仍 mean 30% (target 70%), 因 a32 量级 0.15 落后 a3_taste 0.25 / a23_newuser 0.45/dish, want_pmc=red 但算法选了 spicy+white. 0.30 让 pmc 与 taste 同量级, 让用户填的"主蛋白"偏好真主导。bump 让 v51 缓存失效。
 // v51: TICKET-016 §A: axis 30 cold-start diversity early-return for known-pref users (imagePrefs 任一非空 → 跳过强制多样性)。TICKET-015 sim 诊断 axis 30 累计 -13~-14 压倒 imageOnboardingScore +1~+2.7 (设计 75% 主导), meatlover red 命中率 20% = baseline DB 19%, 算法没把偏好推上来。Root cause: 已填 image onboarding 时仍按"未知偏好"逻辑硬推多样性。bump 让所有 v50 缓存失效, 已填 image 用户立即拿到偏好菜单。
 // v50: TICKET-014: 5 天工作日制 — generateWeekPlan 主循环 7→5 (WORKDAYS_PER_WEEK=5), 周菜单只覆盖周一到周五。老板真测发现 algo 层仍 7 天循环 (line 1970 旧逻辑用 `if (dayIndex >= 5) continue;` 在 7 循环内 skip 周末, 半截改造)。bump 让所有 v49 缓存 (含 7 天 days 数组) 失效, 全用户重生成 5 天版本。菲佣 + 用户家庭工作日做饭, 周末家庭自由发挥。
 // v49: TICKET-012: axis 32 + axis 37 双轨升级 — DB pmc 列优先 + helper fallback, 让 218 道 main_ingredient='other'/NULL 在 axis 32 (15% 权重) + 37 道 pmc='seafood' 但 mi≠seafood 在 axis 37 (6% 权重) 真正命中. 同时 bump 失效所有 v48 缓存让全用户立即拿到新菜单。
@@ -1038,6 +1039,37 @@ const FESTIVALS: Array<{ slug: string; month: number; day: number }> = [
   { slug: 'chongyang', month: 10, day: 29 }, // 重阳
 ];
 
+// ── §B (TICKET-017) Festival API cache ─────────────────────────────────────
+// fire-and-forget fetch /functions/v1/festival-now at module load, write to
+// sessionStorage with 30min TTL. Sync caller in generateWeekPlan reads cached
+// tags; cache miss → axis 27 falls back to local getCurrentFestival 公历推断。
+const FESTIVAL_CACHE_KEY = 'festival_now_tags';
+const FESTIVAL_CACHE_TTL_MS = 30 * 60 * 1000;
+function loadFestivalTagsFromSession(): string[] {
+  try {
+    const raw = sessionStorage.getItem(FESTIVAL_CACHE_KEY);
+    if (!raw) return [];
+    const obj = JSON.parse(raw) as { ts: number; tags: string[] };
+    if (!obj || typeof obj.ts !== 'number') return [];
+    if (Date.now() - obj.ts > FESTIVAL_CACHE_TTL_MS) return [];
+    return Array.isArray(obj.tags) ? obj.tags : [];
+  } catch { return []; }
+}
+async function prefetchFestivalTags(): Promise<void> {
+  try {
+    if (loadFestivalTagsFromSession().length > 0) return; // hit, skip
+    const supabaseUrl = (import.meta as any)?.env?.VITE_SUPABASE_URL;
+    if (!supabaseUrl) return;
+    const res = await fetch(`${supabaseUrl}/functions/v1/festival-now`);
+    if (!res.ok) return;
+    const data = await res.json() as { festival_tags?: string[] };
+    const tags = Array.isArray(data?.festival_tags) ? data.festival_tags : [];
+    sessionStorage.setItem(FESTIVAL_CACHE_KEY, JSON.stringify({ ts: Date.now(), tags }));
+  } catch { /* fetch 失败 → 退本地 getCurrentFestival 兜底 */ }
+}
+// 模块加载即 fire-and-forget。首次 generateWeekPlan 可能仍读空, 落 axis 27 fallback。
+if (typeof window !== 'undefined') prefetchFestivalTags();
+
 function getCurrentFestival(today: Date): string | null {
   const year = today.getFullYear();
   const todayMs = today.getTime();
@@ -1153,6 +1185,11 @@ interface WeeklyScoreParams {
   homeInventoryItems?: Set<string>; // VerifyIngredients localStorage 当日"我家有"食材集合（含 missing_ingredient 反向剔除）
   // ── §A (TICKET-005) axis 32-40: image-onboarding-driven scoring ──
   imagePrefs?: ImagePrefs;          // 9 个 axis 共用一个 prefs 对象, 由 caller 一次性 load
+  // ── §B (TICKET-017) axis 27 festival tags from /functions/v1/festival-now ──
+  // Backend §D festival-now API 返回当日生效的 festival 标签数组 (含农历节庆 +
+  // 24 节气短名). caller fetch + sessionStorage 30min 缓存后传入; 缺失/空 →
+  // 退本地 getCurrentFestival 公历推断 (维持 axis 27 既有兜底量级)。
+  festivalTags?: string[];
 }
 
 // ── Helper: extract all ingredient names a dish references ───────────────────
@@ -1175,7 +1212,7 @@ function scoreForWeek({
   dish, profile, prefScores, recentIds, pickedIngredients, pickedCuisines = [], pickedTitleKeywords, dayIndex,
   spiceBoost: _unusedSpiceBoost = 0, ageGroup, healthPrefs, helperMode = false, hasPregnant = false,
   humidity = 75, solarTerm = null, hasXiaomei = false, mealTime = '晚餐',
-  homeInventoryItems, imagePrefs,
+  homeInventoryItems, imagePrefs, festivalTags,
 }: WeeklyScoreParams): number {
   // TICKET-005 v3 重设计: spiceBoost 入参保留但不再使用 — 由 axis 32-40 间接覆盖.
   void _unusedSpiceBoost;
@@ -1441,16 +1478,24 @@ function scoreForWeek({
     if ((dish as any).cook_method === 'deep_fry') score += 0.20;
   }
 
-  // ── 27. §A (TICKET-025) Festival axis — 节庆 ±3 日内 +0.4 ───────────
-  // dish.festival_tags 命中当前 active festival 时软加分。Database 024 §B
-  // 上线 festival_tags 列前，dish.festival_tags 为 undefined → axis 27 = 0
-  // 自然降级；落地后自动生效，不需要 ALGO_VERSION bump 或 cache 失效。
-  const activeFestival = getCurrentFestival(new Date());
-  if (activeFestival) {
-    const festivalTags = ((dish as any).festival_tags ?? []) as string[];
-    if (Array.isArray(festivalTags) && festivalTags.includes(activeFestival)) {
-      score += 0.4;
+  // ── 27. §A (TICKET-025) / §B (TICKET-017) Festival axis — 节庆 +0.4 ──
+  // dish.festival_tags 命中当前 active festival 时软加分。
+  // TICKET-017 §B 改造: caller 优先注入 ctx.festivalTags (来自 backend
+  // /functions/v1/festival-now API, sessionStorage 30min 缓存); 没注入则
+  // 退本地公历 getCurrentFestival 兜底 (保 backward-compat / API down 不阻塞)。
+  // 命中判定: dish.festival_tags ∩ active set ≠ ∅。
+  const dishFestTags = (((dish as any).festival_tags ?? []) as string[]);
+  if (Array.isArray(dishFestTags) && dishFestTags.length > 0) {
+    let hit = false;
+    if (festivalTags && festivalTags.length > 0) {
+      // API 路径: 任一 dish tag 出现在 API 当前 active set 即命中
+      hit = dishFestTags.some(t => festivalTags.includes(t));
+    } else {
+      // 本地兜底: 公历推断 active festival slug
+      const activeFestival = getCurrentFestival(new Date());
+      if (activeFestival) hit = dishFestTags.includes(activeFestival);
     }
+    if (hit) score += 0.4;
   }
 
   // ── 29. §B (TICKET-046) 特殊人群 dietary_goal — prenatal/lactation/elderly ──
@@ -1946,6 +1991,9 @@ function generateWeekPlan(
   // §A (TICKET-005) v3 image-onboarding-driven scoring — 一次性 load 9 个
   // localStorage prefs key, 后续 4 处 scoreForWeek 调用点共享同一对象.
   const imagePrefs: ImagePrefs = loadImagePrefs();
+  // §B (TICKET-017) 节庆 axis 27 数据流: sessionStorage 命中 → API 路径 (backend
+  // 提供 active festival_tags 集合); 未命中 → axis 27 退本地 getCurrentFestival 公历推断。
+  const festivalTags: string[] = loadFestivalTagsFromSession();
   // 粥 / 稀饭 are breakfast-only in Chinese cuisine — user direction
   // 2026-05-17. Stripped once at function entry so every lunch + dinner
   // pool below inherits the ban (the previous per-slot filter only ran
@@ -2154,7 +2202,7 @@ function generateWeekPlan(
             helperMode,
             hasPregnant: familyPrefs?.hasPregnant ?? false,
             humidity, solarTerm, hasXiaomei, mealTime: '晚餐',
-            homeInventoryItems, imagePrefs,
+            homeInventoryItems, imagePrefs, festivalTags,
           });
 
           // ── Family multi-goal scoring ───────────────────────────────────
@@ -2254,13 +2302,36 @@ function generateWeekPlan(
 
           return { dish: d, score };
         })
-        .filter((x): x is { dish: any; score: number } => x !== null)
+        .filter((x): x is { dish: any; score: number } => x !== null);
+
+      // ── TICKET-017 §A Option δ: single-pmc candidate pool hard filter ─────
+      // CEO 拍板"接受极端化菜单"。imagePrefs.protein_main_class.length===1 +
+      // main protein slot → 强制 candidates dish.protein_main_class 命中。
+      // TICKET-016 sim 显示 single-class pmc 偏好 main 命中率天花板 ≈ DB 占比
+      // (red 19% / white 15%), Option α (axis 32 0.30) 无法突破 — δ 直接绕过。
+      // 降级: 过滤后 candidates < 15 → 用全集 (避免空 slot 兜底)。
+      let optionDFiltered: typeof allCandidates = allCandidates;
+      const slotCatsForDelta = (dayUseSmallTemplate ? SLOT_PREFERRED_CATS_SMALL : SLOT_PREFERRED_CATS)[slot] ?? [];
+      const isMainProteinSlot =
+        slotCatsForDelta.some(c => ['pork','beef','poultry','seafood'].includes(c)) &&
+        !slotCatsForDelta.includes('plant');
+      if (imagePrefs?.protein_main_class?.length === 1 && isMainProteinSlot) {
+        const wantUi = imagePrefs.protein_main_class[0];
+        const wantDb = PROTEIN_CLASS_UI_TO_DB[wantUi] ?? wantUi;
+        const strict = allCandidates.filter(c => {
+          const pmcDb = (c.dish.protein_main_class ?? _proteinClassOf(c.dish.main_ingredient ?? '')) as string;
+          return pmcDb === wantDb;
+        });
+        if (strict.length >= 15) optionDFiltered = strict;
+      }
+
+      const topCandidates = optionDFiltered
         .sort((a, b) => b.score - a.score)
         .slice(0, 25);
 
-      if (allCandidates.length === 0) break;
+      if (topCandidates.length === 0) break;
 
-      const picked = weightedRandom(allCandidates, 1, rng)[0]?.dish;
+      const picked = weightedRandom(topCandidates, 1, rng)[0]?.dish;
       if (!picked) break;
 
       dayDishes.push(picked);
@@ -2317,7 +2388,7 @@ function generateWeekPlan(
             healthPrefs,
             hasPregnant: familyPrefs?.hasPregnant ?? false,
             humidity, solarTerm, hasXiaomei, mealTime: '晚餐',
-            homeInventoryItems, imagePrefs,
+            homeInventoryItems, imagePrefs, festivalTags,
           });
           const flavors: string[] = d.flavor_tags ?? [];
           if (flavors.includes('sweet'))  s += 0.25;
@@ -2389,7 +2460,7 @@ function generateWeekPlan(
         dayIndex, spiceBoost, ageGroup, healthPrefs,
         hasPregnant: familyPrefs?.hasPregnant ?? false,
         humidity, solarTerm, hasXiaomei, mealTime: '午餐',
-        homeInventoryItems, imagePrefs,
+        homeInventoryItems, imagePrefs, festivalTags,
       });
       if ((d.flavor_tags ?? []).includes('light')) score += 0.15;
       return { dish: d, score };
@@ -2574,7 +2645,7 @@ function generateWeekPlan(
             healthPrefs,
             hasPregnant: familyPrefs?.hasPregnant ?? false,
             humidity, solarTerm, hasXiaomei, mealTime: '早餐',
-            homeInventoryItems, imagePrefs,
+            homeInventoryItems, imagePrefs, festivalTags,
           }),
         }));
         scored.sort((a, b) => b.score - a.score);
@@ -3036,15 +3107,32 @@ export function useWeeklyMenu(weekOffset: number = 0) {
           if (existing === undefined || days < existing) recentIds.set(row.dish_id, days);
         });
 
-        // Fetch feedback scores
-        const { data: scoreRow } = await supabase
-          .from('user_preference_scores')
-          .select('*')
-          .eq('user_id', userId)
-          .single()
-          .then(r => r, () => ({ data: null }));
-
-        const prefScores: Record<string, number> = (scoreRow as any) ?? {};
+        // §C (TICKET-017) prefScores DB 优先, user_preference_scores 兜底
+        // Backend §B rollup cron 03:30 把聚合好的 jsonb 写 user_profiles.pref_scores;
+        // 算法侧优先读它 (已聚合, 无需 client 再算); 缺失/失败 → 回退现有
+        // user_preference_scores 路径 (兼容 rollup 未上线 / 单一 feedback 行场景)。
+        let prefScores: Record<string, number> = {};
+        try {
+          const { data: profRow } = await supabase
+            .from('user_profiles')
+            .select('pref_scores')
+            .eq('id', userId)
+            .single()
+            .then(r => r, () => ({ data: null }));
+          const ps = (profRow as any)?.pref_scores;
+          if (ps && typeof ps === 'object' && Object.keys(ps).length > 0) {
+            prefScores = ps as Record<string, number>;
+          }
+        } catch { /* user_profiles 读失败 → 退 user_preference_scores */ }
+        if (Object.keys(prefScores).length === 0) {
+          const { data: scoreRow } = await supabase
+            .from('user_preference_scores')
+            .select('*')
+            .eq('user_id', userId)
+            .single()
+            .then(r => r, () => ({ data: null }));
+          prefScores = (scoreRow as any) ?? {};
+        }
 
         const spiceBoost = localPrefs.spiceBoost ?? 0;
         const healthPrefs = {

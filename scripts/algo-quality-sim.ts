@@ -304,8 +304,19 @@ interface PickRecord { dayIndex: number; meal: string; slot: string; dish: any; 
 function pickSlot(pool: any[], used: Set<string>, p: Profile, meal: '早餐'|'午餐'|'晚餐',
                   dayIndex: number, pickedCuisines: string[], pickedIngredients: string[],
                   slotFilter: (d: any) => boolean, slot: string): PickRecord | null {
-  const candidates = pool.filter(d => !used.has(d.id) && slotFilter(d));
+  let candidates = pool.filter(d => !used.has(d.id) && slotFilter(d));
   if (candidates.length === 0) return null;
+  // TICKET-017 §A Option δ — single-pmc + main protein slot 候选池硬过滤
+  const isMainSlot = ['lu_main','di_main1','di_main2'].includes(slot);
+  if (isMainSlot && p.imagePrefs.protein_main_class?.length === 1) {
+    const wantUi = p.imagePrefs.protein_main_class[0];
+    const wantDb = PROTEIN_CLASS_UI_TO_DB[wantUi] ?? wantUi;
+    const strict = candidates.filter(d => {
+      const pmcDb = (d.protein_main_class ?? _proteinClassOf(d.main_ingredient ?? '')) as string;
+      return pmcDb === wantDb;
+    });
+    if (strict.length >= 15) candidates = strict;
+  }
   const scored = candidates.map(d => {
     const breaks: AxisBreak[] = [];
     return { d, s: score(d, p, meal, dayIndex, pickedCuisines, pickedIngredients, breaks), breaks };
@@ -430,7 +441,7 @@ async function main() {
               oil_level, cook_method, is_vegan, health_score, times_kept_in_menu, meal_type
        FROM dishes WHERE title_zh IS NOT NULL AND meal_type IN ('lunch','dinner','all') LIMIT 1200`
     );
-    console.log(`\n=== algo-quality-sim — TICKET-016 20-profile A/B simulation (ALGO_VERSION v51) ===`);
+    console.log(`\n=== algo-quality-sim — TICKET-017 20-profile A/B simulation (ALGO_VERSION v54 + Option δ) ===`);
     console.log(`pool: breakfast=${breakfastPool.length} | lunch+dinner=${lunchDinnerPool.length}\n`);
 
     // baseline: 看 DB 整体 protein_main_class / oil_level 分布
