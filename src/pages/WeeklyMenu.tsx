@@ -69,11 +69,13 @@ function getDayNutrition(dishes: SupabaseDish[]) {
 
 // ── DishCard ──────────────────────────────────────────────────────────────────
 
-function DishCard({ dish, small = false, familyMembers = [], homeToday = [], michelin }: {
+function DishCard({ dish, small = false, familyMembers = [], homeToday = [], michelin, onSwap, swapping = false }: {
   dish: SupabaseDish; small?: boolean;
   familyMembers?: FamilyMember[];
   homeToday?: string[];
   michelin?: MichelinDish;
+  onSwap?: () => void;
+  swapping?: boolean;
 }) {
   const { isChinese } = useLanguage();
   const activeMembers = familyMembers.filter(m => homeToday.includes(m.id));
@@ -239,6 +241,20 @@ function DishCard({ dish, small = false, familyMembers = [], homeToday = [], mic
           </div>
         )}
       </div>
+      {/* TICKET-017 §C — 换一道按钮（degraded variant, dinner only via swapDish hook） */}
+      {onSwap && (
+        <button
+          onClick={(e) => { e.stopPropagation(); if (!swapping) onSwap(); }}
+          disabled={swapping}
+          title="换一道"
+          className="absolute bottom-2 right-2 w-7 h-7 rounded-full flex items-center justify-center active:scale-90 transition-all disabled:opacity-50"
+          style={{ background: "rgba(255,255,255,0.92)", boxShadow: "0 2px 6px rgba(0,0,0,0.25)" }}
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: 15, color: "#FF5A1F" }}>
+            {swapping ? 'hourglass_top' : 'refresh'}
+          </span>
+        </button>
+      )}
     </div>
   );
 }
@@ -247,10 +263,13 @@ function DishCard({ dish, small = false, familyMembers = [], homeToday = [], mic
 
 function MealSection({
   mealIdx, dishes, familyMembers = [], homeToday = [], michelinByDishId = {},
+  onSwapSlot, swappingSlot = -1,
 }: {
   mealIdx: number; dishes: SupabaseDish[];
   familyMembers?: FamilyMember[]; homeToday?: string[];
   michelinByDishId?: Record<string, MichelinDish>;
+  onSwapSlot?: (slotIdx: number) => void;
+  swappingSlot?: number;
 }) {
   const meal = MEALS[mealIdx];
 
@@ -280,10 +299,12 @@ function MealSection({
       </div>
       {/* Horizontal scroll */}
       <div className="flex gap-3 overflow-x-auto px-5 pb-1" style={{ scrollbarWidth: "none" }}>
-        {dishes.map(dish => (
+        {dishes.map((dish, slotIdx) => (
           <DishCard key={dish.id} dish={dish}
             familyMembers={familyMembers} homeToday={homeToday}
-            michelin={michelinByDishId[dish.id]} />
+            michelin={michelinByDishId[dish.id]}
+            onSwap={onSwapSlot ? () => onSwapSlot(slotIdx) : undefined}
+            swapping={swappingSlot === slotIdx} />
         ))}
       </div>
     </div>
@@ -390,7 +411,40 @@ function LockedDayCard({ onUnlock }: { onUnlock: () => void }) {
 
 export default function WeeklyMenu() {
   const navigate = useNavigate();
-  const { weeklyMenu, loading } = useWeeklyMenu();
+  const { weeklyMenu, loading, swapDish } = useWeeklyMenu();
+  // TICKET-017 §C — 换一道按钮 state（key="dayIdx:slotIdx" busy 标记 + 提示 toast）
+  const [swapBusy, setSwapBusy] = useState<string | null>(null);
+  const [swapToast, setSwapToast] = useState<string | null>(null);
+  async function handleSwapDinner(dayIdx: number, slotIdx: number) {
+    if (!weeklyMenu || swapBusy) return;
+    const day = weeklyMenu.days[dayIdx];
+    const current = day?.dishes[slotIdx];
+    if (!current) return;
+    const busyKey = `${dayIdx}:${slotIdx}`;
+    setSwapBusy(busyKey);
+    try {
+      const excludeIds = day.dishes.map(d => d.id);
+      const inList = `(${excludeIds.map(id => `"${id}"`).join(',')})`;
+      let query = supabase.from('dishes').select('*').limit(20);
+      if (current.type) query = query.eq('type', current.type);
+      if (excludeIds.length > 0) query = query.not('id', 'in', inList);
+      const { data, error } = await query;
+      if (error || !data || data.length === 0) {
+        setSwapToast('暂无候选可换');
+        setTimeout(() => setSwapToast(null), 2200);
+        return;
+      }
+      const pick = data[Math.floor(Math.random() * data.length)] as SupabaseDish;
+      await swapDish(dayIdx, slotIdx, pick);
+      setSwapToast('已换一道菜');
+      setTimeout(() => setSwapToast(null), 2000);
+    } catch {
+      setSwapToast('换菜失败，稍后重试');
+      setTimeout(() => setSwapToast(null), 2200);
+    } finally {
+      setSwapBusy(null);
+    }
+  }
   // UI 014 §C: 周末 → 默认选第 6 tab "周末"（idx 5），渲染 WeekendDiningReport；
   // 工作日 → 默认选当天 (0-4)。todayIdx 仍 clamp 到 0-4 给"今天" dot 高亮和 isDayLocked
   // 用，因为算法层 (Algorithm 014 WORKDAYS_PER_WEEK=5) days 只有 0-4。
@@ -569,6 +623,13 @@ export default function WeeklyMenu() {
       className="min-h-screen flex flex-col max-w-md mx-auto relative overflow-hidden"
       style={{ background: "#0a0a0a", paddingBottom: 140 }}
     >
+      {/* TICKET-017 §C — swap toast (success / 暂无候选 / 换菜失败) */}
+      {swapToast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full font-bold"
+          style={{ background: "rgba(255,90,31,0.95)", color: "white", fontSize: 13, boxShadow: "0 4px 16px rgba(255,90,31,0.40)" }}>
+          {swapToast}
+        </div>
+      )}
       {/* Ambient glow */}
       <div className="absolute inset-0 pointer-events-none z-0">
         <div style={{
@@ -1015,7 +1076,9 @@ export default function WeeklyMenu() {
                             })()}
                             <MealSection mealIdx={0} dishes={dayBreakfast} familyMembers={familyMembers} homeToday={getEatingForDay(i)} michelinByDishId={overlayForDay} />
                             <MealSection mealIdx={1} dishes={dayLunch}     familyMembers={familyMembers} homeToday={getEatingForDay(i)} michelinByDishId={overlayForDay} />
-                            <MealSection mealIdx={2} dishes={dayDinner}    familyMembers={familyMembers} homeToday={getEatingForDay(i)} michelinByDishId={overlayForDay} />
+                            <MealSection mealIdx={2} dishes={dayDinner}    familyMembers={familyMembers} homeToday={getEatingForDay(i)} michelinByDishId={overlayForDay}
+                              onSwapSlot={(slotIdx) => handleSwapDinner(i, slotIdx)}
+                              swappingSlot={swapBusy?.startsWith(`${i}:`) ? Number(swapBusy.split(':')[1]) : -1} />
                           </div>
                         );
                       })}
