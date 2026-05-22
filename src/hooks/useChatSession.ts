@@ -311,5 +311,77 @@ export function useChatSession(mode: ChatMode = 'today', resumeId?: string) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resumeId]);
 
+  // ── TICKET-017 §A.1 — chat-session-get edge function hydration
+  //    Fresh mount path (no resumeId): try GET /functions/v1/chat-session-get
+  //    to fetch the user's most-recent server-side session. If returned
+  //    messages[] is non-empty AND localStorage didn't already have content
+  //    for the current sessionId, hydrate the in-memory session with those
+  //    messages so the user resumes their last conversation.
+  //
+  //    Why this is best-effort only: edge function schema is HANDOFF §2
+  //    (started_at/last_at/intent_tag) but migration 028 actual schema is
+  //    created_at/updated_at/intent_history — edge fn already detects this
+  //    and returns { schema_pending: true, messages: [] }. We hydrate when
+  //    we get real messages and silently no-op otherwise.
+  //
+  //    Important: this does NOT replace the existing supabase.from(...).upsert
+  //    persistence layer above — that one writes directly via PostgREST and
+  //    has been working since TICKET-027/044. This adds a thin edge-fn READ
+  //    pass on first mount, that's it. §A.2 (chat-session-append) and §A.3
+  //    (chat-session-end) edge fns have incompatible payload shapes vs the
+  //    current frontend model (no session_id / mode / proposals / chosen
+  //    parameters), so they remain blocked until Architect aligns contracts.
+  useEffect(() => {
+    if (resumeId) return; // resume path handled above
+    const sid = sessionIdRef.current;
+    const cached = localStorage.getItem(storageKey(sid));
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached) as ChatSession;
+        if (parsed.messages?.some(m => m.role !== 'system')) return; // already has real content
+      } catch { /* fall through to fetch */ }
+    }
+    const uid = getUserId();
+    if (!uid) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke('chat-session-get', {
+          method: 'GET',
+        } as any);
+        if (cancelled || error || !data) return;
+        const msgs = Array.isArray((data as any).messages) ? (data as any).messages : [];
+        if (msgs.length === 0) return; // empty or schema_pending — no-op
+        // Hydrate: keep the current session id (URL is already set to it),
+        // graft server messages in. Server messages use {role, text} or
+        // {role, content} shape — normalize to ChatMessage.
+        setSession(prev => {
+          const normalized: ChatMessage[] = msgs.map((m: any, idx: number) => ({
+            id:        typeof m.id === 'string' ? m.id : `srv_${idx}_${Date.now()}`,
+            role:      (m.role === 'user' || m.role === 'ai' || m.role === 'system' || m.role === 'assistant')
+                         ? (m.role === 'assistant' ? 'ai' : m.role) as ChatRole
+                         : 'ai',
+            content:   typeof m.content === 'string' ? m.content
+                       : typeof m.text === 'string' ? m.text : '',
+            timestamp: typeof m.ts === 'number' ? m.ts
+                       : typeof m.timestamp === 'number' ? m.timestamp : Date.now(),
+          }));
+          // Skip if server returned no real content after normalization.
+          if (!normalized.some(m => m.content.trim().length > 0)) return prev;
+          const next: ChatSession = {
+            ...prev,
+            messages:   [...prev.messages, ...normalized],
+            updated_at: Date.now(),
+          };
+          persistSession(next);
+          return next;
+        });
+      } catch { /* network / edge-fn down — silent, in-memory session still works */ }
+    })();
+    return () => { cancelled = true; };
+    // sessionIdRef stable across renders; resumeId path returns early above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return { session, appendMessage, appendStreamToken, chooseProposal, notFound };
 }
