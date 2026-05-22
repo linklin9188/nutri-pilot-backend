@@ -18,6 +18,7 @@ import {
   type FamilyMember,
 } from "../lib/familyPrefs";
 import { useSubscription } from "../lib/subscription";
+import { TagBadgeRow, type TagBadge } from "../components/TagBadge";
 import { elevateDayToMichelin, type MichelinDish } from "../lib/michelinFromDb";
 import ChefBookingModal from "../components/ChefBookingModal";
 import { NutritionRadarCard } from "../components/NutritionRadar";
@@ -69,13 +70,14 @@ function getDayNutrition(dishes: SupabaseDish[]) {
 
 // ── DishCard ──────────────────────────────────────────────────────────────────
 
-function DishCard({ dish, small = false, familyMembers = [], homeToday = [], michelin, onSwap, swapping = false }: {
+function DishCard({ dish, small = false, familyMembers = [], homeToday = [], michelin, onSwap, swapping = false, badges }: {
   dish: SupabaseDish; small?: boolean;
   familyMembers?: FamilyMember[];
   homeToday?: string[];
   michelin?: MichelinDish;
   onSwap?: () => void;
   swapping?: boolean;
+  badges?: TagBadge[];
 }) {
   const { isChinese } = useLanguage();
   const activeMembers = familyMembers.filter(m => homeToday.includes(m.id));
@@ -232,6 +234,8 @@ function DishCard({ dish, small = false, familyMembers = [], homeToday = [], mic
             {dishDesc}
           </p>
         )}
+        {/* TICKET-018 §C — 5-channel TagBadge row (top 2, optional, no-op when badges undefined) */}
+        {badges && badges.length > 0 && <TagBadgeRow badges={badges} />}
         {/* Member badge: show who can't eat this dish */}
         {cannotEat.length > 0 && (
           <div className="flex items-center gap-0.5 mt-1 flex-wrap">
