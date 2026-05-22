@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
@@ -6,6 +6,7 @@ import { getUserId } from "../lib/userId";
 import { syncProfileToDB } from "../lib/profileSync";
 import ImageGrid, { ImageGridOption } from "../components/ImageGrid";
 import NumberStepper from "../components/NumberStepper";
+import { useLanguage } from "../contexts/LanguageContext";
 
 // TICKET-005 v3 — 图片驱动 onboarding（11 题，条件渲染实际 8-9 步）。
 // 文案铁律：所有标题都是问句 + "怎么吃 / 喜欢" 视角，绕过用户自我描述偏差。
@@ -278,6 +279,160 @@ const QUESTIONS_V3: QuestionV3[] = [
   },
 ];
 
+// TICKET-026 §A — EN overrides for QUESTIONS_V3. zh strings stay as the canonical
+// source above (sentence structure / order owned by product). EN side is a sibling
+// lookup keyed by q.id + option.value. Missing keys silently fall back to zh.
+// zh-Hant uses zh per LanguageContext FALLBACK; tl/id helpers fall back to en here.
+interface OptionTextOverride { label?: string; desc?: string }
+interface QuestionTextOverride { question: string; sub: string; options: Record<string, OptionTextOverride> }
+const QUESTIONS_V3_EN: Record<string, QuestionTextOverride> = {
+  table_style: {
+    question: "How many in your family?",
+    sub: "Pick the closest mix — I'll auto-figure headcount, portions, complexity. Last item is customizable.",
+    options: {
+      solo_w_kid:   { label: "1 adult + 1 kid",   desc: "Single parent" },
+      couple_1kid:  { label: "2 adults + 1 kid",  desc: "Three-person family" },
+      couple_2kids: { label: "2 adults + 2 kids", desc: "Four-person family" },
+      couple_3kids: { label: "2 adults + 3 kids", desc: "Multi-kid family" },
+      three_gen:    { label: "4 adults + 2 kids", desc: "Three generations" },
+      custom:       { label: "Custom N adults + M kids", desc: "Tap to adjust" },
+    },
+  },
+  protein_main_class: {
+    question: "Which protein categories does your family go for?",
+    sub: "Multi-select, at least 1.",
+    options: {
+      red_meat:   { label: "Red meat",  desc: "Beef stew · Braised pork · Lamb" },
+      white_meat: { label: "White meat", desc: "Poached chicken · Three-cup chicken · Duck" },
+      seafood:    { label: "Seafood",   desc: "Shrimp · Crab · Fish · Shellfish" },
+      veggie:     { label: "Vegetarian", desc: "Tofu · Veggies" },
+      other:      { label: "✏️ Other",  desc: "Type your own" },
+    },
+  },
+  staple_pref: {
+    question: "Rice or noodles for staples?",
+    sub: "Multi-select OK.",
+    options: {
+      rice:   { label: "Rice" },
+      noodle: { label: "Noodles / mantou" },
+      congee: { label: "Congee" },
+      grain:  { label: "Whole grains", desc: "Sweet potato · Corn · Oats" },
+      other:  { label: "✏️ Other", desc: "Type your own" },
+    },
+  },
+  protein_pref: {
+    question: "Which meats does your family enjoy?",
+    sub: "Multi-select, at least 1.",
+    options: {
+      pork:    { label: "Pork" },
+      chicken: { label: "Chicken" },
+      duck:    { label: "Duck" },
+      lamb:    { label: "Lamb" },
+      beef:    { label: "Beef" },
+      other:   { label: "✏️ Other" },
+    },
+  },
+  beef_style: {
+    question: "How do you like beef cooked?",
+    sub: "Multi-select — different cooking styles map to different cuisines.",
+    options: {
+      spicy_stirfry: { label: "Spicy stir-fry",  desc: "Hunan · Sichuan spice" },
+      steak:         { label: "Pan-seared steak", desc: "Western · North" },
+      stewed:        { label: "Stewed brisket",  desc: "Cantonese · Light HK" },
+      braised:       { label: "Red-braised beef", desc: "Jiangzhe · North home-style" },
+      other:         { label: "✏️ Other", desc: "Type your own" },
+    },
+  },
+  wellness_goals: {
+    question: "Anything your body especially wants topped up?",
+    sub: "Optional; pick up to 3.",
+    options: {
+      prenatal:    { label: "Pre-pregnancy", desc: "Folate + quality protein" },
+      lactation:   { label: "Nursing",       desc: "Calcium + protein" },
+      muscle_gain: { label: "Muscle gain",   desc: "High protein" },
+      fat_loss:    { label: "Fat loss",      desc: "Low oil + high fiber" },
+      low_sugar:   { label: "Sugar control", desc: "Diabetes / stable post-meal" },
+      low_sodium:  { label: "Salt control",  desc: "High blood pressure" },
+      low_purine:  { label: "Purine control", desc: "Gout / high uric acid" },
+      skip:        { label: "No preference", desc: "Nothing specific" },
+    },
+  },
+  chicken_style: {
+    question: "How do you like chicken cooked?",
+    sub: "Multi-select OK.",
+    options: {
+      poached:        { label: "Poached chicken",  desc: "Cantonese" },
+      spicy_diced:    { label: "Spicy diced",      desc: "Sichuan" },
+      three_cup:      { label: "Three-cup chicken", desc: "Taiwanese" },
+      yellow_braised: { label: "Yellow-braised",   desc: "North · Jiangzhe" },
+      other:          { label: "✏️ Other", desc: "Type your own" },
+    },
+  },
+  seafood_style: {
+    question: "How do you like seafood cooked?",
+    sub: "Multi-select OK.",
+    options: {
+      steamed:  { label: "Steamed" },
+      braised:  { label: "Red-braised" },
+      salted:   { label: "Salt-pepper" },
+      blanched: { label: "Poached / blanched" },
+      other:    { label: "✏️ Other", desc: "Type your own" },
+    },
+  },
+  veggie_method: {
+    question: "How do you like vegetables cooked?",
+    sub: "Multi-select OK.",
+    options: {
+      stirfry:   { label: "Stir-fry" },
+      dry_fried: { label: "Dry-fried" },
+      cold:      { label: "Cold dressed" },
+      soup:      { label: "In soup" },
+      other:     { label: "✏️ Other", desc: "Type your own" },
+    },
+  },
+  oil_level: {
+    question: "Light or rich seasoning?",
+    sub: "I'll dial seasoning up or down based on this.",
+    options: {
+      rich:   { label: "Rich",   desc: "Heavy-oil braised flavor" },
+      medium: { label: "Medium", desc: "Everyday home-style" },
+      light:  { label: "Light",  desc: "Poached · Steamed" },
+      other:  { label: "Other",  desc: "Type your own" },
+    },
+  },
+  breakfast_cuisine: {
+    question: "What does breakfast look like?",
+    sub: "Breakfast often differs from lunch/dinner — HK moms often go west AM, Chinese PM.",
+    options: {
+      chinese: { label: "Chinese", desc: "Baozi · Congee · Youtiao · Soy milk" },
+      western: { label: "Western", desc: "Sandwich · Milk · Cereal" },
+      hk:      { label: "HK-style", desc: "Pineapple bun · Milk tea · Toast" },
+      simple:  { label: "Simple", desc: "Eggs · Oats" },
+      other:   { label: "✏️ Other", desc: "Type your own" },
+    },
+  },
+  strict_avoid: {
+    question: "Anything you absolutely can't eat?",
+    sub: "Can be empty or multiple (true allergy / religion / dislike).",
+    options: {
+      seafood:       { label: "Seafood allergy (shrimp/crab/shellfish)" },
+      fish:          { label: "Fish allergy" },
+      dairy:         { label: "Milk/dairy allergy" },
+      eggs:          { label: "Egg allergy" },
+      gluten:        { label: "Gluten allergy (wheat/barley)" },
+      soy:           { label: "Soy allergy" },
+      tree_nuts:     { label: "Tree nut allergy (almond/walnut/cashew)" },
+      peanut:        { label: "Peanut allergy" },
+      pork_religion: { label: "No pork (religion)" },
+      no_beef_lamb:  { label: "No beef or lamb" },
+      vegetarian:    { label: "Strict vegetarian" },
+      cilantro:      { label: "Cilantro" },
+      innards:       { label: "Organ meats" },
+      other:         { label: "Other (type)" },
+    },
+  },
+};
+
 // Q0 家庭组合 → 人数 / 复杂度 解析表。
 // UI 014: 6 → 4 收敛 (solo/couple/family/gather)。
 // UI 015 §A: 4 → 6 重写以家庭组合为 axis (solo_w_kid / couple_1kid / couple_2kids /
@@ -342,6 +497,7 @@ async function persistProfileToDb(answers: Record<string, any>): Promise<void> {
 
 export default function QuickSetup() {
   const navigate = useNavigate();
+  const { t, isChinese } = useLanguage();
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [multiSel, setMultiSel] = useState<string[]>([]);
@@ -369,6 +525,25 @@ export default function QuickSetup() {
   const currentVisiblePos = Math.max(0, visibleIndices.indexOf(step));
 
   const q = QUESTIONS_V3[step];
+
+  // TICKET-026 §A — render-time i18n picker for QUESTIONS_V3 + per-option text.
+  // zh path returns canonical Chinese; non-zh path returns QUESTIONS_V3_EN override,
+  // falling back to zh when an EN entry is missing. zh-Hant resolved as zh upstream.
+  const qQuestion = isChinese ? q.question : (QUESTIONS_V3_EN[q.id]?.question ?? q.question);
+  const qSub      = isChinese ? q.sub      : (QUESTIONS_V3_EN[q.id]?.sub      ?? q.sub);
+  const optLabel = (opt: ImageGridOption): string => {
+    if (isChinese) return opt.label;
+    return QUESTIONS_V3_EN[q.id]?.options?.[opt.value]?.label ?? opt.label;
+  };
+  const optDesc = (opt: ImageGridOption): string | undefined => {
+    if (isChinese) return opt.desc;
+    return QUESTIONS_V3_EN[q.id]?.options?.[opt.value]?.desc ?? opt.desc;
+  };
+  // ImageGrid options pre-translated so the grid component sees the right language.
+  const translatedOptions: ImageGridOption[] = useMemo(() => {
+    return q.options.map(o => ({ ...o, label: optLabel(o), desc: optDesc(o) }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, isChinese]);
 
   const goToNext = (latestAnswers: Record<string, any>) => {
     // Recompute visible list with latest answers — Q1/Q3 多选可能新增或删除
@@ -596,10 +771,13 @@ export default function QuickSetup() {
               backdropFilter: 'blur(12px)',
             }}>
             <p className="font-bold" style={{ fontSize: 14 }}>
-              已为你挑出 {previewCount >= 100 ? '100+' : previewCount} 道可能爱吃的菜 ✨
+              {t(
+                `Picked ${previewCount >= 100 ? '100+' : previewCount} dishes you may love ✨`,
+                `已为你挑出 ${previewCount >= 100 ? '100+' : previewCount} 道可能爱吃的菜 ✨`,
+              )}
             </p>
             <p className="mt-1 text-white/80 font-light" style={{ fontSize: 12 }}>
-              还有几题，最后给你定制本周菜单
+              {t('A few more questions, then your weekly menu is ready.', '还有几题，最后给你定制本周菜单')}
             </p>
           </motion.div>
         )}
@@ -620,9 +798,14 @@ export default function QuickSetup() {
         <div className="relative z-10 px-6 pt-14 pb-2">
           <div className="rounded-r p-4"
             style={{ background: 'rgba(255,90,31,0.10)', borderLeft: '4px solid #FF9054' }}>
-            <p className="font-bold text-[#FF9054]" style={{ fontSize: 14 }}>🎨 升级了！我们用图片代替文字</p>
+            <p className="font-bold text-[#FF9054]" style={{ fontSize: 14 }}>
+              {t('🎨 Upgraded! Pictures instead of words', '🎨 升级了！我们用图片代替文字')}
+            </p>
             <p className="mt-1 text-white/65 font-light" style={{ fontSize: 12, lineHeight: 1.5 }}>
-              用 3 分钟看图选爱吃的 — 比读字快 10 倍，让推荐更懂你。
+              {t(
+                'Spend 3 minutes picking what you love — 10x faster than reading, gets your taste better.',
+                '用 3 分钟看图选爱吃的 — 比读字快 10 倍，让推荐更懂你。',
+              )}
             </p>
           </div>
         </div>
@@ -660,10 +843,10 @@ export default function QuickSetup() {
             <span className="text-[40px] leading-none">{q.emoji}</span>
             <h2 className="mt-3 font-serif font-black text-white leading-tight"
               style={{ fontSize: 26, letterSpacing: '0.01em' }}>
-              {q.question}
+              {qQuestion}
             </h2>
             <p className="mt-2 text-white/40 font-light" style={{ fontSize: 13, letterSpacing: '0.04em' }}>
-              {q.sub}
+              {qSub}
             </p>
           </div>
 
@@ -681,8 +864,8 @@ export default function QuickSetup() {
                         : { background: 'rgba(255,255,255,0.06)', border: '1.5px solid rgba(255,255,255,0.09)', fontSize: 13, color: 'rgba(255,255,255,0.75)' }
                       }>
                       <span>{opt.emoji}</span>
-                      <span>{opt.label}</span>
-                      {opt.desc && <span style={{ opacity: 0.55, fontSize: 11 }}>· {opt.desc}</span>}
+                      <span>{optLabel(opt)}</span>
+                      {optDesc(opt) && <span style={{ opacity: 0.55, fontSize: 11 }}>· {optDesc(opt)}</span>}
                     </button>
                   );
                 })}
@@ -693,7 +876,7 @@ export default function QuickSetup() {
                     type="text"
                     value={otherText}
                     onChange={e => setOtherText(e.target.value)}
-                    placeholder="自填过敏原（如：芒果 / 猕猴桃）"
+                    placeholder={t('Type your allergens (e.g., mango / kiwi)', '自填过敏原（如：芒果 / 猕猴桃）')}
                     className="w-full px-4 py-3 rounded-xl text-white placeholder-white/30 focus:outline-none"
                     style={{
                       background: 'rgba(255,255,255,0.06)',
@@ -702,45 +885,48 @@ export default function QuickSetup() {
                     }}
                   />
                   <p className="mt-2 text-white/35 font-light" style={{ fontSize: 11 }}>
-                    输完后点下方"完成 →"
+                    {t('After typing, tap "Done →" below', '输完后点下方"完成 →"')}
                   </p>
                 </div>
               )}
             </div>
           ) : q.multi ? (
             <>
-              <ImageGrid options={q.options} multi selected={multiSel} onToggle={toggleMulti} cols={q.cols} />
+              <ImageGrid options={translatedOptions} multi selected={multiSel} onToggle={toggleMulti} cols={q.cols} />
               {/* UI 015 §B — 多选 'other' input：multiSel 含 'other' 时显示文本框，
                   commit 时由 commitMulti 把 'other' 转写为 'other:<text>'。 */}
               {multiSel.includes('other') && (
                 <div className="mt-4">
                   <input type="text" value={otherText} maxLength={30}
                     onChange={e => setOtherText(e.target.value)}
-                    placeholder="自填（最多 30 字）"
+                    placeholder={t('Type your own (30 chars max)', '自填（最多 30 字）')}
                     className="w-full px-4 py-3 rounded-xl text-white placeholder-white/30 focus:outline-none"
                     style={{ background: 'rgba(255,255,255,0.06)', border: '1.5px solid rgba(255,90,31,0.4)', fontSize: 14 }} />
                   <p className="mt-2 text-white/35 font-light" style={{ fontSize: 11 }}>
-                    输完后点下方"完成 →"，或留空跳过
+                    {t('After typing, tap "Done →" below, or leave blank to skip', '输完后点下方"完成 →"，或留空跳过')}
                   </p>
                 </div>
               )}
             </>
           ) : (
             <>
-              <ImageGrid options={q.options} multi={false}
+              <ImageGrid options={translatedOptions} multi={false}
                 selected={answers[q.id] ? [answers[q.id]] : []}
                 onToggle={handleSingle} cols={q.cols} />
               {/* UI 015 §A — Q0 'custom' 双 stepper：选中 custom 后展开调 N 大 M 小 */}
               {q.id === 'table_style' && answers.table_style === 'custom' && (
                 <div className="mt-5">
                   <div className="flex gap-3">
-                    <NumberStepper label="大人" value={customAdults} onChange={setCustomAdults} min={1} max={10} />
-                    <NumberStepper label="孩子" value={customKids}   onChange={setCustomKids}   min={0} max={6} />
+                    <NumberStepper label={t('Adults', '大人')} value={customAdults} onChange={setCustomAdults} min={1} max={10} />
+                    <NumberStepper label={t('Kids',   '孩子')} value={customKids}   onChange={setCustomKids}   min={0} max={6} />
                   </div>
                   <button onClick={() => goToNext(answers)}
                     className="mt-4 w-full py-3 rounded-2xl font-bold text-white"
                     style={{ background: '#FF5A1F', fontSize: 15, letterSpacing: '0.04em' }}>
-                    {customAdults} 大 {customKids} 小 · 下一步 →
+                    {t(
+                      `${customAdults} adult${customAdults === 1 ? '' : 's'} + ${customKids} kid${customKids === 1 ? '' : 's'} · Next →`,
+                      `${customAdults} 大 ${customKids} 小 · 下一步 →`,
+                    )}
                   </button>
                 </div>
               )}
@@ -750,7 +936,7 @@ export default function QuickSetup() {
                 <div className="mt-4">
                   <input type="text" value={otherText} maxLength={30}
                     onChange={e => setOtherText(e.target.value)}
-                    placeholder="自填（最多 30 字）"
+                    placeholder={t('Type your own (30 chars max)', '自填（最多 30 字）')}
                     className="w-full px-4 py-3 rounded-xl text-white placeholder-white/30 focus:outline-none"
                     style={{ background: 'rgba(255,255,255,0.06)', border: '1.5px solid rgba(255,90,31,0.4)', fontSize: 14 }} />
                   <button onClick={() => {
@@ -762,7 +948,9 @@ export default function QuickSetup() {
                   }}
                     className="mt-3 w-full py-3 rounded-2xl font-bold text-white"
                     style={{ background: '#FF5A1F', fontSize: 15, letterSpacing: '0.04em' }}>
-                    {otherText.trim() ? `"${otherText.trim()}" · 下一步 →` : '跳过 · 下一步 →'}
+                    {otherText.trim()
+                      ? t(`"${otherText.trim()}" · Next →`, `"${otherText.trim()}" · 下一步 →`)
+                      : t('Skip · Next →', '跳过 · 下一步 →')}
                   </button>
                 </div>
               )}
@@ -779,11 +967,11 @@ export default function QuickSetup() {
                 {multiSel.length > 0 ? (
                   remaining > 0 ? (
                     <p className="text-[#FF9054]" style={{ fontSize: 12, letterSpacing: '0.04em' }}>
-                      再选 {remaining} 项继续
+                      {t(`Pick ${remaining} more to continue`, `再选 ${remaining} 项继续`)}
                     </p>
                   ) : (
                     <p className="text-white/55" style={{ fontSize: 12, letterSpacing: '0.04em' }}>
-                      已选 {multiSel.length} 项 · 稍等带你往下走
+                      {t(`${multiSel.length} picked · moving on shortly`, `已选 ${multiSel.length} 项 · 稍等带你往下走`)}
                     </p>
                   )
                 ) : <span />}
@@ -791,7 +979,7 @@ export default function QuickSetup() {
                   <button onClick={() => commitMulti(multiSel)}
                     className="text-white/45 hover:text-white/75 transition-colors"
                     style={{ fontSize: 13, letterSpacing: '0.04em' }}>
-                    {multiSel.length > 0 ? '完成' : '这题先放一放'} →
+                    {multiSel.length > 0 ? t('Done', '完成') : t('Skip for now', '这题先放一放')} →
                   </button>
                 ) : <span />}
               </div>
@@ -815,7 +1003,7 @@ export default function QuickSetup() {
             }}
               className="mt-3 mx-auto block text-white/40 hover:text-white/65 transition-colors"
               style={{ fontSize: 13, letterSpacing: '0.04em' }}>
-              ⏭️ 都行 / 跳过这题
+              {t('⏭️ Anything / skip this one', '⏭️ 都行 / 跳过这题')}
             </button>
           )}
 
@@ -843,7 +1031,7 @@ export default function QuickSetup() {
             }}
               className="mt-4 text-center text-white/25 hover:text-white/50 transition-colors"
               style={{ fontSize: 12, letterSpacing: '0.06em' }}>
-              先随便看看
+              {t('Just have a look first', '先随便看看')}
             </button>
           )}
         </motion.div>
