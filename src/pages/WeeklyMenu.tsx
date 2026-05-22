@@ -19,6 +19,8 @@ import {
 } from "../lib/familyPrefs";
 import { useSubscription } from "../lib/subscription";
 import { TagBadgeRow, type TagBadge } from "../components/TagBadge";
+import CandidateGrid from "../components/CandidateGrid";
+import type { SlotPlan, SlotChoice } from "../hooks/useWeeklyMenu";
 import { elevateDayToMichelin, type MichelinDish } from "../lib/michelinFromDb";
 import ChefBookingModal from "../components/ChefBookingModal";
 import { NutritionRadarCard } from "../components/NutritionRadar";
@@ -267,13 +269,22 @@ function DishCard({ dish, small = false, familyMembers = [], homeToday = [], mic
 
 function MealSection({
   mealIdx, dishes, familyMembers = [], homeToday = [], michelinByDishId = {},
-  onSwapSlot, swappingSlot = -1,
+  onSwapSlot, swappingSlot = -1, slotsByDishId = {},
+  expandedDishId, onToggleExpand, onPickCandidate,
 }: {
   mealIdx: number; dishes: SupabaseDish[];
   familyMembers?: FamilyMember[]; homeToday?: string[];
   michelinByDishId?: Record<string, MichelinDish>;
   onSwapSlot?: (slotIdx: number) => void;
   swappingSlot?: number;
+  /** TICKET-022 §A — slot lookup keyed by primary.dish.id for badge + candidate render. */
+  slotsByDishId?: Record<string, SlotPlan>;
+  /** Which dish has its candidate grid expanded (null = none). */
+  expandedDishId?: string | null;
+  /** Tap refresh on a dish card → toggle its candidate grid open/closed. */
+  onToggleExpand?: (dishId: string) => void;
+  /** User picks a candidate from the grid → swap into the menu. */
+  onPickCandidate?: (slotIdx: number, pick: SlotChoice) => void;
 }) {
   const meal = MEALS[mealIdx];
 
@@ -303,14 +314,44 @@ function MealSection({
       </div>
       {/* Horizontal scroll */}
       <div className="flex gap-3 overflow-x-auto px-5 pb-1" style={{ scrollbarWidth: "none" }}>
-        {dishes.map((dish, slotIdx) => (
-          <DishCard key={dish.id} dish={dish}
-            familyMembers={familyMembers} homeToday={homeToday}
-            michelin={michelinByDishId[dish.id]}
-            onSwap={onSwapSlot ? () => onSwapSlot(slotIdx) : undefined}
-            swapping={swappingSlot === slotIdx} />
-        ))}
+        {dishes.map((dish, slotIdx) => {
+          const slot = slotsByDishId[dish.id];
+          const handleSwap = onToggleExpand
+            ? () => onToggleExpand(dish.id)
+            : (onSwapSlot ? () => onSwapSlot(slotIdx) : undefined);
+          return (
+            <DishCard key={dish.id} dish={dish}
+              familyMembers={familyMembers} homeToday={homeToday}
+              michelin={michelinByDishId[dish.id]}
+              onSwap={handleSwap}
+              swapping={swappingSlot === slotIdx}
+              badges={slot?.primary?.tagBadges} />
+          );
+        })}
       </div>
+      {/* TICKET-022 §A — Candidate grid expansion below the meal strip. Renders
+          only when expandedDishId matches a dish in THIS section AND that dish
+          has a SlotPlan with candidates[]. Picking a candidate fires onPickCandidate
+          → swapDish → grid auto-closes. */}
+      {expandedDishId && onPickCandidate && (() => {
+        const expSlotIdx = dishes.findIndex(d => d.id === expandedDishId);
+        if (expSlotIdx < 0) return null;
+        const slot = slotsByDishId[expandedDishId];
+        if (!slot || !slot.candidates || slot.candidates.length === 0) return null;
+        return (
+          <div className="mt-2 px-5">
+            <p className="mb-2 font-bold text-white/70" style={{ fontSize: 11, letterSpacing: '0.04em' }}>
+              {slot.candidates.length} 个候选 · 点选替换
+            </p>
+            <CandidateGrid
+              candidates={slot.candidates}
+              pickedId={expandedDishId}
+              onPick={(c) => onPickCandidate(expSlotIdx, c)}
+              tone="dark"
+            />
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -419,6 +460,20 @@ export default function WeeklyMenu() {
   // TICKET-017 §C — 换一道按钮 state（key="dayIdx:slotIdx" busy 标记 + 提示 toast）
   const [swapBusy, setSwapBusy] = useState<string | null>(null);
   const [swapToast, setSwapToast] = useState<string | null>(null);
+  // TICKET-022 §A — 候选网格展开：key=`${dayIdx}:${dishId}` of dish whose grid is open.
+  // null = no grid open. Tapping a dish's refresh button toggles its grid.
+  const [expandedGridKey, setExpandedGridKey] = useState<string | null>(null);
+  function handleToggleExpand(dayIdx: number, dishId: string) {
+    const key = `${dayIdx}:${dishId}`;
+    setExpandedGridKey(prev => prev === key ? null : key);
+  }
+  async function handlePickCandidate(dayIdx: number, slotIdx: number, pick: SlotChoice) {
+    if (!weeklyMenu) return;
+    await swapDish(dayIdx, slotIdx, pick.dish as SupabaseDish);
+    setExpandedGridKey(null);
+    setSwapToast('已换为「' + ((pick.dish as any).title_zh || (pick.dish as any).title || '该菜') + '」');
+    setTimeout(() => setSwapToast(null), 2000);
+  }
   async function handleSwapDinner(dayIdx: number, slotIdx: number) {
     if (!weeklyMenu || swapBusy) return;
     const day = weeklyMenu.days[dayIdx];
@@ -988,9 +1043,27 @@ export default function WeeklyMenu() {
                   ) : (
                     <div className="flex flex-col">
                       {weeklyMenu?.days.map((day, i) => {
-                        const dayBreakfast = day.breakfastDishes ?? [];
-                        const dayLunch  = day.lunchDishes ?? [];
-                        const dayDinner = day.dishes ?? [];
+                        // §A (TICKET-020) slots[].primary 投影优先, 缺失 fallback 旧字段
+                        // (loadFromDB 命中旧缓存场景或 generateWeekPlan 未填 slots 时不破)
+                        const slotsBreakfast = day.slots
+                          ?.filter(s => s.slotType === 'breakfast')
+                          .map(s => s.primary.dish);
+                        const dayBreakfast = (slotsBreakfast && slotsBreakfast.length > 0)
+                          ? slotsBreakfast : (day.breakfastDishes ?? []);
+                        const slotsLunch = day.slots
+                          ?.filter(s => s.slotType === 'lunch_main' || s.slotType === 'lunch_side')
+                          .map(s => s.primary.dish);
+                        const dayLunch = (slotsLunch && slotsLunch.length > 0)
+                          ? slotsLunch : (day.lunchDishes ?? []);
+                        const slotsDinner = day.slots
+                          ?.filter(s =>
+                            s.slotType === 'dinner_main' ||
+                            s.slotType === 'dinner_side' ||
+                            s.slotType === 'dinner_kid'
+                          )
+                          .map(s => s.primary.dish);
+                        const dayDinner = (slotsDinner && slotsDinner.length > 0)
+                          ? slotsDinner : (day.dishes ?? []);
                         const locked = isDayLocked(i);
                         // 周末规则：周一-周五为本周菜单，今天之前的日子隐藏
                         // 避免用户星期三还看到周一周二的"昨日菜"。
@@ -1078,11 +1151,30 @@ export default function WeeklyMenu() {
                                 </div>
                               );
                             })()}
-                            <MealSection mealIdx={0} dishes={dayBreakfast} familyMembers={familyMembers} homeToday={getEatingForDay(i)} michelinByDishId={overlayForDay} />
-                            <MealSection mealIdx={1} dishes={dayLunch}     familyMembers={familyMembers} homeToday={getEatingForDay(i)} michelinByDishId={overlayForDay} />
-                            <MealSection mealIdx={2} dishes={dayDinner}    familyMembers={familyMembers} homeToday={getEatingForDay(i)} michelinByDishId={overlayForDay}
-                              onSwapSlot={(slotIdx) => handleSwapDinner(i, slotIdx)}
-                              swappingSlot={swapBusy?.startsWith(`${i}:`) ? Number(swapBusy.split(':')[1]) : -1} />
+                            {/* TICKET-022 §A — per-day slot lookup keyed by primary.dish.id;
+                                feeds DishCard badges + CandidateGrid expansion. */}
+                            {(() => {
+                              const slotsByDishId: Record<string, SlotPlan> = {};
+                              for (const sp of day.slots ?? []) {
+                                if (sp.primary?.dish?.id) slotsByDishId[sp.primary.dish.id] = sp;
+                              }
+                              const expandedDishId = expandedGridKey?.startsWith(`${i}:`)
+                                ? expandedGridKey.slice(`${i}:`.length)
+                                : null;
+                              return (<>
+                                <MealSection mealIdx={0} dishes={dayBreakfast} familyMembers={familyMembers} homeToday={getEatingForDay(i)} michelinByDishId={overlayForDay}
+                                  slotsByDishId={slotsByDishId} />
+                                <MealSection mealIdx={1} dishes={dayLunch}     familyMembers={familyMembers} homeToday={getEatingForDay(i)} michelinByDishId={overlayForDay}
+                                  slotsByDishId={slotsByDishId} />
+                                <MealSection mealIdx={2} dishes={dayDinner}    familyMembers={familyMembers} homeToday={getEatingForDay(i)} michelinByDishId={overlayForDay}
+                                  onSwapSlot={(slotIdx) => handleSwapDinner(i, slotIdx)}
+                                  swappingSlot={swapBusy?.startsWith(`${i}:`) ? Number(swapBusy.split(':')[1]) : -1}
+                                  slotsByDishId={slotsByDishId}
+                                  expandedDishId={expandedDishId}
+                                  onToggleExpand={(dishId) => handleToggleExpand(i, dishId)}
+                                  onPickCandidate={(slotIdx, pick) => handlePickCandidate(i, slotIdx, pick)} />
+                              </>);
+                            })()}
                           </div>
                         );
                       })}
