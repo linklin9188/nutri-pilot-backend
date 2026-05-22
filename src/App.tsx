@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useEffect } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import Home from './pages/Home';
 import Login from './pages/Login';
@@ -39,6 +39,11 @@ import { LanguageProvider } from './contexts/LanguageContext';
 import { supabase } from './lib/supabase';
 import { maybeAttemptSilent } from './lib/wechatSilentLogin';
 import { useWeChatShare } from './hooks/useWeChatShare';
+
+// TICKET-018 §D — DEV-only prototype routes (lazy + tree-shaken from prod bundle)
+const CandidateGridProto = import.meta.env.DEV
+  ? lazy(() => import('./pages/__protos__/CandidateGridProto'))
+  : null;
 
 
 // Smart entry point for "/". Anonymous-first: visitors don't need to log in
@@ -216,6 +221,17 @@ function AppShell() {
       <Route path="/pro/wellness"       element={<RequireAuth><ProWellness /></RequireAuth>} />
       <Route path="/pro/school-balance" element={<RequireAuth><ProSchoolBalance /></RequireAuth>} />
       <Route path="/favorites" element={<RequireAuth><Favorites /></RequireAuth>} />
+
+      {/* TICKET-018 §D — DEV-only candidate-grid prototype. Prod build's
+          import.meta.env.DEV is false → CandidateGridProto is null →
+          Route is not registered, dynamic import chunk is tree-shaken. */}
+      {import.meta.env.DEV && CandidateGridProto && (
+        <Route path="/__proto__/candidate-grid" element={
+          <Suspense fallback={<div className="p-12 text-center text-sm opacity-50">Loading proto…</div>}>
+            <CandidateGridProto />
+          </Suspense>
+        } />
+      )}
     </Routes>
     </>
   );
