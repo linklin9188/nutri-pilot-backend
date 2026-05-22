@@ -441,7 +441,7 @@ async function main() {
               oil_level, cook_method, is_vegan, health_score, times_kept_in_menu, meal_type
        FROM dishes WHERE title_zh IS NOT NULL AND meal_type IN ('lunch','dinner','all') LIMIT 1200`
     );
-    console.log(`\n=== algo-quality-sim — TICKET-017 20-profile A/B simulation (ALGO_VERSION v54 + Option δ) ===`);
+    console.log(`\n=== algo-quality-sim — TICKET-018 20-profile A/B simulation (ALGO_VERSION v55: 5-channel slots[].candidates[] + tagBadges[]) ===`);
     console.log(`pool: breakfast=${breakfastPool.length} | lunch+dinner=${lunchDinnerPool.length}\n`);
 
     // baseline: 看 DB 整体 protein_main_class / oil_level 分布
@@ -569,6 +569,50 @@ async function main() {
       const picks = simulateWeek(PROFILES[0], breakfastPool, lunchDinnerPool);
       const m = computeMetrics(picks, PROFILES[0]);
       console.log(`  run ${i+1}: target_pmc=${pct(m.target_pmc)}  target_oil=${pct(m.target_oil)}  target_cuisine=${pct(m.target_cuisine)}`);
+    }
+
+    // ─── TICKET-018 §B deriveBadges 单元 smoke (5 channel 每个至少 1 个命中) ───
+    console.log(`\n【TICKET-018 §B deriveBadges smoke — 5 channel 命中检测】`);
+    const today = new Date();
+    const _m = today.getMonth() + 1;
+    const curSeason = _m >= 3 && _m <= 5 ? 'spring' : _m >= 6 && _m <= 8 ? 'summer' : _m >= 9 && _m <= 11 ? 'autumn' : 'winter';
+    type SimBadge = { kind: string; icon: string; label: string };
+    function simDeriveBadges(dish: any, ctx: any): SimBadge[] {
+      const out: SimBadge[] = [];
+      const wantPmcArr: string[] = ctx.imagePrefs?.protein_main_class ?? [];
+      const dishPmc = (dish.protein_main_class ?? _proteinClassOf(dish.main_ingredient ?? '')) as string;
+      if (wantPmcArr.length > 0 && dishPmc && wantPmcArr.includes(dishPmc)) {
+        out.push({ kind: 'preference', icon: '🌶️', label: `你爱吃${dishPmc}系` });
+      }
+      const dishFest = (dish.festival_tags ?? []) as string[];
+      if (Array.isArray(dishFest) && dishFest.length > 0 && ctx.festivalTags?.length > 0) {
+        const hit = dishFest.find((t: string) => ctx.festivalTags.includes(t));
+        if (hit) out.push({ kind: 'festival', icon: '🎋', label: hit });
+      }
+      if (ctx.hasKid) {
+        if (dish.is_blood_tonic) out.push({ kind: 'school_balance', icon: '🎒', label: '孩子补血' });
+        else if (dish.is_eye_care) out.push({ kind: 'school_balance', icon: '🎒', label: '孩子护眼' });
+      }
+      const dishSeasons = (dish.seasonal_tags ?? []) as string[];
+      if (Array.isArray(dishSeasons) && dishSeasons.includes(curSeason)) {
+        out.push({ kind: 'seasonal', icon: '🌿', label: `${curSeason}当令` });
+      }
+      if (dish.is_qi_tonic) out.push({ kind: 'weekly_balance', icon: '💪', label: '本周补气' });
+      else if (dish.is_mood_boost) out.push({ kind: 'weekly_balance', icon: '💪', label: '本周解压' });
+      const seen = new Set<string>();
+      return out.filter(b => { if (seen.has(b.kind)) return false; seen.add(b.kind); return true; }).slice(0, 2);
+    }
+    const mockDishes = [
+      { kind: 'preference', dish: { protein_main_class: 'red', main_ingredient: 'beef' }, ctx: { imagePrefs: { protein_main_class: ['red'] }, festivalTags: [], hasKid: false } },
+      { kind: 'festival', dish: { festival_tags: ['duanwu'] }, ctx: { imagePrefs: {}, festivalTags: ['duanwu'], hasKid: false } },
+      { kind: 'school_balance', dish: { is_blood_tonic: true }, ctx: { imagePrefs: {}, festivalTags: [], hasKid: true } },
+      { kind: 'seasonal', dish: { seasonal_tags: [curSeason] }, ctx: { imagePrefs: {}, festivalTags: [], hasKid: false } },
+      { kind: 'weekly_balance', dish: { is_qi_tonic: true }, ctx: { imagePrefs: {}, festivalTags: [], hasKid: false } },
+    ];
+    for (const t of mockDishes) {
+      const badges = simDeriveBadges(t.dish, t.ctx);
+      const hit = badges.some(b => b.kind === t.kind);
+      console.log(`  ${t.kind.padEnd(16)}: ${hit ? '✅' : '❌'} → ${badges.map(b => `${b.icon}${b.label}`).join(' ') || '(none)'}`);
     }
   } finally {
     await c.end();

@@ -49,6 +49,39 @@ export interface ScoreExplanation {
   breakdown: AxisHit[];   // 用户友好的主轴明细（约 6-10 条命中项）
 }
 
+// ── TICKET-018 §A 5-channel 接口契约 — slots[].candidates[] + tagBadges[] ──
+export type TagBadgeKind =
+  | 'preference'      // 🌶️ 用户底层偏好（pmc / cuisine / prefScore>0.6）
+  | 'seasonal'        // 🌿 本季当令
+  | 'festival'        // 🎋 节气 / 农历节庆
+  | 'school_balance'  // 🎒 学校营养补缺（孩子 isBloodTonic/isBeauty/isEyeCare）
+  | 'weekly_balance'; // 💪 本周成人 7 维补缺（placeholder：isQiTonic/isMoodBoost/isAntiAging）
+
+export interface TagBadge {
+  kind: TagBadgeKind;
+  icon: '🌶️' | '🌿' | '🎋' | '🎒' | '💪';
+  label: string;         // 短文案: "你爱吃红肉系" / "夏当令" / "端午"
+  reason?: string;       // 长文案 tooltip（可选）
+}
+
+export type SlotType =
+  | 'breakfast'
+  | 'lunch_main' | 'lunch_side'
+  | 'dinner_main' | 'dinner_side' | 'dinner_kid'
+  | 'fruit';
+
+export interface SlotChoice {
+  dish: SupabaseDish;
+  score: number;
+  tagBadges: TagBadge[];  // 0-2 个 channel 标签（cap=2 防 UI 拥挤）
+}
+
+export interface SlotPlan {
+  slotType: SlotType;
+  primary: SlotChoice;    // 默认显示
+  candidates: SlotChoice[]; // 含 primary; 早 3 / 午+晚 5 / 水果 3
+}
+
 export interface WeeklyDayMenu {
   date: string;          // ISO date string for this day (YYYY-MM-DD)
   dayIndex: number;      // 0=Mon … 6=Sun
@@ -59,6 +92,10 @@ export interface WeeklyDayMenu {
   fruitDish?: SupabaseDish;        // 餐后水果（dinner-attached, optional）
   // §B (TICKET-055): explanation map keyed by dish.id，UI 可选消费
   explanations?: Record<string, ScoreExplanation>;
+  // §A (TICKET-018) 新真相：5-channel SlotPlan[] — 每 slot 含 primary + 2-4 候选 + tagBadges。
+  // 旧字段 dishes / lunchDishes / breakfastDishes / fruitDish 仍维持（slot.primary 投影），
+  // 保 Home / VerifyIngredients 等旧消费方不破。UI 019 切换到 slots[]。
+  slots?: SlotPlan[];
 }
 
 // weekStart is YYYY-MM-DD (Monday). Returns YYYY-MM-DD for weekStart + dayIndex days,
@@ -83,7 +120,8 @@ const WORKDAYS_PER_WEEK = 5;
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v54'; // TICKET-017 §A Option δ + §B festival API + §C DB pref_scores. CEO 拍板 Option δ "接受极端化菜单": imagePrefs.protein_main_class.length===1 + main protein slot → 候选池 prefilter dish.protein_main_class === wantDb, 过滤后 < 15 自动放宽避免空 slot。§B axis 27 festival 接入 backend /functions/v1/festival-now (sessionStorage 30min 缓存), 缺失退本地公历兜底。§C user_profiles.pref_scores (rollup) 优先读, 缺失退 user_preference_scores。bump 让所有 v52/v53 缓存失效。
+export const ALGO_VERSION = 'v55'; // TICKET-018 §H 5-channel 接口大改: generateWeekPlan 每 slot 含 candidates[] + tagBadges[] (5 channel: 🌶️ preference / 🌿 seasonal / 🎋 festival / 🎒 school_balance / 💪 weekly_balance). WeeklyDayMenu 加 slots?: SlotPlan[], 旧字段 (dishes/lunchDishes/breakfastDishes/fruitDish) 维持 slot.primary 投影保 backward compat。候选池采样: breakfast top6→3 / main top12→5 / side top8→5 / fruit top4→3, Option δ 硬过滤产生的 topCandidates 复用于 candidates 截取 (CEO TICKET-017 拍板"接受极端化菜单"延续)。bump 让所有 v54 缓存失效。
+// v54: TICKET-017 §A Option δ + §B festival API + §C DB pref_scores. CEO 拍板 Option δ "接受极端化菜单": imagePrefs.protein_main_class.length===1 + main protein slot → 候选池 prefilter dish.protein_main_class === wantDb, 过滤后 < 15 自动放宽避免空 slot。§B axis 27 festival 接入 backend /functions/v1/festival-now (sessionStorage 30min 缓存), 缺失退本地公历兜底。§C user_profiles.pref_scores (rollup) 优先读, 缺失退 user_preference_scores。bump 让所有 v52/v53 缓存失效。
 // v52: TICKET-016 §D Option α: axis 32 protein_main_class 0.15 → 0.30. v51 sim 显示 axis 30 修复后 pmc 命中率仍 mean 30% (target 70%), 因 a32 量级 0.15 落后 a3_taste 0.25 / a23_newuser 0.45/dish, want_pmc=red 但算法选了 spicy+white. 0.30 让 pmc 与 taste 同量级, 让用户填的"主蛋白"偏好真主导。bump 让 v51 缓存失效。
 // v51: TICKET-016 §A: axis 30 cold-start diversity early-return for known-pref users (imagePrefs 任一非空 → 跳过强制多样性)。TICKET-015 sim 诊断 axis 30 累计 -13~-14 压倒 imageOnboardingScore +1~+2.7 (设计 75% 主导), meatlover red 命中率 20% = baseline DB 19%, 算法没把偏好推上来。Root cause: 已填 image onboarding 时仍按"未知偏好"逻辑硬推多样性。bump 让所有 v50 缓存失效, 已填 image 用户立即拿到偏好菜单。
 // v50: TICKET-014: 5 天工作日制 — generateWeekPlan 主循环 7→5 (WORKDAYS_PER_WEEK=5), 周菜单只覆盖周一到周五。老板真测发现 algo 层仍 7 天循环 (line 1970 旧逻辑用 `if (dayIndex >= 5) continue;` 在 7 循环内 skip 周末, 半截改造)。bump 让所有 v49 缓存 (含 7 天 days 数组) 失效, 全用户重生成 5 天版本。菲佣 + 用户家庭工作日做饭, 周末家庭自由发挥。
@@ -1953,6 +1991,156 @@ const SLOT_PREFERRED_CATS_SMALL: string[][] = [
   ['plant', 'other'],                       // 2: 汤（soup 在这里出现）
 ];
 
+// ── TICKET-018 §B deriveBadges — 5-channel 标签判定 ────────────────────────
+// 对每个候选 dish 跑一次，返回最多 2 个 badge（防 UI 拥挤）。优先级:
+// preference > festival > school_balance > seasonal > weekly_balance。
+// 数据源：imagePrefs (UI onboarding) + profile.hometown_cuisine + prefScores (DB rollup)
+// + dish.seasonal_tags + dish.festival_tags + dish.is_blood_tonic 等 wellness bool。
+
+interface BadgeContext {
+  imagePrefs: ImagePrefs;
+  profile: { hometown_cuisine: string | null; dietary_goal: string | null; taste_pref: string | null };
+  prefScores: Record<string, number>;
+  festivalTags: string[];   // sessionStorage 优先, fallback getCurrentFestival
+  today: Date;
+  hasKid: boolean;
+}
+
+const SEASON_LABEL: Record<string, string> = {
+  spring: '春', summer: '夏', autumn: '秋', winter: '冬',
+};
+const PMC_LABEL: Record<string, string> = {
+  red: '红肉', white: '白肉', seafood: '海鲜', veg: '素', mixed: '混合',
+};
+const FESTIVAL_LABEL: Record<string, string> = {
+  laba: '腊八', chunjie: '春节', yuanxiao: '元宵', duanwu: '端午',
+  qixi: '七夕', zhongqiu: '中秋', chongyang: '重阳',
+};
+
+export function deriveBadges(dish: any, ctx: BadgeContext): TagBadge[] {
+  const out: TagBadge[] = [];
+
+  // 1. 🌶️ preference — pmc 命中 OR cuisine 命中 OR prefScore > 0.6
+  const wantPmcArr = ctx.imagePrefs?.protein_main_class ?? [];
+  const dishPmc = (dish.protein_main_class ?? _proteinClassOf(dish.main_ingredient ?? '')) as string;
+  if (wantPmcArr.length > 0 && dishPmc) {
+    const matched = wantPmcArr.some(ui => (PROTEIN_CLASS_UI_TO_DB[ui] ?? ui) === dishPmc);
+    if (matched) {
+      out.push({
+        kind: 'preference', icon: '🌶️',
+        label: `你爱吃${PMC_LABEL[dishPmc] ?? dishPmc}系`,
+      });
+    }
+  }
+  if (out.length === 0) {
+    // cuisine fallback (profile.hometown_cuisine)
+    const ho = ctx.profile?.hometown_cuisine ?? '';
+    const dishCui = (dish.origin_cuisine ?? '') as string;
+    if (ho && dishCui && (ho === dishCui || ho.includes(dishCui) || dishCui.includes(ho))) {
+      out.push({ kind: 'preference', icon: '🌶️', label: '家乡菜系' });
+    }
+  }
+
+  // 3. 🎋 festival (优先级高于 seasonal/school) — sessionStorage 命中 ∪ 本地公历
+  const dishFest = (dish.festival_tags ?? []) as string[];
+  if (Array.isArray(dishFest) && dishFest.length > 0) {
+    let hitSlug: string | null = null;
+    if (ctx.festivalTags.length > 0) {
+      hitSlug = dishFest.find(t => ctx.festivalTags.includes(t)) ?? null;
+    }
+    if (!hitSlug) {
+      const local = getCurrentFestival(ctx.today);
+      if (local && dishFest.includes(local)) hitSlug = local;
+    }
+    if (hitSlug) {
+      out.push({
+        kind: 'festival', icon: '🎋',
+        label: FESTIVAL_LABEL[hitSlug] ?? hitSlug,
+      });
+    }
+  }
+
+  // 4. 🎒 school_balance — 家中有 kid + 含 wellness 标签
+  if (ctx.hasKid) {
+    if (dish.is_blood_tonic) out.push({ kind: 'school_balance', icon: '🎒', label: '孩子补血' });
+    else if (dish.is_eye_care) out.push({ kind: 'school_balance', icon: '🎒', label: '孩子护眼' });
+    else if (dish.is_beauty) out.push({ kind: 'school_balance', icon: '🎒', label: '孩子润肤' });
+  }
+
+  // 2. 🌿 seasonal — dish.seasonal_tags ∩ current season
+  const dishSeasons = (dish.seasonal_tags ?? []) as string[];
+  if (Array.isArray(dishSeasons) && dishSeasons.length > 0) {
+    const m = ctx.today.getMonth() + 1;
+    const cur = m >= 3 && m <= 5 ? 'spring' : m >= 6 && m <= 8 ? 'summer' : m >= 9 && m <= 11 ? 'autumn' : 'winter';
+    if (dishSeasons.includes(cur)) {
+      out.push({ kind: 'seasonal', icon: '🌿', label: `${SEASON_LABEL[cur]}当令` });
+    }
+  } else {
+    // fallback: 单字段 seasonal_tag (与 fruit scoring 一致)
+    const tag = (dish.seasonal_tag ?? '').toLowerCase();
+    if (tag) {
+      const m = ctx.today.getMonth() + 1;
+      const cur = m >= 3 && m <= 5 ? 'spring' : m >= 6 && m <= 8 ? 'summer' : m >= 9 && m <= 11 ? 'autumn' : 'winter';
+      if (tag === cur) out.push({ kind: 'seasonal', icon: '🌿', label: `${SEASON_LABEL[cur]}当令` });
+    }
+  }
+
+  // 5. 💪 weekly_balance (placeholder — 待 Backend 019 weekStats 真接口)
+  if (dish.is_qi_tonic) out.push({ kind: 'weekly_balance', icon: '💪', label: '本周补气' });
+  else if (dish.is_mood_boost) out.push({ kind: 'weekly_balance', icon: '💪', label: '本周解压' });
+  else if (dish.is_anti_aging) out.push({ kind: 'weekly_balance', icon: '💪', label: '本周抗衰' });
+
+  // dedup by kind + cap 2 + sort by priority
+  const priority: Record<TagBadgeKind, number> = {
+    preference: 0, festival: 1, school_balance: 2, seasonal: 3, weekly_balance: 4,
+  };
+  const seen = new Set<TagBadgeKind>();
+  const deduped: TagBadge[] = [];
+  for (const b of out.sort((a, b) => priority[a.kind] - priority[b.kind])) {
+    if (seen.has(b.kind)) continue;
+    seen.add(b.kind);
+    deduped.push(b);
+  }
+  return deduped.slice(0, 2);
+}
+
+// ── TICKET-018 §C 候选池采样 — slot K + take M (含 primary) ────────────────
+const SLOT_TAKE_BREAKFAST = 3;
+const SLOT_TAKE_MAIN = 5;       // dinner_main / lunch_meat
+const SLOT_TAKE_SIDE = 5;       // dinner_side / lunch_staple|veggie|soup / kid
+const SLOT_TAKE_FRUIT = 3;
+
+function buildSlotPlan(
+  slotType: SlotType,
+  scoredPool: Array<{ dish: any; score: number }>,
+  primaryDish: any,
+  take: number,
+  badgeCtx: BadgeContext,
+  enrich: (d: any) => SupabaseDish,
+): SlotPlan | null {
+  if (!primaryDish) return null;
+  // primary first, then top K-1 from scoredPool (excluding primary id)
+  const others = scoredPool
+    .filter(c => c.dish?.id && c.dish.id !== primaryDish.id)
+    .slice(0, take - 1);
+  const primaryEntry = scoredPool.find(c => c.dish?.id === primaryDish.id);
+  const primaryScore = primaryEntry?.score ?? 0;
+  const primaryChoice: SlotChoice = {
+    dish: enrich(primaryDish),
+    score: primaryScore,
+    tagBadges: deriveBadges(primaryDish, badgeCtx),
+  };
+  const candidateChoices: SlotChoice[] = [
+    primaryChoice,
+    ...others.map(c => ({
+      dish: enrich(c.dish),
+      score: c.score,
+      tagBadges: deriveBadges(c.dish, badgeCtx),
+    })),
+  ];
+  return { slotType, primary: primaryChoice, candidates: candidateChoices };
+}
+
 function generateWeekPlan(
   poolRaw: any[],
   profile: { hometown_cuisine: string | null; dietary_goal: string | null; taste_pref: string | null },
@@ -2068,6 +2256,14 @@ function generateWeekPlan(
     const dayDishes: any[] = [];
     const dayIngredients: string[] = [];
     const dayCuisines: string[] = [];   // §A (TICKET-061) axis 30 — 当日已用 origin_cuisine
+    // §A (TICKET-018) per-day SlotPlan[] — 每 slot 含 primary + candidates + tagBadges
+    const daySlots: SlotPlan[] = [];
+    // BadgeContext 复用 imagePrefs / festivalTags / prefScores（一次构造跨 slot 共享）
+    const badgeCtx: BadgeContext = {
+      imagePrefs, profile, prefScores, festivalTags,
+      today: new Date(),
+      hasKid: dayKids > 0,
+    };
     // Same-day title-keyword hard dedup. Without this, the -0.65 soft penalty
     // in scoreForWeek wasn't enough to stop 上汤娃娃菜 + 虾米娃娃菜 landing
     // in the same dinner. Hard-block any candidate whose title keyword has
@@ -2331,8 +2527,16 @@ function generateWeekPlan(
 
       if (topCandidates.length === 0) break;
 
-      const picked = weightedRandom(topCandidates, 1, rng)[0]?.dish;
+      // §C (TICKET-018) candidates 从 topCandidates 复用 — δ 硬过滤后池子已绑定
+      // pmc 偏好，UI 上点哪道都符合"为什么推这道"承诺。primary 用 weightedRandom
+      // 保 axis-driven 多样性 (与 v54 一致, 不回归 pmc 命中率)。
+      const dinnerSlotType: SlotType = isMainProteinSlot ? 'dinner_main' : 'dinner_side';
+      const dinnerSlotTake = isMainProteinSlot ? SLOT_TAKE_MAIN : SLOT_TAKE_SIDE;
+      const dinnerTopK = topCandidates.slice(0, isMainProteinSlot ? 12 : 8);
+      const picked = weightedRandom(dinnerTopK, 1, rng)[0]?.dish;
       if (!picked) break;
+      const dinnerPlan = buildSlotPlan(dinnerSlotType, dinnerTopK, picked, dinnerSlotTake, badgeCtx, enrichRaw);
+      if (dinnerPlan) daySlots.push(dinnerPlan);
 
       dayDishes.push(picked);
       dayIngredients.push(picked.main_ingredient ?? 'other');
@@ -2399,12 +2603,16 @@ function generateWeekPlan(
         .sort((a, b) => b.score - a.score)
         .slice(0, 15);
 
-      weightedRandom(kidCandidates, dayEffectiveKidSlots, rng).forEach(c => {
+      const kidPicked = weightedRandom(kidCandidates, dayEffectiveKidSlots, rng);
+      kidPicked.forEach(c => {
         kidDishes.push(c.dish);
         const kw = extractTitleKeyword(c.dish.title_zh ?? c.dish.title ?? '');
         if (kw) pickedTitleKeywords.push(kw);
         const cat = ingCategory(c.dish.main_ingredient ?? 'other');
         weeklyCatCounts[cat] = (weeklyCatCounts[cat] ?? 0) + 1;
+        // §A (TICKET-018) per-kid-slot SlotPlan — candidates 从 kidCandidates 取
+        const plan = buildSlotPlan('dinner_kid', kidCandidates, c.dish, SLOT_TAKE_SIDE, badgeCtx, enrichRaw);
+        if (plan) daySlots.push(plan);
       });
     }
 
@@ -2517,7 +2725,13 @@ function generateWeekPlan(
     // veggiePool top could land 上汤娃娃菜 + 虾米娃娃菜. Filter each pool
     // against the running keyword set before its draw.
     const lunchKwsSeen: string[] = [];
-    const pickFromPool = (poolArr: { dish: any; score: number }[], n: number): any[] => {
+    // §A (TICKET-018) pickFromPool 增 slotType 入参 — 每 pick 产生一个 SlotPlan
+    // push 到 daySlots. lunch_meat = 'lunch_main', staple/veggie/soup = 'lunch_side'.
+    const pickFromPool = (
+      poolArr: { dish: any; score: number }[],
+      n: number,
+      slotType: SlotType,
+    ): any[] => {
       if (n <= 0) return [];
       const filtered = poolArr.filter(c => {
         const kw = extractTitleKeyword(c.dish.title_zh ?? c.dish.title ?? '');
@@ -2527,12 +2741,15 @@ function generateWeekPlan(
       picks.forEach(d => {
         const kw = extractTitleKeyword(d.title_zh ?? d.title ?? '');
         if (kw) lunchKwsSeen.push(kw);
+        const take = slotType === 'lunch_main' ? SLOT_TAKE_MAIN : SLOT_TAKE_SIDE;
+        const plan = buildSlotPlan(slotType, filtered, d, take, badgeCtx, enrichRaw);
+        if (plan) daySlots.push(plan);
       });
       return picks;
     };
 
-    const stapleLunch = pickFromPool(staplePool, lunchPlan.staple);
-    const veggieLunch = pickFromPool(veggiePool, lunchPlan.veggie);
+    const stapleLunch = pickFromPool(staplePool, lunchPlan.staple, 'lunch_side');
+    const veggieLunch = pickFromPool(veggiePool, lunchPlan.veggie, 'lunch_side');
     // Per-member meat allocation — when ≥ 2 meat slots and ≥ 2 home
     // members each with goals, re-score the meat pool once per member
     // and take that member's top pick. Mirrors the dinner main-slot
@@ -2542,14 +2759,14 @@ function generateWeekPlan(
       if (lunchPlan.meat === 0) return [];
       const homeM = familyPrefs?.homeMembers ?? [];
       if (homeM.length < 2 || lunchPlan.meat < 2) {
-        return pickFromPool(meatPool, lunchPlan.meat);
+        return pickFromPool(meatPool, lunchPlan.meat, 'lunch_main');
       }
       const picks: any[] = [];
       const taken = new Set<string>();
       for (let mi = 0; mi < lunchPlan.meat; mi++) {
         const member = homeM[mi % homeM.length];
         if (!member?.goals || member.goals.length === 0) {
-          const fallback = pickFromPool(meatPool.filter(c => !taken.has(c.dish.id) && !lunchKwsSeen.includes(extractTitleKeyword(c.dish.title_zh ?? '') ?? '')), 1);
+          const fallback = pickFromPool(meatPool.filter(c => !taken.has(c.dish.id) && !lunchKwsSeen.includes(extractTitleKeyword(c.dish.title_zh ?? '') ?? '')), 1, 'lunch_main');
           if (fallback[0]) { picks.push(fallback[0]); taken.add(fallback[0].id); }
           continue;
         }
@@ -2571,11 +2788,14 @@ function generateWeekPlan(
           taken.add(top[0].id);
           const kw = extractTitleKeyword(top[0].title_zh ?? top[0].title ?? '');
           if (kw) lunchKwsSeen.push(kw);
+          // §A (TICKET-018) per-member meat slot SlotPlan (rescored 池 top 8)
+          const plan = buildSlotPlan('lunch_main', rescored.slice(0, 8), top[0], SLOT_TAKE_MAIN, badgeCtx, enrichRaw);
+          if (plan) daySlots.push(plan);
         }
       }
       return picks;
     })();
-    const soupLunch   = pickFromPool(soupPool,   lunchPlan.soup);
+    const soupLunch   = pickFromPool(soupPool,   lunchPlan.soup, 'lunch_side');
 
     // Track lunch picks across days so they can't repeat — also feed title
     // keywords into the weekly dedup tracker, and add IDs to usedIds so a
@@ -2659,6 +2879,33 @@ function generateWeekPlan(
             weekKwLastDay.set(kw, dayIndex);
           }
         }
+        // §A (TICKET-018) breakfast slot — 每道 combo 菜各自一个 SlotPlan。
+        // candidates 从同 breakfastPool 同类 slot (drink/staple/side/vit_fib) 抽 top K,
+        // 让 UI 切换"换豆浆 / 换油条"时只在该 slot 范畴内换。
+        for (const item of scored) {
+          const slotCat = classifyBreakfastSlot(item.dish);
+          const sameSlotCandidates = breakfastPool
+            .filter((d: any) => d.id !== item.dish.id && classifyBreakfastSlot(d) === slotCat)
+            .map((d: any) => ({
+              dish: d,
+              score: scoreForWeek({
+                dish: d, profile, prefScores, recentIds,
+                pickedIngredients: [...pickedIngredients, ...dayIngredients],
+                pickedCuisines: [...pickedCuisines, ...dayCuisines],
+                pickedTitleKeywords,
+                dayIndex,
+                spiceBoost, ageGroup, healthPrefs,
+                hasPregnant: familyPrefs?.hasPregnant ?? false,
+                humidity, solarTerm, hasXiaomei, mealTime: '早餐',
+                homeInventoryItems, imagePrefs, festivalTags,
+              }),
+            }))
+            .sort((a: any, b: any) => b.score - a.score)
+            .slice(0, 6);
+          const breakfastSlotPool = [{ dish: item.dish, score: item.score }, ...sameSlotCandidates];
+          const plan = buildSlotPlan('breakfast', breakfastSlotPool, item.dish, SLOT_TAKE_BREAKFAST, badgeCtx, enrichRaw);
+          if (plan) daySlots.push(plan);
+        }
         return scored.map(s => enrichRaw(s.dish));
       } catch {
         return [];
@@ -2713,10 +2960,16 @@ function generateWeekPlan(
         return s;
       };
 
-      const scored = pickFrom.map(f => ({ dish: f, score: scoreFruit(f) }));
+      const scored = pickFrom.map(f => ({ dish: f, score: scoreFruit(f) }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 4);
       const picks = weightedRandom(scored, 1, rng);
       const raw = picks[0]?.dish;
-      return raw ? enrichRaw(raw) : undefined;
+      if (!raw) return undefined;
+      // §A (TICKET-018) fruit slot — top 4 → 取 3
+      const plan = buildSlotPlan('fruit', scored, raw, SLOT_TAKE_FRUIT, badgeCtx, enrichRaw);
+      if (plan) daySlots.push(plan);
+      return enrichRaw(raw);
     })();
 
     // §B (TICKET-055) 为每道选中的菜跑 explainScore 填充 explanations map
@@ -2747,6 +3000,8 @@ function generateWeekPlan(
       breakfastDishes,
       fruitDish,
       explanations,
+      // §A (TICKET-018) 5-channel SlotPlan[] — primary 投影即 dishes/lunchDishes/breakfastDishes/fruitDish。
+      slots: daySlots,
     });
   }
 

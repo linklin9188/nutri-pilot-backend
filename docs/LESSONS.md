@@ -313,3 +313,14 @@
 - **来源**：2026-05-21 HKT 23:20 Q0 设计被老板批"傻"
 
 - **来源**：TELEPOT-20260520-068 41002 排查 + Railway 事故叠加
+
+### slot-plan-not-flat-dishes — 推荐接口要 slot 化才能让"为什么推这道"可见
+- **场景**：2026-05-22 HKT TICKET-018 5-channel 接口大改。v54 之前 `WeeklyDayMenu.dishes` 是平铺 `SupabaseDish[]`，每菜没有"槽位类型"和"标签"信息，UI 想做"换豆浆 / 换油条"或"为什么推这道"完全无信源。
+- **踩坑**：早期 SPEC 把"推荐结果"等同于"一组菜的 id 数组"，没显式建模 (a) 这道菜属于哪个 slot (b) 同 slot 还有哪些候选 (c) 为什么算法选了它（哪些 channel 命中）。
+- **代价**：每加一个 UI 功能（slot 内换、解释、对比）都要前端反向猜测算法意图——本应由数据结构传递。
+- **教训**：
+  - 推荐输出的**最小粒度是 SlotPlan**（slotType + primary + candidates + tagBadges），不是 dish[]
+  - 候选池要在算法里"采下"几个候选透传给 UI，**别让 UI 重新跑算法找候选**（v55 之前 ChatAgent 重跑 generateWeekPlan 拿 3 候选就是这种反模式）
+  - tagBadges 是"算法可解释性"的产品入口——5 channel 显式标签（🌶️ preference / 🌿 seasonal / 🎋 festival / 🎒 school_balance / 💪 weekly_balance）让用户能直接看到"为什么"
+- **复用避免**：新的推荐 / 排序输出接口设计时，先回答"UI 能不能从这个数据结构看出选择理由？"——不能就是设计不足
+- **来源**：2026-05-22 HKT 09:30 TICKET-018 §A 5-channel 接口契约 commit (Algorithm 018)
