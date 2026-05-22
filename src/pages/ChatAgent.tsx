@@ -95,6 +95,41 @@ export default function ChatAgent() {
   const { weeklyMenu } = useWeeklyMenu(0);
   const [streaming, setStreaming] = useState(false);
 
+  // TICKET-017 §B — festival-now chip
+  //   GET /functions/v1/festival-now → { festival, kind: 'lunar' | 'solar_term', tags, as_of }
+  //   30 min sessionStorage TTL, fetch fail / empty → chip 不出。kind=lunar 用 🎉 / kind=solar_term 用 🌿。
+  interface FestivalChip { label: string; kind: 'lunar' | 'solar_term' }
+  const [festivalChip, setFestivalChip] = useState<FestivalChip | null>(null);
+  useEffect(() => {
+    const CACHE_KEY = 'festival_now_cache';
+    const TTL_MS = 30 * 60 * 1000;
+    try {
+      const raw = sessionStorage.getItem(CACHE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.at && Date.now() - parsed.at < TTL_MS && parsed.chip) {
+          setFestivalChip(parsed.chip);
+          return;
+        }
+      }
+    } catch { /* corrupt cache — fall through to fetch */ }
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke('festival-now', { method: 'GET' });
+        if (cancelled || error || !data) return;
+        const festival = typeof data.festival === 'string' ? data.festival : '';
+        const kind = data.kind === 'lunar' ? 'lunar' : 'solar_term';
+        if (!festival) return;
+        const chip: FestivalChip = { label: festival, kind };
+        setFestivalChip(chip);
+        try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), chip })); }
+        catch { /* quota — non-fatal */ }
+      } catch { /* network fail — chip 不出, ChatAgent 正常 */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   // TICKET-040 §C — explicit intent class picker for the "客服合一入口".
   // Default 'chat_menu' matches SPEC §B; Backend chat endpoint routes prompt
   // + per-class throttle based on this. Sent via streamChat's sessionMeta arg.
@@ -300,6 +335,16 @@ export default function ChatAgent() {
             </p>
           </div>
         </div>
+        {/* TICKET-017 §B — 节庆 / 节气 chip (fetch /functions/v1/festival-now, 30min cache) */}
+        {festivalChip && (
+          <div className="mt-2 flex">
+            <span className="rounded-full px-2 py-0.5 inline-flex items-center gap-1"
+              style={{ background: 'rgba(255,165,0,0.12)', color: '#B45309', fontSize: 11, fontWeight: 600, border: '1px solid rgba(255,165,0,0.25)' }}>
+              <span>{festivalChip.kind === 'lunar' ? '🎉' : '🌿'}</span>
+              <span>今天是 {festivalChip.label}</span>
+            </span>
+          </div>
+        )}
       </header>
 
       {/* §B (TICKET-030) Adopt toast — info on success (3-sec countdown
