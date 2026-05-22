@@ -6,6 +6,17 @@
  * store (upsert every 5 messages + on proposal-chosen events). Either
  * layer is sufficient on its own — if the DB table isn't ready yet the
  * hook degrades to localStorage-only without warning the user.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * Persistence model — Option β (CEO 决断 2026-05-22, TICKET-018):
+ *   - Front-end persists chat_sessions via `supabase.from('chat_sessions').upsert` directly
+ *   - edge fn `chat-session-get` retained as fresh-mount hydration entry (§A.1 22b15f6)
+ *   - edge fn `chat-session-append` / `chat-session-end` deprecated — DO NOT switch to invoke
+ *   - Reason: front-end multi-session + mode routing + proposals.meta does not align with
+ *     edge fn single-session-by-user_id model. Realigning would require migration 057 +
+ *     edge fn rewrite (4-6 commits / 2 departments).
+ *   - This file is the canonical chat persistence path. See docs/LESSONS.md "chat option β".
+ * ─────────────────────────────────────────────────────────────────────────
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { getUserId } from '../lib/userId';

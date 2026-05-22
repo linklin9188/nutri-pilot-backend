@@ -89,6 +89,13 @@
 - **教训**：每个用户消息进来**第一动作**：扫 MEMORY.md index，按关键词触发对应 feedback 反射。不被动等老板说"你查一下 memory"。
 - **来源**：HKT ~12:30 老板观察
 
+### chat-session edge fn 合约错位 — CEO 选 β 保前端模型
+- **场景**：UI 017 §A 派单要求把 ChatAgent 从 mock 切到 3 个 chat-session-* edge fn（get / append / end）。审计后发现 3 套数据模型不兼容：(1) edge fn 实际只接 `{user_id, message}` 不接 session_id/mode/intent；(2) ticket 描述的 `{session_id, mode, message, intent?}` 是第 3 套合约；(3) 前端 useChatSession 已直连 `supabase.from('chat_sessions').upsert`（TICKET-027/044），走多 session + mode 路由 + proposals.meta 模型，已正常工作。edge fn 自检还报 "migration 057 pending — HANDOFF §2 contract vs migration 028 schema 错位"。
+- **踩坑**：派工单时 ticket 作者按"理想合约"写 payload，没读 edge fn 实际 index.ts。如果 UI 不审计直接强切，会回归 multi-session / mode 路由 / proposals 元数据全部丢失。
+- **代价**：UI 017 §A.2 §A.3 留 blocker 等 CEO 决断 1 棒；如果直接强切就是回归事故。
+- **教训**：(a) UI 切 edge fn 前**必读 supabase/functions/<name>/index.ts** 对齐合约（payload 字段 / 返回 shape）；(b) 派单时 ticket 作者也应先 grep edge fn 而非按印象写 payload；(c) CEO 最终选 **β 保前端模型** — 因为前端模型工作良好 + edge fn 改造大手术（migration 057 + 4-6 commits + 2 部门联动）收益低；(d) 未来切到 α 的触发条件：跨平台同步（微信小程序 / iOS app 共用同一 chat 历史）真上线时再改 edge fn 合约统一入口。
+- **来源**：UI 017 §4.5 blocker → CEO 决断 → UI 018 §A 收口
+
 ---
 
 ## Database
@@ -177,3 +184,132 @@
 - **代价**：Architect 没法退场，CEO 不得不自己接手写 docs/ARCHITECT_HANDOFF.md + 派给业务部门完成 4 项收尾
 - **教训**：员工 SOP 强制"每次 process telepot 先 cat telepot.md 检查 TICKET 是不是新的，新则立即弃旧任务读新单"。已落到 PROCESS.md §4 去重算法。Architect 退役后此问题自然消失。
 - **来源**：TELEPOT-20260520-007 退场失败事件
+
+### sandbox-curl-blocked-by-proxy-allowlist-false-alarm — Cowork sandbox curl 出站被 allowlist 拦截，看到 403 容易误判 Railway 部署问题
+- **trigger**：CEO 或部门跑 `curl https://nothinkeats.com/og-image.png` 看 headers → 返回 `HTTP/1.1 403 Forbidden` + `Content-Type: text/plain` + `X-Proxy-Error: blocked-by-allowlist`
+- **mistake**：误以为 Railway 服务器没正确 serve og-image.png（content-type 错路由到 text/html）→ 派 Backend 工单 escalate
+- **truth**：Cowork sandbox 出站代理拦截，返回的是代理自己的 403 错误页（HTML 内容），跟 Railway 实际响应无关
+- **fix**：诊断 og-image.png / 任何 nothinkeats.com 资源时，**不能在 sandbox 内 curl**。让老板自己在 Mac 浏览器/终端访问 + 反馈结果；或者用 Chrome MCP（浏览器测试）；或者实查 git ls-files + 本地 dist/ 文件存在性 → 推断 Railway 上应该是 OK。
+- **复用避免**：所有 `https://nothinkeats.com/*` 资源验证 → 让老板访问 / 用 Chrome MCP，不是 sandbox curl
+- **来源**：TELEPOT-20260520-069 §B 误判 / 067 §A real verify
+
+### telepot-empty-archive-race — telepot_*.md 被空 archive 即派单内容丢失（UI 071/074/075 反复出现）
+- **trigger**：派 UI 工单 pending 后老板敲 `process telepot`，CLI return 但 telepot_ui.md 被改成 `STATUS: idle / ARCHIVED_AT: <time>` 但 **无 LAST_TASK_SUMMARY 内容**，git log 也无新 commit
+- **mistake**：CEO 以为 UI 部门完工归档了；实际派单内容被丢弃从未执行
+- **truth**：还没排查清楚根因。可能是：(a) `process telepot` CLI 命令在 pending 工单遇到某种解析失败时直接空 archive (b) 老板敲 process telepot 时 UI 部门 Claude Code CLI 已经 /compact 上下文，对当前 pending 工单 misread (c) telepot_ui.md 的 hash check / timestamp check 把 pending 误判为已处理
+- **fix**：派单后 5 分钟看 git log 是否真有 commit；如无 commit 且 status idle → 立刻判定空 archive，重写工单（用新 ticket 号避免 dup ID）。明早排查 process telepot CLI 源码 + 加 `LAST_TASK_SUMMARY required when archive` 校验
+- **复用避免**：每次派单后跟踪 git log 确认真正 ship；不被 ARCHIVED_AT 单独时间戳误导
+- **来源**：TELEPOT-20260520-071/074/075 反复观察
+
+### wechat-appid-history-untrusted-must-verify-current — 微信公众号 AppID 历史 docs 不可信，必须 mp.weixin.qq.com 实查
+- **trigger**：CLAUDE.md 写 `wx60f6708a777dc896` / _archive/SESSION-2026-05-17 写 `wx3c66070bbe747b92` / 老板今晚实查 `wx63839880f1595f07` —— 三个值全不一样
+- **mistake**：CEO 引用历史 docs 中的 AppID 派 Backend 工单（如把 `wx3c66070bbe747b92` 写进 wechat-mp-callback / 工单 SPEC），但实际生效的是公众号后台显示的 `wx63839880f1595f07`
+- **truth**：(a) 公众号 AppID 可能因为重命名 / 重新认证 / 公众号迁移变化 (b) 历史 docs 没有 sync 更新机制 (c) AppSecret 重置会生效但 AppID 通常不变 — 三个值不一致最可能是 docs 在不同时期 snapshot 了不同公众号或者 archive 期间换过
+- **fix**：所有微信公众号配置（AppID/AppSecret/IP whitelist/domain/EventToken 等）**永远以 mp.weixin.qq.com → 设置与开发 → 开发接口管理 → 公众号开发信息** 实查为准。CLAUDE.md / _archive / docs 任何引用 AppID 的位置加注释 "verify against mp.weixin.qq.com before use"
+- **复用避免**：未来工单引用任何 AppID 之前 → 必须让老板/CEO 实查公众号后台确认
+- **来源**：2026-05-20 21:00-04:00 多次工单引用错 AppID → errcode 40164 排查 → 实查发现真 AppID 是 wx63839880f1595f07
+
+### railway-platform-incident-recognize-not-user-fault — Railway 平台事故是真的，build 慢不是用户代码问题
+- **trigger**：晚间 push commit 触发 Railway redeploy 但 12+ 分钟还在 BUILDING + 多个 deployment 排队 QUEUED + 页面顶部黄色横幅显示 "Builds are slow to progress. We have pushed a fix and are now monitoring the incident."
+- **mistake**：CEO 误以为代码 bug 导致 build 失败 / Railway 配置问题 / 触发额外排查工单
+- **truth**：Railway 偶尔有 platform-wide 事故（特别是非高峰时段如 UTC 02:00-04:00 / HKT 10:00-12:00），build queue 慢全平台影响，跟用户代码无关
+- **fix**：(a) 看页面 incident 横幅 — Railway 会在 dashboard 顶部主动声明 (b) 看 https://status.railway.com 确认 (c) 多个 deployment 同时排队（BUILDING + QUEUED + ...）是平台事故的强信号
+- **复用避免**：诊断 Railway 部署慢之前先看顶部 incident 横幅；不要立刻怀疑代码
+- **来源**：2026-05-21 03:55 HKT Railway 公开事故影响 wx-jssdk 部署 verify
+
+### env-var-name-typo-causes-missing-error — 环境变量名拼写错（空格/大小写/下划线数）最常导致 41002 / "missing" 错误
+- **trigger**：服务调外部 API 报 `errcode 41002 appid missing` 或类似 missing 错误，但本地环境变量明明已经灌
+- **mistake**：怀疑是 service 没读到环境变量 / 缓存问题 / redeploy 没生效 → 反复 redeploy
+- **truth**：80% 概率是环境变量名拼写错。常见错：(a) 末尾空格 `WECHAT_APPID ` (b) 大小写 `wechat_appid` (c) 双下划线 `WECHAT__APPID` (d) 拼写错 `WECHAT_APP_ID`（多了个 _）
+- **fix**：(1) 截图 dashboard Variables 整页对照 code 期望的 key 字符级精确对比 (2) 在 server 加临时 endpoint `app.get('/api/_env-check', (_, res) => res.json({hasAppId: !!process.env.WECHAT_APPID, hasSecret: !!process.env.WECHAT_APPSECRET}))` 立即看 boolean 状态而非 redeploy 重试
+- **复用避免**：env vars 排查永远先 `_env-check` 验证 boolean，再深入怀疑其他
+
+---
+
+## CrossCutting (2026-05-21 夜班补)
+
+### ceo-communication-bug-4x — 一夜 4 次沟通失误，CEO 必须靠 bash 不靠记忆
+- **场景**：2026-05-21 HKT 20:00-23:35 老板真测 β + CEO 整合期间发生 4 次跨 turn 沟通失误
+- **踩坑序列**：
+  1. **21:30** UI 013 早 20:25 已 ship 4 commits，CEO 仍报 "pending 待你启动" → 老板：「你这个错误太严重了。怎么防范类似的错误？」
+  2. **21:50** CEO 给老板 paste-ready 含 `[Backend tab] /compact → process telepot`，但 Backend tab 当时正在跑 TICKET-010 "Full run 924 dishes" → 老板：「这个还在工作中，你就让我 compact?」
+  3. **23:05** CEO 汇报里口误 "Database in_progress（CEO 醒来后核查）" → 老板：「你不知道你是 CEO ？我是老板！」
+  4. **23:15** UI 014 早 22:35 已 ship 8 commits，CEO 仍报 "pending 待你启动"
+- **代价**：老板情绪 / 老板对 CEO 信任度 / 老板必须自己干 CEO 的活（看 telepot head / git log）
+- **根因（共因）**：CEO 跨 turn 把"上一次见到的状态"当成"当前状态"。**telepot head 是异步更新的真相源**，Lead 完工归档时改 head，CEO 必须主动读才知道。**对话上下文 ≠ 当前真相**。
+- **教训 — PROCESS.md §17 立**：
+  - CEO 每个 turn 涉及 4 tab 状态的回复**第一动作**是 `git fetch && head -8 _bridge/telepot_*.md`
+  - bash 输出当面贴老板看（透明化），不允许编造或近似
+  - 跨 turn 不沿用旧状态 — 老板每个新消息都重置 CEO 对状态的认知
+  - "派工单 / 建议 compact / 建议 process telepot / 汇报" 4 个动作 hard requirement 跑 bash
+- **追加根因（in-progress 状态缺失）— PROCESS.md §16 立**：
+  - telepot 协议原只有 pending/idle 两态，tab 干活中的中间态无文件信号
+  - 立铁律：Lead 开工**第一动作**改 head 为 `STATUS: in_progress + CURRENT_TICKET + STARTED_AT`
+  - CEO 看到 in_progress 绝对不能让老板 compact
+- **复用避免**：Cowork 端 Claude 对所有 file-based 异步协作系统，都要"每 turn bash 实查 + 不靠记忆"
+- **来源**：2026-05-21 HKT 20:00-23:35 真实事件 + PROCESS.md §16+§17 立项
+
+### ui-completed-claim-vs-real-ship-mismatch — Lead 标 completed 不等于代码真 ship 到生产
+- **场景**：2026-05-21 HKT 20:00 CEO Chrome 真测 nothinkeats.com Q0 发现仍是 emoji + 6 选项，UI 012 task list 明明标 [completed]
+- **踩坑**：CEO 信 task list 的 [completed] 标记，没 git log 验证实际 commit，没 Chrome 真测看生产页面
+- **代价**：老板真测才发现"Q0 没用真摄影图 + 6 选项不是 4"。CEO 完工标记和实际生产不一致 → CEO 对工程状态判断失真
+- **教训**：
+  - Lead 写 telepot_response 标 completed ≠ 代码真 ship 到生产
+  - CEO 必须做 **ship-verification 三步**：(1) git log 看 commit hash (2) git status 看 push 状态 (3) Chrome 真测生产页面
+  - task list `[completed]` 也不是真相 — 是 CEO 标的，可能错标
+- **复用避免**：所有"完工"声明必须有 **git commit hash + Chrome 真测截图（mcp__Claude_in_Chrome__）双印证**
+- **来源**：2026-05-21 HKT 20:00 UI 012 假 ship + CEO Chrome MCP 真测发现
+
+### product-pitch-clarify-multi-rounds — 老板的产品定位要求需要等他多轮才说完
+- **场景**：2026-05-21 HKT 21:25-21:35 老板对"视频教学范围"指令 3 次澄清：
+  - 21:25 "视频教学可以在午餐和晚餐的做肉和做海鲜的部分放入"
+  - 21:30 "复杂的汤最好也放视频"
+  - 21:32 "香港的汤 广东的汤 可以放"
+- **踩坑**：CEO 第一轮听完就立 memory project_video_tutorial_scope.md 锁规则。老板二轮三轮补充时 CEO 经历 2 次 Edit memory 才完整
+- **代价**：memory 字段反复修改，未来 session 可能看到中间不完整版本
+- **教训**：
+  - 老板模糊的产品定位指令**第一轮不要立刻 lock memory**
+  - CEO 复述确认（"我的理解是 X，你的意思还有 Y / Z 吗？"）让老板有第二轮机会主动澄清
+  - 等老板自己说完整 / 主动澄清 / 30 秒不补充 → 才落 memory
+  - memory 立项后老板再次澄清要**立即 Edit 不 append**（避免新旧规则共存矛盾）
+- **复用避免**：产品定位类指令处理 SOP：CEO 先复述 + 等 30 秒看老板补不补 + 主动问"还有别的吗" + 老板确认完整 → 落 memory
+- **来源**：2026-05-21 HKT 21:25-21:35 视频范围 3 轮澄清 + project_video_tutorial_scope.md memory 经历 2 次 Edit
+
+### algorithm-cold-start-axis-dominance — 试探机制权重失衡会压死用户偏好
+- **场景**：2026-05-21 HKT 21:40 CEO Chrome 注入"红肉重油川菜"用户测算法，出菜全是白粥/虾饺/西湖牛肉羹 — 完全不是红肉川菜
+- **踩坑**：算法看似"按偏好评分"，实际是个**多 axis 加权和**。axis 30 cold-start diversity 量级 -13 ~ -14，axis 32-40 用户偏好量级 +1 ~ +3。试探机制压死偏好。
+- **代价**：5/5 profile simulation FAIL，红肉用户命中率 20% = DB baseline 19%（算法等于零干预）
+- **根因**：
+  - cold-start diversity 设计意图正确（新用户首周覆盖 ≥4 cuisine 给 preference_learn 采样）
+  - 副作用：当用户已经填了 image onboarding（偏好已知），axis 30 仍按"未知偏好"逻辑硬推多样性
+  - 数学问题：负向 axis 量级远大于正向 axis 时，负向 axis 单方面主导排序
+- **教训**：
+  - 任何 multi-axis scoring，**正负向 axis 量级必须 prove 在同一数量级**（用 simulation harness 跑 5+ profile 看 axis 累计贡献分布）
+  - cold-start / exploration vs exploitation 机制要有**已知偏好用户的 early-return 路径**
+  - 算法的"看似在打分"和"实际占主导的 axis"可能不一致 — 必须做 axis 量级 audit
+- **复用避免**：未来加 axis 必须有 `simulateWeek + axis breakdown log` 验证量级在 ±5 范围内（不超过其他 axis 5 倍）
+- **来源**：2026-05-21 HKT 22:18 TICKET-015 simulation 报告 commit 11dda0f / docs/SPEC_smell1_phase3.md
+
+### onboarding-completion-not-equal-data-collection — onboarding 完成不等于真采集到所有需要的数据
+- **场景**：2026-05-21 HKT 算法 audit 发现 dishes 12 健康标签 boolean 列 **0% 填充**（dead schema），同时 onboarding 也 0 处采集 wellness goal
+- **踩坑**：早期 v3 onboarding 11 题设计时只考虑"偏好维度"，没采集 wellness goal / 孩子年龄 / 学校午餐等 channel 驱动数据
+- **代价**：5-channel 推荐架构里 💪 weekly_补 + 🎒 school_balance 两个 channel 数据源缺失 → channel 形同虚设
+- **教训**：
+  - onboarding 设计要从**算法消费的数据维度反推**，不是从"用户填什么舒服"出发
+  - 每加一个算法 channel / scoring axis，反向 check onboarding 是否采集到驱动数据
+  - dead schema（DB 有列但应用层 0 写入）是产品 / 工程脱节的信号 — 要么用要么删
+- **复用避免**：新加 channel / axis SPEC 必须含 "数据来源" 段，列明 onboarding 哪题 / DB 哪列驱动；否则不允许 ship
+- **来源**：2026-05-21 HKT 22:00 Algorithm 013 audit (telepot_response_algorithm.md §A-§C)
+
+### onboarding-q0-counter-stepper-is-anti-product — Q0 [- 0 +] 计数器是工程师思维不是产品思维
+- **场景**：2026-05-21 HKT 23:20 CEO 提议 Q0 加 `[- 0 +]` 让用户加孩子数。老板：「为什么要这么傻的设计呢？」
+- **踩坑**：CEO 用工程师思维想数据采集（数字 input），不用产品思维想用户认知（视觉一图懂）
+- **教训**：
+  - Onboarding 题选项设计原则：**视觉化大图 + 一眼懂 + 短文字描述**，不让用户算数 / 点击多次 / 选数字
+  - Q0 改 6 大图（1大1小 / 2大1小 / 2大2小 / 2大3小 / 4大2小 + 自定义）覆盖 80% 家庭组合
+  - 自定义入口兜底长尾，让 80% 用户秒选 + 20% 用户能自填
+  - 老板的元规则："所有的都有个自定义 看用户填不填即可"
+- **复用避免**：任何 onboarding 题不要用 `<input type="number">` 或 `[- N +]` stepper 作为主要交互。视觉化选项 + 自定义兜底是 default。
+- **来源**：2026-05-21 HKT 23:20 Q0 设计被老板批"傻"
+
+- **来源**：TELEPOT-20260520-068 41002 排查 + Railway 事故叠加
