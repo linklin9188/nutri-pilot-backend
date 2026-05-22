@@ -12,23 +12,40 @@
 import { useEffect, useState } from 'react';
 import { summarizeWeek, buildDiningSuggestions, FOOD_GROUPS_ORDER, type WeeklySummary, type DiningSuggestion, type FoodGroup } from '../lib/weeklyDiarySummary';
 import { RestaurantCard } from './RestaurantCard';
+import { useLanguage } from '../contexts/LanguageContext';
 
 // 10 类食材组 — 用户视角轮值（鱼/红肉/白肉/蛋/蔬菜/豆/菌/奶/主食/水果），
 // 灰色 chip = 这周没沾，绿色 = 上桌过。
-const FOOD_GROUP_META: Record<FoodGroup, { emoji: string; label: string }> = {
-  fish:     { emoji: '🐟', label: '鱼' },
-  meat:     { emoji: '🥩', label: '红肉' },
-  poultry:  { emoji: '🍗', label: '白肉' },
-  egg:      { emoji: '🥚', label: '蛋' },
-  veggie:   { emoji: '🥬', label: '蔬菜' },
-  soy:      { emoji: '🌱', label: '豆' },
-  mushroom: { emoji: '🍄', label: '菌' },
-  dairy:    { emoji: '🥛', label: '奶' },
-  grain:    { emoji: '🌾', label: '主食' },
-  fruit:    { emoji: '🍎', label: '水果' },
+const FOOD_GROUP_META: Record<FoodGroup, { emoji: string }> = {
+  fish:     { emoji: '🐟' },
+  meat:     { emoji: '🥩' },
+  poultry:  { emoji: '🍗' },
+  egg:      { emoji: '🥚' },
+  veggie:   { emoji: '🥬' },
+  soy:      { emoji: '🌱' },
+  mushroom: { emoji: '🍄' },
+  dairy:    { emoji: '🥛' },
+  grain:    { emoji: '🌾' },
+  fruit:    { emoji: '🍎' },
 };
+// UI 025 §C i18n — food-group labels per language (was hardcoded zh in META).
+function foodGroupLabel(g: FoodGroup, t: (en: string, zh: string) => string): string {
+  switch (g) {
+    case 'fish':     return t('Fish',     '鱼');
+    case 'meat':     return t('Red meat', '红肉');
+    case 'poultry':  return t('Poultry',  '白肉');
+    case 'egg':      return t('Egg',      '蛋');
+    case 'veggie':   return t('Veggies',  '蔬菜');
+    case 'soy':      return t('Soy',      '豆');
+    case 'mushroom': return t('Mushroom', '菌');
+    case 'dairy':    return t('Dairy',    '奶');
+    case 'grain':    return t('Grain',    '主食');
+    case 'fruit':    return t('Fruit',    '水果');
+  }
+}
 
 export default function WeekendDiningReport() {
+  const { t } = useLanguage();
   const [summary, setSummary]         = useState<WeeklySummary | null>(null);
   const [suggestions, setSuggestions] = useState<DiningSuggestion[]>([]);
   const [loading, setLoading]         = useState(true);
@@ -74,15 +91,18 @@ export default function WeekendDiningReport() {
         <div className="relative z-10 px-5">
           <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/90"
             style={{ textShadow: '0 1px 4px rgba(0,0,0,0.4)' }}>
-            周末好 · Weekend
+            {t('Weekend', '周末好 · Weekend')}
           </p>
           <h2 className="font-serif font-black mt-1 text-white"
             style={{ fontSize: 26, lineHeight: 1.2, textShadow: '0 2px 8px rgba(0,0,0,0.45)' }}>
-            出门换换口味吧
+            {t('Eat out for a change', '出门换换口味吧')}
           </h2>
           <p className="font-serif italic mt-2 text-white/85"
             style={{ fontSize: 13, lineHeight: 1.5, textShadow: '0 1px 4px rgba(0,0,0,0.35)' }}>
-            周一到周五在家好好做了几顿，今天放下锅铲。我把本周吃过的整理给您，再挑几家好馆子。
+            {t(
+              'You cooked at home Mon-Fri — put the spatula down today. Here\'s what you ate this week, and a few restaurant picks.',
+              '周一到周五在家好好做了几顿，今天放下锅铲。我把本周吃过的整理给您，再挑几家好馆子。',
+            )}
           </p>
         </div>
       </section>
@@ -90,7 +110,7 @@ export default function WeekendDiningReport() {
       {loading ? (
         <div className="rounded-3xl bg-white px-5 py-10 text-center"
           style={{ boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}>
-          <p className="text-[13px]" style={{ color: 'rgba(0,0,0,0.4)' }}>正在整理本周饭桌…</p>
+          <p className="text-[13px]" style={{ color: 'rgba(0,0,0,0.4)' }}>{t('Reading your week…', '正在整理本周饭桌…')}</p>
         </div>
       ) : (
         <>
@@ -107,9 +127,9 @@ export default function WeekendDiningReport() {
           <section className="rounded-3xl bg-white px-5 py-5"
             style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }}>
             <div className="flex items-baseline justify-between mb-3">
-              <p className="text-[11px] font-bold text-secondary/60 uppercase tracking-wider">本周饭桌</p>
+              <p className="text-[11px] font-bold text-secondary/60 uppercase tracking-wider">{t('Your table this week', '本周饭桌')}</p>
               <p className="text-[10px] font-bold" style={{ color: 'rgba(0,0,0,0.40)', letterSpacing: '0.04em' }}>
-                {summary.groupsCovered.size} / {FOOD_GROUPS_ORDER.length} 类
+                {summary.groupsCovered.size} / {FOOD_GROUPS_ORDER.length} {t('groups', '类')}
               </p>
             </div>
 
@@ -132,7 +152,7 @@ export default function WeekendDiningReport() {
                       fontSize: 11, fontWeight: 700,
                       color: hit ? '#1e8449' : 'rgba(0,0,0,0.35)',
                     }}>
-                      {meta.label}
+                      {foodGroupLabel(g, t)}
                     </span>
                   </div>
                 );
@@ -142,12 +162,18 @@ export default function WeekendDiningReport() {
             {/* 一句话 caption + 数据 */}
             <p className="font-serif text-[13px] leading-relaxed mb-3" style={{ color: '#1a1a1a' }}>
               {summary.groupsMissing.length === 0
-                ? '本周饭桌挺均衡，今天随心挑家馆子。'
-                : `这周缺 ${summary.groupsMissing.map(g => FOOD_GROUP_META[g]?.label ?? g).join('、')}，今天出门吃可以补一下。`}
+                ? t(
+                    'Your table this week is balanced — pick any restaurant today.',
+                    '本周饭桌挺均衡，今天随心挑家馆子。',
+                  )
+                : t(
+                    `Missing ${summary.groupsMissing.map(g => foodGroupLabel(g, t)).join(', ')} this week — eating out today can fill the gap.`,
+                    `这周缺 ${summary.groupsMissing.map(g => foodGroupLabel(g, t)).join('、')}，今天出门吃可以补一下。`,
+                  )}
             </p>
             <div className="grid grid-cols-2 gap-2 pt-3 border-t border-black/5">
-              <Stat value={summary.totalDishes} label="道菜" />
-              <Stat value={summary.distinctFoods} label="种食材" />
+              <Stat value={summary.totalDishes} label={t('dishes', '道菜')} />
+              <Stat value={summary.distinctFoods} label={t('foods', '种食材')} />
             </div>
           </section>
           </>)}
@@ -164,7 +190,7 @@ export default function WeekendDiningReport() {
           {(() => {
             const hk = suggestions.filter(s => s.restaurant.city === 'HK');
             const sz = suggestions.filter(s => s.restaurant.city === 'SZ');
-            const today = new Date().getDay() === 0 ? '周日' : '周六';
+            const today = new Date().getDay() === 0 ? t('Sunday', '周日') : t('Saturday', '周六');
             return (
               <>
                 {hk.length > 0 && (
@@ -172,10 +198,10 @@ export default function WeekendDiningReport() {
                     style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }}>
                     <div className="flex items-baseline justify-between mb-3">
                       <p className="font-serif font-black" style={{ fontSize: 17, color: '#1a1a1a', letterSpacing: '-0.005em' }}>
-                        香港 <span className="font-sans" style={{ fontSize: 12, color: '#FF5A1F', fontWeight: 700, marginLeft: 4 }}>{today}{hk.length}选</span>
+                        {t('Hong Kong', '香港')} <span className="font-sans" style={{ fontSize: 12, color: '#FF5A1F', fontWeight: 700, marginLeft: 4 }}>{today}{t(` · ${hk.length} picks`, `${hk.length}选`)}</span>
                       </p>
                       <p className="text-[10px] font-bold" style={{ color: 'rgba(0,0,0,0.4)', letterSpacing: '0.06em' }}>
-                        米其林 / 必比登 / 老字号
+                        {t('Michelin / Bib / classics', '米其林 / 必比登 / 老字号')}
                       </p>
                     </div>
                     <div className="flex flex-col gap-2.5">
@@ -191,10 +217,10 @@ export default function WeekendDiningReport() {
                     style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }}>
                     <div className="flex items-baseline justify-between mb-3">
                       <p className="font-serif font-black" style={{ fontSize: 17, color: '#1a1a1a', letterSpacing: '-0.005em' }}>
-                        深圳 <span className="font-sans" style={{ fontSize: 12, color: '#1b7e3f', fontWeight: 700, marginLeft: 4 }}>{today}{sz.length}选</span>
+                        {t('Shenzhen', '深圳')} <span className="font-sans" style={{ fontSize: 12, color: '#1b7e3f', fontWeight: 700, marginLeft: 4 }}>{today}{t(` · ${sz.length} picks`, `${sz.length}选`)}</span>
                       </p>
                       <p className="text-[10px] font-bold" style={{ color: 'rgba(0,0,0,0.4)', letterSpacing: '0.06em' }}>
-                        米其林 / 排队店 / 老字号
+                        {t('Michelin / line-up / classics', '米其林 / 排队店 / 老字号')}
                       </p>
                     </div>
                     <div className="flex flex-col gap-2.5">
@@ -211,7 +237,7 @@ export default function WeekendDiningReport() {
           {/* Soft footer */}
           <p className="text-center font-serif italic px-6 pt-1"
             style={{ fontSize: 12, color: 'rgba(0,0,0,0.4)', lineHeight: 1.6 }}>
-            周一回来，我又给您备好菜单。
+            {t('See you Monday — your menu will be ready.', '周一回来，我又给您备好菜单。')}
           </p>
         </>
       )}
