@@ -1,0 +1,17 @@
+{
+  "$schema": "https://code.claude.com/schemas/settings.json",
+  "_comment": "TICKET-021: project-level FileChanged hook for telepot_*.md files. Per-tab DEPT env var (set in Warp tab shell: `export DEPT=ui|backend|algorithm|database`) gates which Claude Code instance acts. See docs/HOOK_SETUP.md.",
+  "hooks": {
+    "FileChanged": [
+      {
+        "matcher": "_bridge/telepot_ui.md|_bridge/telepot_backend.md|_bridge/telepot_algorithm.md|_bridge/telepot_database.md",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node scripts/hooks/on-telepot-changed.cjs"
+          }
+        ]
+      }
+    ]
+  }
+}
