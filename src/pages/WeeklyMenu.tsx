@@ -21,6 +21,8 @@ import { useSubscription } from "../lib/subscription";
 import { TagBadgeRow, type TagBadge } from "../components/TagBadge";
 import CandidateGrid from "../components/CandidateGrid";
 import type { SlotPlan, SlotChoice } from "../hooks/useWeeklyMenu";
+import { getEatenToday, markEaten } from "../lib/eatingDiary";
+import { logMealEaten } from "../lib/mealLog";
 import { elevateDayToMichelin, type MichelinDish } from "../lib/michelinFromDb";
 import ChefBookingModal from "../components/ChefBookingModal";
 import { NutritionRadarCard } from "../components/NutritionRadar";
@@ -72,7 +74,7 @@ function getDayNutrition(dishes: SupabaseDish[]) {
 
 // ── DishCard ──────────────────────────────────────────────────────────────────
 
-function DishCard({ dish, small = false, familyMembers = [], homeToday = [], michelin, onSwap, swapping = false, badges }: {
+function DishCard({ dish, small = false, familyMembers = [], homeToday = [], michelin, onSwap, swapping = false, badges, onMarkEaten, eaten = false }: {
   dish: SupabaseDish; small?: boolean;
   familyMembers?: FamilyMember[];
   homeToday?: string[];
@@ -80,6 +82,10 @@ function DishCard({ dish, small = false, familyMembers = [], homeToday = [], mic
   onSwap?: () => void;
   swapping?: boolean;
   badges?: TagBadge[];
+  /** TICKET-024 §A — "我吃了" button. Caller writes meal_logs + toggleEaten localStorage. */
+  onMarkEaten?: () => void;
+  /** If true, render checkmark instead of plate icon (already logged today). */
+  eaten?: boolean;
 }) {
   const { isChinese } = useLanguage();
   const activeMembers = familyMembers.filter(m => homeToday.includes(m.id));
@@ -261,6 +267,25 @@ function DishCard({ dish, small = false, familyMembers = [], homeToday = [], mic
           </span>
         </button>
       )}
+      {/* TICKET-024 §A — "我吃了" button. Top-right (clear of bottom swap btn),
+          offsets vertically when michelin/小美 chip occupies top-right. Tinted
+          green when eaten=true (already in today's meal_logs). */}
+      {onMarkEaten && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onMarkEaten(); }}
+          title={eaten ? '今日已记录' : '我吃了'}
+          className="absolute right-2 w-7 h-7 rounded-full flex items-center justify-center active:scale-90 transition-all"
+          style={{
+            top: (michelin || ((dish as any).xiaomei_compatible && localStorage.getItem('has_xiaomei_robot') === 'true')) ? 28 : 8,
+            background: eaten ? "rgba(34,197,94,0.92)" : "rgba(255,255,255,0.92)",
+            boxShadow: "0 2px 6px rgba(0,0,0,0.25)",
+          }}
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: 15, color: eaten ? 'white' : "#15803D" }}>
+            {eaten ? 'check_circle' : 'restaurant'}
+          </span>
+        </button>
+      )}
     </div>
   );
 }
@@ -271,6 +296,7 @@ function MealSection({
   mealIdx, dishes, familyMembers = [], homeToday = [], michelinByDishId = {},
   onSwapSlot, swappingSlot = -1, slotsByDishId = {},
   expandedDishId, onToggleExpand, onPickCandidate,
+  onMarkEaten, eatenSet,
 }: {
   mealIdx: number; dishes: SupabaseDish[];
   familyMembers?: FamilyMember[]; homeToday?: string[];
@@ -285,6 +311,10 @@ function MealSection({
   onToggleExpand?: (dishId: string) => void;
   /** User picks a candidate from the grid → swap into the menu. */
   onPickCandidate?: (slotIdx: number, pick: SlotChoice) => void;
+  /** TICKET-024 §A — "我吃了" handler (mealType derived from mealIdx by caller). */
+  onMarkEaten?: (dish: SupabaseDish) => void;
+  /** Set of dish ids already logged today (drives green check state). */
+  eatenSet?: Set<string>;
 }) {
   const meal = MEALS[mealIdx];
 
@@ -325,7 +355,9 @@ function MealSection({
               michelin={michelinByDishId[dish.id]}
               onSwap={handleSwap}
               swapping={swappingSlot === slotIdx}
-              badges={slot?.primary?.tagBadges} />
+              badges={slot?.primary?.tagBadges}
+              onMarkEaten={onMarkEaten ? () => onMarkEaten(dish) : undefined}
+              eaten={eatenSet?.has(dish.id) ?? false} />
           );
         })}
       </div>
@@ -473,6 +505,37 @@ export default function WeeklyMenu() {
     setExpandedGridKey(null);
     setSwapToast('已换为「' + ((pick.dish as any).title_zh || (pick.dish as any).title || '该菜') + '」');
     setTimeout(() => setSwapToast(null), 2000);
+  }
+  // TICKET-024 §A — "我吃了" state. Read localStorage on mount + on 'nutri-eaten-changed'
+  // bus event so checks stay in sync across components.
+  const [eatenSet, setEatenSet] = useState<Set<string>>(() => getEatenToday());
+  useEffect(() => {
+    const sync = () => setEatenSet(getEatenToday());
+    window.addEventListener('nutri-eaten-changed', sync);
+    return () => window.removeEventListener('nutri-eaten-changed', sync);
+  }, []);
+  async function handleMarkEaten(dish: SupabaseDish, mealIdx: number) {
+    const dishId = dish.id;
+    if (!dishId) return;
+    if (eatenSet.has(dishId)) {
+      // Already logged today — no-op, append-only table. Tooltip already says 今日已记录.
+      return;
+    }
+    // 1) localStorage immediate UI feedback (green check appears instantly).
+    markEaten(dishId);
+    setEatenSet(getEatenToday());
+    // 2) DB meal_logs write (async, fire-and-forget). mealIdx 0=早 1=午 2=晚.
+    const mealType = mealIdx === 0 ? 'breakfast' : mealIdx === 1 ? 'lunch' : 'dinner';
+    const title = (dish as any).title_zh || (dish as any).title || '该菜';
+    const res = await logMealEaten({ dishId, mealType });
+    if (res.ok) {
+      setSwapToast('已记录：' + title);
+    } else {
+      // DB write failed — localStorage state stays (better UX than rollback),
+      // toast tells user logging didn't reach server.
+      setSwapToast('已标记（云端未同步）');
+    }
+    setTimeout(() => setSwapToast(null), 1800);
   }
   async function handleSwapDinner(dayIdx: number, slotIdx: number) {
     if (!weeklyMenu || swapBusy) return;
@@ -1161,18 +1224,27 @@ export default function WeeklyMenu() {
                               const expandedDishId = expandedGridKey?.startsWith(`${i}:`)
                                 ? expandedGridKey.slice(`${i}:`.length)
                                 : null;
+                              // TICKET-024 §B — "我吃了" only active for TODAY's day (i === todayIdx).
+                              // Future days can't log "ate" yet; past days hidden from render entirely.
+                              const isToday = i === todayIdx;
                               return (<>
                                 <MealSection mealIdx={0} dishes={dayBreakfast} familyMembers={familyMembers} homeToday={getEatingForDay(i)} michelinByDishId={overlayForDay}
-                                  slotsByDishId={slotsByDishId} />
+                                  slotsByDishId={slotsByDishId}
+                                  onMarkEaten={isToday ? (d) => handleMarkEaten(d, 0) : undefined}
+                                  eatenSet={isToday ? eatenSet : undefined} />
                                 <MealSection mealIdx={1} dishes={dayLunch}     familyMembers={familyMembers} homeToday={getEatingForDay(i)} michelinByDishId={overlayForDay}
-                                  slotsByDishId={slotsByDishId} />
+                                  slotsByDishId={slotsByDishId}
+                                  onMarkEaten={isToday ? (d) => handleMarkEaten(d, 1) : undefined}
+                                  eatenSet={isToday ? eatenSet : undefined} />
                                 <MealSection mealIdx={2} dishes={dayDinner}    familyMembers={familyMembers} homeToday={getEatingForDay(i)} michelinByDishId={overlayForDay}
                                   onSwapSlot={(slotIdx) => handleSwapDinner(i, slotIdx)}
                                   swappingSlot={swapBusy?.startsWith(`${i}:`) ? Number(swapBusy.split(':')[1]) : -1}
                                   slotsByDishId={slotsByDishId}
                                   expandedDishId={expandedDishId}
                                   onToggleExpand={(dishId) => handleToggleExpand(i, dishId)}
-                                  onPickCandidate={(slotIdx, pick) => handlePickCandidate(i, slotIdx, pick)} />
+                                  onPickCandidate={(slotIdx, pick) => handlePickCandidate(i, slotIdx, pick)}
+                                  onMarkEaten={isToday ? (d) => handleMarkEaten(d, 2) : undefined}
+                                  eatenSet={isToday ? eatenSet : undefined} />
                               </>);
                             })()}
                           </div>

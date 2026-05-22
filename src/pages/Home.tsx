@@ -33,6 +33,7 @@ import { HeartButton } from "../components/HeartButton";
 import { TagBadgeRow, type TagBadge } from "../components/TagBadge";
 import DailyNutritionStrip from "../components/DailyNutritionStrip";
 import { toggleEaten, getEatenToday } from "../lib/eatingDiary";
+import { logMealEaten } from "../lib/mealLog";
 import {
   Sun, CloudSun, Cloud, CloudFog,
   CloudRain, CloudRainWind, CloudLightning,
@@ -705,6 +706,13 @@ export default function Home() {
     // the rating flow per TICKET-008 design).
     if (!wasEaten && !ratedDishIds.has(dishId) && mealTime !== '早餐') {
       setRatingPanelDishId(dishId);
+    }
+    // TICKET-024 §B — DB meal_logs write on the FIRST eaten tap only (toggle
+    // off does nothing — append-only table, "undo" requires explicit portion=0
+    // insert which we don't surface in UI yet). Fire-and-forget; failure
+    // silently swallowed (toggleEaten localStorage is the load-bearing path).
+    if (!wasEaten) {
+      logMealEaten({ dishId, mealType: mealTime }).catch(() => { /* silent */ });
     }
   }
   function handlePanelRate(dishId: string, rating: 'good' | 'okay' | 'bad') {
