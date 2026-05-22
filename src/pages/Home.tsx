@@ -4,7 +4,7 @@
  * Sections: Health Dashboard → Procurement → Helper Status → Today's Menu
  */
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchSwapOptions, type SupabaseDish } from "../hooks/useSupabaseMenu";
 import { useWeeklyMenu, isWeekend, todayDayIndex } from "../hooks/useWeeklyMenu";
@@ -30,6 +30,7 @@ import { getUserId } from "../lib/userId";
 import { loadCuisineMode, type CuisineMode } from "../lib/cuisineFilter";
 import { loadFamilyMembers } from "../lib/familyPrefs";
 import { HeartButton } from "../components/HeartButton";
+import { TagBadgeRow, type TagBadge } from "../components/TagBadge";
 import DailyNutritionStrip from "../components/DailyNutritionStrip";
 import { toggleEaten, getEatenToday } from "../lib/eatingDiary";
 import {
@@ -1511,6 +1512,16 @@ export default function Home() {
                             ) : null;
                           })()}
                         </div>
+                        {/* TICKET-022 §B — 5-channel TagBadge chip row (max 2 per dish per Algorithm cap).
+                            Sourced from todaySlotsByDishId (today's SlotPlan primary.tagBadges).
+                            Renders nothing when dish has no slot entry — safe for fallback dishes. */}
+                        {(() => {
+                          const slotEntry = dish?.id ? todaySlotsByDishId[dish.id] : null;
+                          const badges = slotEntry?.tagBadges as TagBadge[] | undefined;
+                          return badges && badges.length > 0
+                            ? <TagBadgeRow badges={badges} />
+                            : null;
+                        })()}
                         {/* TICKET-052 §A — 常驻 3-emoji rating bar removed.
                             Rating now lives inside the popup that opens when
                             the user taps "✅ 我做了" (check_circle) above. */}
