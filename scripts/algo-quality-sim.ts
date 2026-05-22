@@ -441,7 +441,7 @@ async function main() {
               oil_level, cook_method, is_vegan, health_score, times_kept_in_menu, meal_type
        FROM dishes WHERE title_zh IS NOT NULL AND meal_type IN ('lunch','dinner','all') LIMIT 1200`
     );
-    console.log(`\n=== algo-quality-sim — TICKET-018 20-profile A/B simulation (ALGO_VERSION v55: 5-channel slots[].candidates[] + tagBadges[]) ===`);
+    console.log(`\n=== algo-quality-sim — TICKET-019 20-profile A/B simulation (ALGO_VERSION v57: pref_scores jsonb unwrap + Smell 1 phase 2) ===`);
     console.log(`pool: breakfast=${breakfastPool.length} | lunch+dinner=${lunchDinnerPool.length}\n`);
 
     // baseline: 看 DB 整体 protein_main_class / oil_level 分布
@@ -570,6 +570,46 @@ async function main() {
       const m = computeMetrics(picks, PROFILES[0]);
       console.log(`  run ${i+1}: target_pmc=${pct(m.target_pmc)}  target_oil=${pct(m.target_oil)}  target_cuisine=${pct(m.target_cuisine)}`);
     }
+
+    // ─── TICKET-019 §A pref_scores jsonb unwrap 单元 smoke ───
+    console.log(`\n【TICKET-019 §A pref_scores jsonb unwrap smoke — Backend rollup {score,n} → flat number】`);
+    function simUnwrap(raw: Record<string, any>): Record<string, number> {
+      const out: Record<string, number> = {};
+      for (const [key, val] of Object.entries(raw)) {
+        if (val == null) continue;
+        if (typeof val === 'number') { out[key] = val; continue; }
+        if (typeof val === 'object' && typeof val.score === 'number') {
+          const n = typeof val.n === 'number' ? val.n : 0;
+          const confWeight = n >= 30 ? 1.50 : 0.35;
+          out[key] = val.score * confWeight;
+        }
+      }
+      return out;
+    }
+    const mockJsonb = {
+      'pmc:red':           { score: 1.0,  n: 35 },   // 高置信度: 1.0 * 1.50 = 1.50
+      'tag:mood_boost':    { score: 0.5,  n: 12 },   // 低置信度: 0.5 * 0.35 = 0.175
+      'cuisine:jiangnan':  { score: -0.6, n: 30 },   // 边界 n=30: -0.6 * 1.50 = -0.90
+      'tag:legacy_number': 0.42,                      // 兼容旧 number 形态
+      'tag:malformed':     { foo: 'bar' },            // 缺 score 字段, 跳过
+      'tag:null':          null,                      // null 跳过
+    };
+    const unwrapped = simUnwrap(mockJsonb);
+    const expected: Array<[string, number, string]> = [
+      ['pmc:red',           1.0 * 1.50,  'n=35 → confWeight 1.50'],
+      ['tag:mood_boost',    0.5 * 0.35,  'n=12 → confWeight 0.35'],
+      ['cuisine:jiangnan', -0.6 * 1.50,  'n=30 边界 → confWeight 1.50'],
+      ['tag:legacy_number', 0.42,         '旧 number 形态直通'],
+    ];
+    for (const [key, want, why] of expected) {
+      const got = unwrapped[key];
+      const ok = typeof got === 'number' && Math.abs(got - want) < 1e-9;
+      console.log(`  ${key.padEnd(20)}: ${ok ? '✅' : '❌'} got=${got?.toFixed(3) ?? 'undefined'} want=${want.toFixed(3)} (${why})`);
+    }
+    const skipMalformed = !('tag:malformed' in unwrapped);
+    const skipNull = !('tag:null' in unwrapped);
+    console.log(`  ${'tag:malformed'.padEnd(20)}: ${skipMalformed ? '✅' : '❌'} skipped (无 score 字段)`);
+    console.log(`  ${'tag:null'.padEnd(20)}: ${skipNull ? '✅' : '❌'} skipped (null value)`);
 
     // ─── TICKET-018 §B deriveBadges 单元 smoke (5 channel 每个至少 1 个命中) ───
     console.log(`\n【TICKET-018 §B deriveBadges smoke — 5 channel 命中检测】`);

@@ -798,15 +798,24 @@ export default function Home() {
     try { return JSON.parse(localStorage.getItem("generatedMenu") || "[]"); } catch { return []; }
   })();
 
-  // ── Smell 1 阶段 2 (v40): breakfast / fruit / lunch / dinner 全部来自
-  // weeklyMenu.days[todayIdx]。useRecommendDishes / pickBreakfastCombo 链路
-  // 已彻底删除，generateWeekPlan 是唯一菜单生成源；Home 仅做渲染。
+  // ── Smell 1 阶段 2 (v40 phase 1 / v57 phase 2): breakfast / fruit / lunch /
+  // dinner 全部来自 weeklyMenu.days[todayIdx]。v57 起 fruit / breakfast 优先
+  // 走新 slots[] 接口 (TICKET-018) 让 UI 拿到 candidates + tagBadges；当 slots
+  // undefined (loadFromDB 命中旧缓存场景) 时 fallback 旧字段保不破。
+  // useRecommendDishes / pickBreakfastCombo 链路已彻底删除。
   const todayWeekly = weeklyMenu?.days[todayIdx];
-  const fruitFromWeekly = todayWeekly?.fruitDish;
+  const breakfastFromSlots = todayWeekly?.slots
+    ?.filter(s => s.slotType === 'breakfast')
+    .map(s => s.primary.dish);
+  const breakfastDishes = (breakfastFromSlots && breakfastFromSlots.length > 0)
+    ? breakfastFromSlots
+    : (todayWeekly?.breakfastDishes ?? []);
+  const fruitFromSlots = todayWeekly?.slots?.find(s => s.slotType === 'fruit')?.primary?.dish;
+  const fruitFromWeekly = fruitFromSlots ?? todayWeekly?.fruitDish;
 
   const baseMenu: any[] = (() => {
     if (mealTime === "早餐") {
-      return todayWeekly?.breakfastDishes ?? [];
+      return breakfastDishes;
     }
     if (mealTime === "午餐") {
       const lunch = todayWeekly?.lunchDishes ?? [];

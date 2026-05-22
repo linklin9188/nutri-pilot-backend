@@ -324,3 +324,18 @@
   - tagBadges 是"算法可解释性"的产品入口——5 channel 显式标签（🌶️ preference / 🌿 seasonal / 🎋 festival / 🎒 school_balance / 💪 weekly_balance）让用户能直接看到"为什么"
 - **复用避免**：新的推荐 / 排序输出接口设计时，先回答"UI 能不能从这个数据结构看出选择理由？"——不能就是设计不足
 - **来源**：2026-05-22 HKT 09:30 TICKET-018 §A 5-channel 接口契约 commit (Algorithm 018)
+
+### pref-scores-jsonb-shape-drift — Backend 写入形态与 Algorithm reader 期望偏差
+- **场景**：2026-05-22 HKT TICKET-019。Backend 018 §B feedback-rollup 真跑通后写入 `user_profiles.pref_scores` 的实际 jsonb 形态是 `{"pmc:red": {"score": 1, "n": 35}, ...}`, 但 Algorithm v55 reader (TICKET-017 §C) 假设是 flat number `Record<string, number>` 直接消费, 导致 `prefScores[key]` 返回的是 `{score, n}` 对象而非 number, 下游 `usagePower(prefScores[col]) * 0.6 * sigmoidWeight` NaN。
+- **踩坑**：Backend 与 Algorithm 跨部门接口仅靠"列名 + jsonb 类型"对齐, 没有 SPEC 显式规定 jsonb value 形态。Backend 出于精度需求自然存了 `{score, n}` (好 rollup); Algorithm 出于简洁假设 number (好 scoring)。两边都没错, 但接口不匹配。
+- **代价**：v54/v55 真用户 pref_scores 命中后 axis 4 学习信号全 NaN, 等效"未学到任何偏好" — 但因为 `usagePower(NaN)` 在 v45-v55 的 `learnedSignals` 计数 (`Object.values(prefScores).filter(v => typeof v === 'number')`) 路径下 NaN.toString() 不是 number → 自动跳过, 没崩。隐式 fallback 救了一命, 但 axis 4 等于失效。
+- **教训**：
+  - 任何跨部门 jsonb / json 接口必须有 **shape SPEC**（字段名 + 嵌套 + value 类型 + 单位 / 量级）, 不只 "列名 + 类型 jsonb"
+  - reader 端做 **unwrap helper** 而非分散 inline 解构 — `unwrapPrefScoresJsonb()` 一处适配两种形态 (`{score,n}` 嵌套 + flat number 兼容), 下游 consumer 签名 `Record<string, number>` 不动
+  - confidence weight (per-key `n` 阈值 30) 比全局 sigmoid 更精准 — n>=30 → 1.50, n<30 → 0.35
+  - 加 jsonb unwrap unit test smoke 含 null / 缺字段 / 边界 n=30 / legacy number 4 个 edge cases
+- **复用避免**：所有跨部门 jsonb 接口必须有：
+  1. SPEC 文档显式 shape (字段 + 嵌套 + 单位)
+  2. reader 端 unwrap helper + smoke test (含 edge cases: null / malformed / boundary / legacy)
+  3. 双方 PR 互 review 至少 shape 部分
+- **来源**：2026-05-22 HKT 11:50 TICKET-019 §A unwrap fix commit (Algorithm 019)

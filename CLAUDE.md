@@ -30,7 +30,7 @@ Frontend bundle has NO Gemini key. `VITE_GEMINI_API_KEY` is removed.
 - New Gemini call site → add a new `endpoint` to `supabase/functions/gemini-proxy/index.ts`, never reintroduce direct frontend calls.
 
 ### `ALGO_VERSION` cache busting
-Constant in `src/hooks/useWeeklyMenu.ts`. Currently **`v55`** (bumped 2026-05-22 by TICKET-018: 5-channel slots[].candidates[] + tagBadges[] 大改; previous bumps v51→v52→v54 on TICKET-016/017 axis 量级 + Option δ + festival API + DB pref_scores; Smell 4 fix 2026-05-19 retired the two localStorage sentinels in favor of DB columns `user_weekly_menus.algo_version` + `cache_key`).
+Constant in `src/hooks/useWeeklyMenu.ts`. Currently **`v57`** (bumped 2026-05-22 by TICKET-019: §A pref_scores jsonb `{score, n}` unwrap + §B Smell 1 phase 2 Home fruit/breakfast 切到 slots[]; v55 by TICKET-018: 5-channel slots[].candidates[] + tagBadges[] 大改; previous bumps v51→v52→v54 on TICKET-016/017 axis 量级 + Option δ + festival API + DB pref_scores; Smell 4 fix 2026-05-19 retired the two localStorage sentinels in favor of DB columns `user_weekly_menus.algo_version` + `cache_key`).
 
 - ANY change to scoring / scaling / filter / breakfast template / slot allocation → **bump** it.
 - Downstream cache readers (`VerifyIngredients.tsx` for procurement etc.) MUST `import { ALGO_VERSION }`, never hardcode the version string.

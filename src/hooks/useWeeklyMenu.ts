@@ -120,7 +120,8 @@ const WORKDAYS_PER_WEEK = 5;
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v55'; // TICKET-018 §H 5-channel 接口大改: generateWeekPlan 每 slot 含 candidates[] + tagBadges[] (5 channel: 🌶️ preference / 🌿 seasonal / 🎋 festival / 🎒 school_balance / 💪 weekly_balance). WeeklyDayMenu 加 slots?: SlotPlan[], 旧字段 (dishes/lunchDishes/breakfastDishes/fruitDish) 维持 slot.primary 投影保 backward compat。候选池采样: breakfast top6→3 / main top12→5 / side top8→5 / fruit top4→3, Option δ 硬过滤产生的 topCandidates 复用于 candidates 截取 (CEO TICKET-017 拍板"接受极端化菜单"延续)。bump 让所有 v54 缓存失效。
+export const ALGO_VERSION = 'v57'; // TICKET-019 §A v55 pref_scores jsonb unwrap (Backend rollup 实际写 {score, n} 而非 flat number, reader 加 unwrapPrefScoresJsonb 用 confWeight= n>=30 ? 1.50 : 0.35 转 flat 给下游 scoreForWeek) + §B Smell 1 阶段 2 收口 Home.tsx fruit/breakfast 切到 slots[].find(slotType==='fruit'|'breakfast') primary 投影 + fallback 旧 fruitDish/breakfastDishes (loadFromDB 命中 slots=undefined 时不破)。跳 v56 因 §A + §B 同棒 ship。bump 让所有 v55 缓存失效。
+// v55: TICKET-018 §H 5-channel 接口大改: generateWeekPlan 每 slot 含 candidates[] + tagBadges[] (5 channel: 🌶️ preference / 🌿 seasonal / 🎋 festival / 🎒 school_balance / 💪 weekly_balance). WeeklyDayMenu 加 slots?: SlotPlan[], 旧字段 (dishes/lunchDishes/breakfastDishes/fruitDish) 维持 slot.primary 投影保 backward compat。候选池采样: breakfast top6→3 / main top12→5 / side top8→5 / fruit top4→3, Option δ 硬过滤产生的 topCandidates 复用于 candidates 截取 (CEO TICKET-017 拍板"接受极端化菜单"延续)。bump 让所有 v54 缓存失效。
 // v54: TICKET-017 §A Option δ + §B festival API + §C DB pref_scores. CEO 拍板 Option δ "接受极端化菜单": imagePrefs.protein_main_class.length===1 + main protein slot → 候选池 prefilter dish.protein_main_class === wantDb, 过滤后 < 15 自动放宽避免空 slot。§B axis 27 festival 接入 backend /functions/v1/festival-now (sessionStorage 30min 缓存), 缺失退本地公历兜底。§C user_profiles.pref_scores (rollup) 优先读, 缺失退 user_preference_scores。bump 让所有 v52/v53 缓存失效。
 // v52: TICKET-016 §D Option α: axis 32 protein_main_class 0.15 → 0.30. v51 sim 显示 axis 30 修复后 pmc 命中率仍 mean 30% (target 70%), 因 a32 量级 0.15 落后 a3_taste 0.25 / a23_newuser 0.45/dish, want_pmc=red 但算法选了 spicy+white. 0.30 让 pmc 与 taste 同量级, 让用户填的"主蛋白"偏好真主导。bump 让 v51 缓存失效。
 // v51: TICKET-016 §A: axis 30 cold-start diversity early-return for known-pref users (imagePrefs 任一非空 → 跳过强制多样性)。TICKET-015 sim 诊断 axis 30 累计 -13~-14 压倒 imageOnboardingScore +1~+2.7 (设计 75% 主导), meatlover red 命中率 20% = baseline DB 19%, 算法没把偏好推上来。Root cause: 已填 image onboarding 时仍按"未知偏好"逻辑硬推多样性。bump 让所有 v50 缓存失效, 已填 image 用户立即拿到偏好菜单。
@@ -1038,6 +1039,35 @@ function originBaseFor(dishOrigin: string, userBucket: string | null): number {
  * should pull a 粤 user toward 川 dishes much more than a sustained
  * 'spicy' tag should pull a 'light' user toward 'spicy' dishes.
  */
+/**
+ * §A (TICKET-019) Unwrap Backend rollup 写 user_profiles.pref_scores 的 jsonb 形态:
+ *   {"pmc:red": {score: 0.8, n: 35}, "tag:mood_boost": {score: 0.5, n: 12}, ...}
+ * → flat Record<string, number> 让下游 scoreForWeek 等 number-based consumer 无需改签名。
+ *
+ * Per-key confidence weight:
+ *   n >= 30 → 1.50 (高置信度信号超过画像 baseline 1.0)
+ *   n <  30 → 0.35 (cold-start 弱信号 - 与 axis 4 sigmoid 早期权重一致)
+ *
+ * 兼容 user_preference_scores 旧 number 形态 (单一 feedback 行 fallback path)。
+ */
+function unwrapPrefScoresJsonb(raw: Record<string, any>): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [key, val] of Object.entries(raw)) {
+    if (val == null) continue;
+    if (typeof val === 'number') {
+      // 兼容旧 number 形态 (user_preference_scores 单一行)。
+      out[key] = val;
+      continue;
+    }
+    if (typeof val === 'object' && typeof val.score === 'number') {
+      const n = typeof val.n === 'number' ? val.n : 0;
+      const confWeight = n >= 30 ? 1.50 : 0.35;
+      out[key] = val.score * confWeight;
+    }
+  }
+  return out;
+}
+
 function usagePower(n: number): number {
   if (!n) return 0;
   const sign = n >= 0 ? 1 : -1;
@@ -3362,10 +3392,13 @@ export function useWeeklyMenu(weekOffset: number = 0) {
           if (existing === undefined || days < existing) recentIds.set(row.dish_id, days);
         });
 
-        // §C (TICKET-017) prefScores DB 优先, user_preference_scores 兜底
-        // Backend §B rollup cron 03:30 把聚合好的 jsonb 写 user_profiles.pref_scores;
-        // 算法侧优先读它 (已聚合, 无需 client 再算); 缺失/失败 → 回退现有
-        // user_preference_scores 路径 (兼容 rollup 未上线 / 单一 feedback 行场景)。
+        // §C (TICKET-017) prefScores DB 优先, user_preference_scores 兜底.
+        // §A (TICKET-019) Backend 018 §B feedback-rollup 真跑通后实际写入的 jsonb
+        // 形态是 `{ "pmc:red": {score, n}, "tag:mood_boost": {score, n}, ... }`,
+        // 而 v55 算法 reader 期望 flat number。通过 unwrapPrefScoresJsonb 在 reader
+        // 侧 unwrap → score * confWeight (n>=30 → 1.50, else 0.35), 保持下游
+        // scoreForWeek 签名 Record<string, number> 不动 (axis 4 学习曲线 / axis 32-40
+        // 9-axis bridge 等所有 prefScores consumer 零改动)。
         let prefScores: Record<string, number> = {};
         try {
           const { data: profRow } = await supabase
@@ -3376,7 +3409,7 @@ export function useWeeklyMenu(weekOffset: number = 0) {
             .then(r => r, () => ({ data: null }));
           const ps = (profRow as any)?.pref_scores;
           if (ps && typeof ps === 'object' && Object.keys(ps).length > 0) {
-            prefScores = ps as Record<string, number>;
+            prefScores = unwrapPrefScoresJsonb(ps);
           }
         } catch { /* user_profiles 读失败 → 退 user_preference_scores */ }
         if (Object.keys(prefScores).length === 0) {
