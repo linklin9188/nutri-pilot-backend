@@ -1,3 +1,10 @@
+/**
+ * @deprecated 2026-05-22 — Cowork CEO Option β decision (TICKET-018 §D).
+ * Front-end persists via supabase.from('chat_sessions').upsert directly.
+ * chat-session-get retained as fresh-mount hydration entry only.
+ * chat-session-append / chat-session-end retained for legacy compat,
+ * not currently invoked by front-end. Do NOT extend schema/payload.
+ */
 // Supabase Edge Function — GET /functions/v1/chat-session-get?user_id=<id>
 //
 // TICKET-20260521-001 §B(1). Returns the most-recent chat session for the
