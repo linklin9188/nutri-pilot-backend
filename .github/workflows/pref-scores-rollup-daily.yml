@@ -1,0 +1,48 @@
+# Daily pref_scores rollup — TICKET-20260522-018 §C
+#
+# Spec: scripts/feedback-rollup.ts header (TICKET-018 §B).
+# Aggregates user_feedback_helper (7d window) and writes
+# user_profiles.pref_scores jsonb for algorithm consumption (useWeeklyMenu.ts
+# v54+).
+#
+# Schedule: 03:30 HKT (UTC+8) daily. GitHub Actions cron is in UTC, so
+# "30 19 * * *" fires at 19:30 UTC = 03:30 HKT next day.
+#
+# Filename note: workflow file is `pref-scores-rollup-daily.yml` (not
+# `feedback-rollup-daily.yml` as the original ticket §H wording suggested) —
+# `feedback-rollup-daily.yml` is already taken by TICKET-022 §B helper-feedback
+# pipeline (scripts/feedback-to-prompt.ts → dishes.meta prep_steps_json_needs_regen).
+# The two pipelines aggregate the same source table for different downstream
+# columns, so they coexist as separate workflow files.
+#
+# Required GitHub Secrets (Settings → Secrets and variables → Actions):
+#   SUPABASE_URL                 → https://qoyuafqqkfyrqlthsvws.supabase.co
+#   SUPABASE_SERVICE_ROLE_KEY    → service-role key from Supabase dashboard
+# Manual trigger: Actions tab → "Daily pref_scores Rollup" → Run workflow.
+
+name: Daily pref_scores Rollup
+
+on:
+  schedule:
+    - cron: '30 19 * * *'   # 03:30 HKT next day (UTC+8)
+  workflow_dispatch:         # ad-hoc manual run
+
+jobs:
+  rollup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install deps
+        run: npm install --no-audit --no-fund
+
+      - name: Run feedback-rollup (live; writes user_profiles.pref_scores)
+        env:
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: npx tsx scripts/feedback-rollup.ts --commit
