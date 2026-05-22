@@ -163,17 +163,29 @@ function signalOf(fbType: string): number | null {
   console.log(`[COMMIT] user_profiles.pref_scores written — ok=${okUsers} err=${errUsers}`);
 
   // 7) audit INSERT into feedback_rollup_runs (graceful degrade if table missing).
+  // Schema matches TICKET-020 §B contract: run_at + window_days + users_affected
+  // + axes_computed + rows_written + errors + triggered_by.
+  const triggeredBy = process.env.GITHUB_ACTIONS === 'true' ? 'github_actions_cron' : 'manual';
   const { error: auditErr } = await sb
     .from('feedback_rollup_runs')
     .insert({
-      run_at:           new Date().toISOString(),
-      users_affected:   okUsers,
-      axes_updated:     totalAxesUpdated,
+      run_at:         new Date().toISOString(),
+      window_days:    WINDOW_DAYS,
+      users_affected: okUsers,
+      axes_computed:  totalAxesUpdated,
+      rows_written:   okUsers,            // 1 row per user UPDATE — equals okUsers
+      errors:         errUsers,
+      triggered_by:   triggeredBy,
     });
   if (auditErr) {
     console.warn(`[AUDIT-DEGRADED] feedback_rollup_runs INSERT skipped: ${auditErr.message}`);
-    console.warn(`                 (Database task pending: CREATE TABLE feedback_rollup_runs (id uuid PK, run_at timestamptz, users_affected int, axes_updated int);)`);
+    console.warn(`                 (Database task pending: CREATE TABLE feedback_rollup_runs (`);
+    console.warn(`                    id uuid PK DEFAULT gen_random_uuid(),`);
+    console.warn(`                    run_at timestamptz, window_days int,`);
+    console.warn(`                    users_affected int, axes_computed int,`);
+    console.warn(`                    rows_written int, errors int, triggered_by text`);
+    console.warn(`                  );)`);
   } else {
-    console.log(`[AUDIT] feedback_rollup_runs row inserted — users=${okUsers} axes=${totalAxesUpdated}`);
+    console.log(`[AUDIT] feedback_rollup_runs row inserted — trigger=${triggeredBy} users=${okUsers} axes=${totalAxesUpdated} err=${errUsers}`);
   }
 })();
