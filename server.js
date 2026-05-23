@@ -7,6 +7,119 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// ── TICKET-001 sprint 0 — admin auth state (in-memory) ─────────────────────
+// Sprint 0 stores admin sessions in a Map keyed by random token. Persists
+// across requests but resets on server restart (acceptable for sprint 0;
+// JWT-signed tokens land in sprint 2).
+//
+// ADMIN_USERNAME / ADMIN_PASSWORD_HASH come from Railway env. The hash is
+// sha256(password) hex-encoded so we never compare plaintext. Boss sets the
+// password by running `node -e "console.log(require('crypto').createHash('sha256').update('YOUR_PASS').digest('hex'))"`
+// and pasting the result into Railway env ADMIN_PASSWORD_HASH.
+//
+// SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are reused from edge fn env if
+// already on Railway; otherwise CEO sets them once during sprint 0 deploy.
+const ADMIN_USERNAME      = process.env.ADMIN_USERNAME      ?? '';
+const ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH ?? '';
+const SUPABASE_URL              = process.env.SUPABASE_URL              ?? '';
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
+
+const adminSessions = new Map(); // token -> { username, createdAt }
+
+function sha256Hex(s) {
+  return crypto.createHash('sha256').update(s).digest('hex');
+}
+
+function requireAdmin(req, res, next) {
+  const token = req.header('X-Admin-Token');
+  if (!token || !adminSessions.has(token)) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+  req.adminUsername = adminSessions.get(token).username;
+  next();
+}
+
+app.post('/api/admin/login', express.json(), (req, res) => {
+  const { username, password } = req.body ?? {};
+  if (!username || !password) {
+    return res.status(400).json({ error: 'missing username or password' });
+  }
+  if (!ADMIN_USERNAME || !ADMIN_PASSWORD_HASH) {
+    return res.status(503).json({
+      error: 'admin not configured — set ADMIN_USERNAME + ADMIN_PASSWORD_HASH in Railway env',
+    });
+  }
+  // Constant-time-ish comparison via crypto.timingSafeEqual on equal-length buffers.
+  const userOk = Buffer.byteLength(username) === Buffer.byteLength(ADMIN_USERNAME)
+    && crypto.timingSafeEqual(Buffer.from(username), Buffer.from(ADMIN_USERNAME));
+  const passOk = (() => {
+    const got = sha256Hex(password);
+    if (got.length !== ADMIN_PASSWORD_HASH.length) return false;
+    return crypto.timingSafeEqual(Buffer.from(got), Buffer.from(ADMIN_PASSWORD_HASH));
+  })();
+  if (!userOk || !passOk) {
+    return res.status(401).json({ error: 'invalid credentials' });
+  }
+  const token = crypto.randomBytes(32).toString('hex');
+  adminSessions.set(token, { username, createdAt: Date.now() });
+  res.json({ token, username });
+});
+
+app.get('/api/admin/me', requireAdmin, (req, res) => {
+  res.json({ is_admin: true, username: req.adminUsername });
+});
+
+app.get('/api/admin/stats', requireAdmin, async (_req, res) => {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    return res.status(503).json({
+      error: 'supabase not configured — set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY in Railway env',
+    });
+  }
+  try {
+    const u = `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/admin_users_view?select=is_premium,is_trial_active,created_at,last_active_at,menu_count`;
+    const r = await fetch(u, {
+      headers: {
+        apikey:        SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      },
+    });
+    if (!r.ok) {
+      const t = await r.text().catch(() => r.statusText);
+      return res.status(502).json({ error: `supabase ${r.status}: ${t.slice(0, 200)}` });
+    }
+    const rows = await r.json();
+    const now = Date.now();
+    const sevenDaysAgo = now - 7 * 86_400_000;
+    let total_users        = 0;
+    let trial_active_users = 0;
+    let premium_users      = 0;
+    let new_users_7d       = 0;
+    let active_users_7d    = 0;
+    let total_menus        = 0;
+    for (const row of rows) {
+      total_users += 1;
+      if (row.is_premium)      premium_users      += 1;
+      if (row.is_trial_active) trial_active_users += 1;
+      total_menus += typeof row.menu_count === 'number' ? row.menu_count : 0;
+      const created = row.created_at ? new Date(row.created_at).getTime() : NaN;
+      if (Number.isFinite(created) && created > sevenDaysAgo) new_users_7d += 1;
+      const lastActive = row.last_active_at ? new Date(row.last_active_at).getTime() : NaN;
+      if (Number.isFinite(lastActive) && lastActive > sevenDaysAgo) active_users_7d += 1;
+    }
+    res.json({
+      total_users,
+      trial_active_users,
+      premium_users,
+      new_users_7d,
+      active_users_7d,
+      total_menus,
+    });
+  } catch (e) {
+    console.error('[/api/admin/stats]', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── WeChat JSSDK signature (Railway-hosted, fixed-IP) ──────────────────────
 // Supabase Edge Function egress rotates IPs (54.x/18.x AWS pool), which is
 // incompatible with WeChat MP's single-IP allowlist. Railway has a stable
@@ -101,6 +214,27 @@ app.use(express.static(path.join(__dirname, 'dist'), {
     }
   },
 }));
+
+// TICKET-001 sprint 0 — admin app static assets + SPA fallback. Must come
+// BEFORE the main SPA catch-all so /admin/* doesn't fall through to index.html
+// of the main user-facing app. dist-admin/ is built by `npm run build:admin`
+// and ignored from git (build artifact).
+app.use('/admin', express.static(path.join(__dirname, 'dist-admin'), {
+  maxAge: 0,
+  etag: false,
+  setHeaders(res, filePath) {
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    }
+  },
+}));
+app.get('/admin', (_req, res) => {
+  res.sendFile(path.join(__dirname, 'dist-admin', 'index.html'));
+});
+app.get('/admin/*', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.sendFile(path.join(__dirname, 'dist-admin', 'index.html'));
+});
 
 // TICKET-035 §C — explicit MP_verify route as belt-and-suspenders defense.
 // 微信 MP_verify files: 名 = MP_verify_<hash>.txt, 内容 = <hash> (no newline).

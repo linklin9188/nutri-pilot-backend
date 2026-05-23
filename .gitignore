@@ -1,5 +1,6 @@
 node_modules
 dist
+dist-admin
 .env
 
 # Local Supabase CLI scratch (auto-generated when running `supabase` commands)
@@ -10,6 +11,9 @@ supabase/.temp/
 
 # Telepot file-bridge (Cowork ↔ CLI relay, never commit)
 _bridge/
+
+# Architect private knowledge base (lessons learned, never commit)
+_architect/
 
 # macOS junk
 .DS_Store

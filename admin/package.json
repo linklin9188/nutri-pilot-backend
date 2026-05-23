@@ -1,0 +1,11 @@
+{
+  "name": "aieats-admin",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "comment": "TICKET-001 sprint 0 — independent Vite app for Aieats 运营后台. Shares node_modules with monorepo root; vite build emits to ../dist-admin/.",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite --port 3100"
+  }
+}

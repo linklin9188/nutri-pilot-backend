@@ -8,9 +8,10 @@
   },
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
-    "build": "vite build",
+    "build": "vite build && npm run build:admin",
+    "build:admin": "vite build --config admin/vite.config.ts",
     "preview": "vite preview",
-    "clean": "rm -rf dist",
+    "clean": "rm -rf dist dist-admin",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
