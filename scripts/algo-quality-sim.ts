@@ -766,6 +766,66 @@ async function main() {
     console.log(` 验证 ticket §A 意图: meatlover/vegan/单一 pmc 应在 low; 多 pmc + 多 styles 应在 mid+;`);
     console.log(` 真用户 prod 中 familyPrefs.homeMembers (三代同堂多 wellness goals) 会推 diversity ≥ 6 → high.`);
 
+    // ─── TICKET-027 P0 西安(北方) vs 广东(粤菜) 端到端对比 dump ───────────────
+    console.log(`\n=== 【TICKET-027 P0 西安 vs 广东 端到端对比 — 老板核心质疑"算法是否真在干活"】===\n`);
+    const xianResult = results.find(r => r.profile.name === '5-northerner-北方面食');
+    const cantonResult = results.find(r => r.profile.name === '4-cantonese-港式清淡');
+    if (xianResult && cantonResult) {
+      // 1. 全 picks 列出 (35 道每 profile, dinner main 着重)
+      function dumpProfile(label: string, r: typeof xianResult) {
+        console.log(`▼ ${label} (${r.profile.name})`);
+        console.log(`  hometown=${r.profile.hometown} | goal=${r.profile.dietary_goal} | taste=${r.profile.taste_pref}`);
+        console.log(`  imagePrefs: pmc=[${(r.profile.imagePrefs.protein_main_class ?? []).join(',')}] | oil=${r.profile.imagePrefs.oil_level} | staple=[${(r.profile.imagePrefs.staple_pref ?? []).join(',')}]`);
+        const dinnerMains = r.picks.filter(pk => pk.meal === '晚餐' && /main/i.test(pk.slot));
+        console.log(`  全 35 道 picks (按 meal+slot 顺序):`);
+        for (const pk of r.picks) {
+          const d = pk.dish;
+          const pmc = d.protein_main_class ?? _proteinClassOf(d.main_ingredient ?? '');
+          console.log(`    [${pk.meal}/${pk.slot.padEnd(9)}] ${(d.title_zh ?? '').padEnd(22)} pmc=${(pmc||'-').padEnd(8)} oil=${(d.oil_level||'-').padEnd(5)} origin=${(d.origin_cuisine||'-').padEnd(14)} score=${pk.score.toFixed(2)}`);
+        }
+        // cuisine 分布
+        const cuiCounts: Record<string, number> = {};
+        for (const pk of r.picks) {
+          const c = pk.dish.origin_cuisine || '其他';
+          cuiCounts[c] = (cuiCounts[c] ?? 0) + 1;
+        }
+        const cuiSorted = Object.entries(cuiCounts).sort((a, b) => b[1] - a[1]);
+        console.log(`  cuisine 分布: ${cuiSorted.map(([k, v]) => `${k}=${v}`).join(' | ')}`);
+        console.log(`  (dinner main 共 ${dinnerMains.length} 道)`);
+      }
+      dumpProfile('🌵 西安代表', xianResult);
+      console.log('');
+      dumpProfile('🍤 广东代表', cantonResult);
+      // 2. Jaccard 对比
+      const A = new Set(xianResult.picks.map(pk => pk.dish.id));
+      const B = new Set(cantonResult.picks.map(pk => pk.dish.id));
+      const inter = [...A].filter(x => B.has(x)).length;
+      const union = A.size + B.size - inter;
+      const jacc = union === 0 ? 0 : inter / union;
+      console.log(`\n▼ 全 35 道菜 dish ID Jaccard 重合率: ${(jacc*100).toFixed(1)}% (inter=${inter} / union=${union})`);
+      const dinnerXianIds = new Set(xianResult.picks.filter(pk => pk.meal === '晚餐').map(pk => pk.dish.id));
+      const dinnerCantonIds = new Set(cantonResult.picks.filter(pk => pk.meal === '晚餐').map(pk => pk.dish.id));
+      const dinnerInter = [...dinnerXianIds].filter(x => dinnerCantonIds.has(x)).length;
+      const dinnerUnion = dinnerXianIds.size + dinnerCantonIds.size - dinnerInter;
+      const dinnerJacc = dinnerUnion === 0 ? 0 : dinnerInter / dinnerUnion;
+      console.log(`▼ 仅 dinner Jaccard 重合率: ${(dinnerJacc*100).toFixed(1)}% (inter=${dinnerInter} / union=${dinnerUnion})`);
+      // 3. 共有菜判定
+      const shared = [...A].filter(x => B.has(x));
+      if (shared.length > 0) {
+        console.log(`▼ 共有菜 ID 列表:`);
+        for (const id of shared) {
+          const dish = xianResult.picks.find(pk => pk.dish.id === id)?.dish;
+          if (dish) console.log(`    ${dish.title_zh} (origin=${dish.origin_cuisine})`);
+        }
+      } else {
+        console.log(`▼ 共有菜: 0 道 (完全不重叠 — 算法真在按 hometown 分化 ✅)`);
+      }
+      // 4. 结论判定
+      const verdict = jacc < 0.30 ? '✅ 算法真在干活' : jacc > 0.70 ? '❌ 算法假在跑 P0' : '⚠️ 部分分化 mid';
+      console.log(`\n▼ 【结论判定】 全 Jaccard ${(jacc*100).toFixed(1)}% → ${verdict}`);
+      console.log(`   阈值: < 30% = ✅ 真在干活 / > 70% = ❌ 假在跑 / 30-70% = ⚠️ mid`);
+    }
+
     // ─── TICKET-021 §B NUTRIENT_BOOL_FALLBACK 7 映射 audit ──────────────────
     //
     // v58 deriveBadges 💪 channel 期望 dish.atomic_nutrition[nut] > 0 (atomic 真值
