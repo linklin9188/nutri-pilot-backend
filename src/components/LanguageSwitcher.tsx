@@ -1,9 +1,8 @@
 /**
- * LanguageSwitcher — 5-lang floating chip used on public landing (/about).
+ * LanguageSwitcher — 5-lang floating chip used on public pages (/login hero).
  *
  * 不绑 role（公开页谁都能切到自己读得懂的语言）。Home 顶部的 picker 自带 role
- * 过滤逻辑，那个就地 inline，不复用此组件；Settings/About 等无 role 上下文
- * 的页面用这个。
+ * 过滤逻辑，那个就地 inline，不复用此组件；/login 等无 role 上下文的页面用这个。
  *
  * UX：单 chip 显当前语言，点开 dropdown 5 选 1。位置由 `className` 注入
  * (caller 决定 fixed/absolute/inline)。

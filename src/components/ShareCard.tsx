@@ -36,11 +36,11 @@ export default function ShareCard({ userId, compact = false }: ShareCardProps) {
   // ref query param drives future Backend 024 tracking — included now so
   // links shipped today are already trackable when backend lights up.
   const origin = typeof window !== 'undefined' ? window.location.origin : 'https://nothinkeats.com';
-  // TICKET-032 §C — share link 改进 /about?ref=<uid> 让朋友落地介绍页 (而非 Home).
-  // Backward compat: 老链接 `?ref=` 进 / 由 RootRedirect 自动跳 /about, 不破历史.
+  // TICKET-038 REVISED — share link 落地 /login (品牌介绍合并到 login,
+  // 漏斗 -1 页). 老 /about?ref= 链接由 AboutRedirect 兜底透传, 不破历史.
   const link = uid
-    ? `${origin}/about?ref=${encodeURIComponent(uid)}`
-    : `${origin}/about`;
+    ? `${origin}/login?ref=${encodeURIComponent(uid)}`
+    : `${origin}/login`;
   // TICKET-033 §B — hook 重写对齐真品牌 (母婴 / 节气 / 校园 niche).
   // 旧文案 '让做饭省心' 调性偏差 (泛家庭), 跟 index.html OG meta + WhatsApp
   // 真推广卡显示的 '妈妈们的智能菜单' 不一致. CEO 失误立即修.

@@ -30,7 +30,6 @@ import WeChatCallback from './pages/WeChatCallback';
 import WeChatIn from './pages/WeChatIn';
 import Privacy from './pages/Privacy';
 import Terms from './pages/Terms';
-import About from './pages/About';
 import RequireAuth from './components/RequireAuth';
 import NetworkBanner from './components/NetworkBanner';
 import { syncFavoritesFromCloud } from './lib/favorites';
@@ -91,12 +90,13 @@ function RootRedirect() {
     return <Navigate to="/login" replace />;
   }
 
-  // TICKET-032 — `?ref=<inviterId>` 朋友点开链接：未登录 → /about 介绍页
-  // (preserve ref query). 已登录 = 自家老用户 / 老板自检, 跳过直接走 Home 路径。
-  // /about route 本身可独立访问 (登录后老板自检也能看)。
+  // TICKET-038 REVISED — `?ref=<inviterId>` 朋友点开链接：始终跳 /login
+  // (品牌介绍合并到 /login 漏斗 -1 页). 不读 localStorage role / userId,
+  // 即便残留态也强制 login (覆盖 RootRedirect 后续 role=helper → /helper 路径,
+  // 老板真测路径 §B-2: 任何状态访问 /?ref=xxx 都看 /login hero).
   const refParam = params.get('ref');
-  if (refParam && !localStorage.getItem('userId') && !localStorage.getItem('nutri_user_id')) {
-    return <Navigate to={`/about?ref=${encodeURIComponent(refParam)}`} replace />;
+  if (refParam) {
+    return <Navigate to={`/login?ref=${encodeURIComponent(refParam)}`} replace />;
   }
 
   // TICKET-005 §E — β 老用户 onboarding_v3 强制重做。v3 图片驱动 onboarding
@@ -137,6 +137,15 @@ function RootRedirect() {
   if (role === "helper") return <Navigate to="/helper" replace />;
   const hasPrefs = !!localStorage.getItem("quickPrefs");
   return hasPrefs ? <Home /> : <Navigate to="/setup" replace />;
+}
+
+// TICKET-038 REVISED — /about 路由被废，但老推广链接仍带 ?ref=<inviterId>
+// 透传到 /login (老板拍板 about 合并 login 漏斗减一页).
+function AboutRedirect() {
+  const [params] = useSearchParams();
+  const ref = params.get('ref');
+  const target = ref ? `/login?ref=${encodeURIComponent(ref)}` : '/login';
+  return <Navigate to={target} replace />;
 }
 
 // AppShell bootstraps cross-cutting side effects (favorites sync, Supabase
@@ -204,8 +213,9 @@ function AppShell() {
       <Route path="/pricing" element={<Pricing />} />
       <Route path="/privacy" element={<Privacy />} />
       <Route path="/terms" element={<Terms />} />
-      {/* TICKET-032 — landing page for share-link recipients (?ref=<inviterId>). */}
-      <Route path="/about" element={<About />} />
+      {/* TICKET-038 REVISED — /about retired, content merged into /login.
+          Redirect透传 ?ref= 给推广老链接 backward compat. */}
+      <Route path="/about" element={<AboutRedirect />} />
 
       {/* ── Auth-gated — 所有消耗 AI token 或修改状态的功能 ──────
           匿名用户访问会被弹回 /login (helper 路径弹回 /login?role=helper)。
