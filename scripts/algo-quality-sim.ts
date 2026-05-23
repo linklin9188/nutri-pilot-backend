@@ -450,7 +450,7 @@ async function main() {
               oil_level, cook_method, is_vegan, health_score, times_kept_in_menu, meal_type
        FROM dishes WHERE title_zh IS NOT NULL AND meal_type IN ('lunch','dinner','all') LIMIT 1200`
     );
-    console.log(`\n=== algo-quality-sim — TICKET-021 22-profile A/B simulation (ALGO_VERSION v58 持平: §A profile 扩 20→22 (+ 备孕 + 双病老人), §B NUTRIENT_BOOL_FALLBACK audit) ===`);
+    console.log(`\n=== algo-quality-sim — TICKET-022 22-profile A/B simulation (ALGO_VERSION v59: P0 hot-fix 💪 channel NUTRIENT_COLUMN_MAP 独立列 reader) ===`);
     console.log(`pool: breakfast=${breakfastPool.length} | lunch+dinner=${lunchDinnerPool.length}\n`);
 
     // baseline: 看 DB 整体 protein_main_class / oil_level 分布
@@ -649,52 +649,46 @@ async function main() {
     console.log(`  → Algorithm 022 需修 reader: \`dish.iron_mg > 0\` / \`dish.vitamin_d_iu > 0\` 等独立列查询`);
     console.log(`  → Backend 021 ship 的 92.4% atomic fill 目前 atomic 路径 0% 触达 (column shape mismatch)`);
 
-    // ─── TICKET-020 §B weekStats deriveBadges 💪 channel unit smoke ───
-    console.log(`\n【TICKET-020 §B weekStats 💪 channel smoke — nutrient match + fallback】`);
-    const NUTRIENT_ZH: Record<string, string> = {
+    // ─── TICKET-022 P0 hot-fix: 💪 channel column shape mismatch fix smoke ───
+    console.log(`\n【TICKET-022 P0 hot-fix 💪 channel smoke — NUTRIENT_COLUMN_MAP 独立列 reader】`);
+    const NUTRIENT_ZH_v59: Record<string, string> = {
       iron: '铁', calcium: '钙', vitamin_d: '维 D', omega3: 'Ω3', zinc: '锌',
-      protein: '蛋白', fiber: '纤维',
+      protein: '蛋白', fiber: '纤维', vitamin_c: '维 C',
     };
-    const NUTRIENT_BOOL: Record<string, (d: any) => boolean> = {
-      iron:      d => !!d.is_blood_tonic,
-      calcium:   d => !!d.is_blood_tonic || !!d.is_eye_care,
-      vitamin_d: d => !!d.is_eye_care,
-      omega3:    d => !!d.is_anti_aging || !!d.is_anti_inflammation,
-      zinc:      d => !!d.is_qi_tonic,
+    const NUTRIENT_COLUMN_MAP_v59: Record<string, string> = {
+      iron: 'iron_mg', calcium: 'calcium_mg', zinc: 'zinc_mg',
+      vitamin_d: 'vitamin_d_iu', omega3: 'omega3_mg',
+      fiber: 'fiber_g', protein: 'protein_g', vitamin_c: 'vitamin_c_mg',
     };
-    function simWeeklyBadge(dish: any, weekDeficits: string[]): { label: string } | null {
-      if (weekDeficits.length > 0) {
-        const an = (dish.atomic_nutrition ?? {}) as Record<string, number>;
-        for (const nut of weekDeficits) {
-          const v = an[nut];
-          if (typeof v === 'number' && v > 0) {
-            return { label: `本周补${NUTRIENT_ZH[nut] ?? nut}` };
-          }
-          const boolFn = NUTRIENT_BOOL[nut];
-          if (boolFn && boolFn(dish)) {
-            return { label: `本周补${NUTRIENT_ZH[nut] ?? nut}` };
-          }
+    function simWeeklyBadgeV59(dish: any, weekDeficits: string[]): { label: string } | null {
+      if (weekDeficits.length === 0) return null;  // v59: 删 placeholder
+      for (const nut of weekDeficits) {
+        const colName = NUTRIENT_COLUMN_MAP_v59[nut];
+        if (!colName) continue;
+        const v = dish[colName];
+        if (typeof v === 'number' && v > 0) {
+          return { label: `本周补${NUTRIENT_ZH_v59[nut] ?? nut}` };
         }
-        return null;
       }
-      // fallback v55 placeholder
-      if (dish.is_qi_tonic) return { label: '本周补气' };
-      if (dish.is_mood_boost) return { label: '本周解压' };
-      if (dish.is_anti_aging) return { label: '本周抗衰' };
-      return null;
+      return null;  // v59: dish 无对应列 → 不渲染
     }
-    const weekStatsTests: Array<{ case: string; dish: any; deficits: string[]; want: string | null }> = [
-      { case: '真接口 atomic',  dish: { atomic_nutrition: { iron: 4.2 } }, deficits: ['iron'], want: '本周补铁' },
-      { case: '真接口 bool 兜底', dish: { is_blood_tonic: true }, deficits: ['iron'], want: '本周补铁' },
-      { case: '真接口 多 deficit 选首', dish: { is_eye_care: true }, deficits: ['vitamin_d', 'iron'], want: '本周补维 D' },
-      { case: '真接口 dish 不命中',   dish: { is_qi_tonic: true }, deficits: ['iron'], want: null },
-      { case: '空 deficits → fallback', dish: { is_qi_tonic: true }, deficits: [], want: '本周补气' },
-      { case: '空 deficits 无 wellness', dish: {}, deficits: [], want: null },
+    const v59Tests: Array<{ case: string; dish: any; deficits: string[]; want: string | null }> = [
+      { case: 'iron 真列命中',         dish: { iron_mg: 4.2 },        deficits: ['iron'],                want: '本周补铁' },
+      { case: 'vitamin_d 真列命中',     dish: { vitamin_d_iu: 180 },   deficits: ['vitamin_d'],           want: '本周补维 D' },
+      { case: 'omega3 真列命中',        dish: { omega3_mg: 850 },      deficits: ['omega3'],              want: '本周补Ω3' },
+      { case: 'zinc 真列命中',          dish: { zinc_mg: 3.5 },        deficits: ['zinc'],                want: '本周补锌' },
+      { case: 'fiber 真列命中',         dish: { fiber_g: 6.0 },        deficits: ['fiber'],               want: '本周补纤维' },
+      { case: '多 deficit 选首命中',    dish: { vitamin_d_iu: 0, iron_mg: 4.2 }, deficits: ['vitamin_d','iron'], want: '本周补铁' },
+      { case: 'dish 无对应列 → 不标', dish: { iron_mg: null },       deficits: ['iron'],                want: null },
+      { case: 'dish 列为 0 → 不标',   dish: { iron_mg: 0 },          deficits: ['iron'],                want: null },
+      { case: 'v59 删 bool fallback', dish: { is_blood_tonic: true, iron_mg: null }, deficits: ['iron'], want: null },
+      { case: 'deficits 空 → 不标 (v59 删 placeholder)', dish: { is_qi_tonic: true }, deficits: [],   want: null },
+      { case: 'unknown nutrient → skip', dish: { iron_mg: 4.2 },     deficits: ['unknown_nut'],         want: null },
     ];
-    for (const t of weekStatsTests) {
-      const got = simWeeklyBadge(t.dish, t.deficits);
+    for (const t of v59Tests) {
+      const got = simWeeklyBadgeV59(t.dish, t.deficits);
       const ok = (got?.label ?? null) === t.want;
-      console.log(`  ${t.case.padEnd(30)}: ${ok ? '✅' : '❌'} got=${got?.label ?? 'null'} want=${t.want ?? 'null'}`);
+      console.log(`  ${t.case.padEnd(36)}: ${ok ? '✅' : '❌'} got=${got?.label ?? 'null'} want=${t.want ?? 'null'}`);
     }
 
     // ─── TICKET-019 §A pref_scores jsonb unwrap 单元 smoke ───
@@ -763,17 +757,28 @@ async function main() {
       if (Array.isArray(dishSeasons) && dishSeasons.includes(curSeason)) {
         out.push({ kind: 'seasonal', icon: '🌿', label: `${curSeason}当令` });
       }
-      if (dish.is_qi_tonic) out.push({ kind: 'weekly_balance', icon: '💪', label: '本周补气' });
-      else if (dish.is_mood_boost) out.push({ kind: 'weekly_balance', icon: '💪', label: '本周解压' });
+      // TICKET-022 v59: 💪 channel 切独立列 reader. weekDeficits 非空 + 真列 > 0 → 标
+      if (Array.isArray(ctx.weekDeficits) && ctx.weekDeficits.length > 0) {
+        const colMap: Record<string, string> = { iron: 'iron_mg', vitamin_d: 'vitamin_d_iu', omega3: 'omega3_mg', zinc: 'zinc_mg' };
+        for (const nut of ctx.weekDeficits) {
+          const col = colMap[nut];
+          if (!col) continue;
+          const v = dish[col];
+          if (typeof v === 'number' && v > 0) {
+            out.push({ kind: 'weekly_balance', icon: '💪', label: `本周补${nut === 'iron' ? '铁' : nut}` });
+            break;
+          }
+        }
+      }
       const seen = new Set<string>();
       return out.filter(b => { if (seen.has(b.kind)) return false; seen.add(b.kind); return true; }).slice(0, 2);
     }
     const mockDishes = [
-      { kind: 'preference', dish: { protein_main_class: 'red', main_ingredient: 'beef' }, ctx: { imagePrefs: { protein_main_class: ['red'] }, festivalTags: [], hasKid: false } },
-      { kind: 'festival', dish: { festival_tags: ['duanwu'] }, ctx: { imagePrefs: {}, festivalTags: ['duanwu'], hasKid: false } },
-      { kind: 'school_balance', dish: { is_blood_tonic: true }, ctx: { imagePrefs: {}, festivalTags: [], hasKid: true } },
-      { kind: 'seasonal', dish: { seasonal_tags: [curSeason] }, ctx: { imagePrefs: {}, festivalTags: [], hasKid: false } },
-      { kind: 'weekly_balance', dish: { is_qi_tonic: true }, ctx: { imagePrefs: {}, festivalTags: [], hasKid: false } },
+      { kind: 'preference', dish: { protein_main_class: 'red', main_ingredient: 'beef' }, ctx: { imagePrefs: { protein_main_class: ['red'] }, festivalTags: [], hasKid: false, weekDeficits: [] } },
+      { kind: 'festival', dish: { festival_tags: ['duanwu'] }, ctx: { imagePrefs: {}, festivalTags: ['duanwu'], hasKid: false, weekDeficits: [] } },
+      { kind: 'school_balance', dish: { is_blood_tonic: true }, ctx: { imagePrefs: {}, festivalTags: [], hasKid: true, weekDeficits: [] } },
+      { kind: 'seasonal', dish: { seasonal_tags: [curSeason] }, ctx: { imagePrefs: {}, festivalTags: [], hasKid: false, weekDeficits: [] } },
+      { kind: 'weekly_balance', dish: { iron_mg: 4.2 }, ctx: { imagePrefs: {}, festivalTags: [], hasKid: false, weekDeficits: ['iron'] } },
     ];
     for (const t of mockDishes) {
       const badges = simDeriveBadges(t.dish, t.ctx);

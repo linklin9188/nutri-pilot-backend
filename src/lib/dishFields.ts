@@ -67,6 +67,17 @@ export const DISH_FIELDS = [
   'is_prenatal_friendly',
   'is_lactation_friendly',
   'is_elderly_friendly',
+  // ── TICKET-022 §A P0 hot-fix: deriveBadges 💪 channel 真路径 (migrations 064 + 075)
+  // 之前 SELECT 不拉 → reader 切独立列也读不到. Algorithm 021 §B audit 实查 dishes
+  // (n=924) 填充率: iron_mg 98.5% / calcium_mg 98.5% / fiber_g 98.5% / zinc_mg 91.8% /
+  // vitamin_c_mg 87.7% / omega3_mg 72.6% / vitamin_d_iu 22.1% (Backend 023 待补).
+  'iron_mg',
+  'calcium_mg',
+  'zinc_mg',
+  'vitamin_d_iu',
+  'omega3_mg',
+  'fiber_g',
+  'vitamin_c_mg',
 
   // intentionally EXCLUDED: 'embedding' (vector(768), ~8KB stringified per row)
 ].join(',');

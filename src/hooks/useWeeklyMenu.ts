@@ -120,7 +120,8 @@ const WORKDAYS_PER_WEEK = 5;
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v58'; // TICKET-020 §A lunch/dinner 切 slots[].primary 投影 (Home.tsx + WeeklyMenu.tsx, fallback 旧 dishes/lunchDishes 保 loadFromDB) + §B weekStats edge fn 真接口接入: prefetchWeekStats() useWeeklyMenu hook mount 时 fire-and-forget fetch /functions/v1/weekStats?user_id&week_start → sessionStorage 30min, deriveBadges 💪 channel: weekDeficits 非空 → nutrient match (atomic_nutrition 优先 + NUTRIENT_BOOL_FALLBACK 兜底), 空 → 退 v55 placeholder (is_qi_tonic 等). bump 让全 v57 缓存失效。
+export const ALGO_VERSION = 'v59'; // TICKET-022 P0 hot-fix 💪 channel column shape mismatch: deriveBadges 第 5 channel 之前读 dish.atomic_nutrition[nut] JSON (DB 不存在), 切到 NUTRIENT_COLUMN_MAP 独立列查询 (iron→iron_mg / vitamin_d→vitamin_d_iu / omega3→omega3_mg / zinc→zinc_mg / fiber→fiber_g / vitamin_c→vitamin_c_mg / protein→protein_g / calcium→calcium_mg). DISH_FIELDS 同步加 7 列 SELECT (之前不拉, reader 怎么修都读不到). 删 NUTRIENT_BOOL_FALLBACK 7 映射 + qi_tonic/mood_boost/anti_aging placeholder (Algorithm 021 §B audit 实查 dishes n=924 wellness bool 列全 0% 填充, dead schema). weekDeficits 空 / dish 无对应列 → 不渲染 💪 badge (5-channel 退到 4/5 effective; 不假装诚实). bump 让全 v58 缓存失效。
+// v58: TICKET-020 §A lunch/dinner 切 slots[].primary 投影 (Home.tsx + WeeklyMenu.tsx, fallback 旧 dishes/lunchDishes 保 loadFromDB) + §B weekStats edge fn 真接口接入: prefetchWeekStats() useWeeklyMenu hook mount 时 fire-and-forget fetch /functions/v1/weekStats?user_id&week_start → sessionStorage 30min, deriveBadges 💪 channel: weekDeficits 非空 → nutrient match (atomic_nutrition 优先 + NUTRIENT_BOOL_FALLBACK 兜底), 空 → 退 v55 placeholder (is_qi_tonic 等). bump 让全 v57 缓存失效。
 // v57: TICKET-019 §A v55 pref_scores jsonb unwrap (Backend rollup 实际写 {score, n} 而非 flat number, reader 加 unwrapPrefScoresJsonb 用 confWeight= n>=30 ? 1.50 : 0.35 转 flat 给下游 scoreForWeek) + §B Smell 1 阶段 2 收口 Home.tsx fruit/breakfast 切到 slots[].find(slotType==='fruit'|'breakfast') primary 投影 + fallback 旧 fruitDish/breakfastDishes (loadFromDB 命中 slots=undefined 时不破)。跳 v56 因 §A + §B 同棒 ship。bump 让所有 v55 缓存失效。
 // v55: TICKET-018 §H 5-channel 接口大改: generateWeekPlan 每 slot 含 candidates[] + tagBadges[] (5 channel: 🌶️ preference / 🌿 seasonal / 🎋 festival / 🎒 school_balance / 💪 weekly_balance). WeeklyDayMenu 加 slots?: SlotPlan[], 旧字段 (dishes/lunchDishes/breakfastDishes/fruitDish) 维持 slot.primary 投影保 backward compat。候选池采样: breakfast top6→3 / main top12→5 / side top8→5 / fruit top4→3, Option δ 硬过滤产生的 topCandidates 复用于 candidates 截取 (CEO TICKET-017 拍板"接受极端化菜单"延续)。bump 让所有 v54 缓存失效。
 // v54: TICKET-017 §A Option δ + §B festival API + §C DB pref_scores. CEO 拍板 Option δ "接受极端化菜单": imagePrefs.protein_main_class.length===1 + main protein slot → 候选池 prefilter dish.protein_main_class === wantDb, 过滤后 < 15 自动放宽避免空 slot。§B axis 27 festival 接入 backend /functions/v1/festival-now (sessionStorage 30min 缓存), 缺失退本地公历兜底。§C user_profiles.pref_scores (rollup) 优先读, 缺失退 user_preference_scores。bump 让所有 v52/v53 缓存失效。
@@ -2086,16 +2087,26 @@ const NUTRIENT_ZH_LABEL: Record<string, string> = {
   protein: '蛋白', fiber: '纤维', magnesium: '镁', vitamin_c: '维 C',
   vitamin_b12: '维 B12', folate: '叶酸', potassium: '钾',
 };
-// §B (TICKET-020) Wellness bool column fallback per nutrient — 让 atomic_nutrition
-// 缺数据时仍能凭 boolean tag 标 💪 badge (Database 021 后切到真 atomic 数据)。
-const NUTRIENT_BOOL_FALLBACK: Record<string, (d: any) => boolean> = {
-  iron:       d => !!d.is_blood_tonic,
-  calcium:    d => !!d.is_blood_tonic || !!d.is_eye_care,
-  vitamin_d:  d => !!d.is_eye_care,
-  omega3:     d => !!d.is_anti_aging || !!d.is_anti_inflammation,
-  zinc:       d => !!d.is_qi_tonic,
-  protein:    d => !!d.is_qi_tonic,
-  fiber:      d => !!d.is_low_sugar,
+// §A (TICKET-022 P0 hot-fix) Nutrient → dishes 独立列名映射 (migrations 064 + 075
+// ship 的真实列). Algorithm 021 §B SQL audit 实查 dishes (n=924) 填充率:
+//   iron_mg 98.5% / calcium_mg 98.5% / fiber_g 98.5% / zinc_mg 91.8% /
+//   vitamin_c_mg 87.7% / omega3_mg 72.6% / vitamin_d_iu 22.1% (Backend 023 待补)
+// v58 之前 deriveBadges 读 dish.atomic_nutrition[nut] (JSON 字段, DB 不存在) →
+// atomic 路径 0% 触达 + NUTRIENT_BOOL_FALLBACK 7 映射的 wellness bool 列 DB
+// 全 0% 填充 → 整个 💪 channel ZERO 命中. 本棒切独立列 reader + 删 bool
+// fallback + 删 placeholder, 让真值直接消费. 5-channel 退到 4/5 effective
+// 时 (deficit 空 / dish 无对应列) 不渲染 💪 badge — 不假装比真空白更诚实.
+const NUTRIENT_COLUMN_MAP: Record<string, string> = {
+  iron:       'iron_mg',
+  calcium:    'calcium_mg',
+  zinc:       'zinc_mg',
+  vitamin_d:  'vitamin_d_iu',
+  vitamin_d3: 'vitamin_d_iu',
+  omega3:     'omega3_mg',
+  omega_3:    'omega3_mg',
+  fiber:      'fiber_g',
+  protein:    'protein_g',
+  vitamin_c:  'vitamin_c_mg',
 };
 
 const SEASON_LABEL: Record<string, string> = {
@@ -2177,18 +2188,20 @@ export function deriveBadges(dish: any, ctx: BadgeContext): TagBadge[] {
     }
   }
 
-  // 5. 💪 weekly_balance — Backend 020 weekStats 真接口优先, placeholder fallback。
-  // ctx.weekDeficits 非空 → 用 nutrient match: 先查 dish.atomic_nutrition[nutrient]
-  // > 0 (真原子营养), 再查 NUTRIENT_BOOL_FALLBACK[nutrient] (wellness bool 兜底);
-  // 空 → fallback v55 placeholder (qi_tonic / mood_boost / anti_aging)。
+  // 5. 💪 weekly_balance — TICKET-022 P0 hot-fix: 仅查 dishes 独立列 (NUTRIENT_
+  // COLUMN_MAP 映射 iron→iron_mg / vitamin_d→vitamin_d_iu 等). Algorithm 021 §B
+  // audit 实查发现 dish.atomic_nutrition[nut] JSON 字段不存在 (column shape
+  // mismatch) + NUTRIENT_BOOL_FALLBACK 7 映射的 wellness bool 列全 0% 填充 +
+  // qi_tonic/mood_boost/anti_aging placeholder 列也 0%. 三路径全死 → 删 bool
+  // fallback + 删 placeholder, 仅留独立列真值查询. deficit 空 / dish 无对应
+  // 列 → 不渲染 💪 badge (5-channel 退到 4/5 effective; 不假装比空白诚实).
   if (ctx.weekDeficits.length > 0) {
-    const an = (dish.atomic_nutrition ?? {}) as Record<string, number>;
     let hitNutrient: string | null = null;
     for (const nut of ctx.weekDeficits) {
-      const atomicVal = an[nut];
-      if (typeof atomicVal === 'number' && atomicVal > 0) { hitNutrient = nut; break; }
-      const boolFn = NUTRIENT_BOOL_FALLBACK[nut];
-      if (boolFn && boolFn(dish)) { hitNutrient = nut; break; }
+      const colName = NUTRIENT_COLUMN_MAP[nut];
+      if (!colName) continue;
+      const val = (dish as any)[colName];
+      if (typeof val === 'number' && val > 0) { hitNutrient = nut; break; }
     }
     if (hitNutrient) {
       out.push({
@@ -2196,11 +2209,8 @@ export function deriveBadges(dish: any, ctx: BadgeContext): TagBadge[] {
         label: `本周补${NUTRIENT_ZH_LABEL[hitNutrient] ?? hitNutrient}`,
       });
     }
-  } else {
-    if (dish.is_qi_tonic) out.push({ kind: 'weekly_balance', icon: '💪', label: '本周补气' });
-    else if (dish.is_mood_boost) out.push({ kind: 'weekly_balance', icon: '💪', label: '本周解压' });
-    else if (dish.is_anti_aging) out.push({ kind: 'weekly_balance', icon: '💪', label: '本周抗衰' });
   }
+  // weekDeficits 空 → 不渲染 💪 badge (旧 placeholder 列 0% 填充, 渲染等于谎报).
 
   // dedup by kind + cap 2 + sort by priority
   const priority: Record<TagBadgeKind, number> = {
