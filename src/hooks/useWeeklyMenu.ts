@@ -120,7 +120,8 @@ const WORKDAYS_PER_WEEK = 5;
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v60'; // TICKET-024 §A dynamic K — computeUserDiversity(imagePrefs, familyPrefs) 综合 pmc 长度 + 多 array prefs (>=2 各 +1) + familyPrefs.homeMembers[].goals unique×2 → diversity 数; dynamicK(slotType, diversity) 在 SLOT_BASE_K (早 3 / 主 5 / 侧 5 / 水果 3) 基础上动态调 topK + pick: diversity<=2 (单一偏好) topK=max(6, 2×baseK) pick=max(2, baseK-2); diversity>=6 (三代多 wellness) topK=3×baseK pick=min(7, baseK+2); 中 topK=floor(2.4×baseK) pick=baseK. 替换 5 处硬编码 (dinner main / kid / lunch pickFromPool / per-member meat / breakfast / fruit). bump 让全 v59 缓存失效。
+export const ALGO_VERSION = 'v61'; // TICKET-025 §A reader 把 0 IU / 0 mg 视为有效真值参与 (不再当 nullish skip): Backend 023 ship vitamin_d_iu fill 100% (712 行显式 0 + 212 行 >0) 后, 0 不再代表"缺数据"而是物理真值 (中餐 dish 含 vitD 食材有限). deriveBadges 💪 channel reader 显式分离 null/undefined skip vs 0 不命中, 净效应与 v60 等价但语义清晰 + 防未来 reader 误用 `!val` 把 0 当 null 误处理。bump 让全 v60 缓存保险失效, 让新语义立即生效。
+// v60: TICKET-024 §A dynamic K — computeUserDiversity(imagePrefs, familyPrefs) 综合 pmc 长度 + 多 array prefs (>=2 各 +1) + familyPrefs.homeMembers[].goals unique×2 → diversity 数; dynamicK(slotType, diversity) 在 SLOT_BASE_K (早 3 / 主 5 / 侧 5 / 水果 3) 基础上动态调 topK + pick: diversity<=2 (单一偏好) topK=max(6, 2×baseK) pick=max(2, baseK-2); diversity>=6 (三代多 wellness) topK=3×baseK pick=min(7, baseK+2); 中 topK=floor(2.4×baseK) pick=baseK. 替换 5 处硬编码 (dinner main / kid / lunch pickFromPool / per-member meat / breakfast / fruit). bump 让全 v59 缓存失效。
 // v59: TICKET-022 P0 hot-fix 💪 channel column shape mismatch: deriveBadges 第 5 channel 之前读 dish.atomic_nutrition[nut] JSON (DB 不存在), 切到 NUTRIENT_COLUMN_MAP 独立列查询 (iron→iron_mg / vitamin_d→vitamin_d_iu / omega3→omega3_mg / zinc→zinc_mg / fiber→fiber_g / vitamin_c→vitamin_c_mg / protein→protein_g / calcium→calcium_mg). DISH_FIELDS 同步加 7 列 SELECT (之前不拉, reader 怎么修都读不到). 删 NUTRIENT_BOOL_FALLBACK 7 映射 + qi_tonic/mood_boost/anti_aging placeholder (Algorithm 021 §B audit 实查 dishes n=924 wellness bool 列全 0% 填充, dead schema). weekDeficits 空 / dish 无对应列 → 不渲染 💪 badge (5-channel 退到 4/5 effective; 不假装诚实). bump 让全 v58 缓存失效。
 // v58: TICKET-020 §A lunch/dinner 切 slots[].primary 投影 (Home.tsx + WeeklyMenu.tsx, fallback 旧 dishes/lunchDishes 保 loadFromDB) + §B weekStats edge fn 真接口接入: prefetchWeekStats() useWeeklyMenu hook mount 时 fire-and-forget fetch /functions/v1/weekStats?user_id&week_start → sessionStorage 30min, deriveBadges 💪 channel: weekDeficits 非空 → nutrient match (atomic_nutrition 优先 + NUTRIENT_BOOL_FALLBACK 兜底), 空 → 退 v55 placeholder (is_qi_tonic 等). bump 让全 v57 缓存失效。
 // v57: TICKET-019 §A v55 pref_scores jsonb unwrap (Backend rollup 实际写 {score, n} 而非 flat number, reader 加 unwrapPrefScoresJsonb 用 confWeight= n>=30 ? 1.50 : 0.35 转 flat 给下游 scoreForWeek) + §B Smell 1 阶段 2 收口 Home.tsx fruit/breakfast 切到 slots[].find(slotType==='fruit'|'breakfast') primary 投影 + fallback 旧 fruitDish/breakfastDishes (loadFromDB 命中 slots=undefined 时不破)。跳 v56 因 §A + §B 同棒 ship。bump 让所有 v55 缓存失效。
@@ -2202,7 +2203,15 @@ export function deriveBadges(dish: any, ctx: BadgeContext): TagBadge[] {
       const colName = NUTRIENT_COLUMN_MAP[nut];
       if (!colName) continue;
       const val = (dish as any)[colName];
-      if (typeof val === 'number' && val > 0) { hitNutrient = nut; break; }
+      // §A (TICKET-025) Backend 023 fill vitamin_d_iu 100% (712 行显式 0 IU +
+      // 212 行 > 0) 后, 0 不再代表"缺数据"而是物理真值 (中餐 dish 含 vitD 食材
+      // 有限). 显式区分 null/undefined (缺数据 → skip continue loop 到下个 nut)
+      // 与 0 (真读数 → 不命中, 也 continue, 不让 0 badge 误导用户"dish 补该 nut").
+      // 净效应: 行为与 v60 等价, 但语义清晰 + 防未来 reader 误用 `!val` 把 0
+      // 当 null 处理.
+      if (val === null || val === undefined) continue;
+      const num = typeof val === 'number' ? val : Number(val);
+      if (Number.isFinite(num) && num > 0) { hitNutrient = nut; break; }
     }
     if (hitNutrient) {
       out.push({

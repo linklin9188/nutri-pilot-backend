@@ -384,3 +384,42 @@
   5. 真路径死了 → 退渲染层 default badge (e.g. "今日推荐") 而非空 — 但这是 UI 决策
 - **复用避免**：所有依赖 DB 列的 algo 路径上线前, 必须有 SQL audit 证明列存在 + ≥某阈值填充。CI sim 加 column existence + fill rate check 是长期解法。
 - **来源**：2026-05-23 HKT 03:00 TICKET-021 §B audit (Algorithm 021, 触发 Algorithm 022 P0 reader fix)
+
+### chip-single-select-handler-history-first-combo-bug — chip + 单选历史首次组合卡死
+- **症状**：onboarding Q8 oil_level UI 025 §B 改 `chips: true + multi: false` 后用户点 rich/medium/light 任一选项卡死（不 auto-advance 不跳下一题）。
+- **根因**：QuickSetup chip render branch 历史只 hardcode `toggleMulti` handler — 之前 chips: true 用法（Q5 wellness / Q10 strict_avoid）全是 multi: true 多选，第一次撞 chips + 单选组合时 handler 路径全空跑，answers 不写 → 不 trigger auto-advance。
+- **修复 (UI 027 P0)**：chip click handler 按 q.multi 分流（true → toggleMulti / false → handleSingle）。chip branch 嵌入 single 'other' input + 下一步 button。
+- **复用避免**：UI 改单 axis（chip / image）+ 新 axis（multi / single）双组合时，老板真测前必跑 4 case (chip×multi / chip×single / image×multi / image×single)。Lead 自测 e2e 应覆盖所有 axis 笛卡尔积。
+- **来源**：2026-05-22 ~16:55 老板报，2026-05-23 03:00 TICKET-027 修
+
+### nutrient-fill-rate-two-dimensions — 营养素 fill 要分 NULL 处理率 vs 物理覆盖率
+- **症状**：Backend 023 vitamin_d_iu fill 跑后 IS NOT NULL 92.4%→100%（gate 60% 已破），但 non-zero 仅 22.1%→22.9%（看似没大幅提升）。
+- **根因**：中餐 dish 物理含 vitD 食材有限（仅 fish/egg/mushroom/强化食品），non-zero 22.9% 是物理天花板。强求 Gemini fill 非 0 值会误导（凭空给土豆烧肉填 vitD）。
+- **正确理解**：fill 工单的 KPI 应分两维：(1) **NULL 处理率** = 数据完整性 (2) **物理覆盖率** = 营养学合理性
+- **算法侧响应**：reader 把 0 视为有效 deficit 参与（不是"未填充"跳过）= Algorithm 025 待派。
+- **复用避免**：未来 Gemini fill 营养素工单写期望填充率时，先调研食材物理覆盖率上限（如 vitD 22% / iron 95% / calcium 95%），不要拍脑袋设 70% 默认。
+- **来源**：2026-05-23 HKT 19:30 TICKET-023 Backend 023 ship + 洞见 surface
+
+### ceo-time-truth-must-bash-date — CEO 时间判断必先 bash date 不准凭文件时戳
+- **症状**：CEO 5-23 02:25 看 telepot 文件 "ARCHIVED_AT: 02:25" 误推断"现在 HKT 凌晨" → 触发 PROCESS.md §8 反弹窗 / 不写新工单 / 误判"半夜"。老板纠正"半夜？" CEO bash date 实测才发现实际 HKT 08:07 早上工作时段。
+- **再次发生**：CEO 5-23 19:08 同样误以为还是早上（"HKT 09:35"），实际 wall-clock 已是晚上 19:08，3 部门 Lead 跑了 9 小时不是"刚开始"。
+- **修复**：立 memory `feedback_time_truth_check.md` — CEO 涉及"现在 / 半夜 / 工作时段"判断必先 bash date 实查。
+- **复用避免**：每次 CEO turn 开头 git fetch 顺手 bash date 一次（边际成本零）。
+- **来源**：2026-05-23 HKT 08:07 + 19:08 老板纠正两次
+
+### nutrient-zero-is-real-value-not-missing — 0 IU / 0 mg 是真值不是缺失, reader 必须显式区分
+- **场景**：2026-05-23 HKT TICKET-025。Backend 023 ship vitamin_d_iu fill 100% (712 行显式 0 IU + 212 行 > 0)。Backend surface 洞见: "中餐 dish 物理含 vitD 食材有限 (主要鱼/蛋黄/蘑菇), 0 IU 是真实物理读数, 不是数据缺失."
+- **踩坑**：v60 之前的 reader 用 `if (val > 0)` 隐式把 0 当"无效"。语义上"0 是真值"和"null 是缺数据"应该显式区分:
+  - null/undefined → 缺数据, skip to 下个 nutrient
+  - 0 → 真读数 (dish 含 0 量 nutrient), 不命中本 nut 但 loop 继续
+  净效应在我们的 reader 实现下与 v60 等价 (loop 都 continue), 但语义不清晰会埋雷:
+  - 未来某天有 reader 用 `if (!val) continue` 模式 → 会把 0 当 null 误处理
+  - weekStats 端 sum 计算 `sum(iron_mg)` 若 0 被 reader 跳过, sum 偏小, deficit_pct 偏大, 误推"本周补维 D"
+- **代价**：本棒 ticket 025 单独棒收口, 加显式 null check + sim 6 case unit smoke 钉死语义。若不区分, 6-12 个月后某 reader 引入 nullish skip bug, debug 时再追这条线浪费工时。
+- **教训**：
+  - 数据库列存值 0 时, 必须问 schema 文档 / Backend "0 是真值还是缺失代号" — 不同列语义可能不同 (e.g. `nutrition_kcal_per_serving=0` 不合理可能是 missing, `vitamin_d_iu=0` 合理是真值)
+  - reader 实现统一显式: `if (val === null || val === undefined) continue` 而非 `if (!val) continue`
+  - sim/CI smoke 加 4 case: `0` / `null` / `undefined` / 字符串数字 — 覆盖类型边界
+  - 跨部门接口文档明示每列 "0 语义" (真值/缺失/不适用) 是好习惯
+- **复用避免**：所有从 DB 列读数值的 reader (badges / sums / averages) 必须区分 null vs 0, sim/test 覆盖两种 case 独立验证
+- **来源**：2026-05-23 HKT 20:00 TICKET-025 Backend 023 fill 100% 后 reader 语义对齐 (Algorithm 025)

@@ -536,7 +536,7 @@ async function main() {
               oil_level, cook_method, is_vegan, health_score, times_kept_in_menu, meal_type
        FROM dishes WHERE title_zh IS NOT NULL AND meal_type IN ('lunch','dinner','all') LIMIT 1200`
     );
-    console.log(`\n=== algo-quality-sim — TICKET-024 22-profile A/B simulation (ALGO_VERSION v60: dynamic K — userDiversity 调 topK/pick) ===`);
+    console.log(`\n=== algo-quality-sim — TICKET-025 22-profile A/B simulation (ALGO_VERSION v61: reader 把 0 IU/mg 视为有效真值, null/undefined 才 skip) ===`);
     console.log(`pool: breakfast=${breakfastPool.length} | lunch+dinner=${lunchDinnerPool.length}\n`);
 
     // baseline: 看 DB 整体 protein_main_class / oil_level 分布
@@ -792,7 +792,12 @@ async function main() {
         const colName = NUTRIENT_COLUMN_MAP_v59[nut];
         if (!colName) continue;
         const v = dish[colName];
-        if (typeof v === 'number' && v > 0) {
+        // §A (TICKET-025) 显式区分 null/undefined (缺数据 skip 下个 nut) vs 0
+        // (真读数, 不命中也不命中本 nut 继续 loop). Backend 023 vitamin_d_iu fill
+        // 100% 后, 0 是真物理值, 不再代表"缺失".
+        if (v === null || v === undefined) continue;
+        const num = typeof v === 'number' ? v : Number(v);
+        if (Number.isFinite(num) && num > 0) {
           return { label: `本周补${NUTRIENT_ZH_v59[nut] ?? nut}` };
         }
       }
@@ -810,6 +815,19 @@ async function main() {
       { case: 'v59 删 bool fallback', dish: { is_blood_tonic: true, iron_mg: null }, deficits: ['iron'], want: null },
       { case: 'deficits 空 → 不标 (v59 删 placeholder)', dish: { is_qi_tonic: true }, deficits: [],   want: null },
       { case: 'unknown nutrient → skip', dish: { iron_mg: 4.2 },     deficits: ['unknown_nut'],         want: null },
+      // ── TICKET-025 §B null/0/undefined 区分 unit tests ──
+      { case: 'v61 0 IU 是真值不 nullish skip',
+        dish: { iron_mg: 0, vitamin_d_iu: 0 }, deficits: ['iron'],   want: null },
+      { case: 'v61 vitamin_d_iu=0 + 多 deficit loop 继续到 iron',
+        dish: { vitamin_d_iu: 0, iron_mg: 4.2 }, deficits: ['vitamin_d', 'iron'], want: '本周补铁' },
+      { case: 'v61 iron_mg=null → 缺数据 skip',
+        dish: { iron_mg: null }, deficits: ['iron'], want: null },
+      { case: 'v61 vitamin_d_iu=undefined → 缺数据 skip',
+        dish: {}, deficits: ['vitamin_d'], want: null },
+      { case: 'v61 字符串"4.2" 强转 number 命中',
+        dish: { iron_mg: '4.2' }, deficits: ['iron'], want: '本周补铁' },
+      { case: 'v61 字符串"0" 强转 0 不命中',
+        dish: { iron_mg: '0' }, deficits: ['iron'], want: null },
     ];
     for (const t of v59Tests) {
       const got = simWeeklyBadgeV59(t.dish, t.deficits);
