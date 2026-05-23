@@ -102,9 +102,36 @@ app.use(express.static(path.join(__dirname, 'dist'), {
   },
 }));
 
-// SPA fallback — always serve fresh index.html
-app.get('*', (_req, res) => {
+// TICKET-035 §C — explicit MP_verify route as belt-and-suspenders defense.
+// 微信 MP_verify files: 名 = MP_verify_<hash>.txt, 内容 = <hash> (no newline).
+// 即便 dist/ 漏 copy (build cache stale / Railway deploy 滞后) 也能正确返回.
+// 仅在 express.static 上方 dist/ 真有文件时此路由不触发 (static 优先匹配).
+app.get('/MP_verify_:hash.txt', (req, res) => {
+  res.type('text/plain').send(req.params.hash);
+});
+// 老板原话: 微信有时只回简化 hash.txt 无 MP_verify_ 前缀. 加 regex 防意外抢
+// 其他真静态 .txt (公司 robots.txt 等), 仅匹配 8-32 char 字母数字 hash.
+app.get('/:hash.txt', (req, res, next) => {
+  const hash = req.params.hash;
+  if (/^[a-zA-Z0-9]{8,32}$/.test(hash)) {
+    return res.type('text/plain').send(hash);
+  }
+  next();
+});
+
+// TICKET-035 §B — SPA fallback with path-extension guard.
+// 老板 22:50 报: 微信小程序后台点「校验」报"校验文件验证失败" — 实查 server
+// catch-all `app.get('*')` 把所有未匹配 GET 都返回 index.html, 微信拿到 HTML
+// 而非纯文本 hash → 校验 fail.
+// 修复: URL 含文件扩展名 (e.g. .txt .xml .json) 且不是 /api/ → 404 (这些应该
+// 由 express.static 已 serve, 走到这一步说明 dist/ 缺该文件; 404 比 HTML
+// 错误内容好, 让客户端知道 file not found).
+// SPA 路由 (/about /weekly /setup 等) 无扩展名 → 仍正常 sendFile index.html.
+app.get('*', (req, res) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  if (path.extname(req.path) && !req.path.startsWith('/api/')) {
+    return res.status(404).type('text/plain').send('Not Found');
+  }
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
