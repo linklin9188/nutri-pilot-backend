@@ -120,7 +120,8 @@ const WORKDAYS_PER_WEEK = 5;
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v59'; // TICKET-022 P0 hot-fix 💪 channel column shape mismatch: deriveBadges 第 5 channel 之前读 dish.atomic_nutrition[nut] JSON (DB 不存在), 切到 NUTRIENT_COLUMN_MAP 独立列查询 (iron→iron_mg / vitamin_d→vitamin_d_iu / omega3→omega3_mg / zinc→zinc_mg / fiber→fiber_g / vitamin_c→vitamin_c_mg / protein→protein_g / calcium→calcium_mg). DISH_FIELDS 同步加 7 列 SELECT (之前不拉, reader 怎么修都读不到). 删 NUTRIENT_BOOL_FALLBACK 7 映射 + qi_tonic/mood_boost/anti_aging placeholder (Algorithm 021 §B audit 实查 dishes n=924 wellness bool 列全 0% 填充, dead schema). weekDeficits 空 / dish 无对应列 → 不渲染 💪 badge (5-channel 退到 4/5 effective; 不假装诚实). bump 让全 v58 缓存失效。
+export const ALGO_VERSION = 'v60'; // TICKET-024 §A dynamic K — computeUserDiversity(imagePrefs, familyPrefs) 综合 pmc 长度 + 多 array prefs (>=2 各 +1) + familyPrefs.homeMembers[].goals unique×2 → diversity 数; dynamicK(slotType, diversity) 在 SLOT_BASE_K (早 3 / 主 5 / 侧 5 / 水果 3) 基础上动态调 topK + pick: diversity<=2 (单一偏好) topK=max(6, 2×baseK) pick=max(2, baseK-2); diversity>=6 (三代多 wellness) topK=3×baseK pick=min(7, baseK+2); 中 topK=floor(2.4×baseK) pick=baseK. 替换 5 处硬编码 (dinner main / kid / lunch pickFromPool / per-member meat / breakfast / fruit). bump 让全 v59 缓存失效。
+// v59: TICKET-022 P0 hot-fix 💪 channel column shape mismatch: deriveBadges 第 5 channel 之前读 dish.atomic_nutrition[nut] JSON (DB 不存在), 切到 NUTRIENT_COLUMN_MAP 独立列查询 (iron→iron_mg / vitamin_d→vitamin_d_iu / omega3→omega3_mg / zinc→zinc_mg / fiber→fiber_g / vitamin_c→vitamin_c_mg / protein→protein_g / calcium→calcium_mg). DISH_FIELDS 同步加 7 列 SELECT (之前不拉, reader 怎么修都读不到). 删 NUTRIENT_BOOL_FALLBACK 7 映射 + qi_tonic/mood_boost/anti_aging placeholder (Algorithm 021 §B audit 实查 dishes n=924 wellness bool 列全 0% 填充, dead schema). weekDeficits 空 / dish 无对应列 → 不渲染 💪 badge (5-channel 退到 4/5 effective; 不假装诚实). bump 让全 v58 缓存失效。
 // v58: TICKET-020 §A lunch/dinner 切 slots[].primary 投影 (Home.tsx + WeeklyMenu.tsx, fallback 旧 dishes/lunchDishes 保 loadFromDB) + §B weekStats edge fn 真接口接入: prefetchWeekStats() useWeeklyMenu hook mount 时 fire-and-forget fetch /functions/v1/weekStats?user_id&week_start → sessionStorage 30min, deriveBadges 💪 channel: weekDeficits 非空 → nutrient match (atomic_nutrition 优先 + NUTRIENT_BOOL_FALLBACK 兜底), 空 → 退 v55 placeholder (is_qi_tonic 等). bump 让全 v57 缓存失效。
 // v57: TICKET-019 §A v55 pref_scores jsonb unwrap (Backend rollup 实际写 {score, n} 而非 flat number, reader 加 unwrapPrefScoresJsonb 用 confWeight= n>=30 ? 1.50 : 0.35 转 flat 给下游 scoreForWeek) + §B Smell 1 阶段 2 收口 Home.tsx fruit/breakfast 切到 slots[].find(slotType==='fruit'|'breakfast') primary 投影 + fallback 旧 fruitDish/breakfastDishes (loadFromDB 命中 slots=undefined 时不破)。跳 v56 因 §A + §B 同棒 ship。bump 让所有 v55 缓存失效。
 // v55: TICKET-018 §H 5-channel 接口大改: generateWeekPlan 每 slot 含 candidates[] + tagBadges[] (5 channel: 🌶️ preference / 🌿 seasonal / 🎋 festival / 🎒 school_balance / 💪 weekly_balance). WeeklyDayMenu 加 slots?: SlotPlan[], 旧字段 (dishes/lunchDishes/breakfastDishes/fruitDish) 维持 slot.primary 投影保 backward compat。候选池采样: breakfast top6→3 / main top12→5 / side top8→5 / fruit top4→3, Option δ 硬过滤产生的 topCandidates 复用于 candidates 截取 (CEO TICKET-017 拍板"接受极端化菜单"延续)。bump 让所有 v54 缓存失效。
@@ -2227,10 +2228,70 @@ export function deriveBadges(dish: any, ctx: BadgeContext): TagBadge[] {
 }
 
 // ── TICKET-018 §C 候选池采样 — slot K + take M (含 primary) ────────────────
-const SLOT_TAKE_BREAKFAST = 3;
-const SLOT_TAKE_MAIN = 5;       // dinner_main / lunch_meat
-const SLOT_TAKE_SIDE = 5;       // dinner_side / lunch_staple|veggie|soup / kid
-const SLOT_TAKE_FRUIT = 3;
+// §C (TICKET-018) base K — slot 标配候选数 (pick). v60 起 dynamicK() 根据
+// userDiversity 在 SLOT_BASE_K 基础上动态调 K (单一偏好缩 / 多样偏好扩)。
+const SLOT_BASE_K: Record<SlotType, number> = {
+  breakfast:   3,
+  lunch_main:  5,
+  lunch_side:  5,
+  dinner_main: 5,
+  dinner_side: 5,
+  dinner_kid:  5,
+  fruit:       3,
+};
+// 旧 SLOT_TAKE_* 保留作 fallback / sim 调用 (TICKET-018 时期 const, 不删避免破)
+const SLOT_TAKE_BREAKFAST = SLOT_BASE_K.breakfast;
+const SLOT_TAKE_MAIN      = SLOT_BASE_K.dinner_main;
+const SLOT_TAKE_SIDE      = SLOT_BASE_K.dinner_side;
+const SLOT_TAKE_FRUIT     = SLOT_BASE_K.fruit;
+
+// §A (TICKET-024) computeUserDiversity — 用户偏好多样性信号. 越多样 → dynamicK
+// 给的 topK 池更大 + 候选数更多让用户挑; 越单一 → 池小候选少避免选择疲劳.
+// 信号来源:
+//   - imagePrefs.protein_main_class.length (主蛋白类目数, 1=单一/2+=多类)
+//   - imagePrefs 其他 array prefs (staple/protein/beef/chicken/seafood/veggie)
+//     长度 >= 2 各 +1 (反映用户已选多种风格)
+//   - familyPrefs.homeMembers[].goals unique 数 ×2 (三代同堂多 wellness goals
+//     最显著的多样性信号, 真实生产典型 case 是"祖辈维持 + 父母增肌 + 孩子成长"
+//     三套 goals → uniqueGoals=3 → +6 强力推高 diversity)
+// 阈值:
+//   diversity <= 2 → 单一偏好 (meatlover / vegan 等)
+//   diversity 3-5 → 中等 (默认)
+//   diversity >= 6 → 高 (多人多 wellness 三代家庭)
+export function computeUserDiversity(
+  imagePrefs: ImagePrefs,
+  familyPrefs?: { homeMembers?: Array<{ goals?: string[] }> } | null,
+): number {
+  const pmcLen = imagePrefs.protein_main_class?.length ?? 0;
+  const arrayPrefsBoost = [
+    imagePrefs.staple_pref, imagePrefs.protein_pref,
+    imagePrefs.beef_style, imagePrefs.chicken_style,
+    imagePrefs.seafood_style, imagePrefs.veggie_method,
+  ].filter(a => (a?.length ?? 0) >= 2).length;
+  const memberGoals = familyPrefs?.homeMembers?.flatMap(m => m.goals ?? []) ?? [];
+  const goalsUnique = new Set(memberGoals).size;
+  return pmcLen + arrayPrefsBoost + 2 * goalsUnique;
+}
+
+// §A (TICKET-024) dynamicK — 按 userDiversity 在 SLOT_BASE_K 基础上动态调:
+//   topK: weightedRandom 采样池上限 (越大随机性越高 / 越小越确定)
+//   pick: UI candidates 数 (slot.candidates 长度, UI "换一道" 看到的候选)
+// 单一 (d<=2): 采样池放大 2× 让随机性反映"用户已知吃啥但仍接受惊喜",
+//               但 pick 减到 baseK-2 (最少 2) — UI 上 3 个候选已足够,
+//               再多选项疲劳。
+// 中等 (3-5): topK = baseK*2.4 (rounded), pick = baseK (标配).
+// 多样 (>=6): topK = baseK*3 + pick = baseK+2 (最多 7) — 多人多偏好用户
+//               想看更多候选挑.
+export function dynamicK(slotType: SlotType, userDiversity: number): { topK: number; pick: number } {
+  const baseK = SLOT_BASE_K[slotType];
+  if (userDiversity <= 2) {
+    return { topK: Math.max(6, baseK * 2),  pick: Math.max(2, baseK - 2) };
+  }
+  if (userDiversity >= 6) {
+    return { topK: baseK * 3,               pick: Math.min(7, baseK + 2) };
+  }
+  return { topK: Math.floor(baseK * 2.4), pick: baseK };
+}
 
 function buildSlotPlan(
   slotType: SlotType,
@@ -2308,6 +2369,9 @@ function generateWeekPlan(
   // useWeeklyMenu hook 触发 prefetchWeekStats 写入). 空 = meal_logs 未建/fetch
   // 失败/无 deficits, deriveBadges 💪 channel 退 v55 placeholder。
   const weekDeficits: string[] = loadWeekDeficitsFromSession(getMondayISO());
+  // §A (TICKET-024) userDiversity — 在 generateWeekPlan 顶部计算一次, main loop
+  // 4 处 weightedRandom + buildSlotPlan 都从同一 diversity 派生 dynamicK 输出.
+  const userDiversity = computeUserDiversity(imagePrefs, familyPrefs ?? null);
   // 粥 / 稀饭 are breakfast-only in Chinese cuisine — user direction
   // 2026-05-17. Stripped once at function entry so every lunch + dinner
   // pool below inherits the ban (the previous per-slot filter only ran
@@ -2656,12 +2720,13 @@ function generateWeekPlan(
       // §C (TICKET-018) candidates 从 topCandidates 复用 — δ 硬过滤后池子已绑定
       // pmc 偏好，UI 上点哪道都符合"为什么推这道"承诺。primary 用 weightedRandom
       // 保 axis-driven 多样性 (与 v54 一致, 不回归 pmc 命中率)。
+      // §A (TICKET-024) dynamicK: topK/pick 按 userDiversity 在 baseK 上动态调.
       const dinnerSlotType: SlotType = isMainProteinSlot ? 'dinner_main' : 'dinner_side';
-      const dinnerSlotTake = isMainProteinSlot ? SLOT_TAKE_MAIN : SLOT_TAKE_SIDE;
-      const dinnerTopK = topCandidates.slice(0, isMainProteinSlot ? 12 : 8);
+      const dinnerK = dynamicK(dinnerSlotType, userDiversity);
+      const dinnerTopK = topCandidates.slice(0, dinnerK.topK);
       const picked = weightedRandom(dinnerTopK, 1, rng)[0]?.dish;
       if (!picked) break;
-      const dinnerPlan = buildSlotPlan(dinnerSlotType, dinnerTopK, picked, dinnerSlotTake, badgeCtx, enrichRaw);
+      const dinnerPlan = buildSlotPlan(dinnerSlotType, dinnerTopK, picked, dinnerK.pick, badgeCtx, enrichRaw);
       if (dinnerPlan) daySlots.push(dinnerPlan);
 
       dayDishes.push(picked);
@@ -2737,7 +2802,9 @@ function generateWeekPlan(
         const cat = ingCategory(c.dish.main_ingredient ?? 'other');
         weeklyCatCounts[cat] = (weeklyCatCounts[cat] ?? 0) + 1;
         // §A (TICKET-018) per-kid-slot SlotPlan — candidates 从 kidCandidates 取
-        const plan = buildSlotPlan('dinner_kid', kidCandidates, c.dish, SLOT_TAKE_SIDE, badgeCtx, enrichRaw);
+        // §A (TICKET-024) dynamicK pick — 按 userDiversity 调候选数
+        const kidK = dynamicK('dinner_kid', userDiversity);
+        const plan = buildSlotPlan('dinner_kid', kidCandidates, c.dish, kidK.pick, badgeCtx, enrichRaw);
         if (plan) daySlots.push(plan);
       });
     }
@@ -2867,8 +2934,9 @@ function generateWeekPlan(
       picks.forEach(d => {
         const kw = extractTitleKeyword(d.title_zh ?? d.title ?? '');
         if (kw) lunchKwsSeen.push(kw);
-        const take = slotType === 'lunch_main' ? SLOT_TAKE_MAIN : SLOT_TAKE_SIDE;
-        const plan = buildSlotPlan(slotType, filtered, d, take, badgeCtx, enrichRaw);
+        // §A (TICKET-024) dynamicK pick — slot-aware 候选数
+        const lunchK = dynamicK(slotType, userDiversity);
+        const plan = buildSlotPlan(slotType, filtered, d, lunchK.pick, badgeCtx, enrichRaw);
         if (plan) daySlots.push(plan);
       });
       return picks;
@@ -2915,7 +2983,9 @@ function generateWeekPlan(
           const kw = extractTitleKeyword(top[0].title_zh ?? top[0].title ?? '');
           if (kw) lunchKwsSeen.push(kw);
           // §A (TICKET-018) per-member meat slot SlotPlan (rescored 池 top 8)
-          const plan = buildSlotPlan('lunch_main', rescored.slice(0, 8), top[0], SLOT_TAKE_MAIN, badgeCtx, enrichRaw);
+          // §A (TICKET-024) dynamicK pick — userDiversity 调候选数
+          const meatK = dynamicK('lunch_main', userDiversity);
+          const plan = buildSlotPlan('lunch_main', rescored.slice(0, 8), top[0], meatK.pick, badgeCtx, enrichRaw);
           if (plan) daySlots.push(plan);
         }
       }
@@ -3027,9 +3097,11 @@ function generateWeekPlan(
               }),
             }))
             .sort((a: any, b: any) => b.score - a.score)
-            .slice(0, 6);
+            .slice(0, dynamicK('breakfast', userDiversity).topK);
           const breakfastSlotPool = [{ dish: item.dish, score: item.score }, ...sameSlotCandidates];
-          const plan = buildSlotPlan('breakfast', breakfastSlotPool, item.dish, SLOT_TAKE_BREAKFAST, badgeCtx, enrichRaw);
+          // §A (TICKET-024) dynamicK pick — userDiversity 调候选数
+          const bK = dynamicK('breakfast', userDiversity);
+          const plan = buildSlotPlan('breakfast', breakfastSlotPool, item.dish, bK.pick, badgeCtx, enrichRaw);
           if (plan) daySlots.push(plan);
         }
         return scored.map(s => enrichRaw(s.dish));
@@ -3086,14 +3158,15 @@ function generateWeekPlan(
         return s;
       };
 
+      // §A (TICKET-024) dynamicK — fruit topK 与 pick 按 userDiversity 动态调
+      const fruitK = dynamicK('fruit', userDiversity);
       const scored = pickFrom.map(f => ({ dish: f, score: scoreFruit(f) }))
         .sort((a, b) => b.score - a.score)
-        .slice(0, 4);
+        .slice(0, fruitK.topK);
       const picks = weightedRandom(scored, 1, rng);
       const raw = picks[0]?.dish;
       if (!raw) return undefined;
-      // §A (TICKET-018) fruit slot — top 4 → 取 3
-      const plan = buildSlotPlan('fruit', scored, raw, SLOT_TAKE_FRUIT, badgeCtx, enrichRaw);
+      const plan = buildSlotPlan('fruit', scored, raw, fruitK.pick, badgeCtx, enrichRaw);
       if (plan) daySlots.push(plan);
       return enrichRaw(raw);
     })();

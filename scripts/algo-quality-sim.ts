@@ -536,7 +536,7 @@ async function main() {
               oil_level, cook_method, is_vegan, health_score, times_kept_in_menu, meal_type
        FROM dishes WHERE title_zh IS NOT NULL AND meal_type IN ('lunch','dinner','all') LIMIT 1200`
     );
-    console.log(`\n=== algo-quality-sim — TICKET-023 22-profile A/B simulation (ALGO_VERSION v59 持平: + pre-flight schema/fill-rate CI check) ===`);
+    console.log(`\n=== algo-quality-sim — TICKET-024 22-profile A/B simulation (ALGO_VERSION v60: dynamic K — userDiversity 调 topK/pick) ===`);
     console.log(`pool: breakfast=${breakfastPool.length} | lunch+dinner=${lunchDinnerPool.length}\n`);
 
     // baseline: 看 DB 整体 protein_main_class / oil_level 分布
@@ -665,6 +665,46 @@ async function main() {
       const m = computeMetrics(picks, PROFILES[0]);
       console.log(`  run ${i+1}: target_pmc=${pct(m.target_pmc)}  target_oil=${pct(m.target_oil)}  target_cuisine=${pct(m.target_cuisine)}`);
     }
+
+    // ─── TICKET-024 dynamicK smoke — 22 profile userDiversity + topK/pick 输出 ───
+    console.log(`\n【TICKET-024 §A dynamicK smoke — 22 profile userDiversity 分布 + slot K】`);
+    type SimSlotType = 'breakfast' | 'lunch_main' | 'lunch_side' | 'dinner_main' | 'dinner_side' | 'dinner_kid' | 'fruit';
+    const SIM_SLOT_BASE_K: Record<SimSlotType, number> = {
+      breakfast: 3, lunch_main: 5, lunch_side: 5, dinner_main: 5, dinner_side: 5, dinner_kid: 5, fruit: 3,
+    };
+    function simComputeDiversity(imagePrefs: ImagePrefs, memberGoalsUnique = 0): number {
+      const pmcLen = imagePrefs.protein_main_class?.length ?? 0;
+      const arrayPrefsBoost = [
+        imagePrefs.staple_pref, imagePrefs.protein_pref,
+        imagePrefs.beef_style, imagePrefs.chicken_style,
+        imagePrefs.seafood_style, imagePrefs.veggie_method,
+      ].filter(a => (a?.length ?? 0) >= 2).length;
+      return pmcLen + arrayPrefsBoost + 2 * memberGoalsUnique;
+    }
+    function simDynamicK(slotType: SimSlotType, userDiversity: number): { topK: number; pick: number } {
+      const baseK = SIM_SLOT_BASE_K[slotType];
+      if (userDiversity <= 2) return { topK: Math.max(6, baseK * 2), pick: Math.max(2, baseK - 2) };
+      if (userDiversity >= 6) return { topK: baseK * 3, pick: Math.min(7, baseK + 2) };
+      return { topK: Math.floor(baseK * 2.4), pick: baseK };
+    }
+    console.log(`profile                     | diversity | bucket | dinner_main K=topK/pick | breakfast K=topK/pick | fruit K=topK/pick`);
+    console.log('─'.repeat(140));
+    const diversityBuckets = { low: 0, mid: 0, high: 0 };
+    for (const p of PROFILES) {
+      // sim 无 familyPrefs.homeMembers, memberGoalsUnique 默认 0;
+      // 但 ticket 描述 "三代同堂" 通过 familyPrefs 拉高, sim 测的是 pmc + array 维度.
+      const d = simComputeDiversity(p.imagePrefs);
+      const bucket = d <= 2 ? 'low' : d >= 6 ? 'high' : 'mid';
+      diversityBuckets[bucket]++;
+      const dMain = simDynamicK('dinner_main', d);
+      const bk = simDynamicK('breakfast', d);
+      const fr = simDynamicK('fruit', d);
+      const name = p.name.padEnd(27);
+      console.log(`${name} | ${String(d).padStart(9)} | ${bucket.padEnd(6)} | ${`${dMain.topK}/${dMain.pick}`.padEnd(23)} | ${`${bk.topK}/${bk.pick}`.padEnd(21)} | ${fr.topK}/${fr.pick}`);
+    }
+    console.log(`\n bucket 分布: low=${diversityBuckets.low}/22 (单一偏好少候选), mid=${diversityBuckets.mid}/22 (标配), high=${diversityBuckets.high}/22 (多样多候选)`);
+    console.log(` 验证 ticket §A 意图: meatlover/vegan/单一 pmc 应在 low; 多 pmc + 多 styles 应在 mid+;`);
+    console.log(` 真用户 prod 中 familyPrefs.homeMembers (三代同堂多 wellness goals) 会推 diversity ≥ 6 → high.`);
 
     // ─── TICKET-021 §B NUTRIENT_BOOL_FALLBACK 7 映射 audit ──────────────────
     //
