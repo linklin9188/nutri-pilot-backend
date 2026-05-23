@@ -23,6 +23,7 @@ import CandidateGrid from "../components/CandidateGrid";
 import type { SlotPlan, SlotChoice } from "../hooks/useWeeklyMenu";
 import { getEatenToday, markEaten } from "../lib/eatingDiary";
 import { logMealEaten } from "../lib/mealLog";
+import { getDishTitle } from "../lib/dishTitleI18n";
 import { elevateDayToMichelin, type MichelinDish } from "../lib/michelinFromDb";
 import ChefBookingModal from "../components/ChefBookingModal";
 import { NutritionRadarCard } from "../components/NutritionRadar";
@@ -87,15 +88,12 @@ function DishCard({ dish, small = false, familyMembers = [], homeToday = [], mic
   /** If true, render checkmark instead of plate icon (already logged today). */
   eaten?: boolean;
 }) {
-  const { isChinese } = useLanguage();
+  const { isChinese, language } = useLanguage();
   const activeMembers = familyMembers.filter(m => homeToday.includes(m.id));
   const cannotEat = activeMembers.length > 0 ? dishAllergyFor(dish as any, activeMembers) : [];
-  // Single-language title / description: zh → title_zh + description_zh;
-  // anything else (en / tl / id) → title_en + description_en with the
-  // Chinese fields as a fallback for legacy rows that lack EN translations.
-  const dishName = isChinese
-    ? ((dish as any).title_zh || (dish as any).title || (dish as any).title_en || '')
-    : ((dish as any).title_en || (dish as any).title || (dish as any).title_zh || '');
+  // TICKET-029 — language-aware title via getDishTitle (zh / zh-Hant / en).
+  // Backend 022 §C ship 给 924 dishes 灌 title_zh_hant + title_en, helper 自动 picks.
+  const dishName = getDishTitle(dish as any, language);
   const dishDesc = isChinese
     ? ((dish as any).description_zh || (dish as any).description_en || '')
     : ((dish as any).description_en || (dish as any).description_zh || '');
@@ -157,7 +155,7 @@ function DishCard({ dish, small = false, familyMembers = [], homeToday = [], mic
       {/* Image */}
       <img
         src={imgSrc}
-        alt={dish.title || dish.title_zh}
+        alt={dishName}
         className="absolute inset-0 w-full h-full object-cover"
         onError={e => {
           (e.target as HTMLImageElement).src =
@@ -503,7 +501,7 @@ export default function WeeklyMenu() {
     if (!weeklyMenu) return;
     await swapDish(dayIdx, slotIdx, pick.dish as SupabaseDish);
     setExpandedGridKey(null);
-    setSwapToast('已换为「' + ((pick.dish as any).title_zh || (pick.dish as any).title || '该菜') + '」');
+    setSwapToast('已换为「' + (getDishTitle(pick.dish as any, language) || '该菜') + '」');
     setTimeout(() => setSwapToast(null), 2000);
   }
   // TICKET-024 §A — "我吃了" state. Read localStorage on mount + on 'nutri-eaten-changed'
@@ -526,7 +524,7 @@ export default function WeeklyMenu() {
     setEatenSet(getEatenToday());
     // 2) DB meal_logs write (async, fire-and-forget). mealIdx 0=早 1=午 2=晚.
     const mealType = mealIdx === 0 ? 'breakfast' : mealIdx === 1 ? 'lunch' : 'dinner';
-    const title = (dish as any).title_zh || (dish as any).title || '该菜';
+    const title = getDishTitle(dish as any, language) || '该菜';
     const res = await logMealEaten({ dishId, mealType });
     if (res.ok) {
       setSwapToast('已记录：' + title);

@@ -31,6 +31,7 @@ import { loadCuisineMode, type CuisineMode } from "../lib/cuisineFilter";
 import { loadFamilyMembers } from "../lib/familyPrefs";
 import { HeartButton } from "../components/HeartButton";
 import { TagBadgeRow, type TagBadge } from "../components/TagBadge";
+import { getDishTitle } from "../lib/dishTitleI18n";
 import DailyNutritionStrip from "../components/DailyNutritionStrip";
 import { toggleEaten, getEatenToday } from "../lib/eatingDiary";
 import { logMealEaten } from "../lib/mealLog";
@@ -457,15 +458,12 @@ export default function Home() {
     setTimeout(() => setLangSwitchToast(null), 2500);
   }
 
-  // Single-language display: pick the right title field for a dish based on
-  // the user's active language. zh / zh-Hant → title_zh; everything else
-  // (en / tl / id) → title_en with title_zh as a safety fallback when the
-  // English title wasn't seeded (legacy rows, AI-generated school suggestions
-  // before backfill, etc.).
-  const dishTitle = (d: { title_zh?: string; title_en?: string; title?: string }) =>
-    isChinese
-      ? (d.title_zh || d.title_en || d.title || '')
-      : (d.title_en || d.title_zh || d.title || '');
+  // Single-language display: TICKET-029 upgraded to language-aware (zh / zh-Hant
+  // / en / tl / id) via getDishTitle helper. zh-Hant now picks title_zh_hant
+  // (Backend 022 §C ship). Old call signature stays (d: { title_zh?, title_en?,
+  // title? }) so callers don't break — getDishTitle accepts the wider shape too.
+  const dishTitle = (d: { title_zh?: string; title_zh_hant?: string; title_en?: string; title?: string }) =>
+    getDishTitle(d, language);
 
   // Localize the raw origin_cuisine DB value (e.g. 'cantonese' / 'northern' /
   // 'japanese_korean') for the dish subtitle. Without this, Chinese users
@@ -2244,7 +2242,7 @@ export default function Home() {
                               )}
                               <div className="flex-1 min-w-0">
                                 <p className="font-bold truncate" style={{ fontSize: 15 }}>
-                                  {isChinese ? (dish.title_zh || dish.title_en) : (dish.title_en || dish.title_zh)}
+                                  {getDishTitle(dish, language)}
                                 </p>
                                 <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                                   {dish.cook_method && (

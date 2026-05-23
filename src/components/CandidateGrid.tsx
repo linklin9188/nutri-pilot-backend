@@ -17,6 +17,8 @@
  */
 import type { SlotChoice } from '../hooks/useWeeklyMenu';
 import { TagBadgeRow } from './TagBadge';
+import { useLanguage } from '../contexts/LanguageContext';
+import { getDishTitle } from '../lib/dishTitleI18n';
 
 export interface CandidateGridProps {
   /** SlotPlan.candidates[] — includes primary as first entry. */
@@ -30,6 +32,7 @@ export interface CandidateGridProps {
 }
 
 export default function CandidateGrid({ candidates, pickedId, onPick, tone = 'dark' }: CandidateGridProps) {
+  const { language } = useLanguage();
   if (!candidates || candidates.length === 0) return null;
 
   const isDark = tone === 'dark';
@@ -44,7 +47,7 @@ export default function CandidateGrid({ candidates, pickedId, onPick, tone = 'da
       {candidates.map((c, idx) => {
         const isPrimary = idx === 0;
         const isPicked  = pickedId != null && c.dish?.id === pickedId;
-        const title = (c.dish as any).title_zh || (c.dish as any).title_en || (c.dish as any).title || '';
+        const title = getDishTitle(c.dish as any, language);
         const desc  = (c.dish as any).description_zh || (c.dish as any).description_en || '';
         const img   = (c.dish as any).img || (c.dish as any).image_url || '';
         return (

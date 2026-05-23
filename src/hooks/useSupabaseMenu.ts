@@ -45,6 +45,9 @@ export interface SupabaseDish {
   // ── Raw DB fields ────────────────────────────────────────────────────────
   id: string;
   title_zh: string;
+  /** TICKET-029 — Backend 022 §C 给 924 dishes 灌入。可空 (老缓存行无此列时 fallback)。 */
+  title_zh_hant?: string;
+  title_en?: string;
   origin_cuisine: string;
   flavor_tags: string[];
   health_benefit_tags: string[];
@@ -511,13 +514,16 @@ function deriveDescription(dish: any): string {
 // Fallback chain: explicit DB field → derived → empty string.
 
 function enrichDish(dish: any, highlight: boolean): SupabaseDish {
-  const lang = (localStorage.getItem('appLanguage') ?? 'zh') as 'en' | 'zh';
+  // TICKET-029 — expanded lang detection: 'zh' / 'zh-Hant' / 'en' / 'tl' / 'id'.
+  // 'zh-Hant' picks new title_zh_hant column (Backend 022 §C ship).
+  const lang = (localStorage.getItem('appLanguage') ?? 'zh') as 'en' | 'zh' | 'zh-Hant' | 'tl' | 'id';
   const derivedDesc = deriveDescription(dish);
 
-  const title =
-    lang === 'zh'
-      ? (dish.title_zh || dish.title_en || dish.title_zh || '')
-      : (dish.title_en || dish.title_zh || '');
+  const title = (() => {
+    if (lang === 'zh-Hant') return dish.title_zh_hant || dish.title_zh || dish.title_en || '';
+    if (lang === 'zh')      return dish.title_zh || dish.title_zh_hant || dish.title_en || '';
+    return dish.title_en || dish.title_zh || dish.title_zh_hant || '';   // en / tl / id
+  })();
 
   const desc =
     lang === 'zh'

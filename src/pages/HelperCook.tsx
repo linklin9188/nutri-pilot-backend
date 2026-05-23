@@ -4,11 +4,13 @@ import { supabase } from "../lib/supabase";
 import { type CookStep } from "../hooks/useSupabaseMenu";
 import { useLanguage } from "../contexts/LanguageContext";
 import { getUserId } from "../lib/userId";
+import { getDishTitle } from "../lib/dishTitleI18n";
 import HelperBottomTabBar from "../components/HelperBottomTabBar";
 
 interface DishWithCook {
   id: string;
   title_zh: string;
+  title_zh_hant?: string;
   title_en?: string;
   image_url?: string;
   cook_steps_json?: CookStep[] | null;
@@ -71,12 +73,10 @@ function DishListScreen({ dishes, loading, onSelect }: {
   onSelect: (dish: DishWithCook) => void;
 }) {
   const navigate = useNavigate();
-  const { t3, t4, isChinese } = useLanguage();
-  // Single-language dish title — was `dish.title_zh` only, which ignored the
-  // language toggle. Now switches to the English/Tagalog/Indo fallback when
-  // the user isn't on a Chinese variant.
-  const dishTitle = (d: DishWithCook) =>
-    isChinese ? (d.title_zh || d.title_en || '') : (d.title_en || d.title_zh || '');
+  const { t3, t4, language } = useLanguage();
+  // TICKET-029 — upgraded to getDishTitle (zh / zh-Hant / en / tl / id picker).
+  // Backend 022 §C ship 给 924 dishes 灌 title_zh_hant + title_en.
+  const dishTitle = (d: DishWithCook) => getDishTitle(d, language);
   return (
     <div className="min-h-screen flex flex-col max-w-md mx-auto" style={{ background: '#FEF7E5', paddingBottom: 80 }}>
       {/* Header */}
@@ -207,10 +207,8 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
   onNextDish: (dish: DishWithCook) => void;
 }) {
   const { t4, isChinese, language } = useLanguage();
-  // Same single-language picker as DishListScreen — used in header, completion
-  // banner, and the "next dish" CTA so the toggle reaches every label.
-  const dishTitle = (d: DishWithCook) =>
-    isChinese ? (d.title_zh || d.title_en || '') : (d.title_en || d.title_zh || '');
+  // TICKET-029 — upgraded to getDishTitle (zh / zh-Hant / en / tl / id picker).
+  const dishTitle = (d: DishWithCook) => getDishTitle(d, language);
   const steps = dish.cook_steps_json ?? [];
   const [currentIdx, setCurrentIdx] = useState(0);
   const [completed, setCompleted] = useState<Set<number>>(new Set());

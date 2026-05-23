@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { getUserId } from "../lib/userId";
 import { useLanguage } from "../contexts/LanguageContext";
+import { getDishTitle } from "../lib/dishTitleI18n";
 import HelperBottomTabBar from "../components/HelperBottomTabBar";
 
 interface DayDish {
@@ -385,7 +386,7 @@ export default function HelperHome() {
                       style={{ width: 80, height: 80 }}>
                       <img
                         src={dish.img || dish.image_url || "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?q=80&w=80&auto=format&fit=crop"}
-                        alt={dish.title || dish.title_zh}
+                        alt={getDishTitle(dish, language)}
                         className="w-full h-full object-cover"
                         onError={e => { (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?q=80&w=80&auto=format&fit=crop"; }}
                       />
@@ -393,7 +394,7 @@ export default function HelperHome() {
                         style={{ background: "linear-gradient(to top, rgba(0,0,0,0.72) 0%, transparent 55%)" }} />
                       <p className="absolute bottom-1 left-1.5 right-1.5 text-white font-semibold leading-tight"
                         style={{ fontSize: 10 }}>
-                        {dish.title || dish.title_zh}
+                        {getDishTitle(dish, language)}
                       </p>
                     </div>
                   ))}
