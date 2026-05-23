@@ -1,0 +1,64 @@
+# Algorithm sim pre-flight CI — TICKET-026
+#
+# Ship 后, 任何 PR 改 useWeeklyMenu reader / NUTRIENT_COLUMN_MAP / sim 自身 →
+# Actions 自动跑 scripts/algo-quality-sim.ts --ci-mode 验证:
+#   1. verifyDishSchema — dishes 表实际列名覆盖 NUTRIENT_COLUMN_MAP 真列 +
+#      deriveBadges 期望 schema 字段; 缺关键列 → EXIT 2 → PR red block merge
+#   2. fill-rate sanity — 8 nutrient 列填充率, < 30% warn (不阻塞)
+#   3. 全 smoke (TICKET-018 5-channel / 019 jsonb / 022 v59 hot-fix + 025 v61
+#      0/null/undefined 边界 / 024 dynamicK 分布 / 021 audit) → 任一 fail
+#      EXIT 3 → PR red
+#   4. JSON summary 输出 ::CI_SUMMARY_BEGIN::/::END:: 标记包夹 → Actions step
+#      解析 verdict 标记 status
+#
+# Algorithm 021 §B SQL audit 揭出 v58 column shape mismatch P0 bug 后, TICKET-022
+# 修通 + TICKET-023 加 sim verifyDishSchema 防御 + TICKET-026 上 CI 闭环。
+#
+# Required GitHub Secrets (已设, 与 feedback-rollup-daily.yml 复用):
+#   DIRECT_DATABASE_URL → Postgres direct connection string (Supabase)
+#
+# 触发条件: PR / push to main 改了相关文件; workflow_dispatch ad-hoc.
+
+name: Algorithm Sim Pre-flight
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/hooks/useWeeklyMenu.ts'
+      - 'src/lib/dishFields.ts'
+      - 'scripts/algo-quality-sim.ts'
+      - '.github/workflows/algo-sim-pre-flight.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/hooks/useWeeklyMenu.ts'
+      - 'src/lib/dishFields.ts'
+      - 'scripts/algo-quality-sim.ts'
+  workflow_dispatch:
+
+jobs:
+  pre-flight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install deps
+        run: npm install --no-audit --no-fund
+
+      - name: Run algo-quality-sim.ts --ci-mode
+        env:
+          DIRECT_DATABASE_URL: ${{ secrets.DIRECT_DATABASE_URL }}
+        run: npx tsx scripts/algo-quality-sim.ts --ci-mode
+
+      # EXIT codes:
+      #   0: 全通 (schema + smoke + profile metrics)
+      #   1: BLOCKER (DIRECT_DATABASE_URL 未设 / connect fail / 异常 throw)
+      #   2: schema check fail (verifyDishSchema 缺关键列)
+      #   3: smoke fail (任一 unit test 失败)
+      # GitHub Actions step 默认非 0 → red, 自动 block PR merge.

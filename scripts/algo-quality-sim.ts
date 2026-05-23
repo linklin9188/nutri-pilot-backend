@@ -475,6 +475,7 @@ async function verifyDishSchema(c: pg.Client): Promise<void> {
   const missingBadge = REQUIRED_DISH_COLUMNS.badge_schema.filter(c => !actualCols.has(c));
 
   if (missingNutrient.length > 0 || missingBadge.length > 0) {
+    ciStats.schemaCheck = 'fail';
     console.error(`  ❌ FATAL: dishes schema 缺关键 column, deriveBadges 路径会死路:`);
     if (missingNutrient.length > 0) {
       console.error(`     nutrient 列 (NUTRIENT_COLUMN_MAP): ${missingNutrient.join(', ')}`);
@@ -484,8 +485,10 @@ async function verifyDishSchema(c: pg.Client): Promise<void> {
     }
     console.error(`     ↪ 修复: Database 加 migration 补列 / Algorithm 修 reader 映射`);
     console.error(`     ↪ 相关参考: docs/LESSONS.md → atomic-nutrition-column-shape-mismatch-bug`);
+    if (CI_MODE) emitCiSummary();
     process.exit(2);
   }
+  ciStats.schemaCheck = 'pass';
   console.log(`  ✅ NUTRIENT_COLUMN_MAP 真列 ${REQUIRED_DISH_COLUMNS.nutrient.length}/${REQUIRED_DISH_COLUMNS.nutrient.length} 全部存在`);
   console.log(`  ✅ deriveBadges schema 字段 ${REQUIRED_DISH_COLUMNS.badge_schema.length}/${REQUIRED_DISH_COLUMNS.badge_schema.length} 全部存在`);
 
@@ -510,10 +513,63 @@ async function verifyDishSchema(c: pg.Client): Promise<void> {
   if (lowFillCols.length > 0) {
     console.log(`  ⚠️  ${lowFillCols.length} 列 < ${FILL_RATE_WARN_PCT}% fill — 派 Backend ticket 补 fill:`);
     for (const { col, pct } of lowFillCols) {
+      ciStats.fillRateWarns.push(`${col}:${pct.toFixed(1)}%`);
       console.log(`     ${col} 仅 ${pct.toFixed(1)}% — deriveBadges 命中该 deficit 时大半 dish 读 null, 自动跳过`);
     }
   }
 }
+
+// §C (TICKET-026) CI JSON summary emitter — Actions step 解析 stdout 末尾 JSON。
+function emitCiSummary(): void {
+  if (!CI_MODE) return;
+  const summary = {
+    algo_version: 'v61',  // 与 ALGO_VERSION 同步, sim 仅信号
+    schema_check: ciStats.schemaCheck,
+    fill_rate_warns: ciStats.fillRateWarns,
+    smoke: {
+      total: ciStats.smokeTotal,
+      passed: ciStats.smokePassed,
+      failed: ciStats.smokeFailed,
+    },
+    profile_metrics: {
+      pass_pmc_main: ciStats.passPmcMain,
+      total: ciStats.totalProfiles,
+      mean_pmc_main: ciStats.meanPmcMain,
+    },
+    verdict: ciStats.schemaCheck === 'pass' && ciStats.smokeFailed === 0 ? 'pass' : 'fail',
+  };
+  console.log(`\n::CI_SUMMARY_BEGIN::`);
+  console.log(JSON.stringify(summary, null, 2));
+  console.log(`::CI_SUMMARY_END::`);
+}
+
+// 包一层 smoke assert 统计
+function ciAssert(label: string, ok: boolean, got: string, want: string): void {
+  ciStats.smokeTotal++;
+  if (ok) ciStats.smokePassed++; else ciStats.smokeFailed++;
+  // 不在此处打印 — 各 smoke section 已 console.log 详细行, ciAssert 只 tally。
+}
+
+// ── TICKET-026 CI-mode flag ─────────────────────────────────────────────
+// PR-triggered GitHub Actions 跑此 sim 时传 --ci-mode:
+//   - 跳过 22-profile 大量 verbose tabular 输出 (CI log 噪声减少)
+//   - 保留 pre-flight schema check + fill-rate sanity + 所有 smoke tests
+//   - 结尾输出 JSON summary 让 Actions 解析 pass/fail counts
+//   - EXIT 0: 全通; EXIT 2: schema check fail (verifyDishSchema); EXIT 3: smoke fail
+// dev local run 不传 flag → 维持原详尽输出。
+const CI_MODE = process.argv.includes('--ci-mode');
+// CI 跑收集 pass/fail counts 用于 JSON summary
+const ciStats = {
+  smokeTotal: 0,
+  smokePassed: 0,
+  smokeFailed: 0,
+  schemaCheck: 'unknown' as 'pass' | 'fail' | 'unknown',
+  fillRateWarns: [] as string[],
+  passPmcMain: 0,
+  totalProfiles: 0,
+  meanPmcMain: 0,
+};
+function ciLog(s: string): void { if (!CI_MODE) console.log(s); }
 
 async function main() {
   const conn = process.env.DIRECT_DATABASE_URL;
@@ -536,7 +592,7 @@ async function main() {
               oil_level, cook_method, is_vegan, health_score, times_kept_in_menu, meal_type
        FROM dishes WHERE title_zh IS NOT NULL AND meal_type IN ('lunch','dinner','all') LIMIT 1200`
     );
-    console.log(`\n=== algo-quality-sim — TICKET-025 22-profile A/B simulation (ALGO_VERSION v61: reader 把 0 IU/mg 视为有效真值, null/undefined 才 skip) ===`);
+    console.log(`\n=== algo-quality-sim — TICKET-026 22-profile A/B simulation (ALGO_VERSION v61 持平: + --ci-mode JSON summary + GitHub Actions PR pre-flight) ===`);
     console.log(`pool: breakfast=${breakfastPool.length} | lunch+dinner=${lunchDinnerPool.length}\n`);
 
     // baseline: 看 DB 整体 protein_main_class / oil_level 分布
@@ -657,6 +713,10 @@ async function main() {
     const meanCui = results.reduce((s,r) => s + r.m.target_cuisine, 0) / results.length;
     const meanPmcAll = results.reduce((s,r) => s + r.m.target_pmc, 0) / results.length;
     console.log(`  mean: pmc_main=${pct(meanPmcMain)} oil_main=${pct(meanOilMain)} cui=${pct(meanCui)} (ref pmc_all=${pct(meanPmcAll)})`);
+    // §C (TICKET-026) CI stats: 22-profile verdict 数 — JSON summary 消费
+    ciStats.passPmcMain = passPmc;
+    ciStats.totalProfiles = results.length;
+    ciStats.meanPmcMain = Math.round(meanPmcMain * 100) / 100;
 
     // stability check — 同 profile 跑 3 次, 命中率方差
     console.log(`\n【随机性 / 稳定性检查 — meatlover 跑 3 次】`);
@@ -832,6 +892,7 @@ async function main() {
     for (const t of v59Tests) {
       const got = simWeeklyBadgeV59(t.dish, t.deficits);
       const ok = (got?.label ?? null) === t.want;
+      ciAssert(t.case, ok, got?.label ?? 'null', t.want ?? 'null');
       console.log(`  ${t.case.padEnd(36)}: ${ok ? '✅' : '❌'} got=${got?.label ?? 'null'} want=${t.want ?? 'null'}`);
     }
 
@@ -868,11 +929,14 @@ async function main() {
     for (const [key, want, why] of expected) {
       const got = unwrapped[key];
       const ok = typeof got === 'number' && Math.abs(got - want) < 1e-9;
+      ciAssert(`jsonb:${key}`, ok, got?.toFixed(3) ?? 'undefined', want.toFixed(3));
       console.log(`  ${key.padEnd(20)}: ${ok ? '✅' : '❌'} got=${got?.toFixed(3) ?? 'undefined'} want=${want.toFixed(3)} (${why})`);
     }
     const skipMalformed = !('tag:malformed' in unwrapped);
     const skipNull = !('tag:null' in unwrapped);
     console.log(`  ${'tag:malformed'.padEnd(20)}: ${skipMalformed ? '✅' : '❌'} skipped (无 score 字段)`);
+    ciAssert('jsonb:tag:malformed-skipped', skipMalformed, String(skipMalformed), 'true');
+    ciAssert('jsonb:tag:null-skipped', skipNull, String(skipNull), 'true');
     console.log(`  ${'tag:null'.padEnd(20)}: ${skipNull ? '✅' : '❌'} skipped (null value)`);
 
     // ─── TICKET-018 §B deriveBadges 单元 smoke (5 channel 每个至少 1 个命中) ───
@@ -927,8 +991,12 @@ async function main() {
     for (const t of mockDishes) {
       const badges = simDeriveBadges(t.dish, t.ctx);
       const hit = badges.some(b => b.kind === t.kind);
+      ciAssert(`5ch:${t.kind}`, hit, String(hit), 'true');
       console.log(`  ${t.kind.padEnd(16)}: ${hit ? '✅' : '❌'} → ${badges.map(b => `${b.icon}${b.label}`).join(' ') || '(none)'}`);
     }
+    // §C (TICKET-026) CI summary + EXIT 3 on smoke failure
+    emitCiSummary();
+    if (CI_MODE && ciStats.smokeFailed > 0) process.exit(3);
   } finally {
     await c.end();
   }
