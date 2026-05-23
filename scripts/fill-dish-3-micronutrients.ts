@@ -26,7 +26,8 @@ const BOT_USER_ID  = 'backfill-bot-021';
 const LIMIT_ARG = process.argv.find(a => a.startsWith('--limit='));
 const LIMIT     = LIMIT_ARG ? parseInt(LIMIT_ARG.split('=')[1], 10) : Infinity;
 const DRY_RUN   = process.argv.includes('--dry-run');
-const RESUME    = process.argv.includes('--resume'); // skip dishes that already have any of the 3 cols
+const RESUME    = process.argv.includes('--resume');  // skip dishes that already have any of the 3 cols
+const ONLY_VITD = process.argv.includes('--only-vitd'); // TICKET-023 §A — filter vitamin_d_iu IS NULL only (compute zinc/omega3 too but only write missing vitD-side)
 const PAUSE     = 600;
 
 // Plausibility ranges per serving (HKD home-cooking portion, ~250-400g):
@@ -147,7 +148,10 @@ async function main() {
   }));
 
   let candidates = dishes;
-  if (RESUME) {
+  if (ONLY_VITD) {
+    candidates = dishes.filter(d => d.vitamin_d_iu == null);
+    console.log(`(--only-vitd mode — filter vitamin_d_iu IS NULL, ${candidates.length}/${dishes.length})`);
+  } else if (RESUME) {
     candidates = dishes.filter(d => d.zinc_mg == null && d.vitamin_d_iu == null && d.omega3_mg == null);
     console.log(`(resume mode — skip dishes with any of the 3 already filled, ${candidates.length}/${dishes.length})`);
   }
