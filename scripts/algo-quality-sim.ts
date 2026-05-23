@@ -432,12 +432,98 @@ function computeMetrics(picks: PickRecord[], profile: Profile) {
 function pct(x: number): string { return (x*100).toFixed(0).padStart(3) + '%'; }
 
 // ── Main ────────────────────────────────────────────────────────────────
+// ── TICKET-023 pre-flight schema check ────────────────────────────────────
+//
+// Algorithm 021 §B SQL audit 揭出 v58 column shape mismatch P0 bug 后, ticket 023
+// 加 CI-style pre-flight check 防再犯。检查 dishes 表实际 column 名是否覆盖
+// (a) NUTRIENT_COLUMN_MAP 7+ 真列映射 (b) deriveBadges 其他 4 channel 读到的字段。
+// 任一关键列缺失 → exit(2) 让 CI 红。fill-rate < 30% → warn 不 exit, 提示
+// 派 Backend ticket 补 fill。
+//
+// 列清单与 src/hooks/useWeeklyMenu.ts deriveBadges + NUTRIENT_COLUMN_MAP 同步。
+const REQUIRED_DISH_COLUMNS = {
+  // §A 关键 NUTRIENT_COLUMN_MAP 真列 (TICKET-022 P0 fix) — 缺任一 → 💪 channel 死路
+  nutrient: [
+    'iron_mg', 'calcium_mg', 'zinc_mg',
+    'vitamin_d_iu', 'omega3_mg',
+    'fiber_g', 'protein_g', 'vitamin_c_mg',
+  ],
+  // §A deriveBadges 其他 channel 读到的 schema 字段
+  // (preference 用 protein_main_class + main_ingredient + origin_cuisine,
+  //  festival 用 festival_tags, seasonal 用 seasonal_tags + seasonal_tag,
+  //  school_balance 用 is_blood_tonic / is_eye_care / is_beauty)
+  badge_schema: [
+    'protein_main_class', 'main_ingredient', 'origin_cuisine',
+    'festival_tags', 'seasonal_tag',
+    'is_blood_tonic', 'is_eye_care', 'is_beauty',
+  ],
+} as const;
+// fill-rate warn 阈值 (< 30% → warn)
+const FILL_RATE_WARN_PCT = 30;
+
+async function verifyDishSchema(c: pg.Client): Promise<void> {
+  // 1. 实查 information_schema.columns 拿到 dishes 真实列名
+  const { rows: colRows } = await c.query<any>(
+    `SELECT column_name FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'dishes'`
+  );
+  const actualCols = new Set(colRows.map(r => r.column_name as string));
+  console.log(`\n【TICKET-023 pre-flight schema check】 dishes 共 ${actualCols.size} 列`);
+
+  // 2. 检查 NUTRIENT_COLUMN_MAP 真列
+  const missingNutrient = REQUIRED_DISH_COLUMNS.nutrient.filter(c => !actualCols.has(c));
+  const missingBadge = REQUIRED_DISH_COLUMNS.badge_schema.filter(c => !actualCols.has(c));
+
+  if (missingNutrient.length > 0 || missingBadge.length > 0) {
+    console.error(`  ❌ FATAL: dishes schema 缺关键 column, deriveBadges 路径会死路:`);
+    if (missingNutrient.length > 0) {
+      console.error(`     nutrient 列 (NUTRIENT_COLUMN_MAP): ${missingNutrient.join(', ')}`);
+    }
+    if (missingBadge.length > 0) {
+      console.error(`     badge schema 列: ${missingBadge.join(', ')}`);
+    }
+    console.error(`     ↪ 修复: Database 加 migration 补列 / Algorithm 修 reader 映射`);
+    console.error(`     ↪ 相关参考: docs/LESSONS.md → atomic-nutrition-column-shape-mismatch-bug`);
+    process.exit(2);
+  }
+  console.log(`  ✅ NUTRIENT_COLUMN_MAP 真列 ${REQUIRED_DISH_COLUMNS.nutrient.length}/${REQUIRED_DISH_COLUMNS.nutrient.length} 全部存在`);
+  console.log(`  ✅ deriveBadges schema 字段 ${REQUIRED_DISH_COLUMNS.badge_schema.length}/${REQUIRED_DISH_COLUMNS.badge_schema.length} 全部存在`);
+
+  // 3. §B fill-rate sanity check — 7 个 nutrient 列填充率, < 30% warn (不 exit)
+  const colExprs = REQUIRED_DISH_COLUMNS.nutrient
+    .map(c => `COUNT(${c}) FILTER (WHERE ${c} IS NOT NULL AND ${c} > 0) AS ${c}_filled`)
+    .join(', ');
+  const { rows: fillRows } = await c.query<any>(
+    `SELECT COUNT(*) AS total, ${colExprs} FROM dishes WHERE title_zh IS NOT NULL`
+  );
+  const fr = fillRows[0];
+  const total = Number(fr.total);
+  const lowFillCols: Array<{ col: string; pct: number; n: number }> = [];
+  console.log(`  ─── fill-rate sanity (n=${total}) ───`);
+  for (const col of REQUIRED_DISH_COLUMNS.nutrient) {
+    const n = Number(fr[`${col}_filled`]);
+    const pct = total > 0 ? (n / total * 100) : 0;
+    const mark = pct < FILL_RATE_WARN_PCT ? '⚠️ ' : '✅ ';
+    console.log(`    ${mark}${col.padEnd(15)}: ${String(n).padStart(4)}/${total} = ${pct.toFixed(1)}%`);
+    if (pct < FILL_RATE_WARN_PCT) lowFillCols.push({ col, pct, n });
+  }
+  if (lowFillCols.length > 0) {
+    console.log(`  ⚠️  ${lowFillCols.length} 列 < ${FILL_RATE_WARN_PCT}% fill — 派 Backend ticket 补 fill:`);
+    for (const { col, pct } of lowFillCols) {
+      console.log(`     ${col} 仅 ${pct.toFixed(1)}% — deriveBadges 命中该 deficit 时大半 dish 读 null, 自动跳过`);
+    }
+  }
+}
+
 async function main() {
   const conn = process.env.DIRECT_DATABASE_URL;
   if (!conn) { console.error('BLOCKER: DIRECT_DATABASE_URL 未设置'); process.exit(1); }
   const c = new pg.Client({ connectionString: conn, ssl: { rejectUnauthorized: false } });
   await c.connect();
   try {
+    // §A + §B pre-flight: 缺关键列 exit 2; fill-rate < 30% warn 不 exit
+    await verifyDishSchema(c);
+
     const { rows: breakfastPool } = await c.query<any>(
       `SELECT id, title_zh, origin_cuisine, flavor_tags, health_benefit_tags,
               main_ingredient, protein_main_class, protein_source, course_type,
@@ -450,7 +536,7 @@ async function main() {
               oil_level, cook_method, is_vegan, health_score, times_kept_in_menu, meal_type
        FROM dishes WHERE title_zh IS NOT NULL AND meal_type IN ('lunch','dinner','all') LIMIT 1200`
     );
-    console.log(`\n=== algo-quality-sim — TICKET-022 22-profile A/B simulation (ALGO_VERSION v59: P0 hot-fix 💪 channel NUTRIENT_COLUMN_MAP 独立列 reader) ===`);
+    console.log(`\n=== algo-quality-sim — TICKET-023 22-profile A/B simulation (ALGO_VERSION v59 持平: + pre-flight schema/fill-rate CI check) ===`);
     console.log(`pool: breakfast=${breakfastPool.length} | lunch+dinner=${lunchDinnerPool.length}\n`);
 
     // baseline: 看 DB 整体 protein_main_class / oil_level 分布
