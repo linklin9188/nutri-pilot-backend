@@ -35,13 +35,29 @@ import { useLanguage } from "../contexts/LanguageContext";
 
 // UI 014 §C: 5 天工作日制 + 第 6 个 "周末" tab，点击展示 WeekendDiningReport。
 // Algorithm 014 已 ship WORKDAYS_PER_WEEK=5 + ALGO_VERSION v50，weeklyMenu.days.length === 5。
-const DAYS = ["周一", "周二", "周三", "周四", "周五", "周末"];
+const DAYS_ZH = ["周一", "周二", "周三", "周四", "周五", "周末"];
+const DAYS_EN = ["Mon", "Tue", "Wed", "Thu", "Fri", "Weekend"];
+// TICKET-030 §B — DAYS resolver used inside components; lang from useLanguage.
+function dayLabel(i: number, isZh: boolean): string {
+  return (isZh ? DAYS_ZH : DAYS_EN)[i] ?? '';
+}
+// Back-compat re-export for any external readers (none in tree at this time).
+const DAYS = DAYS_ZH;
 const WEEKEND_TAB_IDX = 5;
-const MEALS = [
+const MEALS_ZH = [
   { label: "早餐", icon: "☀️", color: "#FF9F43" },
   { label: "午餐", icon: "🌤️", color: "#FF5A1F" },
   { label: "晚餐", icon: "🌙", color: "#6C5CE7" },
 ];
+const MEALS_EN = [
+  { label: "Breakfast", icon: "☀️", color: "#FF9F43" },
+  { label: "Lunch",     icon: "🌤️", color: "#FF5A1F" },
+  { label: "Dinner",    icon: "🌙", color: "#6C5CE7" },
+];
+function mealMeta(idx: number, isZh: boolean) {
+  return (isZh ? MEALS_ZH : MEALS_EN)[idx];
+}
+const MEALS = MEALS_ZH;
 
 // Nutrition estimate per dish type (rough, for display only)
 const NUTRITION_BY_TYPE: Record<string, { cal: number; pro: number; fat: number; carb: number }> = {
@@ -184,9 +200,9 @@ function DishCard({ dish, small = false, familyMembers = [], homeToday = [], mic
             letterSpacing: "0.02em",
             boxShadow: "0 2px 6px rgba(0,0,0,0.25)",
           }}
-          title={matched.length > 0 ? `应季食材：${matched.slice(0, 4).join('、')}` : '当季'}
+          title={matched.length > 0 ? (isChinese ? `应季食材：${matched.slice(0, 4).join('、')}` : `In-season: ${matched.slice(0, 4).join(', ')}`) : (isChinese ? '当季' : 'In season')}
         >
-          🌱 应季
+          {isChinese ? '🌱 应季' : '🌱 In season'}
         </div>
       )}
       {/* Michelin star / award badge — '⭐ 3 / Lung King Heen' style */}
@@ -214,7 +230,7 @@ function DishCard({ dish, small = false, familyMembers = [], homeToday = [], mic
             color: "#FF5A1F", fontSize: 9, letterSpacing: "0.02em",
             boxShadow: "0 2px 6px rgba(0,0,0,0.20)",
           }}
-          title="小美料理机可以做这道菜"
+          title={isChinese ? "小美料理机可以做这道菜" : "Xiaomei robot can cook this"}
         >
           🤖 小美
         </div>
@@ -256,7 +272,7 @@ function DishCard({ dish, small = false, familyMembers = [], homeToday = [], mic
         <button
           onClick={(e) => { e.stopPropagation(); if (!swapping) onSwap(); }}
           disabled={swapping}
-          title="换一道"
+          title={isChinese ? "换一道" : "Swap"}
           className="absolute bottom-2 right-2 w-7 h-7 rounded-full flex items-center justify-center active:scale-90 transition-all disabled:opacity-50"
           style={{ background: "rgba(255,255,255,0.92)", boxShadow: "0 2px 6px rgba(0,0,0,0.25)" }}
         >
@@ -271,7 +287,7 @@ function DishCard({ dish, small = false, familyMembers = [], homeToday = [], mic
       {onMarkEaten && (
         <button
           onClick={(e) => { e.stopPropagation(); onMarkEaten(); }}
-          title={eaten ? '今日已记录' : '我吃了'}
+          title={eaten ? (isChinese ? '今日已记录' : 'Logged today') : (isChinese ? '我吃了' : 'I ate this')}
           className="absolute right-2 w-7 h-7 rounded-full flex items-center justify-center active:scale-90 transition-all"
           style={{
             top: (michelin || ((dish as any).xiaomei_compatible && localStorage.getItem('has_xiaomei_robot') === 'true')) ? 28 : 8,
@@ -314,7 +330,9 @@ function MealSection({
   /** Set of dish ids already logged today (drives green check state). */
   eatenSet?: Set<string>;
 }) {
-  const meal = MEALS[mealIdx];
+  // TICKET-030 §B — i18n meal label resolver (uses MealSection-scope useLanguage).
+  const { isChinese: isZhMeal, t: tMeal } = useLanguage();
+  const meal = mealMeta(mealIdx, isZhMeal);
 
   if (dishes.length === 0) {
     return (
@@ -325,7 +343,7 @@ function MealSection({
         </div>
         <div className="rounded-2xl flex items-center justify-center py-6"
           style={{ background: "rgba(255,255,255,0.05)", border: "1px dashed rgba(255,255,255,0.12)" }}>
-          <span className="text-white/30" style={{ fontSize: 12 }}>暂无推荐，AI 正在学习您的口味</span>
+          <span className="text-white/30" style={{ fontSize: 12 }}>{tMeal('No picks yet — AI is learning your taste', '暂无推荐，AI 正在学习您的口味')}</span>
         </div>
       </div>
     );
@@ -338,7 +356,7 @@ function MealSection({
         <span style={{ fontSize: 16 }}>{meal.icon}</span>
         <span className="font-semibold text-white/80" style={{ fontSize: 13 }}>{meal.label}</span>
         <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.08)" }} />
-        <span className="text-white/30" style={{ fontSize: 11 }}>{dishes.length} 道菜</span>
+        <span className="text-white/30" style={{ fontSize: 11 }}>{tMeal(`${dishes.length} dishes`, `${dishes.length} 道菜`)}</span>
       </div>
       {/* Horizontal scroll */}
       <div className="flex gap-3 overflow-x-auto px-5 pb-1" style={{ scrollbarWidth: "none" }}>
@@ -371,7 +389,7 @@ function MealSection({
         return (
           <div className="mt-2 px-5">
             <p className="mb-2 font-bold text-white/70" style={{ fontSize: 11, letterSpacing: '0.04em' }}>
-              {slot.candidates.length} 个候选 · 点选替换
+              {tMeal(`${slot.candidates.length} candidates · tap to swap`, `${slot.candidates.length} 个候选 · 点选替换`)}
             </p>
             <CandidateGrid
               candidates={slot.candidates}
@@ -437,6 +455,7 @@ const FREE_DAYS = 3; // today + next 2 days visible; rest locked
 // users see today's column (as a tease) and an upgrade card for the rest
 // of the week — the daily Home menu remains available without paying.
 function LockedDayCard({ onUnlock }: { onUnlock: () => void }) {
+  const { t } = useLanguage();
   return (
     <div className="mx-5 mt-2">
       <motion.div
@@ -464,8 +483,8 @@ function LockedDayCard({ onUnlock }: { onUnlock: () => void }) {
             style={{ background: "rgba(255,90,31,0.15)", border: "1.5px solid rgba(255,90,31,0.35)" }}>
             <span className="material-symbols-outlined text-[#FF5A1F]" style={{ fontSize: 28 }}>workspace_premium</span>
           </div>
-          <p className="text-white font-bold mb-1" style={{ fontSize: 16 }}>会员解锁完整 5 天菜单</p>
-          <p className="text-white/40 mb-5" style={{ fontSize: 12 }}>每日菜单始终免费 · 5 天规划 + 周末外食 + 一步采购 需会员</p>
+          <p className="text-white font-bold mb-1" style={{ fontSize: 16 }}>{t('Members unlock the full 5-day menu', '会员解锁完整 5 天菜单')}</p>
+          <p className="text-white/40 mb-5" style={{ fontSize: 12 }}>{t('Daily menu is always free · 5-day plan + weekend dine-out + one-step shopping require membership', '每日菜单始终免费 · 5 天规划 + 周末外食 + 一步采购 需会员')}</p>
           <button onClick={onUnlock}
             className="px-8 h-11 rounded-2xl font-semibold flex items-center gap-2 transition-all active:scale-95"
             style={{
@@ -474,7 +493,7 @@ function LockedDayCard({ onUnlock }: { onUnlock: () => void }) {
               fontSize: 14, color: "white",
             }}>
             <span className="material-symbols-outlined" style={{ fontSize: 16 }}>arrow_upward</span>
-            升级会员
+            {t('Upgrade', '升级会员')}
           </button>
         </div>
       </motion.div>
@@ -486,6 +505,9 @@ function LockedDayCard({ onUnlock }: { onUnlock: () => void }) {
 
 export default function WeeklyMenu() {
   const navigate = useNavigate();
+  // TICKET-030 §B — lang-aware UI strings. isChinese 已在 DishCard 内 used,
+  // 这里加 t / language 给顶层 toast / banner / hero.
+  const { t, language } = useLanguage();
   const { weeklyMenu, loading, swapDish } = useWeeklyMenu();
   // TICKET-017 §C — 换一道按钮 state（key="dayIdx:slotIdx" busy 标记 + 提示 toast）
   const [swapBusy, setSwapBusy] = useState<string | null>(null);
@@ -501,7 +523,7 @@ export default function WeeklyMenu() {
     if (!weeklyMenu) return;
     await swapDish(dayIdx, slotIdx, pick.dish as SupabaseDish);
     setExpandedGridKey(null);
-    setSwapToast('已换为「' + (getDishTitle(pick.dish as any, language) || '该菜') + '」');
+    setSwapToast(t('Swapped to "' + (getDishTitle(pick.dish as any, language) || 'this dish') + '"', '已换为「' + (getDishTitle(pick.dish as any, language) || '该菜') + '」'));
     setTimeout(() => setSwapToast(null), 2000);
   }
   // TICKET-024 §A — "我吃了" state. Read localStorage on mount + on 'nutri-eaten-changed'
@@ -527,11 +549,11 @@ export default function WeeklyMenu() {
     const title = getDishTitle(dish as any, language) || '该菜';
     const res = await logMealEaten({ dishId, mealType });
     if (res.ok) {
-      setSwapToast('已记录：' + title);
+      setSwapToast(t('Logged: ' + title, '已记录：' + title));
     } else {
       // DB write failed — localStorage state stays (better UX than rollback),
       // toast tells user logging didn't reach server.
-      setSwapToast('已标记（云端未同步）');
+      setSwapToast(t('Marked (not synced)', '已标记（云端未同步）'));
     }
     setTimeout(() => setSwapToast(null), 1800);
   }
@@ -550,16 +572,16 @@ export default function WeeklyMenu() {
       if (excludeIds.length > 0) query = query.not('id', 'in', inList);
       const { data, error } = await query;
       if (error || !data || data.length === 0) {
-        setSwapToast('暂无候选可换');
+        setSwapToast(t('No swap candidates', '暂无候选可换'));
         setTimeout(() => setSwapToast(null), 2200);
         return;
       }
       const pick = data[Math.floor(Math.random() * data.length)] as SupabaseDish;
       await swapDish(dayIdx, slotIdx, pick);
-      setSwapToast('已换一道菜');
+      setSwapToast(t('Swapped one dish', '已换一道菜'));
       setTimeout(() => setSwapToast(null), 2000);
     } catch {
-      setSwapToast('换菜失败，稍后重试');
+      setSwapToast(t('Swap failed, retry later', '换菜失败，稍后重试'));
       setTimeout(() => setSwapToast(null), 2200);
     } finally {
       setSwapBusy(null);
@@ -800,10 +822,10 @@ export default function WeeklyMenu() {
             onClick={() => setIntentOpen(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all active:scale-95"
             style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.10)" }}
-            title="说说您想吃什么，我重新安排"
+            title={t('Tell me what you want; I will re-plan', '说说您想吃什么，我重新安排')}
           >
             <span style={{ fontSize: 13 }}>📝</span>
-            <span className="font-semibold" style={{ fontSize: 11, color: "rgba(255,255,255,0.80)" }}>重新生成</span>
+            <span className="font-semibold" style={{ fontSize: 11, color: "rgba(255,255,255,0.80)" }}>{t('Regenerate', '重新生成')}</span>
           </button>
           <button
             onClick={() => {
@@ -818,7 +840,7 @@ export default function WeeklyMenu() {
           >
             <span style={{ fontSize: 13 }}>{michelinMode && isPro ? "⭐" : "✨"}</span>
             <span className="font-semibold" style={{ fontSize: 11, color: michelinMode && isPro ? "#1a1a1a" : "rgba(255,255,255,0.80)" }}>
-              {michelinMode && isPro ? "米其林" : isPro ? "AI 规划" : "升级米其林"}
+              {michelinMode && isPro ? t("Michelin", "米其林") : isPro ? t("AI plan", "AI 规划") : t("Upgrade Michelin", "升级米其林")}
             </span>
           </button>
 
@@ -829,10 +851,10 @@ export default function WeeklyMenu() {
             onClick={() => navigate('/favorites')}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all active:scale-95"
             style={{ background: "rgba(255,90,31,0.18)", border: "1px solid rgba(255,90,31,0.30)" }}
-            title="我的收藏"
+            title={t('My favorites', '我的收藏')}
           >
             <span style={{ fontSize: 13 }}>❤️</span>
-            <span className="font-semibold" style={{ fontSize: 11, color: "#FF8C54" }}>收藏</span>
+            <span className="font-semibold" style={{ fontSize: 11, color: "#FF8C54" }}>{t('Favorites', '收藏')}</span>
           </button>
 
           {/* 📞 预约大厨 — only appears when michelin mode is active. Opens a
@@ -849,7 +871,7 @@ export default function WeeklyMenu() {
               style={{ background: "linear-gradient(135deg, #1a1a1a, #404040)", border: "1px solid rgba(255,255,255,0.12)" }}
             >
               <span style={{ fontSize: 13 }}>📞</span>
-              <span className="font-semibold text-white" style={{ fontSize: 11 }}>预约大厨</span>
+              <span className="font-semibold text-white" style={{ fontSize: 11 }}>{t('Book a chef', '预约大厨')}</span>
             </button>
           )}
         </div>
@@ -858,7 +880,7 @@ export default function WeeklyMenu() {
       {/* ── Day Tabs ────────────────────────────────────────────── */}
       <div className="relative z-10 px-5 mb-5">
         <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
-          {DAYS.map((day, i) => {
+          {(language === 'zh' || language === 'zh-Hant' ? DAYS_ZH : DAYS_EN).map((day, i) => {
             const isWeekendTab = i === WEEKEND_TAB_IDX;
             const isToday      = isWeekendTab ? realTodayIdx >= 5 : i === todayIdx;
             const isSelected   = i === selectedDay;
@@ -905,7 +927,7 @@ export default function WeeklyMenu() {
         {/* Active intent-bias chips — let user see what biases are in effect, with an [x] to clear. */}
         {intentBias && intentBias.chips.length > 0 && (
           <div className="mt-2 flex items-center gap-1.5 flex-wrap">
-            <span className="text-white/40" style={{ fontSize: 10 }}>本周偏好：</span>
+            <span className="text-white/40" style={{ fontSize: 10 }}>{t('This week preferences:', '本周偏好：')}</span>
             {intentBias.chips.map((c, i) => (
               <span key={i}
                 className="px-2 py-0.5 rounded-full font-semibold"
@@ -926,7 +948,7 @@ export default function WeeklyMenu() {
               }}
               className="ml-1 w-5 h-5 rounded-full flex items-center justify-center active:scale-90"
               style={{ background: "rgba(255,255,255,0.08)" }}
-              title="清除本周偏好"
+              title={t('Clear weekly preferences', '清除本周偏好')}
             >
               <span className="material-symbols-outlined text-white/50" style={{ fontSize: 12 }}>close</span>
             </button>
@@ -962,7 +984,7 @@ export default function WeeklyMenu() {
       {familyMembers.length > 0 && (
         <div className="relative z-10 px-5 mb-4">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-white/40" style={{ fontSize: 11 }}>谁在家：</span>
+            <span className="text-white/40" style={{ fontSize: 11 }}>{t('Home today:', '谁在家：')}</span>
             {familyMembers.map(m => {
               const isHome = homeToday.includes(m.id);
               return (
@@ -1098,8 +1120,8 @@ export default function WeeklyMenu() {
                   {dinner.length === 0 && lunch.length === 0 && breakfast.length === 0 ? (
                     <div className="px-5 py-10 text-center">
                       <span className="text-5xl mb-4 block">🍽️</span>
-                      <p className="text-white/50" style={{ fontSize: 14 }}>本周菜单正在生成中…</p>
-                      <p className="text-white/30 mt-1" style={{ fontSize: 12 }}>请确保已设置您的口味偏好</p>
+                      <p className="text-white/50" style={{ fontSize: 14 }}>{t('Generating your weekly menu…', '本周菜单正在生成中…')}</p>
+                      <p className="text-white/30 mt-1" style={{ fontSize: 12 }}>{t('Make sure your taste preferences are set', '请确保已设置您的口味偏好')}</p>
                     </div>
                   ) : (
                     <div className="flex flex-col">
@@ -1138,7 +1160,7 @@ export default function WeeklyMenu() {
                             <div key={i} id={`day-${i}`} className="mb-3">
                               <div className="px-5 flex items-baseline justify-between mb-2 opacity-60">
                                 <p className="font-serif font-black text-white" style={{ fontSize: 18, letterSpacing: "-0.005em" }}>
-                                  {DAYS[i]}
+                                  {dayLabel(i, language === 'zh' || language === 'zh-Hant')}
                                 </p>
                                 <p className="text-white/30" style={{ fontSize: 11, letterSpacing: "0.04em" }}>
                                   {(() => {
@@ -1168,7 +1190,7 @@ export default function WeeklyMenu() {
                           <div key={i} id={`day-${i}`} className="mb-5">
                             <div className="px-5 flex items-baseline justify-between mb-2">
                               <p className="font-serif font-black text-white" style={{ fontSize: 22, letterSpacing: "-0.005em" }}>
-                                {DAYS[i]}
+                                {dayLabel(i, language === 'zh' || language === 'zh-Hant')}
                               </p>
                               <p className="text-white/35" style={{ fontSize: 11, letterSpacing: "0.04em" }}>
                                 {(() => {
@@ -1285,7 +1307,7 @@ export default function WeeklyMenu() {
           <span className="material-symbols-outlined" style={{ fontSize: 20 }}>
             {isPro ? "shopping_cart" : "workspace_premium"}
           </span>
-          {isPro ? "一键生成本周购物清单" : "升级会员 · 一步采购"}
+          {isPro ? t("Generate this week's shopping list", "一键生成本周购物清单") : t("Upgrade · One-step shopping", "升级会员 · 一步采购")}
         </button>
       </div>
 
