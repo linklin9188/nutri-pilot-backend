@@ -31,6 +31,8 @@ const ENDPOINT_LIMITS: Record<string, number> = {
   translate:      50,  // Day 4 cook-step translation (zh → en/tl/id) — dispatch via handleTranslateEndpoint
   health_tag:     2000, // TICKET-20260521-010 — dishes.health_benefit_tags 12 wellness backfill (script-only, dedicated user_id 'backfill-bot')
   micronutrient:  2000, // TICKET-20260522-021 — dishes.zinc_mg/vitamin_d_iu/omega3_mg backfill (script-only, dedicated user_id 'backfill-bot-021')
+  image_gen:       100, // TICKET-20260523-022 §B — Nano Banana (gemini-2.5-flash-image) onboarding 6+3 imagery (script-only, dedicated user_id 'backfill-bot-022a')
+  translate_dish: 2000, // TICKET-20260523-022 §C — dishes.title_zh_hant + title_en backfill via Gemini (script-only, dedicated user_id 'backfill-bot-022c')
 };
 
 const DEFAULT_MODEL = "gemini-2.5-flash";
