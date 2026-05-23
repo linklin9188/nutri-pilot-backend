@@ -263,6 +263,16 @@ export default function Login() {
     { key: "id", label: "Bahasa" },
   ];
 
+  // TICKET-038 §C — 微信按钮下方 5-lang 小字 "（免费试用30天）"。zh-Hant 独立
+  // 翻译（繁体"免費"不同字），所以不能复用 t() 的 zh fallback。
+  const TRIAL_CAPTION: Record<Language, string> = {
+    "zh":      "（免费试用30天）",
+    "zh-Hant": "（免費試用30天）",
+    "en":      "(Free 30-day trial)",
+    "tl":      "(Libreng 30-araw trial)",
+    "id":      "(Coba gratis 30 hari)",
+  };
+
   // ── time-based hero bg ───────────────────────────────────────────
   // 7 days (Mon–Sun) × 3 meal slots (breakfast/lunch/dinner)
   const DAY_IMAGES = [
@@ -570,6 +580,11 @@ export default function Login() {
               </svg>
               {t("Continue with WeChat", "微信登录")}
             </button>
+            {/* TICKET-038 §C — 微信按钮下方 trial caption (老板 01:20 拍板:
+                "在下面用小字体显示 （免费试用30天）"). 5-lang per TRIAL_CAPTION. */}
+            <p className="text-center text-white/45" style={{ fontSize: 11, marginTop: -4 }}>
+              {TRIAL_CAPTION[language]}
+            </p>
 
             </>
             )}
