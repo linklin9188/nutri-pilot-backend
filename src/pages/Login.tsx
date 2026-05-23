@@ -6,6 +6,30 @@ import { supabase } from "../lib/supabase";
 import { markLogin } from "../lib/userLifecycle";
 import { syncProfileFromDB } from "../lib/profileSync";
 import { getUserId, setUserId } from "../lib/userId";
+import LanguageSwitcher from "../components/LanguageSwitcher";
+
+// TICKET-038 REVISED — about hero 合并 login (老板拍板漏斗 -1 页). 5 lang
+// 全配 (zh/zh-Hant/en/tl/id). 不用 t() / t4() 因 zh-Hant 字形独立。
+const LOGIN_HERO: Record<Language, { eyebrow: string; h1: string; sub: string }> = {
+  "zh":      { eyebrow: "AIEATS · 妈妈们的智能菜单",          h1: "妈妈们的智能菜单",          sub: "按节气推应季菜 · 同步校园菜谱 · 给宝贝不重复的营养呵护" },
+  "zh-Hant": { eyebrow: "AIEATS · 媽媽們的智能菜單",          h1: "媽媽們的智能菜單",          sub: "按節氣推應季菜 · 同步校園菜譜 · 給寶貝不重複的營養呵護" },
+  "en":      { eyebrow: "AIEATS · Smart Menu for Moms",       h1: "Smart menu for moms",       sub: "Seasonal recipes by solar terms · aligned with school cafeteria · no-repeat nutrition for your baby." },
+  "tl":      { eyebrow: "AIEATS · Smart Menu para sa Nanay",  h1: "Smart menu para sa nanay",  sub: "Mga seasonal na recipe · ka-aligned ng school cafeteria · walang-ulit na nutrisyon para sa anak mo." },
+  "id":      { eyebrow: "AIEATS · Menu Pintar untuk Mama",    h1: "Menu pintar untuk mama",    sub: "Resep musiman · selaras dengan kafetaria sekolah · nutrisi tanpa pengulangan untuk si kecil." },
+};
+
+interface ChannelChip {
+  emoji: string;
+  color: string;
+  label: Record<Language, string>;
+}
+const LOGIN_CHANNELS: ChannelChip[] = [
+  { emoji: '🌶️', color: 'rgba(255,90,31,0.15)',  label: { 'zh': '你爱吃',  'zh-Hant': '你愛吃',  'en': 'You love',   'tl': 'Gusto mo',       'id': 'Favoritmu'        } },
+  { emoji: '🌿', color: 'rgba(34,197,94,0.15)',  label: { 'zh': '当令',    'zh-Hant': '當令',    'en': 'In season',  'tl': 'In season',      'id': 'Musimnya'         } },
+  { emoji: '🎋', color: 'rgba(236,72,153,0.15)', label: { 'zh': '节气',    'zh-Hant': '節氣',    'en': 'Festival',   'tl': 'Pista',          'id': 'Perayaan'         } },
+  { emoji: '🎒', color: 'rgba(59,130,246,0.15)', label: { 'zh': '孩子补',  'zh-Hant': '孩子補',  'en': 'Kid boost',  'tl': 'Para sa bata',   'id': 'Untuk anak'       } },
+  { emoji: '💪', color: 'rgba(168,85,247,0.15)', label: { 'zh': '本周补',  'zh-Hant': '本週補',  'en': 'Week boost', 'tl': 'Linggo boost',   'id': 'Boost mingguan'   } },
+];
 
 type Role = "employer" | "helper";
 
@@ -253,16 +277,6 @@ export default function Login() {
     navigate("/helper");
   };
 
-  // ── 4-language switcher ──────────────────────────────────────────
-  // Always 4-way (zh / en / tl / id) regardless of role — helpers may pick
-  // their language before tapping a button, employers can keep zh.
-  const LANGS: { key: Language; label: string }[] = [
-    { key: "zh", label: "中文" },
-    { key: "en", label: "EN" },
-    { key: "tl", label: "Tagalog" },
-    { key: "id", label: "Bahasa" },
-  ];
-
   // TICKET-038 §C — 微信按钮下方 5-lang 小字 "（免费试用30天）"。zh-Hant 独立
   // 翻译（繁体"免費"不同字），所以不能复用 t() 的 zh fallback。
   const TRIAL_CAPTION: Record<Language, string> = {
@@ -348,24 +362,12 @@ export default function Login() {
       style={{ background: "#080808" }}>
       {heroBg}
 
-      {/* Top bar — 4-language switcher */}
-      <header className="relative z-10 flex justify-end p-5">
-        <div className="inline-flex p-1 rounded-2xl gap-0.5"
-          style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.10)" }}>
-          {LANGS.map(({ key, label }) => (
-            <button key={key}
-              onClick={() => setLanguage(key)}
-              className="px-2.5 py-1 rounded-xl font-bold transition-all active:scale-95"
-              style={{
-                fontSize: 11,
-                background: language === key ? "#FF5A1F" : "transparent",
-                color:      language === key ? "white"   : "rgba(255,255,255,0.55)",
-              }}>
-              {label}
-            </button>
-          ))}
-        </div>
-      </header>
+      {/* TICKET-038 REVISED — 5-lang floating switcher (zh/zh-Hant/en/tl/id);
+          替换原 4-lang inline chip (漏 zh-Hant). HK/TW 妈妈用繁体首选。 */}
+      <LanguageSwitcher className="fixed top-4 right-4 z-50" />
+
+      {/* 占位 header 保留垂直节奏 (原 4-lang header 高约 56px) */}
+      <header className="relative z-10 h-14" />
 
       <AnimatePresence mode="wait">
         <motion.div key="login"
@@ -373,24 +375,45 @@ export default function Login() {
           transition={{ duration: 0.6 }}
           className="flex-1 flex flex-col justify-end px-7 pb-10 z-10 relative">
 
-          {/* Brand block */}
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15, duration: 0.7, ease: "easeOut" }} className="mb-7">
-
-            <div className="flex items-center gap-3">
-              <h1 className="font-serif font-black text-white leading-none whitespace-nowrap"
-                style={{ fontSize: 40, letterSpacing: "0.02em" }}>爱吃</h1>
-              <span style={{ fontSize: 22, color: "#FF5A1F", fontWeight: 400, lineHeight: 1 }}>·</span>
-              <span className="text-white/75 font-light uppercase"
-                style={{ fontSize: 20, letterSpacing: "0.20em" }}>Aieats</span>
-            </div>
-
-            <div className="mt-4 mb-5 rounded-full"
-              style={{ width: 36, height: 2, background: "#FF5A1F", boxShadow: "0 0 12px rgba(255,90,31,0.6)" }} />
-
-            <p className="text-white/85 font-light" style={{ fontSize: 18, letterSpacing: "0.06em", lineHeight: 1.5 }}>
-              {t("No more thinking about what to eat", "今天吃啥，交给我惦记")}
+          {/* TICKET-038 REVISED §B — about hero 合并到 login. eyebrow + H1 + 副标
+              + 5 chip 横排, 让朋友点链接落地一眼明白产品做什么. 原 '爱吃 ·
+              Aieats' brand block 删除 (eyebrow + H1 已说明品牌). */}
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.10, duration: 0.5, ease: "easeOut" }} className="mb-5">
+            <p className="font-bold uppercase tracking-[0.20em] mb-2"
+              style={{ fontSize: 11, color: "#FF8C54" }}>
+              {LOGIN_HERO[language].eyebrow}
             </p>
+            <h1 className="font-serif font-black text-white leading-tight"
+              style={{ fontSize: 28, letterSpacing: "-0.01em" }}>
+              {LOGIN_HERO[language].h1}
+            </h1>
+            <div className="mt-3 mb-3 rounded-full"
+              style={{ width: 36, height: 2, background: "#FF5A1F", boxShadow: "0 0 12px rgba(255,90,31,0.6)" }} />
+            <p className="text-white/70 leading-relaxed" style={{ fontSize: 14 }}>
+              {LOGIN_HERO[language].sub}
+            </p>
+          </motion.div>
+
+          {/* 5-channel chip 横排 — 与原 /about 对齐, 无标题无 desc, chip 自解释 */}
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+            transition={{ delay: 0.20, duration: 0.5 }}
+            className="flex flex-wrap gap-2 mb-7">
+            {LOGIN_CHANNELS.map((c, idx) => (
+              <motion.span key={c.emoji}
+                initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.30, delay: 0.25 + idx * 0.05, ease: "easeOut" }}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-semibold"
+                style={{
+                  background: c.color,
+                  color: "white",
+                  fontSize: 11,
+                  border: `1px solid ${c.color.replace("0.15", "0.30")}`,
+                }}>
+                <span>{c.emoji}</span>
+                <span>{c.label[language]}</span>
+              </motion.span>
+            ))}
           </motion.div>
 
           {/* TICKET-010 §H — role 选择优先：未确认 → 2 大卡片 grid（雇主 +
