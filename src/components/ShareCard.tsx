@@ -41,9 +41,12 @@ export default function ShareCard({ userId, compact = false }: ShareCardProps) {
   const link = uid
     ? `${origin}/about?ref=${encodeURIComponent(uid)}`
     : `${origin}/about`;
+  // TICKET-033 §B — hook 重写对齐真品牌 (母婴 / 节气 / 校园 niche).
+  // 旧文案 '让做饭省心' 调性偏差 (泛家庭), 跟 index.html OG meta + WhatsApp
+  // 真推广卡显示的 '妈妈们的智能菜单' 不一致. CEO 失误立即修.
   const hook = t(
-    'Family meal planning that actually saves time. Aieats AI plans your week with what your family eats.',
-    '让做饭省心 — Aieats 一周菜单 AI 推荐，全家爱吃的菜配齐了。',
+    'Smart menu for moms — Seasonal recipes, school cafeteria aligned, no-repeat nutrition for your baby.',
+    '妈妈们的智能菜单 — 按节气推应季菜 · 同步校园菜谱 · 给宝贝不重复的营养呵护',
   );
   const shareText = `${hook}\n\n${link}`;
 

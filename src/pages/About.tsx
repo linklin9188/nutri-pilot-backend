@@ -75,16 +75,20 @@ export default function About() {
           transition={{ duration: 0.4, ease: 'easeOut' }}>
           <p className="font-bold uppercase tracking-[0.20em] mb-3"
             style={{ fontSize: 11, color: '#FF8C54' }}>
-            {t('Aieats · Family Meal Planning', 'Aieats · 家庭菜单 AI')}
+            {t('Aieats · Smart Menu for Moms', '爱吃 Aieats · 妈妈们的智能菜单')}
           </p>
+          {/* TICKET-033 §A — hero 重写对齐真品牌 (母婴 / 节气 / 校园 niche).
+              旧文案 '让做饭省心 / Family meal planning that saves time' 调性偏差
+              (泛家庭), 跟 index.html OG meta + WhatsApp 推广卡显示真品牌不一致.
+              CEO 失误立即修. */}
           <h1 className="font-serif font-black text-white leading-tight"
             style={{ fontSize: 30, letterSpacing: '-0.01em' }}>
-            {t('Family meal planning that actually saves time', '让做饭省心 — 一周菜单 AI 推荐')}
+            {t('Smart menu for moms', '妈妈们的智能菜单')}
           </h1>
           <p className="mt-3 text-white/65 leading-relaxed" style={{ fontSize: 15 }}>
             {t(
-              'Aieats AI plans your week with what your family actually eats. No more "what\'s for dinner" stress.',
-              '全家爱吃的菜配齐了。不用再为今晚吃啥发愁。',
+              'Seasonal recipes by solar terms · aligned with school cafeteria · no-repeat nutrition for your baby.',
+              '按节气推应季菜 · 同步校园菜谱 · 给宝贝不重复的营养呵护',
             )}
           </p>
           <button
@@ -96,6 +100,10 @@ export default function About() {
           </button>
           <p className="mt-2 text-center text-white/35" style={{ fontSize: 11 }}>
             {t('Free 7 days · no card needed', '7 天免费 · 无需信用卡')}
+          </p>
+          {/* 情感钩子 — small italic, 对齐 OG card "每一餐，都是给家人的惦记 ～" */}
+          <p className="mt-5 text-center italic font-serif text-white/55" style={{ fontSize: 13, letterSpacing: '0.02em' }}>
+            {t('Every meal is care for your family.', '每一餐，都是给家人的惦记 ～')}
           </p>
         </motion.div>
       </section>
