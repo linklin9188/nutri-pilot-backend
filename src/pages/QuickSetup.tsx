@@ -851,13 +851,22 @@ export default function QuickSetup() {
           </div>
 
           {q.chips ? (
-            // Q10 — chips 风格（strict_avoid 更紧凑 + other 自填 input）
+            // chips 风格分两条路径：
+            //   multi=true (Q5 wellness_goals / Q10 strict_avoid) → toggleMulti + multiSel
+            //   multi=false (Q8 oil_level UI 025 §B 后) → handleSingle + answers[q.id]
+            // TICKET-027 P0 hot-fix: 之前 chip 路径硬编码 toggleMulti, Q8 单选 chip
+            // 点了无反应卡死 (answers 不写, 不 auto-advance)。
             <div className="flex-1">
               <div className="flex flex-wrap gap-2">
                 {q.options.map(opt => {
-                  const sel = multiSel.includes(opt.value);
+                  const sel = q.multi
+                    ? multiSel.includes(opt.value)
+                    : answers[q.id] === opt.value;
+                  const onTap = q.multi
+                    ? () => toggleMulti(opt.value)
+                    : () => handleSingle(opt.value);
                   return (
-                    <button key={opt.value} onClick={() => toggleMulti(opt.value)}
+                    <button key={opt.value} onClick={onTap}
                       className="px-4 py-2.5 rounded-full active:scale-95 transition-transform flex items-center gap-2"
                       style={sel
                         ? { background: 'rgba(255,90,31,0.20)', border: '1.5px solid #FF5A1F', fontSize: 13, color: '#fff' }
@@ -887,6 +896,32 @@ export default function QuickSetup() {
                   <p className="mt-2 text-white/35 font-light" style={{ fontSize: 11 }}>
                     {t('After typing, tap "Done →" below', '输完后点下方"完成 →"')}
                   </p>
+                </div>
+              )}
+              {/* TICKET-027 P0 — chip + single 时 'other' 入口: 复用现有 single 'other'
+                  input + 下一步 button 逻辑（同 ImageGrid else 分支）。Q8 oil_level 唯一
+                  受影响题。'other' 选中后 handleSingle early-return 不 auto-advance,
+                  这里展开 input 让用户填 + 显式点下一步。 */}
+              {!q.multi && answers[q.id] === 'other' && (
+                <div className="mt-4">
+                  <input type="text" value={otherText} maxLength={30}
+                    onChange={e => setOtherText(e.target.value)}
+                    placeholder={t('Type your own (30 chars max)', '自填（最多 30 字）')}
+                    className="w-full px-4 py-3 rounded-xl text-white placeholder-white/30 focus:outline-none"
+                    style={{ background: 'rgba(255,255,255,0.06)', border: '1.5px solid rgba(255,90,31,0.4)', fontSize: 14 }} />
+                  <button onClick={() => {
+                    const trimmed = otherText.trim();
+                    const next = { ...answers, [q.id]: trimmed ? `other:${trimmed}` : 'other' };
+                    setAnswers(next);
+                    setOtherText('');
+                    goToNext(next);
+                  }}
+                    className="mt-3 w-full py-3 rounded-2xl font-bold text-white"
+                    style={{ background: '#FF5A1F', fontSize: 15, letterSpacing: '0.04em' }}>
+                    {otherText.trim()
+                      ? t(`"${otherText.trim()}" · Next →`, `"${otherText.trim()}" · 下一步 →`)
+                      : t('Skip · Next →', '跳过 · 下一步 →')}
+                  </button>
                 </div>
               )}
             </div>
