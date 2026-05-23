@@ -8,6 +8,7 @@ import { useLanguage } from "../contexts/LanguageContext";
 import { getUserId } from "../lib/userId";
 import { syncProfileToDB } from "../lib/profileSync";
 import { isWithinTrial, trialDaysRemaining } from "../lib/userLifecycle";
+import ShareCard from "../components/ShareCard";
 
 // TICKET-071 §C — LanguageCard 已删除（Home 顶部 chip popover 已覆盖语言切换，
 // 避免重复 UI）。Settings 「下发指令语言」section (line ~928) 是菲佣指令语言
@@ -275,7 +276,7 @@ export default function Settings() {
   // TICKET-040 §A — add useLanguage to main Settings function (sub-components
   // already use it). Lets the header subtitle + Pro toolbox section title
   // follow the global language picker.
-  const { t4 } = useLanguage();
+  const { t4, isChinese } = useLanguage();
 
   const [members,   setMembers]   = useState<FamilyMember[]>(loadMembers);
   const [openId,    setOpenId]    = useState<string | null>(null);
@@ -1127,6 +1128,22 @@ export default function Settings() {
           <MembershipBenefits isPro={proReason === 'paid' || proReason === 'helper'} />
 
           {/* TICKET-067 §C — 独立 小美料理机 toggle card 已删除，并入"做饭辅助"分组卡 */}
+
+          {/* TICKET-031 §B — 推广 Aieats 卡 (老板拍板拓客起点) */}
+          <section className="bg-white border border-black/5 rounded-[22px] p-4 shadow-[0_4px_20px_rgba(0,0,0,0.04)]">
+            <div className="flex items-center gap-2 mb-3">
+              <span style={{ fontSize: 20 }}>🎁</span>
+              <h3 className="font-bold" style={{ fontSize: 15, color: '#1a1a1a' }}>
+                {isChinese ? '推广 Aieats' : 'Share Aieats'}
+              </h3>
+            </div>
+            <p className="mb-3 leading-snug" style={{ fontSize: 12, color: 'rgba(0,0,0,0.55)' }}>
+              {isChinese
+                ? '把链接发给朋友，一起省心做饭。WhatsApp / 微信 / 朋友圈都可以。'
+                : 'Send the link to friends. Works in WhatsApp / WeChat / Moments.'}
+            </p>
+            <ShareCard />
+          </section>
 
           {/* ── Sign out ── */}
           <button

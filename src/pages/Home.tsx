@@ -32,6 +32,7 @@ import { loadFamilyMembers } from "../lib/familyPrefs";
 import { HeartButton } from "../components/HeartButton";
 import { TagBadgeRow, type TagBadge } from "../components/TagBadge";
 import { getDishTitle } from "../lib/dishTitleI18n";
+import ShareCard from "../components/ShareCard";
 import DailyNutritionStrip from "../components/DailyNutritionStrip";
 import { toggleEaten, getEatenToday } from "../lib/eatingDiary";
 import { logMealEaten } from "../lib/mealLog";
@@ -440,6 +441,8 @@ export default function Home() {
   // kept available as a fallback (we still wire the button to it on legacy
   // contexts that haven't migrated to the picker UX).
   const [langPickerOpen, setLangPickerOpen] = useState(false);
+  // TICKET-031 §B — 推广 share sheet (bottom drawer).
+  const [shareSheetOpen, setShareSheetOpen] = useState(false);
   const [langSwitchToast, setLangSwitchToast] = useState<string | null>(null);
   function pickLanguage(target: Language) {
     setLangPickerOpen(false);
@@ -1172,6 +1175,16 @@ export default function Home() {
                 </div>
               </>
             )}
+            {/* TICKET-031 §B — 推广 share button (老板拓客起点).
+                点击 toggle 底部 sheet (Sheet 内嵌 ShareCard). */}
+            <button
+              onClick={() => setShareSheetOpen(true)}
+              className="w-9 h-9 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+              style={{ background: 'white', boxShadow: '0 4px 14px rgba(0,0,0,0.06)' }}
+              title={isChinese ? '推广 Aieats' : 'Share Aieats'}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 18, color: '#FF5A1F' }}>ios_share</span>
+            </button>
           </div>
         </div>
       </header>
@@ -1941,6 +1954,31 @@ export default function Home() {
       )}
 
       <BottomTabBar />
+
+      {/* TICKET-031 §B — 推广 ShareCard bottom sheet (拓客起点). 点击 share icon
+          → 弹底部 drawer; backdrop tap dismiss; ESC 留给系统. */}
+      {shareSheetOpen && (
+        <>
+          <div className="fixed inset-0 z-[80]" onClick={() => setShareSheetOpen(false)}
+            style={{ background: 'rgba(0,0,0,0.40)' }} />
+          <div className="fixed left-0 right-0 bottom-0 z-[81] max-w-md mx-auto rounded-t-3xl shadow-2xl"
+            style={{ background: 'white', paddingBottom: 'env(safe-area-inset-bottom, 16px)' }}>
+            <div className="px-5 pt-4 pb-3 border-b border-black/[0.06] flex items-center justify-between">
+              <p className="font-bold" style={{ fontSize: 15, color: '#1a1a1a' }}>
+                {isChinese ? '推广 Aieats' : 'Share Aieats'}
+              </p>
+              <button onClick={() => setShareSheetOpen(false)}
+                className="w-8 h-8 rounded-full flex items-center justify-center active:scale-90"
+                style={{ background: 'rgba(0,0,0,0.05)' }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 17 }}>close</span>
+              </button>
+            </div>
+            <div className="p-4">
+              <ShareCard />
+            </div>
+          </div>
+        </>
+      )}
 
       {/* §C (TICKET-037) Language switch toast — floats above BottomTabBar.
           Auto-dismisses after 2.5s; one-line text rendered in the NEW language
