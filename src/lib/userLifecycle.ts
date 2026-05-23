@@ -1,8 +1,8 @@
 /**
- * userLifecycle.ts — first-login bookkeeping + 7-day trial window.
+ * userLifecycle.ts — first-login bookkeeping + 30-day trial window.
  *
  * Drives the new-user vs returning-user split on Home (weekend dining is
- * only for returning users) and the 7-day free trial after which the daily
+ * only for returning users) and the 30-day free trial after which the daily
  * menu paywalls behind /pricing for non-members.
  *
  * Storage layout:
@@ -20,7 +20,7 @@
 const LS_FIRST_LOGIN_AT  = 'nutri_first_login_at';
 const SS_SESSION_IS_NEW  = 'nutri_session_new';
 
-const TRIAL_DAYS = 7;
+const TRIAL_DAYS = 30;
 const MS_PER_DAY = 86_400_000;
 
 /**
@@ -65,7 +65,7 @@ export function daysIntoTrial(): number {
 }
 
 /**
- * Free-tier window: 7 days from first login. Pro members ignore this —
+ * Free-tier window: 30 days from first login. Pro members ignore this —
  * callers should check isPro first and only fall through to isWithinTrial.
  * Returns true when no first_login_at recorded yet (anonymous / pre-login
  * users haven't started their trial).
@@ -76,7 +76,7 @@ export function isWithinTrial(): boolean {
   return (Date.now() - t) < TRIAL_DAYS * MS_PER_DAY;
 }
 
-/** Whole days remaining on the trial. Clamped to [0, 7]. */
+/** Whole days remaining on the trial. Clamped to [0, 30]. */
 export function trialDaysRemaining(): number {
   const used = daysIntoTrial();
   return Math.max(0, TRIAL_DAYS - used);

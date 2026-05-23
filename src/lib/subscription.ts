@@ -19,6 +19,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "./supabase";
 import { effectiveProReason, type ProReason } from "./promo";
 import { getUserId } from "./userId";
+import { isWithinTrial } from "./userLifecycle";
 
 const LS_IS_PRO    = "nutri_is_pro";
 const LS_SUB_END   = "nutri_sub_end_at";
@@ -46,7 +47,10 @@ function readLocal(): SubscriptionState {
   const plan   = (localStorage.getItem(LS_PLAN) as SubscriptionPlan) ?? "free";
   // If the recorded subscription end has passed, treat the user as free.
   const paidIsPro = isPro && (!endsAt || endsAt.getTime() > Date.now());
-  const reason = effectiveProReason({ paidIsPro });
+  // TICKET-037 §C — within 30-day trial → 视同 Pro (proReason='trial'). isPaidPro
+  // 保持 raw 'paid via Stripe' 语义不动 (MembershipBenefits 用它区分'付费'/'促销解锁')。
+  const inTrial = !paidIsPro && isWithinTrial();
+  const reason = effectiveProReason({ paidIsPro, inTrial });
   return {
     isPro:     reason !== 'none',
     isPaidPro: paidIsPro,

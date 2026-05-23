@@ -3,8 +3,12 @@
  *
  * Rules:
  *   - All users (including anonymous) can browse TODAY + next 2 days
- *   - Logged-in users get full 7-day access + curated suppliers
- *   - Premium members get everything + luxury suppliers
+ *   - Logged-in users get full 7-day menu view + curated suppliers
+ *   - Premium members + within-30-day-trial users get everything + luxury suppliers
+ *
+ * TICKET-037 §C — within 30-day trial 视同 Pro (effectiveIsPremium = isPremium ||
+ * (isLoggedIn && isWithinTrial())). raw isPremium localStorage flag 不动 (Stripe
+ * webhook 仍 source of truth)。试用过期后回退到 free tier (FREE_DAYS = 3) 限制。
  *
  * Usage:
  *   const { canAccess, isLocked, daysAllowed, userTier } = useAccessControl();
@@ -12,6 +16,7 @@
 
 import { useState, useEffect } from "react";
 import { getUserTier, UserTier } from "../lib/suppliers";
+import { isWithinTrial } from "../lib/userLifecycle";
 
 export const FREE_DAYS = 3; // anonymous users: today + 2 more
 
@@ -53,6 +58,8 @@ export function useAccessControl(): AccessControl {
   }, []);
 
   const userTier   = getUserTier();
+  // TICKET-037 §C — effectiveIsPremium 合并 trial. raw isPremium 不动.
+  const effectiveIsPremium = isPremium || (isLoggedIn && isWithinTrial());
   const daysAllowed = isLoggedIn ? 7 : FREE_DAYS;
 
   // Today's index: Mon=0 … Sun=6
@@ -66,7 +73,7 @@ export function useAccessControl(): AccessControl {
   return {
     userTier,
     isLoggedIn,
-    isPremium,
+    isPremium: effectiveIsPremium,  // §C 合并 trial → 下游 UI 视同 Pro
     daysAllowed,
     todayIdx,
     isDayLocked,

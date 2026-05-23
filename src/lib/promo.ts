@@ -42,17 +42,23 @@ export function isHelperRole(): boolean {
  * "Why is this user effectively Pro?" — one of:
  *   - 'paid'   they actually paid via Stripe (or dev-activated)
  *   - 'helper' the device is on the helper side
+ *   - 'trial'  inside the 30-day free trial window (TICKET-037 §C)
  *   - 'none'   none of the above; show paywall
  *
  * 'promo' is deliberately no longer returned — the promo path was retired.
  * Callers that switch on ProReason still compile (the type still includes
  * 'promo' for backward compat with the membership card / pricing copy),
  * but effectiveProReason() will never return it.
+ *
+ * TICKET-037 §C — `inTrial` 由 caller (subscription.readLocal) 传入,
+ * 避免本文件 import userLifecycle.ts 形成循环。trial 排在 paid / helper 之后 →
+ * 真付费 / helper 永不掉到 trial 桶, 30 天过期付费用户继续显示 'paid' 不变。
  */
-export type ProReason = 'paid' | 'promo' | 'helper' | 'none';
+export type ProReason = 'paid' | 'promo' | 'helper' | 'trial' | 'none';
 
-export function effectiveProReason(args: { paidIsPro: boolean }): ProReason {
+export function effectiveProReason(args: { paidIsPro: boolean; inTrial?: boolean }): ProReason {
   if (args.paidIsPro)   return 'paid';
   if (isHelperRole())   return 'helper';
+  if (args.inTrial)     return 'trial';
   return 'none';
 }

@@ -337,11 +337,11 @@ function useDailyTip() {
 }
 
 /**
- * TrialExpiredCard — shown on Home when a non-member's 7-day trial has
- * elapsed (user direction 2026-05-17: "用户可以一直打开，一周后再次
- * 打开就需要付费"). Replaces the daily menu / weekend dining surface
- * with a clear upgrade card. Members and within-trial users never see
- * this; first-session new users are always within trial.
+ * TrialExpiredCard — shown on Home when a non-member's 30-day trial has
+ * elapsed (TICKET-037: 老板 2026-05-23 拍板 trial 7→30 + 试用期全功能
+ * 开放). Replaces the daily menu / weekend dining surface with a clear
+ * upgrade card. Members and within-trial users never see this;
+ * first-session new users are always within trial.
  */
 function TrialExpiredCard({ onUnlock }: { onUnlock: () => void }) {
   return (
@@ -352,10 +352,10 @@ function TrialExpiredCard({ onUnlock }: { onUnlock: () => void }) {
       }}>
       <div className="text-[44px] mb-2">⭐</div>
       <h2 className="font-serif font-black text-white" style={{ fontSize: 22, lineHeight: 1.3 }}>
-        7 天免费试用结束啦
+        30 天免费试用结束啦
       </h2>
       <p className="mt-3 text-white/90" style={{ fontSize: 13, lineHeight: 1.6 }}>
-        感谢您这一周用爱吃。<br />
+        感谢您这一个月用爱吃。<br />
         续上爱吃 Pro，继续每天给您安排专属菜单 —<br />
         整周菜单 · 一步采购 · 米其林菜单 · 学校营养 · 节气养生。
       </p>
@@ -1191,8 +1191,8 @@ export default function Home() {
 
       <main className="flex flex-col gap-4 pt-2 pb-4 px-4">
 
-        {/* Trial-expired gate (2026-05-17 product spec). Non-members whose
-            7-day 试用期 has elapsed see a paywall card in place of any
+        {/* Trial-expired gate (TICKET-037: 30-day trial). Non-members whose
+            30-day 试用期 has elapsed see a paywall card in place of any
             menu surface. Members and within-trial users see the regular
             flow below. */}
         {isLoggedIn && !isPro && !isWithinTrial() ? (
@@ -1869,7 +1869,7 @@ export default function Home() {
 
         {/* TICKET-074 §F — Home 内嵌 Pro 推广卡已删除（避免与 Settings
             MembershipCard 重复 CTA）。Home 顶部 TrialExpiredCard (line ~1138)
-            仍保留作为 7 天试用过期的提示 banner — 它是 expected 终结提示，
+            仍保留作为 30 天试用过期的提示 banner — 它是 expected 终结提示，
             不是推广。 */}
 
         </>}  {/* end of weekday fragment — closes the isWeekend ternary */}
