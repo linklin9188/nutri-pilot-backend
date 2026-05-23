@@ -176,41 +176,29 @@ via `HOMETOWN_TO_DB_BUCKETS` but writes don't symmetrically propagate.
 Result: hometown shown in UI ≠ hometown used in scoring on edge cases,
 and any new field added to one side won't reach the other.
 
-### Smell 3 — `households`/`household_members` 嵌入查询与 RLS 与匿名 Auth 三方冲突
+### Smell 3 — `households`/`household_members` 嵌入查询与 RLS 与匿名 Auth 三方冲突 (B-1 RESOLVED 2026-05-19; verify 2026-05-23)
 
-⚠️ **原描述（"前端用 `WHERE user_id = ?` 查 → PostgREST 400"）不准确**。
-Backend 2026-05-19 全量 grep 验证：前端从未对 `households` / `household_members`
-用 `user_id` 查。所有查询用的都是 `employer_id` 或 `helper_id`，字段名与
-DB 对齐（见 `docs/DIAG_smell3_households.md` §1）。
+**B-1 已修复 2026-05-19**（migration 025 `b0458eb` + 026 `71bfc18`）。Database 2026-05-23
+工单 024 在 migration 077 跑 information_schema DO block verify 留证据，4 项全过：
 
-每次 Home mount 报 2-4 条 PostgREST 400 的真正根因有两个：
+- `household_members.helper_id` type = **text**（025 §3 ALTER COLUMN TYPE 已生效）
+- FK `household_members_helper_id_fkey` count = **1**（025 §4 ADD CONSTRAINT 已生效）
+- `households` + `household_members` 当前 policy = **2 条 anon-first FOR ALL `USING (true)`**
+  （`households_anon_full` + `household_members_anon_full`，025 §2 DROP 5 旧 auth.uid() policy
+  + §5 CREATE 2 条 FOR ALL 等价覆盖原 5 cmd 维度）
+- 残留孤儿 helper_id = **0 行**（025 §1 DELETE + FK CASCADE 保证）
 
-(a) **嵌入资源关系不存在** — `Home.tsx:425` 用 PostgREST 嵌入语法依赖
-    `household_members.helper_id → user_profiles` 的 FK，但此 FK **从未存在**
-    (migration 006 drop 了 `auth.users` FK，但 `user_profiles` FK 也没补上)。
-(b) **RLS 策略仍依赖 `auth.uid()`** — migration 001 给两张表的 RLS 全部是
-    `USING (auth.uid() = ...)`，与本项目的匿名 Auth 模型直接冲突，INSERT 静默失败。
+原 root-cause（保留历史参考）：
+- (a) 嵌入资源关系不存在 — `Home.tsx:425` PostgREST 嵌入依赖
+  `household_members.helper_id → user_profiles` FK，025 已补
+- (b) RLS 依赖 `auth.uid()` 与匿名 Auth 冲突，INSERT 静默失败 — 025 已替换为 USING (true)
 
-DB schema 重申（无变化）：
-- `households` = `id / employer_id / name / invite_code / created_at`（employer 拥有家庭）
-- `household_members` = `id / household_id / helper_id / status / ...`（保姆与家庭的关联）
-- 业务模型是"雇主雇佣保姆"，不是"用户拥有家庭"。前端代码层面已经按这个模型查，
-  问题在 DB 的 FK + RLS 两个补丁没跟上。
+**B-2 待办（Backend 部门，独立 ticket）**：`Home.tsx:425` 嵌入语法加 `!helper_id`
+alias hint；3 处 INSERT 加 error 兜底（不要 try/catch 吞错，让 PostgREST 真相露出）。
 
-**修复方向 B**（推荐，见 `docs/DIAG_smell3_households.md` §3 + Database 2026-05-19 P3 核查）：
-- **B-1 前置**：先把 `household_members.helper_id` 从 `uuid` 改成 `text`：
-  `ALTER TABLE household_members ALTER COLUMN helper_id TYPE text USING helper_id::text;`
-  （因为 `user_profiles.id` 是 `text`，类型不匹配不能直接加 FK）
-- **B-1 主体**（DB 部门）：
-  1. 先清洗孤儿数据：`DELETE FROM household_members WHERE helper_id::text NOT IN (SELECT id FROM user_profiles);`
-     （Database P3 实查发现 2 行 household_members 中 1 行 helper_id 无对应 user_profile，50% 孤儿率）
-  2. 加 FK：`ALTER TABLE household_members ADD CONSTRAINT household_members_helper_id_fkey FOREIGN KEY (helper_id) REFERENCES user_profiles(id) ON DELETE CASCADE;`
-     **FK 目标是 `user_profiles(id)`**（不是 `user_id`——该列不存在；也不是 `auth.users`——硬性不变量 #1）
-  3. DROP 5 条原 RLS policy（全部依赖 auth.uid()），CREATE 5 条 anon-first policy（`USING (true)` 或基于 application userId 应用层过滤）
-  4. 特别注意：原 migration 001 中 "helper can read household by invite code" 是 `USING (true)`，等于 households 全表对匿名读者开放——B-1 必须收紧（按 invite_code 或 helper_id 过滤）
-- **B-2**（Backend 部门）：`Home.tsx:425` 嵌入语法加 `!helper_id` hint；3 处 INSERT 加 error 兜底（不要 try/catch 吞错，让 PostgREST 真相露出）
-
-⚠️ 这套 B-1 SQL 草案已经吸收了 Database 2026-05-19 P3 实查发现的 §A 主键名 / §C 类型迁移 / §D 全开 RLS 三处偏离。落地前 Architect 还要做一次复审拍板。
+⚠️ 残留收紧建议（未来 ticket）：原 migration 001 "helper can read household by invite code"
+USING (true) 等于 households 全表对匿名读者开放；当前 anon-first FOR ALL 沿用此模型，
+真要做 RLS 收紧需要等 JWT 接入或 PostgREST RPC。
 
 ### Smell 4 — weekly_menu cache has no algo_version column (RESOLVED 2026-05-19)
 
