@@ -25,7 +25,7 @@ import pg from 'pg';
 import { config } from 'dotenv';
 config();
 
-// ── PROFILES — 5 个对比鲜明的偏好用户 ──────────────────────────────────────
+// ── PROFILES — 22 个对比鲜明的偏好用户 (TICKET-016 扩 5→20 + TICKET-021 扩到 22) ──
 interface ImagePrefs {
   protein_main_class?: string[];
   staple_pref?: string[];
@@ -96,6 +96,15 @@ const PROFILES: Profile[] = [
     imagePrefs: { protein_main_class: ['seafood'], oil_level: 'low', seafood_style: ['steam','soup'] } },
   { name: '20-独居老人-粤菜白肉',     hometown: 'cantonese', dietary_goal: 'maintain', taste_pref: 'light',
     imagePrefs: { protein_main_class: ['white'], oil_level: 'low', breakfast_cuisine: 'hk' } },
+  // ── TICKET-021 §A 扩 2 个 wellness-driven 场景 (CEO ticket 列举的 5 类中
+  //     未覆盖的 2 个: 备孕 / 控糖+控盐双病老人. 另 3 类 增肌/三代/HK 已由
+  //     #1/#11/#15 + #13/#14 + #7/#14/#19 覆盖) ───────────────────────────
+  { name: '21-备孕妈妈-江浙白肉',      hometown: 'east', dietary_goal: 'pregnancy', taste_pref: 'light',
+    imagePrefs: { protein_main_class: ['white'], oil_level: 'low',
+                  chicken_style: ['steam','braise'], staple_pref: ['rice'] } },
+  { name: '22-双病老人-控糖控盐',      hometown: 'cantonese', dietary_goal: 'maintain', taste_pref: 'light',
+    imagePrefs: { protein_main_class: ['white','seafood'], oil_level: 'low',
+                  seafood_style: ['steam','soup'], breakfast_cuisine: 'hk' } },
 ];
 
 // ── Hometown → DB bucket (镜像 src/lib/hometownBuckets.ts) ────────────────
@@ -441,7 +450,7 @@ async function main() {
               oil_level, cook_method, is_vegan, health_score, times_kept_in_menu, meal_type
        FROM dishes WHERE title_zh IS NOT NULL AND meal_type IN ('lunch','dinner','all') LIMIT 1200`
     );
-    console.log(`\n=== algo-quality-sim — TICKET-020 20-profile A/B simulation (ALGO_VERSION v58: lunch/dinner 切 slots[] + weekStats edge fn 真接口) ===`);
+    console.log(`\n=== algo-quality-sim — TICKET-021 22-profile A/B simulation (ALGO_VERSION v58 持平: §A profile 扩 20→22 (+ 备孕 + 双病老人), §B NUTRIENT_BOOL_FALLBACK audit) ===`);
     console.log(`pool: breakfast=${breakfastPool.length} | lunch+dinner=${lunchDinnerPool.length}\n`);
 
     // baseline: 看 DB 整体 protein_main_class / oil_level 分布
@@ -570,6 +579,75 @@ async function main() {
       const m = computeMetrics(picks, PROFILES[0]);
       console.log(`  run ${i+1}: target_pmc=${pct(m.target_pmc)}  target_oil=${pct(m.target_oil)}  target_cuisine=${pct(m.target_cuisine)}`);
     }
+
+    // ─── TICKET-021 §B NUTRIENT_BOOL_FALLBACK 7 映射 audit ──────────────────
+    //
+    // v58 deriveBadges 💪 channel 期望 dish.atomic_nutrition[nut] > 0 (atomic 真值
+    // 优先), 但 dishes schema 实际是独立列 iron_mg / calcium_mg / vitamin_d_iu /
+    // omega3_mg / zinc_mg / fiber_g / vitamin_c_mg (migrations 064 + 075), 不存在
+    // 单一 atomic_nutrition JSON 列。本 audit 用 SQL 直查实际列填充率, 对比 v58
+    // reader 假设的"atomic JSON"路径, 量化两条路径的真实数据可用性, 并 flag
+    // 给 Algorithm 022 修 reader (本棒 §C 明示不动 reader 不 bump)。
+    console.log(`\n【TICKET-021 §B NUTRIENT_BOOL_FALLBACK audit — Backend 021 atomic 真数据 vs v58 reader】`);
+
+    const { rows: atomicAudit } = await c.query<any>(
+      `SELECT
+         COUNT(*)                                            AS total,
+         COUNT(iron_mg)        FILTER (WHERE iron_mg > 0)     AS iron_filled,
+         COUNT(calcium_mg)     FILTER (WHERE calcium_mg > 0)  AS calcium_filled,
+         COUNT(vitamin_c_mg)   FILTER (WHERE vitamin_c_mg > 0) AS vitc_filled,
+         COUNT(fiber_g)        FILTER (WHERE fiber_g > 0)     AS fiber_filled,
+         COUNT(zinc_mg)        FILTER (WHERE zinc_mg > 0)     AS zinc_filled,
+         COUNT(vitamin_d_iu)   FILTER (WHERE vitamin_d_iu > 0) AS vitd_filled,
+         COUNT(omega3_mg)      FILTER (WHERE omega3_mg > 0)    AS omega3_filled,
+         COUNT(*) FILTER (WHERE is_blood_tonic)         AS blood_tonic_n,
+         COUNT(*) FILTER (WHERE is_eye_care)            AS eye_care_n,
+         COUNT(*) FILTER (WHERE is_anti_aging)          AS anti_aging_n,
+         COUNT(*) FILTER (WHERE is_anti_inflammation)   AS anti_inflam_n,
+         COUNT(*) FILTER (WHERE is_qi_tonic)            AS qi_tonic_n,
+         COUNT(*) FILTER (WHERE is_low_sugar)           AS low_sugar_n,
+         COUNT(*) FILTER (WHERE is_mood_boost)          AS mood_boost_n
+       FROM dishes WHERE title_zh IS NOT NULL`
+    );
+    const a = atomicAudit[0];
+    const total = Number(a.total);
+    console.log(`  dishes total (title_zh non-null): ${total}`);
+    console.log(`  ─── atomic 真值列填充率 (Backend 021 ship) ───`);
+    const atomicCols: Array<[string, string, string]> = [
+      ['iron',      'iron_mg',      a.iron_filled],
+      ['calcium',   'calcium_mg',   a.calcium_filled],
+      ['vitamin_c', 'vitamin_c_mg', a.vitc_filled],
+      ['fiber',     'fiber_g',      a.fiber_filled],
+      ['zinc',      'zinc_mg',      a.zinc_filled],
+      ['vitamin_d', 'vitamin_d_iu', a.vitd_filled],
+      ['omega3',    'omega3_mg',    a.omega3_filled],
+    ];
+    for (const [nut, col, filled] of atomicCols) {
+      const n = Number(filled);
+      const fillPct = total > 0 ? (n / total * 100).toFixed(1) : 'N/A';
+      console.log(`    ${nut.padEnd(11)} (${col.padEnd(13)}): ${String(n).padStart(4)}/${total} = ${fillPct}%`);
+    }
+    console.log(`  ─── NUTRIENT_BOOL_FALLBACK 7 映射兜底覆盖率 ───`);
+    const boolCols: Array<[string, string, string]> = [
+      ['iron',      'is_blood_tonic',                    a.blood_tonic_n],
+      ['calcium',   'is_blood_tonic + is_eye_care',      a.blood_tonic_n], // 取交集近似上界
+      ['vitamin_d', 'is_eye_care',                       a.eye_care_n],
+      ['omega3',    'is_anti_aging|is_anti_inflam',      a.anti_aging_n],
+      ['zinc',      'is_qi_tonic',                       a.qi_tonic_n],
+      ['protein',   'is_qi_tonic',                       a.qi_tonic_n],
+      ['fiber',     'is_low_sugar',                      a.low_sugar_n],
+    ];
+    for (const [nut, mapping, n] of boolCols) {
+      const nNum = Number(n);
+      const cov = total > 0 ? (nNum / total * 100).toFixed(1) : 'N/A';
+      console.log(`    ${nut.padEnd(11)} (${mapping.padEnd(40)}): ${String(nNum).padStart(4)}/${total} = ${cov}%`);
+    }
+    console.log(`  ─── ⚠️ AUDIT 发现 ───`);
+    console.log(`  v58 deriveBadges 读路径: dish.atomic_nutrition[nut] (JSON 字段)`);
+    console.log(`  DB schema 实际: 独立列 iron_mg / calcium_mg / vitamin_d_iu / omega3_mg / zinc_mg / fiber_g / vitamin_c_mg`);
+    console.log(`  → 当前 100% deficits 命中走 NUTRIENT_BOOL_FALLBACK 路径, atomic 真值未被消费`);
+    console.log(`  → Algorithm 022 需修 reader: \`dish.iron_mg > 0\` / \`dish.vitamin_d_iu > 0\` 等独立列查询`);
+    console.log(`  → Backend 021 ship 的 92.4% atomic fill 目前 atomic 路径 0% 触达 (column shape mismatch)`);
 
     // ─── TICKET-020 §B weekStats deriveBadges 💪 channel unit smoke ───
     console.log(`\n【TICKET-020 §B weekStats 💪 channel smoke — nutrient match + fallback】`);

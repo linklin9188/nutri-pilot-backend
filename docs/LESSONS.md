@@ -363,3 +363,24 @@
   - sim 加 unit smoke 覆盖"接口空"和"接口有数据"两种 case (本棒 weekStats smoke 6 case 含两种)
 - **复用避免**：接任何外部接口 (跨部门 / 跨服务), 默认实现 fetch-fail + data-empty 两层 fallback, 单元 smoke 同时覆盖两种 case。
 - **来源**：2026-05-22 HKT 14:35 TICKET-020 §B weekStats 接入 commit (Algorithm 020)
+
+### atomic-nutrition-column-shape-mismatch-bug — v58 💪 channel 双路径全死路 (audit P0 finding)
+- **场景**：2026-05-23 HKT TICKET-021 §B NUTRIENT_BOOL_FALLBACK audit。Algorithm v58 (TICKET-020 ship) deriveBadges 💪 channel 假设 `dish.atomic_nutrition[nut] > 0` 读 JSON 字段; SQL audit 发现 dishes schema **不存在 atomic_nutrition JSON 列**, 实际是独立列 `iron_mg` / `calcium_mg` / `vitamin_d_iu` / `omega3_mg` / `zinc_mg` (migrations 064 + 075 创建)。
+- **更严重的并发踩坑**：NUTRIENT_BOOL_FALLBACK 7 映射的 wellness bool 列 (`is_blood_tonic` / `is_eye_care` / `is_anti_aging` / `is_qi_tonic` / `is_mood_boost` / `is_low_sugar` 等) **DB 全部 0/924 = 0% 填充**。Algorithm 假设这些 boolean 列已有数据可兜底, 但实际从未被 fill。
+- **代价**：v58 ship 后 💪 channel:
+  - weekDeficits 非空时 (Backend 020 weekStats ACTIVE) → atomic 路径死 (column 不存在) + bool fallback 死 (列空) → **0 命中**
+  - weekDeficits 空时 (Database 021 meal_logs 还没建) → placeholder `is_qi_tonic` / `is_mood_boost` → **同样 0 命中** (列空)
+  - 用户 ship 后看到的 💪 badge: **永远 0 个** (虽然 5-channel 接口契约 ship)
+- **教训**：
+  - 接 schema 假设的字段前**必须先 SQL 验证字段存在 + 数据填充率**, 不能从 ticket 文本"Backend ship X 列 92.4% fill"推断字段名
+  - JSON vs 独立列是常见 schema misunderstanding — 跨部门接口必须 schema 文档明示
+  - wellness bool 列 0% 填充是 dead schema 信号 (LESSONS 已有 `onboarding-completion-not-equal-data-collection` 系列), 不应该作算法 fallback 路径基石
+  - audit ticket 的最大价值是**揭露 ship 后的隐藏死路** — TICKET-021 §B audit 是 P0 救命, 不只是"调优 微调"
+- **修复方向 (Algorithm 022)**：
+  1. NUTRIENT_COLUMN_MAP: `{ iron: 'iron_mg', calcium: 'calcium_mg', vitamin_d: 'vitamin_d_iu', omega3: 'omega3_mg', zinc: 'zinc_mg', fiber: 'fiber_g', vitamin_c: 'vitamin_c_mg' }`
+  2. deriveBadges 💪 channel 读 `dish[NUTRIENT_COLUMN_MAP[nut]] > 0`
+  3. 删 NUTRIENT_BOOL_FALLBACK 路径 (列 0% 填充无意义, 误导)
+  4. placeholder fallback 也撤 (qi_tonic 等列 0% 填充, 同上)
+  5. 真路径死了 → 退渲染层 default badge (e.g. "今日推荐") 而非空 — 但这是 UI 决策
+- **复用避免**：所有依赖 DB 列的 algo 路径上线前, 必须有 SQL audit 证明列存在 + ≥某阈值填充。CI sim 加 column existence + fill rate check 是长期解法。
+- **来源**：2026-05-23 HKT 03:00 TICKET-021 §B audit (Algorithm 021, 触发 Algorithm 022 P0 reader fix)
