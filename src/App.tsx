@@ -30,6 +30,7 @@ import WeChatCallback from './pages/WeChatCallback';
 import WeChatIn from './pages/WeChatIn';
 import Privacy from './pages/Privacy';
 import Terms from './pages/Terms';
+import About from './pages/About';
 import RequireAuth from './components/RequireAuth';
 import NetworkBanner from './components/NetworkBanner';
 import { syncFavoritesFromCloud } from './lib/favorites';
@@ -88,6 +89,14 @@ function RootRedirect() {
       'veggie_method', 'oil_level', 'breakfast_cuisine',
     ].forEach(axis => localStorage.removeItem(`${axis}_custom_text`));
     return <Navigate to="/login" replace />;
+  }
+
+  // TICKET-032 — `?ref=<inviterId>` 朋友点开链接：未登录 → /about 介绍页
+  // (preserve ref query). 已登录 = 自家老用户 / 老板自检, 跳过直接走 Home 路径。
+  // /about route 本身可独立访问 (登录后老板自检也能看)。
+  const refParam = params.get('ref');
+  if (refParam && !localStorage.getItem('userId') && !localStorage.getItem('nutri_user_id')) {
+    return <Navigate to={`/about?ref=${encodeURIComponent(refParam)}`} replace />;
   }
 
   // TICKET-005 §E — β 老用户 onboarding_v3 强制重做。v3 图片驱动 onboarding
@@ -195,6 +204,8 @@ function AppShell() {
       <Route path="/pricing" element={<Pricing />} />
       <Route path="/privacy" element={<Privacy />} />
       <Route path="/terms" element={<Terms />} />
+      {/* TICKET-032 — landing page for share-link recipients (?ref=<inviterId>). */}
+      <Route path="/about" element={<About />} />
 
       {/* ── Auth-gated — 所有消耗 AI token 或修改状态的功能 ──────
           匿名用户访问会被弹回 /login (helper 路径弹回 /login?role=helper)。

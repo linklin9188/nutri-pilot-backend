@@ -36,9 +36,11 @@ export default function ShareCard({ userId, compact = false }: ShareCardProps) {
   // ref query param drives future Backend 024 tracking — included now so
   // links shipped today are already trackable when backend lights up.
   const origin = typeof window !== 'undefined' ? window.location.origin : 'https://nothinkeats.com';
+  // TICKET-032 §C — share link 改进 /about?ref=<uid> 让朋友落地介绍页 (而非 Home).
+  // Backward compat: 老链接 `?ref=` 进 / 由 RootRedirect 自动跳 /about, 不破历史.
   const link = uid
-    ? `${origin}/?ref=${encodeURIComponent(uid)}`
-    : `${origin}/`;
+    ? `${origin}/about?ref=${encodeURIComponent(uid)}`
+    : `${origin}/about`;
   const hook = t(
     'Family meal planning that actually saves time. Aieats AI plans your week with what your family eats.',
     '让做饭省心 — Aieats 一周菜单 AI 推荐，全家爱吃的菜配齐了。',
