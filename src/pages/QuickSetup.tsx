@@ -60,12 +60,12 @@ const QUESTIONS_V3: QuestionV3[] = [
     multi: true,
     minSelect: 1,
     cols: 2,
-    // UI 025 §A: 拼盘 → 具体菜。img reuse 现有图 (q1_beef_stew / chicken / seafood / veg)
-    // — Backend 022 ship 后 UI 026 swap 为 q1_beef_stew/chicken_poached/shrimp 新图。
+    // UI 028 §B: img swap 至 Backend 022 §B ship 的 3 张 Gemini 生图
+    // (q1_beef_stew / q1_chicken_poached / q1_shrimp). veggie/other 不动。
     options: [
-      { value: 'red_meat',   label: '红肉系', desc: '炖牛腩 · 红烧肉 · 羊肉',  img: '/onboarding/q4_beef_stew.jpg' },
-      { value: 'white_meat', label: '白肉系', desc: '白切鸡 · 三杯鸡 · 鸭',     img: '/onboarding/q1_chicken.jpg' },
-      { value: 'seafood',    label: '海鲜系', desc: '虾 · 蟹 · 鱼 · 贝',        img: '/onboarding/q1_seafood.jpg' },
+      { value: 'red_meat',   label: '红肉系', desc: '炖牛腩 · 红烧肉 · 羊肉',  img: '/onboarding/q1_beef_stew.jpg' },
+      { value: 'white_meat', label: '白肉系', desc: '白切鸡 · 三杯鸡 · 鸭',     img: '/onboarding/q1_chicken_poached.jpg' },
+      { value: 'seafood',    label: '海鲜系', desc: '虾 · 蟹 · 鱼 · 贝',        img: '/onboarding/q1_shrimp.jpg' },
       { value: 'veggie',     label: '素食',   desc: '豆腐 · 蔬菜',              img: '/onboarding/q1_veg.jpg' },
       { value: 'other',      label: '✏️ 其他', desc: '自填',                    emoji: '✏️' },
     ],
