@@ -435,7 +435,7 @@ export default function Home() {
   }, [weeklyMenu]);
 
   // ── Language + cuisine prefs ─────────────────────────────────────
-  const { language, cycleLanguage, isChinese, setLanguage, t4 } = useLanguage();
+  const { language, cycleLanguage, isChinese, setLanguage, t, t4 } = useLanguage();
   // TICKET-037 §C — language picker overlay + post-switch toast. cycleLanguage
   // kept available as a fallback (we still wire the button to it on legacy
   // contexts that haven't migrated to the picker UX).
@@ -1226,7 +1226,10 @@ export default function Home() {
                     color: mealTime === m ? "#1a1a1a" : "rgba(0,0,0,0.42)",
                     boxShadow: mealTime === m ? "0 2px 8px rgba(0,0,0,0.08)" : "none",
                   }}>
-                  {m}
+                  {/* TICKET-030 §A — meal tab i18n: zh native, en simple labels */}
+                  {isChinese
+                    ? m
+                    : (m === '早餐' ? 'Breakfast' : m === '午餐' ? 'Lunch' : 'Dinner')}
                 </button>
               ))}
             </div>
@@ -1615,8 +1618,8 @@ export default function Home() {
                           }}
                           title={
                             eatenSet.has(dish.id)
-                              ? (ratedDishIds.has(dish.id) ? '今天已做' : '已吃 · 点击取消')
-                              : '我做了 (做完点这里评分)'
+                              ? (ratedDishIds.has(dish.id) ? t('Done today', '今天已做') : t('Ate · tap to undo', '已吃 · 点击取消'))
+                              : t('I made this (tap to rate after)', '我做了 (做完点这里评分)')
                           }>
                           <span className="material-symbols-outlined" style={{
                             fontSize: 14,
