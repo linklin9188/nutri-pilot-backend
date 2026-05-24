@@ -10,12 +10,14 @@ import LanguageSwitcher from "../components/LanguageSwitcher";
 
 // TICKET-038 REVISED — about hero 合并 login (老板拍板漏斗 -1 页). 5 lang
 // 全配 (zh/zh-Hant/en/tl/id). 不用 t() / t4() 因 zh-Hant 字形独立。
+// TICKET-040 — eyebrow 简化为 "爱吃 Aieats" (原 "AIEATS · 妈妈们的智能菜单"
+// 跟 H1 重复). H1 / sub 不动.
 const LOGIN_HERO: Record<Language, { eyebrow: string; h1: string; sub: string }> = {
-  "zh":      { eyebrow: "AIEATS · 妈妈们的智能菜单",          h1: "妈妈们的智能菜单",          sub: "按节气推应季菜 · 同步校园菜谱 · 给宝贝不重复的营养呵护" },
-  "zh-Hant": { eyebrow: "AIEATS · 媽媽們的智能菜單",          h1: "媽媽們的智能菜單",          sub: "按節氣推應季菜 · 同步校園菜譜 · 給寶貝不重複的營養呵護" },
-  "en":      { eyebrow: "AIEATS · Smart Menu for Moms",       h1: "Smart menu for moms",       sub: "Seasonal recipes by solar terms · aligned with school cafeteria · no-repeat nutrition for your baby." },
-  "tl":      { eyebrow: "AIEATS · Smart Menu para sa Nanay",  h1: "Smart menu para sa nanay",  sub: "Mga seasonal na recipe · ka-aligned ng school cafeteria · walang-ulit na nutrisyon para sa anak mo." },
-  "id":      { eyebrow: "AIEATS · Menu Pintar untuk Mama",    h1: "Menu pintar untuk mama",    sub: "Resep musiman · selaras dengan kafetaria sekolah · nutrisi tanpa pengulangan untuk si kecil." },
+  "zh":      { eyebrow: "爱吃 Aieats", h1: "妈妈们的智能菜单",          sub: "按节气推应季菜 · 同步校园菜谱 · 给宝贝不重复的营养呵护" },
+  "zh-Hant": { eyebrow: "愛吃 Aieats", h1: "媽媽們的智能菜單",          sub: "按節氣推應季菜 · 同步校園菜譜 · 給寶貝不重複的營養呵護" },
+  "en":      { eyebrow: "Aieats",      h1: "Smart menu for moms",       sub: "Seasonal recipes by solar terms · aligned with school cafeteria · no-repeat nutrition for your baby." },
+  "tl":      { eyebrow: "Aieats",      h1: "Smart menu para sa nanay",  sub: "Mga seasonal na recipe · ka-aligned ng school cafeteria · walang-ulit na nutrisyon para sa anak mo." },
+  "id":      { eyebrow: "Aieats",      h1: "Menu pintar untuk mama",    sub: "Resep musiman · selaras dengan kafetaria sekolah · nutrisi tanpa pengulangan untuk si kecil." },
 };
 
 interface ChannelChip {
