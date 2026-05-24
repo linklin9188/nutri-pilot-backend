@@ -8,7 +8,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchSwapOptions, type SupabaseDish } from "../hooks/useSupabaseMenu";
 import { useWeeklyMenu, isWeekend, todayDayIndex } from "../hooks/useWeeklyMenu";
-import { isNewUserSession, isWithinTrial } from "../lib/userLifecycle";
+import { isWithinTrial } from "../lib/userLifecycle";
 import WeekendDiningReport from "../components/WeekendDiningReport";
 import {
   analyzeFridgePhoto, fileToBase64,
@@ -1118,10 +1118,16 @@ export default function Home() {
             }}>
               {dateLabel}
             </p>
+            {/* TICKET-050 §A — 周末 hero "周末好，出门换换口味吧" (橙黑配)，
+                替换工作日 "{greeting}，开饭啦"。9 字 vs 7 字，fontSize 26 防溢出。 */}
             <h1 className="font-serif font-black mt-1" style={{
-              fontSize: 30, color: "#1a1a1a", letterSpacing: "-0.01em", lineHeight: 1.05,
+              fontSize: isWeekend() ? 26 : 30, color: "#1a1a1a", letterSpacing: "-0.01em", lineHeight: 1.05,
             }}>
-              {greeting}，<span style={{ color: "#FF5A1F" }}>{t4("let's eat", '开饭啦', 'kain na', "ayo makan")}</span>
+              {isWeekend() ? (
+                <>{t('Weekend, ', '周末好，')}<span style={{ color: "#FF5A1F" }}>{t('eat out today', '出门换换口味吧')}</span></>
+              ) : (
+                <>{greeting}，<span style={{ color: "#FF5A1F" }}>{t4("let's eat", '开饭啦', 'kain na', "ayo makan")}</span></>
+              )}
             </h1>
             {/* Solar term + weather as a single inline row, no chip clutter */}
             <p className="mt-2 flex items-center gap-2 flex-wrap" style={{ fontSize: 11.5, color: "rgba(0,0,0,0.55)" }}>
@@ -1256,16 +1262,17 @@ export default function Home() {
           <TrialExpiredCard onUnlock={() => navigate('/pricing')} />
         ) : (<>
 
-        {/* Weekend (Sat/Sun) → swap menu surface (user-confirmed 2026-05-17):
-            1) "出门换换口味" hero + 本周饭桌+缺什么合一框 + 5 家餐厅推荐
-            2) 简化的"下周菜单"nav card 跳 /weekly
-            Mon-Fri continues to render the full meal flow below.
+        {/* TICKET-050 §A — 周末 (Sat/Sun) 全删工作日菜单 surface：
+            1) 顶部 weekendSection (5 餐厅卡 + 查看链接，TICKET-048 已 ship)
+            2) header hero "周末好，出门换换口味吧" (本 ticket 上方改)
+            3) main 内仅渲染 <WeekendDiningReport /> (本周吃过 diary + 外食建议)
+            4) 早午晚 tab / 中港西 tab / "晚餐还没菜单" / 生成菜单按钮 / 营养
+               strip / 工作日餐厅 nav 等整段隐藏。
 
-            New-user gate (2026-05-17): first-ever session always sees the
-            daily-menu surface regardless of weekday — restaurant recs are
-            a "returning user" reward. Second login onward, the weekend
-            branch kicks in. */}
-        {(isWeekend() && !isNewUserSession()) ? <>
+            new-user gate (`!isNewUserSession()`) 2026-05-24 老板拍板移除：
+            周末 = 周末，不论是不是首次登录。restaurant recs 不再是
+            "returning user 奖励"，而是周末家庭自由发挥的默认 surface。 */}
+        {isWeekend() ? <>
           <WeekendDiningReport />
           {/* TICKET-049 — 删 NextWeekMenuPreview "下周菜单" nav card (老板拍板
               下周菜单在 /weekly 页面显示，首页周末分支不再有 menu 导航入口)。 */}
