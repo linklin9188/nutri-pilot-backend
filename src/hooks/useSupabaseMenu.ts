@@ -691,15 +691,48 @@ export function isWholegrain(d: any): boolean {
 }
 
 
-// ── Swap options: same course_type FIRST, prefer same main_ingredient ────
+// ── Swap options: course_type + protein FAMILY hard match ────────────────
 //
-// 原则：换菜后必须是"功能等价"的菜 — 汤换汤、主食换主食、蔬菜换蔬菜。
-// 之前只过滤 main_ingredient 导致 "西班牙冷汤" (veggie/soup) 的替换池里
-// 出现 "炒青菜" 这种非汤的 veggie 菜，搭配整体失衡。
+// 原则：换菜后必须是"功能等价 + 同主蛋白大类"的菜 — 鱼换鱼 / 鸡换鸡 /
+// 牛换牛 / 蔬菜换蔬菜。汤换汤、主食换主食。
 //
-// 现在两层：
-//   1. 硬过滤：course_type 必须相同（如果有）
-//   2. 软偏好：同 main_ingredient 排前面，不同的洗牌排后面
+// 历史 bug (TICKET-031b 2026-05-24)：原算法只硬过滤 course_type，把
+// main_ingredient 退化成软排序。结果"红烧鲫鱼 (fish, main_protein)"点换菜
+// 出来 3 个候选是大盘鸡 / 意式柠檬鸡 / 葱烧海参 (chicken + other) — 因为
+// 同 course_type='main_protein' 的鸡禽菜远多于鱼，软排序根本兜不住。
+//
+// 修复方案 (3 层):
+//   1. course_type 硬过滤 (汤换汤)
+//   2. protein FAMILY 硬过滤 (主蛋白大类 — fish 族 / poultry 族 / 牛 /
+//      猪 / 羊 / 海鲜 / 豆制品 / 蛋 / 蔬菜)。被换菜可映射到明确 family
+//      时, 候选必须同 family OR family='' (兼容 main_ingredient='other'
+//      的菜 — DB 有 218 道 'other', 不能一刀切排除)。
+//   3. 同 main_ingredient 软排序前置 (鱼优先 fish > salmon > seabass)
+//
+// Safety net: 同 family 候选 < count 时, 仍允许 'other' family 兜底, 但
+// 绝不允许跨族肉 (fish 池绝不出鸡 / 牛 / 猪)。
+
+/**
+ * 把 main_ingredient 映射到 protein family 大类.
+ *
+ * 与 useWeeklyMenu._proteinClassOf 同源 (red/white/seafood/veg) 但本地化
+ * 在此避免跨 hook 循环 import. 任何修改必须同步两处。
+ *
+ * 返回 '' 表示"未知 family", 用于 main_ingredient='other' / 'carb' /
+ * 'dessert' / 'fruit' / 'rice' / 'grain' / 'dairy' 等非主蛋白类目 — 这些
+ * 在 swap 时不参与 family 硬过滤 (走 course_type only)。
+ */
+function proteinFamilyOf(mi: string | null | undefined): string {
+  if (!mi) return '';
+  const m = mi.toLowerCase();
+  if (['beef', 'pork', 'lamb'].includes(m)) return 'red';
+  if (['chicken', 'duck', 'turkey', 'poultry'].includes(m)) return 'white';
+  if (['fish', 'shrimp', 'crab', 'squid', 'scallop', 'clam', 'oyster',
+       'salmon', 'tuna', 'cod', 'seabass', 'hairtail', 'shellfish',
+       'seafood'].includes(m)) return 'seafood';
+  if (['tofu', 'egg', 'soy', 'mushroom', 'veggie', 'vegetable', 'bean'].includes(m)) return 'veg';
+  return '';
+}
 
 export async function fetchSwapOptions(
   currentDish: SupabaseDish,
@@ -707,6 +740,7 @@ export async function fetchSwapOptions(
 ): Promise<SupabaseDish[]> {
   const ingredient = currentDish.main_ingredient;
   const courseType = currentDish.course_type;
+  const currentFamily = proteinFamilyOf(ingredient);
 
   // Pull current user prefs so the swap drawer respects the SAME
   // allergen/spice gates the main recommend hook applies. Without this
@@ -719,7 +753,7 @@ export async function fetchSwapOptions(
     .from('dishes')
     .select(DISH_FIELDS)
     .neq('id', currentDish.id)
-    .limit(count * 12); // fetch extra so hardFilter has room to survive
+    .limit(count * 20); // fetch extra so family + hardFilter has room to survive
 
   // ── Hard: same course_type ──
   // soup → soup, staple → staple, main_protein → main_protein,
@@ -745,11 +779,43 @@ export async function fetchSwapOptions(
   );
   const pool = filtered.length > 0 ? filtered : data;  // fall back to unfiltered if pool emptied
 
+  // ── HARD: same protein family (TICKET-031b 鱼换鱼不换鸡) ──
+  // 只在被换菜有明确 family 时才执行 — 否则 (carb / dessert / fruit /
+  // grain 等 non-protein course) 跳过 family 过滤, 仍走原 course_type only.
+  let familyPool = pool;
+  if (currentFamily) {
+    // 同 family OR 候选 family='' (main_ingredient='other'/null — 兼容
+    // DB 218 道未细分但可能确实是鱼 / 鸡的菜, 让它们仍可参与, 不一刀切)
+    const sameFamilyOrUnknown = pool.filter(d => {
+      const f = proteinFamilyOf(d.main_ingredient);
+      return f === currentFamily || f === '';
+    });
+    // 同 family 强候选 (排除 unknown)
+    const strictSameFamily = pool.filter(d => proteinFamilyOf(d.main_ingredient) === currentFamily);
+
+    // 优先用 strictSameFamily 池; 不够 count 个再补 unknown; 最后才让 pool
+    // 退到 cross-family (但日志层面这应该极少发生)
+    if (strictSameFamily.length >= count) {
+      familyPool = strictSameFamily;
+    } else if (sameFamilyOrUnknown.length >= count) {
+      familyPool = sameFamilyOrUnknown;
+    } else {
+      // 同 family + unknown 都凑不够 count — 仍优先取 same family + unknown
+      // 在前, 跨 family 殿后 (兼容 0 候选场景, 但不会把鸡当首选)
+      const crossFamily = pool.filter(d => {
+        const f = proteinFamilyOf(d.main_ingredient);
+        return f !== '' && f !== currentFamily;
+      });
+      familyPool = [...sameFamilyOrUnknown, ...crossFamily];
+    }
+  }
+
   // ── Soft: prefer same main_ingredient ──
   // E.g. swapping 红烧肉 (pork) prefers 糖醋里脊 (pork) over 葱油鸡 (chicken),
-  // but both are valid main_protein swaps.
-  const sameIng  = pool.filter(d => d.main_ingredient === ingredient);
-  const otherIng = pool.filter(d => d.main_ingredient !== ingredient);
+  // 但 family 过滤已经把鸡排除了, 软排序现在主要在族内细分排序 (鱼内
+  // fish > salmon > seabass)。
+  const sameIng  = familyPool.filter(d => d.main_ingredient === ingredient);
+  const otherIng = familyPool.filter(d => d.main_ingredient !== ingredient);
   const ordered = [
     ...sameIng.sort(() => Math.random() - 0.5),
     ...otherIng.sort(() => Math.random() - 0.5),
