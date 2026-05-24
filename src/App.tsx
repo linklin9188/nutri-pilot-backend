@@ -47,15 +47,23 @@ const CandidateGridProto = import.meta.env.DEV
   : null;
 
 
-// Smart entry point for "/". Anonymous-first: visitors don't need to log in
-// to use the app. QuickSetup creates a local anonymous userId on completion
-// (test-phase pattern preserved). /login is still routable for users who
-// choose to attach a real account once social providers come online.
+// Smart entry point for "/".
+//
+// TICKET-030 P0 (老板真测 2026-05-24) — 未登录用户必须先看 /login，不再直接
+// 把匿名访客送到 /setup。原 anonymous-first 模型（QuickSetup 内部 crypto
+// .randomUUID() 写 userId）让用户跳过 login 关口，老板要求恢复 login 第一
+// 关。判定 "未登录" 用 getUserId()（custom auth invariant: userId 在
+// localStorage，CLAUDE.md hard rule）。
 //
 // Flow:
-//  • Helper role (set via /login?role=helper) → /helper
-//  • No quickPrefs yet                         → /setup (anonymous onboarding)
-//  • Has quickPrefs                            → Home
+//  • ?fresh=1                                  → /login (清登录态)
+//  • ?ref=xxx                                  → /login?ref= (推广链接)
+//  • 微信 silent re-auth pending               → 等候 page (auto redirect)
+//  • 无 userId (getUserId() === null)          → /login  ← 新关口
+//  • v3 升级路径 (老 prefs 没 v3 done)         → /setup
+//  • role=helper                               → /helper
+//  • 已登录 + 有 quickPrefs                    → Home
+//  • 已登录 + 无 quickPrefs                    → /setup (onboarding)
 function RootRedirect() {
   // TICKET-070 §C + UI 015 §M — ?fresh=1 强制 fresh restart（清登录态 + 偏好 +
   // onboarding 状态），用于 Chrome 自动化 20 profile QA 测试 + CEO 看 Login 页。
@@ -132,6 +140,14 @@ function RootRedirect() {
         </div>
       </div>
     );
+  }
+
+  // TICKET-030 P0 (老板真测) — 未登录用户必须先过 /login 关口，不再直接
+  // 进 onboarding (/setup)。getUserId() 是 custom-auth 登录态唯一判定
+  // (CLAUDE.md hard rule: userId 在 localStorage)。微信 silent re-auth
+  // 跑在这之前，所以微信用户不会被错误踢回 login。
+  if (!getUserId()) {
+    return <Navigate to="/login" replace />;
   }
 
   const role = localStorage.getItem("nutri_role");
