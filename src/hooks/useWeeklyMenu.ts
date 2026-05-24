@@ -835,6 +835,80 @@ export function getCacheKey(weekStart: string): string {
   return `weekly_menu_${ALGO_VERSION}_${weekStart}_p${dishesPerDay}_c${cuisineKey}_e${eatingKey}_i${intentKey}_x${ccKey}${crKey}${byDayKey}`;
 }
 
+// §A (TICKET-030) localStorage quota 防爆 — 老板 15:35 F12 真测发现旧版本 cache
+// 累积导致 setItem QuotaExceededError, menu state 永卡 loading. 替代 raw
+// localStorage.setItem 调用. 5MB quota 用满后:
+//   1. 先清同 prefix 旧版本 cache (weekly_menu_v* 不等于当前 ALGO_VERSION)
+//   2. 再 retry 写新 cache
+//   3. 仍失败 → 不抛错让 React 状态卡, 只 console.warn 跳过 (内存中 menu 仍渲染)
+function safeSetWeeklyMenuCache(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch (e) {
+    const isQuotaErr = (e as any)?.name === 'QuotaExceededError'
+      || (e as any)?.code === 22
+      || (e as any)?.code === 1014;  // Firefox NS_ERROR_DOM_QUOTA_REACHED
+    if (!isQuotaErr) {
+      console.warn('[useWeeklyMenu] localStorage.setItem non-quota error:', e);
+      return;
+    }
+    // 清旧版本 cache (任何 weekly_menu_v* 不属于当前 ALGO_VERSION)
+    try {
+      const currentPrefix = `weekly_menu_${ALGO_VERSION}_`;
+      const toRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('weekly_menu_v') && !k.startsWith(currentPrefix)) {
+          toRemove.push(k);
+        }
+      }
+      for (const k of toRemove) localStorage.removeItem(k);
+      console.warn(`[useWeeklyMenu] localStorage quota — cleared ${toRemove.length} stale cache keys, retrying`);
+      localStorage.setItem(key, value);
+    } catch (retryErr) {
+      // 仍失败 (e.g. clear 后单 value 仍 >5MB, 或 clear 失败) → 不阻塞 React 状态
+      console.warn('[useWeeklyMenu] localStorage write fail after cleanup, skip:', retryErr);
+    }
+  }
+}
+
+// §B (TICKET-030) entry-level cleanup — mount 时一次性扫 localStorage, 删除任何
+// ALGO_VERSION ≠ 当前 v62 的旧 cache + 限制每 ALGO_VERSION rolling window 最多
+// 4 周. 默认旧 v60/v61 cache 一旦 user 升 v62 立即清理, 不等到 quota 爆。
+function pruneStaleWeeklyMenuCache(): void {
+  try {
+    const currentPrefix = `weekly_menu_${ALGO_VERSION}_`;
+    const toRemove: string[] = [];
+    const currentVersionKeys: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k) continue;
+      if (k.startsWith('weekly_menu_v') && !k.startsWith(currentPrefix)) {
+        toRemove.push(k);   // 旧版本: 直接删
+      } else if (k.startsWith(currentPrefix)) {
+        currentVersionKeys.push(k);
+      }
+    }
+    // 当前版本超过 4 entry → 删最旧的几个 (依 weekStart 排序)
+    // key 格式: weekly_menu_v62_2026-05-25_p4_... weekStart 第 3 段
+    if (currentVersionKeys.length > 4) {
+      const sortedByWeekStart = currentVersionKeys.slice().sort((a, b) => {
+        const wa = a.split('_')[3] ?? '';
+        const wb = b.split('_')[3] ?? '';
+        return wa.localeCompare(wb);
+      });
+      const dropCount = currentVersionKeys.length - 4;
+      for (let i = 0; i < dropCount; i++) toRemove.push(sortedByWeekStart[i]);
+    }
+    for (const k of toRemove) localStorage.removeItem(k);
+    if (toRemove.length > 0) {
+      console.log(`[useWeeklyMenu] pruneStaleWeeklyMenuCache: removed ${toRemove.length} stale keys`);
+    }
+  } catch (e) {
+    console.warn('[useWeeklyMenu] pruneStaleWeeklyMenuCache failed:', e);
+  }
+}
+
 // Always use the local-time date to avoid UTC offset shifting the value to the
 // previous day for users east of UTC.
 function formatLocalDate(d: Date): string {
@@ -3414,6 +3488,9 @@ export function useWeeklyMenu(weekOffset: number = 0) {
     // 返 deficits=[] (meal_logs 未建), 不阻塞 menu; Database 021 后真生效。
     const uid = getUserId();
     if (uid) prefetchWeekStats(getMondayISO(), uid).catch(() => {/* offline-tolerant */});
+    // §B (TICKET-030) entry-level prune — mount 时一次性扫 localStorage 清旧版本
+    // cache + rolling window 4 周. 防止 quota 累积爆 (老板 15:35 F12 真测 QuotaExceededError).
+    pruneStaleWeeklyMenuCache();
   }, []);
 
   // Re-generate when user updates preferences or eating selection changes
@@ -3736,7 +3813,8 @@ export function useWeeklyMenu(weekOffset: number = 0) {
 
         // Persist — algo_version + cache_key are written into the DB row by
         // saveToDB so the next loadFromDB can detect stale data on its own.
-        localStorage.setItem(lsKey, JSON.stringify(menu));
+        // §A (TICKET-030) safeSetWeeklyMenuCache: quota 防爆 + 自动清旧版本
+        safeSetWeeklyMenuCache(lsKey, JSON.stringify(menu));
         saveToDB(userId, menu, lsKey).catch(() => {});
         saveToHistory(userId, menu).catch(() => {});
 
@@ -3772,7 +3850,7 @@ export function useWeeklyMenu(weekOffset: number = 0) {
     setWeeklyMenu(updated);
 
     const lsKey = getCacheKey(weeklyMenu.weekStart);
-    localStorage.setItem(lsKey, JSON.stringify(updated));
+    safeSetWeeklyMenuCache(lsKey, JSON.stringify(updated));
 
     const userId = getUserId() ?? 'anonymous';
     const day = updated.days[dayIndex];
