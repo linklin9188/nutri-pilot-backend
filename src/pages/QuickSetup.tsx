@@ -508,8 +508,8 @@ export default function QuickSetup() {
   useEffect(() => {
     const role = localStorage.getItem('nutri_role');
     if (role === 'helper') return;
-    if (language === 'en' || language === 'tl' || language === 'id') {
-      setLanguage('zh-Hant');  // TICKET-045 老板二改 12:05: zh → zh-Hant 默认繁体
+    if (language === 'en' || language === 'tl' || language === 'id' || language === 'zh-Hant') {
+      setLanguage('zh');  // TICKET-047 老板 14:11 第 4 次 flip: 默认简体 zh
     }
     // 仅 mount 时跑一次, 不监听 language 后续变化（用户在 setup 内主动切
     // 回 EN 不应被反复强制）.

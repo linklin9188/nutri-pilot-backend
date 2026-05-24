@@ -98,11 +98,10 @@ function defaultForRole(): Language {
     const tl = detectFromBrowser();
     return tl === 'tl' || tl === 'id' ? tl : 'en';
   }
-  // TICKET-045 (老板 2026-05-24 12:05 拍板覆盖) — Employer 默认改 **繁体中文**.
-  // HK 老板娘 + TW 用户主战场, 真测发现英文 fallback 不可接受. 简体大陆访客
-  // 走 detectFromBrowser zh 分支 (zh-CN / zh-Hans) 仍返 'zh', 不破大陆.
-  // (TICKET-074 §G 5-21 拍板"简体 first" 由 045 12:05 拍板覆盖.)
-  return 'zh-Hant';
+  // TICKET-047 (老板 2026-05-24 14:11 拍板第 4 次 flip) — 默认回 **简体中文 'zh'**.
+  // 老板真测后明确锁定 "默认简体中文 (不是繁体, 不是英文)", 切换器 3 选保留.
+  // i18n flip 时间线: 074 §G zh (5-21) → 045 zh-Hant (12:05) → 047 zh (14:11).
+  return 'zh';
 }
 
 export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {

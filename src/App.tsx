@@ -173,14 +173,18 @@ function AppShell() {
   // (HK 妈妈自选繁体)的.
   useEffect(() => {
     try {
-      // TICKET-045 — bump sentinel key 让 234c0f6 session (zh sentinel '1') 重 reset 一次到 zh-Hant
-      if (sessionStorage.getItem('nutri_lang_reset_done_v045') === '1') return;
+      // TICKET-047 — bump sentinel key 让 045 (zh-Hant) session 重 reset 一次回 zh 简体
+      if (sessionStorage.getItem('nutri_lang_reset_done_v047') === '1') return;
       const role = localStorage.getItem('nutri_role');
       if (role === 'helper') return;
-      if (language === 'en' || language === 'tl' || language === 'id') {
-        setLanguage('zh-Hant');  // TICKET-045 老板二改: zh → zh-Hant 默认繁体
+      // TICKET-047 默认 reset 到 zh 简体 (老板 14:11 第 4 次 flip 锁定简体).
+      // 045 自动 sticky 到 zh-Hant 的用户也 catch — 045 ship 短窗口没人手动选繁体,
+      // 大概率是 defaultForRole 自动给的 zh-Hant. HK 用户后续在 LanguageSwitcher 主
+      // 动选 zh-Hant 仍可 (047 reset 1 次后 sentinel _v047 锁定).
+      if (language === 'en' || language === 'tl' || language === 'id' || language === 'zh-Hant') {
+        setLanguage('zh');
       }
-      sessionStorage.setItem('nutri_lang_reset_done_v045', '1');
+      sessionStorage.setItem('nutri_lang_reset_done_v047', '1');
     } catch { /* private mode — non-critical */ }
     // mount-once: 用户在 session 内切回 EN 不被反复覆盖.
     // eslint-disable-next-line react-hooks/exhaustive-deps

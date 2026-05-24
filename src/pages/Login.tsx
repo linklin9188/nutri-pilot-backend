@@ -463,8 +463,27 @@ export default function Login() {
               {roleHint}
             </p>
 
-            {/* TICKET-046 §C 完整 — 3 入口同时显示 (老板 12:05 拍板). 删 role 三元,
-                菲佣邀请码 box + 微信登录卡 并列, 雇主点微信卡走 OAuth, 菲佣输码登. */}
+            {/* TICKET-047 §A — 加雇主登录卡 (老板 14:05 真测发现 046 漏了雇主入口).
+                雇主登录走相同微信 OAuth (handleWeChat), 但视觉独立显眼让用户知道
+                "这是我的入口". 橙色边框 vs 菲佣绿色 vs 微信主推绿色. */}
+            <button
+              onClick={handleWeChat}
+              className="w-full rounded-2xl p-4 active:scale-[0.97] transition-all flex flex-col items-center gap-1"
+              style={{
+                background: "rgba(255,90,31,0.10)",
+                border: "1.5px solid rgba(255,90,31,0.45)",
+                boxShadow: "0 6px 22px rgba(255,90,31,0.18)",
+              }}>
+              <span style={{ fontSize: 28 }}>🏠</span>
+              <span className="font-bold text-white" style={{ fontSize: 15 }}>
+                {t("Sign in as employer", "雇主登录")}
+              </span>
+              <span className="text-white/55 text-center" style={{ fontSize: 11 }}>
+                {t("WeChat sign-in · plan menus for family", "微信扫码 · 为家庭准备菜单")}
+              </span>
+            </button>
+
+            {/* TICKET-046 §C — 菲佣 + 微信 卡并列. TICKET-047 §B Learner 移底部 secondary. */}
             <>
               {/* TICKET-068 §B — 菲佣邀请码登录入口（跳过 OAuth 直接进 /helper） */}
               <div className="flex flex-col gap-3 rounded-2xl p-4"
@@ -519,29 +538,9 @@ export default function Login() {
                 )}
               </div>
 
-              {/* UI 013 §B — Learner helper signup (无 invite_code path) */}
-              <div className="flex items-center gap-3 my-1">
-                <div className="flex-1 h-px bg-white/15" />
-                <span className="text-white/45" style={{ fontSize: 12 }}>
-                  {t("or", "或者")}
-                </span>
-                <div className="flex-1 h-px bg-white/15" />
-              </div>
-              <button
-                onClick={handleLearnerSignup}
-                className="w-full h-[54px] rounded-2xl flex items-center justify-center gap-2 font-semibold transition-all active:scale-[0.98]"
-                style={{
-                  background: "rgba(255,255,255,0.05)",
-                  border: "1.5px dashed rgba(255,255,255,0.30)",
-                  fontSize: 14, color: "rgba(255,255,255,0.85)",
-                }}
-              >
-                <span style={{ fontSize: 18 }}>🌱</span>
-                {t("Not employed yet — Learn Chinese cooking", "我还没就职 — 先学中国菜")}
-              </button>
             </>
 
-            {/* TICKET-046 — 雇主路径与菲佣 box 平铺, 不再 role 二选一 */}
+            {/* TICKET-046 — 微信主推卡分隔 (雇主卡上方已有, 这里区分 employer/helper 卡 vs 通用微信) */}
             <div className="flex items-center gap-3 my-1">
               <div className="flex-1 h-px bg-white/15" />
               <span className="text-white/45" style={{ fontSize: 12 }}>
@@ -572,6 +571,19 @@ export default function Login() {
             </p>
 
             </>
+
+            {/* TICKET-047 §B — Learner signup secondary (底部, 非 primary 3 入口) */}
+            <button
+              onClick={handleLearnerSignup}
+              className="w-full h-[44px] mt-3 rounded-2xl flex items-center justify-center gap-2 font-semibold transition-all active:scale-[0.98]"
+              style={{
+                background: "rgba(255,255,255,0.04)",
+                border: "1px dashed rgba(255,255,255,0.20)",
+                fontSize: 12, color: "rgba(255,255,255,0.65)",
+              }}>
+              <span style={{ fontSize: 14 }}>🌱</span>
+              {t("Not employed yet — Learn Chinese cooking", "我还没就职 — 先学中国菜")}
+            </button>
 
             {error && (
               <p className="text-center" style={{ color: "#FF8C54", fontSize: 13 }}>
