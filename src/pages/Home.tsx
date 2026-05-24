@@ -1025,8 +1025,10 @@ export default function Home() {
     { emoji: '🥘', name: '川菜小馆',     desc: '麻辣过瘾, 全家解馋',       reason: '🌶️ 因为爸爸爱辣',           url: mapsHK('川菜'),   color: 'rgba(236,72,153,0.10)' },
     { emoji: '🍕', name: '社区比萨店',   desc: '孩子最爱, 周末欢乐时光',   reason: '🎒 孩子学校缺主食日',      url: mapsHK('比萨'),   color: 'rgba(168,85,247,0.10)' },
   ];
+  // TICKET-052 §B — weekendSection 移入 main 内部后，main 已带 px-4，去掉自身 px-4
+  // 防双重水平 padding；保留 pt/pb 维持 section 间距。
   const weekendSection = isWeekend() ? (
-    <div className="px-4 pt-4 pb-2">
+    <div className="pt-1 pb-2">
       <p className="font-bold uppercase tracking-[0.20em]" style={{ fontSize: 11, color: '#FF8C54' }}>
         {t('Weekend', '周末')}
       </p>
@@ -1072,9 +1074,9 @@ export default function Home() {
         paddingBottom: 100,
       }}>
 
-      {/* TICKET-048 §B — 周末顶部追加餐厅推荐 section (老板拍板"home 老 layout 100%
-          保留 + 周末追加"). 工作日不显此 section. 每卡含 "查看 →" 链接跳 Google Maps. */}
-      {weekendSection}
+      {/* TICKET-052 §B — 老板 17:00 HKT 拍板周末顺序 hero → 5 餐厅 → location-based。
+          weekendSection 从 header 上方移到 main 内部、WeekendDiningReport 之前
+          (见下方 isWeekend 分支)。此处保留注释占位防回归。 */}
 
       {/* TICKET-061 §B — β 反馈提示 banner (dismissable + localStorage 持久化)
           仅 β 阶段显示；关闭后 localStorage.beta_banner_dismissed=true 永久不再显示。 */}
@@ -1277,6 +1279,9 @@ export default function Home() {
             周末 = 周末，不论是不是首次登录。restaurant recs 不再是
             "returning user 奖励"，而是周末家庭自由发挥的默认 surface。 */}
         {isWeekend() ? <>
+          {/* TICKET-052 §B 顺序: hero (header 已渲染) → 5 餐厅卡 → WeekendDiningReport
+              (本周吃过 diary + 外食建议, 含 location-based maps 推荐) 收底。 */}
+          {weekendSection}
           <WeekendDiningReport />
           {/* TICKET-049 — 删 NextWeekMenuPreview "下周菜单" nav card (老板拍板
               下周菜单在 /weekly 页面显示，首页周末分支不再有 menu 导航入口)。 */}
