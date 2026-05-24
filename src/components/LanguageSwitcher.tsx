@@ -10,7 +10,9 @@
 import { useState } from 'react';
 import { useLanguage, LANGUAGE_LABEL, type Language } from '../contexts/LanguageContext';
 
-const LANGS: Language[] = ['zh', 'zh-Hant', 'en', 'tl', 'id'];
+// TICKET-047 §C — Login/Settings 顶部 switcher 4 lang (简/繁/英/Filipino),
+// 删 Indonesian (id). 老板拍板 "Filipino" 通俗名 vs 'Tagalog' 语言学名 (see LANGUAGE_LABEL).
+const LANGS: Language[] = ['zh', 'zh-Hant', 'en', 'tl'];
 
 export default function LanguageSwitcher({ className = '' }: { className?: string }) {
   const { language, setLanguage } = useLanguage();

@@ -573,18 +573,21 @@ export default function Login() {
 
             </>
 
-            {/* TICKET-047 §B — Learner signup secondary (底部, 非 primary 3 入口) */}
-            <button
-              onClick={handleLearnerSignup}
-              className="w-full h-[44px] mt-3 rounded-2xl flex items-center justify-center gap-2 font-semibold transition-all active:scale-[0.98]"
-              style={{
-                background: "rgba(255,255,255,0.04)",
-                border: "1px dashed rgba(255,255,255,0.20)",
-                fontSize: 12, color: "rgba(255,255,255,0.65)",
-              }}>
-              <span style={{ fontSize: 14 }}>🌱</span>
-              {t("Not employed yet — Learn Chinese cooking", "我还没就职 — 先学中国菜")}
-            </button>
+            {/* TICKET-047 §F — Learner signup 只 helper 选中时显 (老板 14:35 真测拍板
+                "雇主不可能未就业"). employer 选中时不显此入口. */}
+            {role === "helper" && (
+              <button
+                onClick={handleLearnerSignup}
+                className="w-full h-[44px] mt-3 rounded-2xl flex items-center justify-center gap-2 font-semibold transition-all active:scale-[0.98]"
+                style={{
+                  background: "rgba(255,255,255,0.04)",
+                  border: "1px dashed rgba(255,255,255,0.20)",
+                  fontSize: 12, color: "rgba(255,255,255,0.65)",
+                }}>
+                <span style={{ fontSize: 14 }}>🌱</span>
+                {t("Not employed yet — Learn Chinese cooking", "我还没就职 — 先学中国菜")}
+              </button>
+            )}
 
             {error && (
               <p className="text-center" style={{ color: "#FF8C54", fontSize: 13 }}>

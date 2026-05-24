@@ -96,7 +96,10 @@ function defaultForRole(): Language {
   // Helpers: keep browser detection for Tagalog/Indonesian users, else English.
   if (role === 'helper') {
     const tl = detectFromBrowser();
-    return tl === 'tl' || tl === 'id' ? tl : 'en';
+    // TICKET-047 §G (老板 14:35 真测发现 helper 路径 fallback 'en' 漏改) — 改 'zh' 简体.
+    // 真菲佣 (tl/id navigator.language) 仍优先母语, 其他 helper 用户 (老板自己测试 sticky)
+    // 默认简体不再英文 fallback.
+    return tl === 'tl' || tl === 'id' ? tl : 'zh';
   }
   // TICKET-047 (老板 2026-05-24 14:11 拍板第 4 次 flip) — 默认回 **简体中文 'zh'**.
   // 老板真测后明确锁定 "默认简体中文 (不是繁体, 不是英文)", 切换器 3 选保留.
@@ -238,6 +241,6 @@ export const LANGUAGE_LABEL: Record<Language, string> = {
   zh:        '简体',
   'zh-Hant': '繁體',
   en:        'EN',
-  tl:        'Tagalog',
+  tl:        'Filipino',   // TICKET-047 §C 老板拍板 "Filipino" 通俗名 (vs 'Tagalog' 语言学名)
   id:        'Indonesia',
 };
