@@ -7,7 +7,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
 import { useWeeklyMenu, todayDayIndex, isFruitVeggieInSeason, getCurrentSolarTermZh, isWeekend, getWeekStartISO } from "../hooks/useWeeklyMenu";
-import WeekendDiningReport from "../components/WeekendDiningReport";
+// TICKET-043 — WeekendDiningReport import 删除 (老板拍板餐厅推荐转移到 /home).
 import { type SupabaseDish } from "../hooks/useSupabaseMenu";
 import { supabase } from "../lib/supabase";
 import BottomTabBar from "../components/BottomTabBar";
@@ -35,8 +35,10 @@ import { useLanguage } from "../contexts/LanguageContext";
 
 // UI 014 §C: 5 天工作日制 + 第 6 个 "周末" tab，点击展示 WeekendDiningReport。
 // Algorithm 014 已 ship WORKDAYS_PER_WEEK=5 + ALGO_VERSION v50，weeklyMenu.days.length === 5。
-const DAYS_ZH = ["周一", "周二", "周三", "周四", "周五", "周末"];
-const DAYS_EN = ["Mon", "Tue", "Wed", "Thu", "Fri", "Weekend"];
+// TICKET-043 — 删 "周末" tab (老板拍板"菜单里是下周的菜单. 推荐的餐厅在首页").
+// 周一-五 5 个 tab, 周末默认显 day 0 (下周一菜单, useWeeklyMenu weekOffset=1 已切下周).
+const DAYS_ZH = ["周一", "周二", "周三", "周四", "周五"];
+const DAYS_EN = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 // TICKET-030 §B — DAYS resolver used inside components; lang from useLanguage.
 function dayLabel(i: number, isZh: boolean): string {
   return (isZh ? DAYS_ZH : DAYS_EN)[i] ?? '';
@@ -592,12 +594,11 @@ export default function WeeklyMenu() {
       setSwapBusy(null);
     }
   }
-  // UI 014 §C: 周末 → 默认选第 6 tab "周末"（idx 5），渲染 WeekendDiningReport；
-  // 工作日 → 默认选当天 (0-4)。todayIdx 仍 clamp 到 0-4 给"今天" dot 高亮和 isDayLocked
-  // 用，因为算法层 (Algorithm 014 WORKDAYS_PER_WEEK=5) days 只有 0-4。
+  // TICKET-043 — 周末访问默认显 day 0 (下周一, useWeeklyMenu weekOffset=1 已切下周).
+  // 周一-五 → 显当天 tab. 工作日 todayIdx 0-4, 周末 clamp 到 0.
   const realTodayIdx = todayDayIndex();
   const todayIdx = realTodayIdx >= 5 ? 0 : realTodayIdx;
-  const defaultSelectedDay = realTodayIdx >= 5 ? WEEKEND_TAB_IDX : realTodayIdx;
+  const defaultSelectedDay = todayIdx;
   const [selectedDay, setSelectedDay] = useState(defaultSelectedDay);
 
   // Michelin-mode toggle. The toggle exists for everyone, but only Pro users
@@ -1108,12 +1109,9 @@ export default function WeeklyMenu() {
       {/* TICKET-074 §D — 删除"整页 LockedDayCard 切换"。改为 per-day 渲染：
           今+明 显示完整 meals，3-5 天 显示 ProGatePreview 占位卡。底部
           统一 LockedDayCard CTA 引导升级（line ~967）。
-          UI 014 §C: 周末 tab → 显示 WeekendDiningReport（外食推荐），不进入 day list。 */}
-      {selectedDay === WEEKEND_TAB_IDX ? (
-        <div className="relative z-10 flex-1">
-          <WeekendDiningReport />
-        </div>
-      ) : (
+          TICKET-043 — 删 weekend tab + WeekendDiningReport 渲染分支
+          (老板拍板餐厅推荐在 /home, 不在 /weekly). 三元简化为 单分支. */}
+      {(
       <div className="relative z-10 flex-1">
         <AnimatePresence mode="wait">
               {loading ? (

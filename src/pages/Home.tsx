@@ -1017,12 +1017,14 @@ export default function Home() {
   // (老板拍板"周六日的主页是推荐餐厅. 下周菜单在菜单界面"). 周一-五正常菜单 UI.
   // hook 已全部在前面调用过, 这里 conditional return 不破 React rules.
   if (isWeekend()) {
+    // TICKET-043 §B — 5 张餐厅占位卡 + 推荐理由 chip (mock 文案, 真接入下个 sprint
+    // 关联 weekStats / taste_pref / member_goal). 老板拍板"每张卡含推荐理由 chip".
     const RESTAURANTS = [
-      { emoji: '🍱', name: '家附近茶餐厅',     desc: '港式快靓正, 老少咸宜',         color: 'rgba(255,90,31,0.10)'  },
-      { emoji: '🍜', name: '街角面馆',         desc: '汤鲜面爽, 一人 30 元搞定',      color: 'rgba(34,197,94,0.10)'  },
-      { emoji: '🍣', name: '日料居酒屋',       desc: '换换口味, 周末小确幸',         color: 'rgba(59,130,246,0.10)' },
-      { emoji: '🥘', name: '川菜小馆',         desc: '麻辣过瘾, 全家解馋',           color: 'rgba(236,72,153,0.10)' },
-      { emoji: '🍕', name: '社区比萨店',       desc: '孩子最爱, 周末欢乐时光',       color: 'rgba(168,85,247,0.10)' },
+      { emoji: '🍱', name: '家附近茶餐厅', desc: '港式快靓正, 老少咸宜',    reason: '🍃 偏清淡, 这家清蒸好',     color: 'rgba(255,90,31,0.10)'  },
+      { emoji: '🍜', name: '街角面馆',     desc: '汤鲜面爽, 一人 30 元搞定', reason: '🥩 本周已 4 道猪肉, 换换',  color: 'rgba(34,197,94,0.10)'  },
+      { emoji: '🍣', name: '日料居酒屋',   desc: '换换口味, 周末小确幸',     reason: '🐟 本周缺海鲜, 补一顿',     color: 'rgba(59,130,246,0.10)' },
+      { emoji: '🥘', name: '川菜小馆',     desc: '麻辣过瘾, 全家解馋',       reason: '🌶️ 因为爸爸爱辣',            color: 'rgba(236,72,153,0.10)' },
+      { emoji: '🍕', name: '社区比萨店',   desc: '孩子最爱, 周末欢乐时光',   reason: '🎒 孩子学校缺主食日',       color: 'rgba(168,85,247,0.10)' },
     ];
     return (
       <div className="min-h-screen max-w-md mx-auto relative px-5"
@@ -1034,16 +1036,23 @@ export default function Home() {
           {t('Family time, eat out today', '周末家庭自由发挥')}
         </h1>
         <p className="mt-2 text-zinc-500 leading-relaxed" style={{ fontSize: 14 }}>
-          {t('Try these nearby spots · Next week menu is AI-planned', '试试这些餐厅 · 下周菜单已规划')}
+          {t('Try these nearby spots · Next week menu is AI-planned', '为您推荐这几家 · 下周菜单已规划')}
         </p>
         <div className="mt-6 flex flex-col gap-3">
           {RESTAURANTS.map(r => (
-            <div key={r.name} className="rounded-2xl px-4 py-3 flex items-center gap-3"
+            <div key={r.name} className="rounded-2xl px-4 py-3"
               style={{ background: r.color, border: '1px solid rgba(0,0,0,0.05)' }}>
-              <span style={{ fontSize: 32 }}>{r.emoji}</span>
-              <div className="flex-1">
-                <p className="font-bold" style={{ fontSize: 14, color: '#1a1a1a' }}>{r.name}</p>
-                <p className="text-zinc-500" style={{ fontSize: 12 }}>{r.desc}</p>
+              <div className="flex items-center gap-3">
+                <span style={{ fontSize: 32 }}>{r.emoji}</span>
+                <div className="flex-1">
+                  <p className="font-bold" style={{ fontSize: 14, color: '#1a1a1a' }}>{r.name}</p>
+                  <p className="text-zinc-500" style={{ fontSize: 12 }}>{r.desc}</p>
+                </div>
+              </div>
+              {/* 推荐理由 chip — 基于用户口味 / weekStats 营养缺口 / member goal mock */}
+              <div className="mt-2 inline-flex items-center px-2.5 py-1 rounded-full"
+                style={{ background: 'rgba(0,0,0,0.05)', fontSize: 11, color: '#555' }}>
+                {r.reason}
               </div>
             </div>
           ))}
