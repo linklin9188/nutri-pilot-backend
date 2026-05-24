@@ -606,6 +606,8 @@ export default function Settings() {
   const [supportSheetOpen, setSupportSheetOpen] = useState(false);
   // TICKET-066 §B — JS 拼接防爬虫 grep 字面 @nothinkeats.com
   const SUPPORT_EMAIL = ["support", "nothinkeats.com"].join("@");
+  // TICKET-045 §D — VIP 专属客服邮箱 (中介推荐用户用)
+  const VIP_EMAIL = ["vip", "nothinkeats.com"].join("@");
 
   // TICKET-063 §A — 个人头像 + 昵称 + role + 家庭成员卡
   // TICKET-039 §1 — 合并 UI-031c: 读 user_profiles.avatar_url + nickname (微信 OAuth fill).
@@ -620,6 +622,36 @@ export default function Settings() {
   const [avatarMsg, setAvatarMsg] = useState<string | null>(null);
   interface HouseholdHelper { helper_id: string; name: string | null; avatar_b64: string | null; }
   const [householdHelpers, setHouseholdHelpers] = useState<HouseholdHelper[]>([]);
+
+  // TICKET-045 §A — 中介裂变 C+D: 拉用户被推荐的 agency
+  //   - C: 头像下方显示 "由 {agency.name} 推荐" 小字 (PDPO 合规: 不展示中介 contact)
+  //   - D: 头像右上挂 💎 VIP chip + 联系客服切到 vip@nothinkeats.com
+  //   - agencies 表 RLS 已过滤 status='active' (migration 087), pending 自然为 null
+  interface ReferringAgency { id: string; name: string; }
+  const [agency, setAgency] = useState<ReferringAgency | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const uid = getUserId();
+      if (!uid) return;
+      const { data: profile } = await supabase
+        .from("user_profiles")
+        .select("referred_by_agency_id")
+        .eq("id", uid)
+        .maybeSingle();
+      if (cancelled) return;
+      const refId = (profile as { referred_by_agency_id?: string | null } | null)?.referred_by_agency_id;
+      if (!refId) { setAgency(null); return; }
+      const { data: ag } = await supabase
+        .from("agencies")
+        .select("id, name")
+        .eq("id", refId)
+        .maybeSingle();
+      if (cancelled) return;
+      setAgency((ag as ReferringAgency | null) ?? null);
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Initial fetch — 自己 profile + 家里已加入的 helpers (employer only)
   useEffect(() => {
@@ -844,7 +876,7 @@ export default function Settings() {
               点头像触发 file input → canvas 256×256 resize → base64 → supabase.user_profiles.avatar_b64
               avatar_b64 列 supabase migration 045 已加。 */}
           <div className="bg-white rounded-[22px] p-4 shadow-[0_4px_20px_rgba(0,0,0,0.04)] flex items-center gap-3 mt-1">
-            <label className="relative cursor-pointer active:scale-95 transition-transform" title="点击更换头像">
+            <label className="relative cursor-pointer active:scale-95 transition-transform inline-block" title="点击更换头像">
               <input
                 type="file"
                 accept="image/*"
@@ -892,6 +924,15 @@ export default function Settings() {
                   </span>
                 </div>
               )}
+              {/* TICKET-045 §D — VIP chip (仅 referred_by_agency_id 有值时显示) */}
+              {agency && (
+                <span
+                  className="absolute -top-1 -right-1 bg-yellow-400 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold shadow"
+                  style={{ boxShadow: "0 2px 6px rgba(0,0,0,0.18)" }}
+                >
+                  💎 VIP
+                </span>
+              )}
             </label>
             <div className="flex-1 min-w-0">
               <p className="font-bold text-[16px] truncate">
@@ -914,6 +955,10 @@ export default function Settings() {
                   </span>
                 )}
               </div>
+              {/* TICKET-045 §C — 中介品牌挂名 (PDPO: 仅显示 name, 不展示 contact_whatsapp/email) */}
+              {agency && (
+                <p className="text-[11px] text-gray-500 mt-1 truncate">由 {agency.name} 推荐</p>
+              )}
             </div>
           </div>
 
@@ -1895,15 +1940,19 @@ export default function Settings() {
               section, not a separate page, to stay surgical. */}
           <FeedbackHistorySection />
 
-          {/* TICKET-061 §A — 联系客服 (β 反馈通道) */}
+          {/* TICKET-061 §A — 联系客服 (β 反馈通道)
+              TICKET-045 §D — VIP 用户 (referred_by_agency_id ≠ null) 切到「📞 联系专属客服」
+              入口 + 进 sheet 后 mailto 走 vip@nothinkeats.com */}
           <button
             onClick={() => setSupportSheetOpen(true)}
             className="w-full bg-white border border-black/5 rounded-[22px] p-4 shadow-[0_4px_20px_rgba(0,0,0,0.04)] flex items-center gap-3 active:scale-[0.98] transition-all"
           >
-            <span className="text-[24px]">📩</span>
+            <span className="text-[24px]">{agency ? "📞" : "📩"}</span>
             <div className="flex-1 text-left">
-              <p className="font-bold text-[14px]">联系客服</p>
-              <p className="text-[11px] text-gray-400 mt-0.5">用 app 遇问题 / 反馈 / 报 bug</p>
+              <p className="font-bold text-[14px]">{agency ? "联系专属客服" : "联系客服"}</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">
+                {agency ? "💎 VIP 专属通道 · 优先处理" : "用 app 遇问题 / 反馈 / 报 bug"}
+              </p>
             </div>
             <span className="material-symbols-outlined" style={{ fontSize: 18, color: "rgba(0,0,0,0.30)" }}>
               chevron_right
@@ -1947,18 +1996,23 @@ export default function Settings() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="w-12 h-1 bg-black/10 rounded-full mx-auto mb-4" />
-            <h3 className="text-[16px] font-bold mb-1">联系客服</h3>
-            <p className="text-[12px] text-gray-500 mb-4">用 app 遇到问题？告诉我们，我们 24h 内回复你。</p>
+            <h3 className="text-[16px] font-bold mb-1">{agency ? "💎 联系专属客服" : "联系客服"}</h3>
+            <p className="text-[12px] text-gray-500 mb-4">
+              {agency
+                ? `VIP 专属通道 · 优先处理 (由 ${agency.name} 推荐)`
+                : "用 app 遇到问题？告诉我们，我们 24h 内回复你。"}
+            </p>
 
+            {/* TICKET-045 §D — agency 用户走 VIP_EMAIL */}
             <a
-              href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("[Aieats β 反馈]")}&body=${encodeURIComponent("用户ID: " + (getUserId()?.slice(0, 8) ?? "unknown") + "\n\n问题描述：\n")}`}
+              href={`mailto:${agency ? VIP_EMAIL : SUPPORT_EMAIL}?subject=${encodeURIComponent(agency ? "[Aieats VIP 反馈]" : "[Aieats β 反馈]")}&body=${encodeURIComponent("用户ID: " + (getUserId()?.slice(0, 8) ?? "unknown") + "\n\n问题描述：\n")}`}
               onClick={onClickSupportMail}
               className="w-full bg-gray-50 border border-black/5 rounded-[16px] p-4 flex items-center gap-3 active:scale-[0.98] transition-all mb-2.5"
             >
               <span className="text-[22px]">📧</span>
               <div className="flex-1 text-left">
                 <p className="font-bold text-[13px]">发邮件反馈</p>
-                <p className="text-[11px] text-gray-400 mt-0.5">{SUPPORT_EMAIL}</p>
+                <p className="text-[11px] text-gray-400 mt-0.5">{agency ? VIP_EMAIL : SUPPORT_EMAIL}</p>
               </div>
               <span className="material-symbols-outlined" style={{ fontSize: 18, color: "rgba(0,0,0,0.30)" }}>
                 arrow_forward_ios
@@ -1966,7 +2020,7 @@ export default function Settings() {
             </a>
 
             <a
-              href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("[Aieats β Bug]")}&body=${encodeURIComponent("用户ID: " + (getUserId()?.slice(0, 8) ?? "unknown") + "\n\nbug 复现步骤：\n1. \n2. \n3. \n\n期望行为：\n\n实际行为：\n\n截图：\n")}`}
+              href={`mailto:${agency ? VIP_EMAIL : SUPPORT_EMAIL}?subject=${encodeURIComponent(agency ? "[Aieats VIP Bug]" : "[Aieats β Bug]")}&body=${encodeURIComponent("用户ID: " + (getUserId()?.slice(0, 8) ?? "unknown") + "\n\nbug 复现步骤：\n1. \n2. \n3. \n\n期望行为：\n\n实际行为：\n\n截图：\n")}`}
               onClick={onClickSupportMail}
               className="w-full bg-gray-50 border border-black/5 rounded-[16px] p-4 flex items-center gap-3 active:scale-[0.98] transition-all mb-4"
             >
