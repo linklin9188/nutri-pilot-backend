@@ -1128,7 +1128,16 @@ export default function WeeklyMenu() {
                     <div className="px-5 py-10 text-center">
                       <span className="text-5xl mb-4 block">🍽️</span>
                       <p className="text-white/50" style={{ fontSize: 14 }}>{t('Generating your weekly menu…', '本周菜单正在生成中…')}</p>
-                      <p className="text-white/30 mt-1" style={{ fontSize: 12 }}>{t('Make sure your taste preferences are set', '请确保已设置您的口味偏好')}</p>
+                      <p className="text-white/30 mt-1 mb-5" style={{ fontSize: 12 }}>{t('Make sure your taste preferences are set', '请确保已设置您的口味偏好')}</p>
+                      {/* UI 051 §D2 — 空菜单页 CTA 引导用户去设置偏好 */}
+                      <button
+                        onClick={() => navigate('/settings')}
+                        className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full font-bold text-white active:scale-95 transition-transform"
+                        style={{ fontSize: 13, background: "linear-gradient(135deg, #FF5A1F, #FF8C54)", boxShadow: "0 6px 18px rgba(255,90,31,0.30)" }}
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: 16 }}>tune</span>
+                        {t('Set taste preferences', '去设置口味偏好')}
+                      </button>
                     </div>
                   ) : (
                     <div className="flex flex-col">
@@ -1297,8 +1306,11 @@ export default function WeeklyMenu() {
 
       {/* ── Bottom CTA ───────────────────────────────────────────── */}
       {/* ── Shopping list CTA (above tab bar) ─────────────────── */}
-      <div className="fixed left-1/2 -translate-x-1/2 w-full max-w-md z-20 px-5 pt-3 pb-2"
-        style={{ bottom: 64, background: "linear-gradient(to top, #0a0a0a 55%, transparent 100%)" }}>
+      {/* z-[60] 高于 BottomTabBar z-50, bottom 用 safe-area + tab bar 高度避免
+          视觉/点击重叠 (TELEPOT-052 P0 fix: 老板真测点击无效 — 旧 z-20 +
+          bottom:64 让 button 下半被 nav 覆盖 + click 被 z-50 nav 拦截). */}
+      <div className="fixed left-1/2 -translate-x-1/2 w-full max-w-md z-[60] px-5 pt-3 pb-2"
+        style={{ bottom: "calc(env(safe-area-inset-bottom, 16px) + 64px)", background: "linear-gradient(to top, #0a0a0a 55%, transparent 100%)" }}>
         <button
           onClick={handleShoppingList}
           className="w-full h-[52px] rounded-2xl font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98]"

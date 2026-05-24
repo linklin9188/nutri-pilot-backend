@@ -1907,20 +1907,26 @@ export default function Home() {
           </div>
         )}
 
-        {/* Day 1 CTA — only when no menu yet */}
-        {!hasMenu && (
-          <div className="rounded-2xl p-5" style={{ background: "linear-gradient(135deg, #FF5A1F, #FF8C54)" }}>
-            <h2 className="font-black text-white mb-1" style={{ fontSize: 20 }}>每天不再烦恼"吃什么"</h2>
-            <p style={{ fontSize: 13, color: "rgba(255,255,255,0.8)", lineHeight: 1.5, marginBottom: 14 }}>
-              AI 根据家人健康状况，智能规划一周菜单
-            </p>
-            <button onClick={() => navigate("/weekly")}
-              className="w-full py-3 rounded-2xl font-bold active:scale-[0.98] transition-all"
-              style={{ fontSize: 14, background: "white", color: "#FF5A1F" }}>
-              生成本周菜单 →
-            </button>
-          </div>
-        )}
+        {/* TELEPOT-052 §A — context-aware primary CTA:
+            - 无菜单 → "生成本周菜单" 跳 /weekly
+            - 有菜单 → "查看采购清单" 跳 /verify (fabAction 复活)
+            老板真测发现工作日 home hasMenu 时根本没采购入口；fabLabel/fabAction
+            (line ~933) 是 TICKET-048 还原老 layout 时留下的 dead code，现在在
+            这里渲染出来. */}
+        <div className="rounded-2xl p-5" style={{ background: "linear-gradient(135deg, #FF5A1F, #FF8C54)" }}>
+          <h2 className="font-black text-white mb-1" style={{ fontSize: 20 }}>
+            {hasMenu ? "本周菜单已就绪" : '每天不再烦恼"吃什么"'}
+          </h2>
+          <p style={{ fontSize: 13, color: "rgba(255,255,255,0.8)", lineHeight: 1.5, marginBottom: 14 }}>
+            {hasMenu ? "一键生成本周食材采购清单，按家人份量自动计算" : "AI 根据家人健康状况，智能规划一周菜单"}
+          </p>
+          <button onClick={fabAction}
+            className="w-full py-3 rounded-2xl font-bold active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+            style={{ fontSize: 14, background: "white", color: "#FF5A1F" }}>
+            <span className="material-symbols-outlined" style={{ fontSize: 18 }}>{fabIcon}</span>
+            {fabLabel} →
+          </button>
+        </div>
 
         {/* Login CTA */}
         {!isLoggedIn && (
