@@ -1,6 +1,9 @@
 /**
  * HelperCommunity — TICKET-044 §A + §B + §C + §D 菲佣社区 feed.
  * TICKET-037 P1 §3 小红书风升级: 双列瀑布流 + 标签 tab + 今日热门 section.
+ * TICKET-20260525-044 P1 §4 AI 增加 community 活跃度 (简化版):
+ *   §A F — 发帖 FAB + Modal + "✨ AI 帮我写" 按钮 (调 gemini-proxy recipe endpoint)
+ *   §C E — 顶部 "📌 今日话题" banner (30 题 hardcode, getDate() % 30 轮播)
  *
  * 路由 /helper-community (RequireAuth helperRole 守, App.tsx). HelperHome
  * 的 "厨艺社区" tile route 改指此页. 不破老 Community.tsx (employer 端
@@ -29,6 +32,7 @@ import { supabase } from '../lib/supabase';
 import { getUserId } from '../lib/userId';
 import { useLanguage } from '../contexts/LanguageContext';
 import HelperTabBar from '../components/HelperTabBar';
+import { callGemini } from '../lib/geminiProxy';
 
 interface PostRow {
   id: string;
@@ -73,6 +77,47 @@ const CATEGORIES: CategoryDef[] = [
   { id: 'help',  en: 'Help',    zh: '求助',     tl: 'Tulong',    hashtags: ['求助', 'help', '问', 'question', '请教'] },
   { id: 'chat',  en: 'Chat',    zh: '闲聊',     tl: 'Chat',      hashtags: ['闲聊', '日常', 'chat', 'life', '生活'] },
 ];
+
+// ── §C E — 今日话题 (30 题 hardcode, getDate() % 30 轮播) ─────────────
+// SPEC: TICKET-20260525-044 §C. 不调 Gemini, 静态 banner. 真 AI 推到后续 ticket.
+const DAILY_TOPICS: string[] = [
+  '今天做了什么家常菜？',
+  '晒一晒你的台面工具',
+  '推荐一道你拿手的快手菜',
+  '雇主家孩子最爱吃啥？',
+  '你最近学会的新菜式',
+  '分享一个省时小窍门',
+  '今天买了什么新鲜食材？',
+  '你家雇主的口味是哪里的？',
+  '说一道你做不好的菜',
+  '最难处理的食材是什么？',
+  '中秋你要做什么菜？',
+  '春节你最拿手的菜是？',
+  '夏天你最常做哪些菜？',
+  '雇主孩子挑食怎么办？',
+  '你的厨房必备调料是？',
+  '推荐一道适合老人的菜',
+  '推荐一道孩子爱吃的菜',
+  '你做菜最大的乐趣是？',
+  '今天有什么烦恼？',
+  '分享一道你家乡菜',
+  '你最想学的菜系是？',
+  '雇主对菜单有什么要求？',
+  '你认识多少种中式炖汤？',
+  '说一个你刚学会的菜',
+  '你做菜从谁那里学的？',
+  '推荐一道你的拿手汤',
+  '今天采购买了什么？',
+  '你最喜欢的厨具是？',
+  '分享一道下饭菜',
+  '今天工作累不累？',
+];
+
+function todayTopic(): string {
+  return DAILY_TOPICS[new Date().getDate() % DAILY_TOPICS.length];
+}
+
+const POST_BODY_MAX = 500;
 
 /** parse hashtags out of body text; lowercased; returns set of raw tag strings */
 function parseHashtags(body: string): string[] {
@@ -147,6 +192,21 @@ export default function HelperCommunity() {
   const [commentDraft, setCommentDraft] = useState('');
   const [toast, setToast]               = useState<string | null>(null);
 
+  // §A 发帖 modal — FAB 触发, 含 AI 帮我写
+  const [composeOpen, setComposeOpen]   = useState(false);
+  const [composeTitle, setComposeTitle] = useState('');
+  const [composeBody, setComposeBody]   = useState('');
+  const [composeSaving, setComposeSaving] = useState(false);
+  // AI 草稿三段 (zh / en / tl), null = 还没生成; 用户点 ✨ 后填充
+  const [aiDrafts, setAiDrafts]         = useState<{ zh: string; en: string; tl: string } | null>(null);
+  const [aiLoading, setAiLoading]       = useState(false);
+  const [aiError, setAiError]           = useState<string | null>(null);
+  // 用户 origin_country (PH/ID) — 给 AI prompt 上下文
+  const [myOriginCountry, setMyOriginCountry] = useState<string | null>(null);
+  // 最近做的菜 (从 generatedMenu localStorage 抓 1 道, AI prompt 上下文)
+  const [recentDishTitle, setRecentDishTitle] = useState<string | null>(null);
+  const TOPIC = todayTopic();
+
   function flash(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(null), 2000);
@@ -188,6 +248,30 @@ export default function HelperCommunity() {
     load();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myUserId]);
+
+  // §A AI 草稿上下文 — load 一次: origin_country + 最近做的菜 (generatedMenu cache)
+  useEffect(() => {
+    if (!myUserId) return;
+    supabase.from('user_profiles')
+      .select('origin_country')
+      .eq('id', myUserId).maybeSingle()
+      .then(({ data }) => {
+        const oc = (data as { origin_country?: string | null } | null)?.origin_country ?? null;
+        setMyOriginCountry(oc);
+      })
+      .catch(() => { /* silent */ });
+
+    // 最近做的菜: 从 HelperHome 已写入的 generatedMenu localStorage 抓第一个 title
+    try {
+      const raw = localStorage.getItem('generatedMenu');
+      if (raw) {
+        const arr = JSON.parse(raw);
+        const first = Array.isArray(arr) ? arr[0] : null;
+        const t = first?.title_zh || first?.title_en || first?.title || null;
+        if (t) setRecentDishTitle(t);
+      }
+    } catch { /* ignore */ }
   }, [myUserId]);
 
   // ── Derived: 今日热门 + 按 tab filter ─────────────────────────────
@@ -304,6 +388,132 @@ export default function HelperCommunity() {
     setCommentDraft('');
   }
 
+  // ── §A 发帖 modal — open / close / submit ─────────────────────────
+  function openCompose(prefillTopic = false) {
+    if (!myUserId) {
+      flash(t3('Please sign in', '请先登录', 'Mag-sign in muna'));
+      return;
+    }
+    setComposeOpen(true);
+    setAiDrafts(null);
+    setAiError(null);
+    // 从话题入口进来 → autofill #今日话题 hashtag
+    if (prefillTopic) {
+      setComposeTitle('');
+      setComposeBody(`#今日话题 ${TOPIC}\n\n`);
+    } else {
+      setComposeTitle('');
+      setComposeBody('');
+    }
+  }
+  function closeCompose() {
+    if (composeSaving) return;
+    setComposeOpen(false);
+    setComposeTitle('');
+    setComposeBody('');
+    setAiDrafts(null);
+    setAiError(null);
+  }
+
+  // §A "✨ AI 帮我写" — 调 gemini-proxy recipe endpoint (30/day quota),
+  //   prompt: helper 国籍 + 最近做的菜 + 今日话题, 输出 zh/en/tl 三段.
+  //   失败兜底: 硬编码 3 段示例文案让用户选 (stub fallback).
+  async function runAiDraft() {
+    setAiLoading(true);
+    setAiError(null);
+    setAiDrafts(null);
+
+    const nation = myOriginCountry === 'ID' ? 'Indonesian' : 'Filipino';
+    const dishLine = recentDishTitle ? `- 最近做的菜: ${recentDishTitle}` : '- 最近做的菜: (无)';
+    const promptText = [
+      '你是菲佣社区文案助手。请基于以下信息，输出 50-100 字的中文 + 英文 + Tagalog 三段短文案，',
+      '适合菲佣 (Filipina/Indonesian helper) 发到社区分享。每段单独成段，要轻松、接地气、像朋友说话。',
+      '',
+      `- 国籍: ${nation} (${myOriginCountry || '未知'})`,
+      dishLine,
+      `- 今日话题: ${TOPIC}`,
+      '',
+      '严格输出格式 (3 段, 用纯文本, 不要 markdown / 引号 / 标号):',
+      '【中文】',
+      '<50-100 字中文文案>',
+      '【English】',
+      '<50-100 word English caption>',
+      '【Tagalog】',
+      '<50-100 word Tagalog caption>',
+    ].join('\n');
+
+    try {
+      const data = await callGemini({
+        endpoint: 'recipe',
+        contents: [{ role: 'user', parts: [{ text: promptText }] }],
+        generationConfig: { temperature: 0.85, maxOutputTokens: 600 },
+      });
+      const text: string = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+      // 解析 3 段 — 按【XXX】拆分
+      const zh = (text.match(/【中文】\s*([\s\S]*?)(?=【English】|【Tagalog】|$)/)?.[1] ?? '').trim();
+      const en = (text.match(/【English】\s*([\s\S]*?)(?=【Tagalog】|【中文】|$)/)?.[1] ?? '').trim();
+      const tl = (text.match(/【Tagalog】\s*([\s\S]*?)$/)?.[1] ?? '').trim();
+      if (!zh && !en && !tl) {
+        // 模型没按格式 — 整段塞到 zh, 用户还可改
+        setAiDrafts({ zh: text.trim(), en: '', tl: '' });
+      } else {
+        setAiDrafts({ zh, en, tl });
+      }
+    } catch (e) {
+      // Stub fallback: 3 段硬编码示例, 让 helper 仍能选用
+      console.warn('[HelperCommunity] AI draft failed, using stub fallback:', e);
+      setAiError((e as Error).message || 'AI 暂不可用');
+      setAiDrafts({
+        zh: `今天和大家分享一下：${TOPIC} 🍳 在 Ma'am 家做菜，越做越喜欢这份工作！#今日话题`,
+        en: `Sharing today: ${TOPIC} Cooking for Ma'am's family keeps getting better day by day! #DailyTopic`,
+        tl: `Share ko lang ngayon: ${TOPIC} Mas natutuwa akong magluto para sa pamilya ng Ma'am araw-araw! #TopicNgAraw`,
+      });
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
+  function pickAiDraft(text: string) {
+    if (!text) return;
+    // 追加到 composeBody (尾部), 不覆盖用户已写部分
+    setComposeBody(prev => (prev.trim() ? prev.trim() + '\n\n' + text : text));
+  }
+
+  async function submitPost() {
+    const body = composeBody.trim();
+    if (!body) {
+      flash(t3('Please write something', '请写点内容', 'Magsulat ka ng laman'));
+      return;
+    }
+    if (body.length > POST_BODY_MAX) {
+      flash(t3('Post too long', '内容过长', 'Masyadong mahaba'));
+      return;
+    }
+    if (!myUserId) {
+      flash(t3('Please sign in', '请先登录', 'Mag-sign in muna'));
+      return;
+    }
+    setComposeSaving(true);
+    const title = composeTitle.trim() || null;
+    const { data, error } = await supabase
+      .from('helper_posts')
+      .insert({ helper_id: myUserId, title, body })
+      .select('*, user_profiles(display_name, hometown_cuisine)')
+      .single();
+    setComposeSaving(false);
+    if (error || !data) {
+      flash(t3('Post failed', '发布失败', 'Hindi naipost'));
+      return;
+    }
+    // optimistic prepend
+    setPosts(prev => [data as unknown as PostRow, ...prev]);
+    flash(t3('Posted! 🎉', '已发布 🎉', 'Naipost! 🎉'));
+    setComposeOpen(false);
+    setComposeTitle('');
+    setComposeBody('');
+    setAiDrafts(null);
+  }
+
   // ── Card component (双列瀑布流单卡) ──────────────────────────────
   function PostCard({ post, compact }: { post: PostRow; compact?: boolean }) {
     const name = post.user_profiles?.display_name ?? t3('Helper', '菲佣', 'Helper');
@@ -409,6 +619,38 @@ export default function HelperCommunity() {
           <p className="text-zinc-500 mt-1" style={{ fontSize: 11 }}>
             {t3('Helpers share their dishes & tips', '菲佣分享菜品与做菜心得', 'Mga helper na nagbabahagi')}
           </p>
+        </div>
+      </div>
+
+      {/* §C E — 今日话题 banner (静态 30 题轮播, 不调 Gemini) */}
+      <div className="px-4 mt-3">
+        <div
+          className="rounded-2xl px-4 py-3 flex items-center gap-3"
+          style={{
+            background: 'linear-gradient(135deg, rgba(255,90,31,0.10), rgba(255,144,84,0.06))',
+            border: '1px solid rgba(255,90,31,0.20)',
+          }}
+        >
+          <div className="flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center"
+            style={{ background: 'rgba(255,90,31,0.15)' }}>
+            <span style={{ fontSize: 18 }}>📌</span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p style={{ fontSize: 10, color: '#FF5A1F', fontWeight: 700, letterSpacing: '0.08em' }}>
+              {t3("TODAY'S TOPIC", '今日话题', 'TOPIC NGAYON')}
+            </p>
+            <p className="font-bold mt-0.5 truncate" style={{ fontSize: 13, color: '#1a1a1a' }}>
+              {TOPIC}
+            </p>
+          </div>
+          <button
+            onClick={() => openCompose(true)}
+            className="flex-shrink-0 flex items-center gap-1 px-3 h-8 rounded-full font-bold text-white active:scale-95 transition-transform"
+            style={{ background: '#FF5A1F', fontSize: 11, boxShadow: '0 2px 8px rgba(255,90,31,0.30)' }}
+          >
+            <span style={{ fontSize: 12 }}>✏️</span>
+            {t3('Post', '发个帖', 'Mag-post')}
+          </button>
         </div>
       </div>
 
@@ -647,6 +889,171 @@ export default function HelperCommunity() {
                 className="px-3 h-9 rounded-full font-semibold text-white active:scale-95 transition-transform disabled:opacity-40 flex-shrink-0"
                 style={{ background: '#FF5A1F', fontSize: 12 }}>
                 {t3('Send', '发送', 'Ipadala')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* §A 发帖 FAB — 固定右下, 永远可点 (TabBar 之上 z-50) */}
+      <button
+        onClick={() => openCompose(false)}
+        className="fixed z-[55] active:scale-95 transition-transform flex items-center justify-center font-bold text-white"
+        style={{
+          right: 20,
+          bottom: 96,
+          width: 56,
+          height: 56,
+          borderRadius: 28,
+          background: 'linear-gradient(135deg, #FF5A1F, #FF9054)',
+          boxShadow: '0 6px 18px rgba(255,90,31,0.40)',
+          fontSize: 26,
+        }}
+        aria-label={t3('Create post', '发帖', 'Mag-post')}
+      >
+        ✏️
+      </button>
+
+      {/* §A 发帖 Modal — 含 "✨ AI 帮我写" 按钮 */}
+      {composeOpen && (
+        <div
+          className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.55)' }}
+          onClick={closeCompose}
+        >
+          <div
+            className="w-full max-w-md bg-white rounded-t-3xl sm:rounded-3xl overflow-hidden flex flex-col"
+            style={{ maxHeight: '90vh' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-5 pt-4 pb-3 flex items-center justify-between"
+              style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+              <p className="font-bold" style={{ fontSize: 16, color: '#1a1a1a' }}>
+                {t3('New Post', '发个帖', 'Bagong Post')}
+              </p>
+              <button onClick={closeCompose}
+                disabled={composeSaving}
+                className="w-8 h-8 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-40"
+                style={{ background: 'rgba(0,0,0,0.05)' }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 18, color: '#1a1a1a' }}>close</span>
+              </button>
+            </div>
+
+            {/* Scroll body */}
+            <div className="flex-1 overflow-y-auto px-5 pt-4 pb-3">
+              {/* Title input */}
+              <input
+                value={composeTitle}
+                onChange={e => setComposeTitle(e.target.value.slice(0, 50))}
+                placeholder={t3('Title (optional)', '标题 (可选)', 'Pamagat (opsyonal)')}
+                maxLength={50}
+                className="w-full px-3 py-2.5 rounded-xl outline-none font-bold"
+                style={{ background: 'rgba(0,0,0,0.04)', border: '1px solid rgba(0,0,0,0.08)', fontSize: 14, color: '#1a1a1a' }}
+              />
+
+              {/* Body textarea */}
+              <textarea
+                value={composeBody}
+                onChange={e => setComposeBody(e.target.value.slice(0, POST_BODY_MAX))}
+                placeholder={t3(
+                  'Share something… use #hashtag to categorize (e.g. #技巧 / #求助)',
+                  '说点什么… 用 #hashtag 分类 (如 #技巧 / #求助)',
+                  'Mag-share ka… gumamit ng #hashtag para sa kategorya',
+                )}
+                rows={6}
+                maxLength={POST_BODY_MAX}
+                className="w-full mt-3 px-3 py-2.5 rounded-xl outline-none"
+                style={{ background: 'rgba(0,0,0,0.04)', border: '1px solid rgba(0,0,0,0.08)', fontSize: 13, color: '#1a1a1a', lineHeight: 1.55, resize: 'none' }}
+              />
+              <div className="flex justify-end mt-1">
+                <span style={{ fontSize: 10, color: 'rgba(0,0,0,0.4)' }}>
+                  {composeBody.length}/{POST_BODY_MAX}
+                </span>
+              </div>
+
+              {/* ✨ AI 帮我写 按钮 */}
+              <button
+                onClick={runAiDraft}
+                disabled={aiLoading}
+                className="w-full mt-2 px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all font-bold disabled:opacity-50"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(255,90,31,0.10), rgba(255,144,84,0.05))',
+                  border: '1.5px dashed rgba(255,90,31,0.40)',
+                  color: '#FF5A1F',
+                  fontSize: 13,
+                }}
+              >
+                {aiLoading
+                  ? <>
+                      <span className="material-symbols-outlined animate-spin" style={{ fontSize: 16 }}>progress_activity</span>
+                      {t3('Drafting…', '生成中…', 'Gumagawa…')}
+                    </>
+                  : <>
+                      <span style={{ fontSize: 14 }}>✨</span>
+                      {t3('AI help me write', 'AI 帮我写', 'AI tulungan mo ako')}
+                    </>}
+              </button>
+              {aiError && (
+                <p className="mt-1.5 text-center" style={{ fontSize: 10, color: '#d63838' }}>
+                  {aiError} — {t3('using sample drafts', '使用示例文案', 'sample drafts')}
+                </p>
+              )}
+
+              {/* AI 草稿 3 段 — 点 "用这段" 追加到 body */}
+              {aiDrafts && (
+                <div className="mt-3 flex flex-col gap-2.5">
+                  <p className="font-bold" style={{ fontSize: 11, color: 'rgba(0,0,0,0.55)', letterSpacing: '0.06em' }}>
+                    ✨ {t3('Pick one or edit', '选一段或修改', 'Pumili o i-edit')}
+                  </p>
+                  {([
+                    { key: 'zh', label: '中文', flag: '🇨🇳', text: aiDrafts.zh },
+                    { key: 'en', label: 'English', flag: '🇺🇸', text: aiDrafts.en },
+                    { key: 'tl', label: 'Tagalog', flag: '🇵🇭', text: aiDrafts.tl },
+                  ] as const).map(d => d.text ? (
+                    <div key={d.key} className="rounded-xl p-3"
+                      style={{ background: 'rgba(0,0,0,0.03)', border: '1px solid rgba(0,0,0,0.06)' }}>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(0,0,0,0.65)' }}>
+                          {d.flag} {d.label}
+                        </span>
+                        <button
+                          onClick={() => pickAiDraft(d.text)}
+                          className="px-2.5 h-6 rounded-full font-bold text-white active:scale-95 transition-transform"
+                          style={{ background: '#FF5A1F', fontSize: 10 }}
+                        >
+                          {t3('Use', '用这段', 'Gamitin')}
+                        </button>
+                      </div>
+                      <p className="whitespace-pre-wrap text-zinc-700" style={{ fontSize: 12, lineHeight: 1.55 }}>
+                        {d.text}
+                      </p>
+                    </div>
+                  ) : null)}
+                </div>
+              )}
+            </div>
+
+            {/* Footer — submit */}
+            <div className="px-5 pt-3 pb-4 flex items-center gap-2"
+              style={{ borderTop: '1px solid rgba(0,0,0,0.06)', background: '#fff' }}>
+              <button
+                onClick={closeCompose}
+                disabled={composeSaving}
+                className="px-4 h-10 rounded-full font-semibold active:scale-95 transition-transform disabled:opacity-40"
+                style={{ background: 'rgba(0,0,0,0.05)', color: 'rgba(0,0,0,0.65)', fontSize: 13 }}
+              >
+                {t3('Cancel', '取消', 'Kanselahin')}
+              </button>
+              <button
+                onClick={submitPost}
+                disabled={composeSaving || !composeBody.trim()}
+                className="flex-1 h-10 rounded-full font-bold text-white active:scale-95 transition-transform disabled:opacity-40"
+                style={{ background: '#FF5A1F', fontSize: 13, boxShadow: '0 4px 14px rgba(255,90,31,0.25)' }}
+              >
+                {composeSaving
+                  ? t3('Posting…', '发布中…', 'Naglalathala…')
+                  : t3('Post', '发布', 'I-post')}
               </button>
             </div>
           </div>

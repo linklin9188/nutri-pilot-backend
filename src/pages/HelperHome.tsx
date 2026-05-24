@@ -155,10 +155,17 @@ export default function HelperHome() {
       })
       .catch(() => { setOriginCountry(null); });
 
-    // §4 社区动态 — 最新 3 帖 (helper_posts + display_name JOIN). 失败静默 (D 兜底: 没数据隐 section).
+    // §4 社区动态 — TICKET-044 §B "近期热门" mock smart push:
+    //   过去 7 天 + like_count desc 取 3 帖 (区别原 created_at desc, 给 helper
+    //   看见高赞内容刺激活跃度).
+    //   TODO: 真协同过滤推荐 ("跟你国籍/角色相似的 helpers 在看什么")
+    //         推到后续 ticket. 当前 like_count desc + 近 7 天 = 近期热门 mock.
+    //   失败静默 (D 兜底: 没数据隐 section).
+    const sevenDaysAgoIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     supabase.from('helper_posts')
       .select('id, title, body, image_url, like_count, comment_count, helper_id, user_profiles(display_name)')
-      .order('created_at', { ascending: false })
+      .gte('created_at', sevenDaysAgoIso)
+      .order('like_count', { ascending: false, nullsFirst: false })
       .limit(3)
       .then(({ data }) => {
         if (data) setCommunityPosts(data as unknown as PostMini[]);
@@ -604,13 +611,24 @@ export default function HelperHome() {
         </div>
       )}
 
-      {/* ─────────────── §4 社区动态 (空时整段隐藏) ─────────────── */}
+      {/* ─────────────── §4 社区动态 — TICKET-044 §B 近期热门 mock smart push ─────────────── */}
       {communityPosts.length > 0 && (
         <div className="relative z-10 px-5 mb-5">
           <div className="flex items-center justify-between mb-2.5">
-            <p style={{ fontSize: 11, color: "rgba(0,0,0,0.55)", letterSpacing: "0.10em", fontWeight: 700 }}>
-              {t3("COMMUNITY", "社区动态", "KOMUNIDAD")}
-            </p>
+            <div className="flex items-center gap-2">
+              <p style={{ fontSize: 11, color: "rgba(0,0,0,0.55)", letterSpacing: "0.10em", fontWeight: 700 }}>
+                {t3("COMMUNITY", "社区动态", "KOMUNIDAD")}
+              </p>
+              {/* 🔥 chip — 区分 "近期热门" fallback 模式 (现在是 like_count desc + 7d,
+                  真协同过滤推到后续 ticket) */}
+              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full"
+                style={{ background: "rgba(255,90,31,0.10)", border: "1px solid rgba(255,90,31,0.20)" }}>
+                <span style={{ fontSize: 10 }}>🔥</span>
+                <span style={{ fontSize: 9, color: "#FF5A1F", fontWeight: 700, letterSpacing: '0.04em' }}>
+                  {t3('TRENDING', '近期热门', 'TRENDING')}
+                </span>
+              </span>
+            </div>
             <button
               onClick={() => navigate('/helper-community')}
               className="flex items-center gap-0.5 active:scale-95 transition-transform"
