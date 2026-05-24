@@ -33,6 +33,7 @@ import { isNewUserSession } from '../lib/userLifecycle';
 import { pickBreakfastCombo, classifyBreakfastSlot, WET_DRINK_KEYWORDS } from '../lib/breakfastCombos';
 import { syncProfileFromDB } from '../lib/profileSync';
 import { loadPantryItems } from './usePantry';
+import { recommendDishesByVector, VECTOR_DIM } from '../lib/recommendVector';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -120,7 +121,8 @@ const WORKDAYS_PER_WEEK = 5;
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v64'; // v64: TICKET-031b P1 swap 同类匹配修 — fetchSwapOptions (useSupabaseMenu.ts:704+) 加 proteinFamilyOf() + family 硬过滤 3 层 (strict same family → same family OR unknown → cross-family 殿后)。修前老板真测 /home 红烧鲫鱼 (fish, main_protein) 点换菜出大盘鸡 / 意式柠檬鸡 / 葱烧海参 (chicken+other) 因原算法只硬过滤 course_type='main_protein', main_ingredient 退化成软排序。修后 fish 候选硬过滤 family='seafood', 鸡 (white)/牛 (red) 绝不进入. main_ingredient='other'/'carb' 等非主蛋白 dish 走原 course_type only 兼容. bump 让全 v63 缓存失效。
+export const ALGO_VERSION = 'v65'; // v65: TICKET-034 Settings §2 嵌入向量推荐 — recommendVector.ts (manual 20 维: cuisine 5+spice 1+ingredient family 8+cooking 6); user 选 onboarding 图片 → userVectorFromSelectedDishes 写 user_profiles.preference_vector; 推荐 cascade: 有 vector → recommendDishesByVector (cosineSimilarity top 100 → nutritionRerank by dietary_goal → 过敏硬过滤) 截 pool top 150 喂 generateWeekPlan; 无 vector (旧用户) → fallback 现有 scoreDish/scoreForWeek 兼容. dishes.feature_vector 100% 填充 (924/924, by scripts/compute-dish-feature-vector.ts). bump 让全 v64 缓存失效, 新算法立即生效。
+// v64: TICKET-031b P1 swap 同类匹配修 — fetchSwapOptions (useSupabaseMenu.ts:704+) 加 proteinFamilyOf() + family 硬过滤 3 层 (strict same family → same family OR unknown → cross-family 殿后)。修前老板真测 /home 红烧鲫鱼 (fish, main_protein) 点换菜出大盘鸡 / 意式柠檬鸡 / 葱烧海参 (chicken+other) 因原算法只硬过滤 course_type='main_protein', main_ingredient 退化成软排序。修后 fish 候选硬过滤 family='seafood', 鸡 (white)/牛 (red) 绝不进入. main_ingredient='other'/'carb' 等非主蛋白 dish 走原 course_type only 兼容. bump 让全 v63 缓存失效。
 // v63: TICKET-031 §A 早餐蛋类 5 工作日轮换 — breakfastCombos.ts 加 EGG_PLACEHOLDER + BREAKFAST_PROTEIN_EGG_POOL (5 蛋); 13 处 side[0]='茶叶蛋' 硬编码 → placeholder; hk-tea-restaurant 港式 3 蛋后追加 placeholder; resolveSlot 加 dayIndex 参数解析 placeholder 为 dayIndex%5 轮换 → 周一-五 protein 5 蛋不重. bump 让全 v62 缓存失效。
 // v62: TICKET-028 §D 老板 spec 早餐 4 大营养类 (碳水/蛋白/蔬菜/水果): src/lib/breakfastCombos.ts BREAKFAST_VITAMIN_FIBER_KEYWORDS 拆为 BREAKFAST_VEG_KEYWORDS + BREAKFAST_FRUIT_KEYWORDS; classifyBreakfastSlot 加 'veg' 'fruit' 两类 + 优先级 protein > fruit > veg > liquid > carb; useWeeklyMenu generateWeekPlan breakfast 改成 检查 veg + fruit 各 1 道 supplement (老 vit_fib 单 slot 拆分). 'vitamin_fiber' alias 保留 backward compat. bump 让全 v61 缓存失效, 让早餐 4 件 立即生效。
 // v61: TICKET-025 §A reader 把 0 IU / 0 mg 视为有效真值参与 (不再当 nullish skip): Backend 023 ship vitamin_d_iu fill 100% (712 行显式 0 + 212 行 >0) 后, 0 不再代表"缺数据"而是物理真值 (中餐 dish 含 vitD 食材有限). deriveBadges 💪 channel reader 显式分离 null/undefined skip vs 0 不命中, 净效应与 v60 等价但语义清晰 + 防未来 reader 误用 `!val` 把 0 当 null 误处理。bump 让全 v60 缓存保险失效, 让新语义立即生效。
@@ -3579,9 +3581,10 @@ export function useWeeklyMenu(weekOffset: number = 0) {
 
         // Fetch dish pool (dinner + all-type, limit 400).
         // Explicit column list excludes embedding (vector(768) ≈ 8KB/row).
+        // TICKET-034: 加 feature_vector (20 维 numeric[] ~200B/row) 给 vector-based recommend.
         let poolQuery = supabase
           .from('dishes')
-          .select(DISH_FIELDS)
+          .select(DISH_FIELDS + ',feature_vector')
           .or('meal_type.in.(lunch,dinner,all),meal_type.is.null')
           .limit(400);
 
@@ -3627,10 +3630,10 @@ export function useWeeklyMenu(weekOffset: number = 0) {
           return true;
         });
 
-        // Fetch user profile
+        // Fetch user profile (TICKET-034: 加 preference_vector for vector-based recommend)
         const { data: profileRow } = await supabase
           .from('user_profiles')
-          .select('hometown_cuisine, dietary_goal, taste_pref, age_group')
+          .select('hometown_cuisine, dietary_goal, taste_pref, age_group, preference_vector')
           .eq('id', userId)
           .single()
           .then(r => r, () => ({ data: null }));
@@ -3641,6 +3644,17 @@ export function useWeeklyMenu(weekOffset: number = 0) {
           taste_pref:       (profileRow as any)?.taste_pref ?? localPrefs.tastePref,
           age_group:        (profileRow as any)?.age_group ?? null,
         };
+        // TICKET-034: preference_vector — 用户 onboarding 3 组图选菜后由
+        // userVectorFromSelectedDishes 写入 (20 维 numeric[]). 存在则 cascade
+        // 走 recommendDishesByVector pre-filter pool; 缺失则 fallback 旧 scoreDish.
+        const preferenceVector: number[] | null = (() => {
+          const raw = (profileRow as any)?.preference_vector;
+          if (!raw || !Array.isArray(raw) || raw.length !== VECTOR_DIM) return null;
+          // Postgres numeric[] 可能回成 string array; 转 number
+          const arr = raw.map((x: any) => typeof x === 'number' ? x : parseFloat(String(x)));
+          if (arr.some((x: number) => !Number.isFinite(x))) return null;
+          return arr;
+        })();
 
         // Fetch recent dish history (last 30 days)
         const since = new Date();
@@ -3801,8 +3815,31 @@ export function useWeeklyMenu(weekOffset: number = 0) {
           }
         } catch { /* user_weekly_menus query 失败 → undefined fallback */ }
 
+        // ── TICKET-034 §D vector cascade ──────────────────────────────────
+        // 若 user_profiles.preference_vector 存在 (用户做过 onboarding v2 3 组
+        // 图选菜), 用 recommendDishesByVector 重排 pool top 150 喂 generateWeekPlan.
+        // 旧用户 (preference_vector 缺失) → skip cascade → 走原 scoreDish/scoreForWeek
+        // 路径不动. 保留 150 candidate (远大于 5 slot×5 day = 25) 确保 generateWeekPlan
+        // 内部多样性/dedup/营养均衡过滤仍有空间.
+        let finalPool = pool;
+        if (preferenceVector) {
+          const allergyAll: string[] = [];
+          if (familyPrefs?.allergyMembers) {
+            for (const m of familyPrefs.allergyMembers) {
+              for (const a of m.allergies) allergyAll.push(a);
+            }
+          }
+          const vectorRanked = recommendDishesByVector(preferenceVector, pool as any[], {
+            dietaryGoal: profile.dietary_goal,
+            allergens: allergyAll,
+            count: 150,
+            topNAfterSim: 150,
+          });
+          if (vectorRanked.length > 0) finalPool = vectorRanked;
+        }
+
         const menu = generateWeekPlan(
-          pool, profile, prefScores, recentIds, dishesPerDay, kidSlots,
+          finalPool, profile, prefScores, recentIds, dishesPerDay, kidSlots,
           spiceBoost, profile.age_group, healthPrefs, familyPrefs, helperMode,
           hcAdults, hcKids,
           humidity, solarTerm, hasXiaomei, breakfastPool, fruitPool,
