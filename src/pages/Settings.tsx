@@ -494,6 +494,9 @@ export default function Settings() {
     excluded_ingredients?: string[] | null;
     cooking_frequency_per_week?: number | null;
     budget_level?: string | null;
+    // TICKET-053 — 忌口可视化 (qa-047 P3): avoid_tags 由 OnboardingV2
+    // 单独写入 (海鲜/坚果/麸质/奶/蛋), 与 excluded_meats 双列等价覆盖.
+    avoid_tags?: string[] | null;
   }
   const [profileV2, setProfileV2] = useState<ProfileV2>({});
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -507,7 +510,7 @@ export default function Settings() {
       if (!uid) return;
       const { data } = await supabase
         .from("user_profiles")
-        .select("hometown_cuisine, cuisine_preference, spice_tolerance, taste_intensity, cooking_methods_pref, excluded_meats, excluded_ingredients, cooking_frequency_per_week, budget_level")
+        .select("hometown_cuisine, cuisine_preference, spice_tolerance, taste_intensity, cooking_methods_pref, excluded_meats, excluded_ingredients, cooking_frequency_per_week, budget_level, avoid_tags")
         .eq("id", uid)
         .maybeSingle();
       if (cancelled || !data) return;
@@ -1056,6 +1059,40 @@ export default function Settings() {
                       </div>
                     );
                   })()}
+
+                  {/* TICKET-053 — 忌口可视化 (qa-047 P3 — avoid_tags + excluded_meats chip).
+                      算法反推聚合 chip 把忌口压缩成"🥩 不吃猪/牛"一行, 用户填的细分类被吞.
+                      这里独立显示每个 tag, 让用户确认"我填的过敏原/忌肉都在". */}
+                  {((profileV2.avoid_tags?.length ?? 0) > 0 || (profileV2.excluded_meats?.length ?? 0) > 0) && (
+                    <div className="rounded-[16px] p-3" style={{ background: "rgba(255,90,31,0.04)", border: "1px solid rgba(255,90,31,0.10)" }}>
+                      <p className="text-[11px] font-bold mb-2" style={{ color: "#B84A0F" }}>🚫 我的忌口</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {/* avoid_tags chip (OnboardingV2 写入: 海鲜/坚果/麸质/奶/蛋) */}
+                        {profileV2.avoid_tags?.map(tag => {
+                          const label = ({
+                            seafood: "🦐 海鲜",
+                            nuts:    "🥜 坚果",
+                            gluten:  "🌾 麸质",
+                            milk:    "🥛 奶",
+                            eggs:    "🥚 蛋",
+                          } as Record<string, string>)[tag] || tag;
+                          return <span key={`a-${tag}`} className="px-2 py-0.5 text-[10px] bg-red-50 text-red-700 rounded-full">{label}</span>;
+                        })}
+                        {/* excluded_meats chip (OnboardingV2 写入: 猪/牛/羊/鸡/鸭) */}
+                        {profileV2.excluded_meats?.map(meat => {
+                          const label = ({
+                            pork:    "🐷 不吃猪",
+                            beef:    "🐄 不吃牛",
+                            lamb:    "🐑 不吃羊",
+                            chicken: "🐔 不吃鸡",
+                            duck:    "🦆 不吃鸭",
+                          } as Record<string, string>)[meat] || `不吃${meat}`;
+                          return <span key={`m-${meat}`} className="px-2 py-0.5 text-[10px] bg-orange-50 text-orange-700 rounded-full">{label}</span>;
+                        })}
+                      </div>
+                      <p className="text-[10px] text-gray-400 mt-1">想改？重做 onboarding（暂时手动重置）</p>
+                    </div>
+                  )}
 
                   {/* TICKET-039 §2 — 手动覆盖抽屉 (5 advanced 字段 → user_profiles upsert) */}
                   {advancedOpen && (
