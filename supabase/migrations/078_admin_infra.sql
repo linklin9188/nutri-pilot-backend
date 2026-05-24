@@ -36,6 +36,21 @@ COMMENT ON COLUMN user_profiles.is_admin IS
    该列判断调用者是否管理员。anon-first app 没 JWT，所以 admin gate 在
    backend service_role 层做不在 RLS 层。default false 安全语义。';
 
+-- §A1.5 user_profiles.created_at — Database 025 (TICKET-025) P0 surgical fix
+-- 原 078 §A2 view 依赖 up.created_at 但该列不存在（db push 报 SQLSTATE 42703
+-- 阻塞了 079 P0 hot helper_community）。Lead 跨部门补 ALTER 解锁。
+-- 副作用 flag：既有行 created_at = now()（不是真实注册时间），所以
+-- admin view trial_end_at = created_at + 30d 对存量用户起算 = 落地日。
+-- admin 部门若需要更准的"真实注册时间"，建议未来从 user_weekly_menus
+-- 最早 record 或 meal_logs 最早 record 反推 backfill。
+ALTER TABLE user_profiles
+  ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
+
+COMMENT ON COLUMN user_profiles.created_at IS
+  'Row creation timestamp. Added 2026-05-24 by TICKET-025 surgical fix to unblock
+   078 admin_users_view (which assumed this column existed). Existing rows defaulted
+   to now() at migration time — NOT true signup time.';
+
 -- =========================================================================
 -- §A2. admin_users_view — 每行 = 1 个用户聚合
 -- =========================================================================
