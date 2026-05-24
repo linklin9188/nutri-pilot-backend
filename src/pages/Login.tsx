@@ -463,8 +463,9 @@ export default function Login() {
               {roleHint}
             </p>
 
-            {role === "helper" ? (
-              <>
+            {/* TICKET-046 §C 完整 — 3 入口同时显示 (老板 12:05 拍板). 删 role 三元,
+                菲佣邀请码 box + 微信登录卡 并列, 雇主点微信卡走 OAuth, 菲佣输码登. */}
+            <>
               {/* TICKET-068 §B — 菲佣邀请码登录入口（跳过 OAuth 直接进 /helper） */}
               <div className="flex flex-col gap-3 rounded-2xl p-4"
                 style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.10)" }}>
@@ -538,8 +539,16 @@ export default function Login() {
                 <span style={{ fontSize: 18 }}>🌱</span>
                 {t("Not employed yet — Learn Chinese cooking", "我还没就职 — 先学中国菜")}
               </button>
-              </>
-            ) : (
+            </>
+
+            {/* TICKET-046 — 雇主路径与菲佣 box 平铺, 不再 role 二选一 */}
+            <div className="flex items-center gap-3 my-1">
+              <div className="flex-1 h-px bg-white/15" />
+              <span className="text-white/45" style={{ fontSize: 12 }}>
+                {t("or sign in with WeChat", "或微信登录")}
+              </span>
+              <div className="flex-1 h-px bg-white/15" />
+            </div>
             <>
             {/* WeChat — always shown */}
             <button
@@ -563,7 +572,6 @@ export default function Login() {
             </p>
 
             </>
-            )}
 
             {error && (
               <p className="text-center" style={{ color: "#FF8C54", fontSize: 13 }}>
