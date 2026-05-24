@@ -1013,63 +1013,58 @@ export default function Home() {
     }
   };
 
-  // TICKET-042 §A — 周末模式: Home 不显菜单, 改显"周末推荐餐厅" hero
-  // (老板拍板"周六日的主页是推荐餐厅. 下周菜单在菜单界面"). 周一-五正常菜单 UI.
-  // hook 已全部在前面调用过, 这里 conditional return 不破 React rules.
-  if (isWeekend()) {
-    // TICKET-043 §B — 5 张餐厅占位卡 + 推荐理由 chip (mock 文案, 真接入下个 sprint
-    // 关联 weekStats / taste_pref / member_goal). 老板拍板"每张卡含推荐理由 chip".
-    const RESTAURANTS = [
-      { emoji: '🍱', name: '家附近茶餐厅', desc: '港式快靓正, 老少咸宜',    reason: '🍃 偏清淡, 这家清蒸好',     color: 'rgba(255,90,31,0.10)'  },
-      { emoji: '🍜', name: '街角面馆',     desc: '汤鲜面爽, 一人 30 元搞定', reason: '🥩 本周已 4 道猪肉, 换换',  color: 'rgba(34,197,94,0.10)'  },
-      { emoji: '🍣', name: '日料居酒屋',   desc: '换换口味, 周末小确幸',     reason: '🐟 本周缺海鲜, 补一顿',     color: 'rgba(59,130,246,0.10)' },
-      { emoji: '🥘', name: '川菜小馆',     desc: '麻辣过瘾, 全家解馋',       reason: '🌶️ 因为爸爸爱辣',            color: 'rgba(236,72,153,0.10)' },
-      { emoji: '🍕', name: '社区比萨店',   desc: '孩子最爱, 周末欢乐时光',   reason: '🎒 孩子学校缺主食日',       color: 'rgba(168,85,247,0.10)' },
-    ];
-    return (
-      <div className="min-h-screen max-w-md mx-auto relative px-5"
-        style={{ background: "linear-gradient(180deg, #FAF6F0 0%, #F4EEE3 100%)", paddingBottom: 100, paddingTop: 'calc(env(safe-area-inset-top, 0px) + 24px)' }}>
-        <p className="font-bold uppercase tracking-[0.20em] mt-2" style={{ fontSize: 11, color: '#FF8C54' }}>
-          {t('Weekend', '周末')}
-        </p>
-        <h1 className="font-serif font-black mt-2 leading-tight" style={{ fontSize: 30, color: '#1a1a1a', letterSpacing: '-0.01em' }}>
-          {t('Family time, eat out today', '周末家庭自由发挥')}
-        </h1>
-        <p className="mt-2 text-zinc-500 leading-relaxed" style={{ fontSize: 14 }}>
-          {t('Try these nearby spots · Next week menu is AI-planned', '为您推荐这几家 · 下周菜单已规划')}
-        </p>
-        <div className="mt-6 flex flex-col gap-3">
-          {RESTAURANTS.map(r => (
-            <div key={r.name} className="rounded-2xl px-4 py-3"
-              style={{ background: r.color, border: '1px solid rgba(0,0,0,0.05)' }}>
-              <div className="flex items-center gap-3">
-                <span style={{ fontSize: 32 }}>{r.emoji}</span>
-                <div className="flex-1">
-                  <p className="font-bold" style={{ fontSize: 14, color: '#1a1a1a' }}>{r.name}</p>
-                  <p className="text-zinc-500" style={{ fontSize: 12 }}>{r.desc}</p>
-                </div>
+  // TICKET-048 §A+§B — 撤 042 §A "整个 home 替换为餐厅页" (老板拍板 home 老 layout
+  // 必须 100% 保留 + 周末只在顶部追加餐厅 section). 每卡加"查看 →"链接.
+  const RESTAURANTS_048 = [
+    { emoji: '🍱', name: '家附近茶餐厅', desc: '港式快靓正, 老少咸宜',    reason: '🍃 偏清淡, 这家清蒸好',    url: 'https://www.google.com/maps/search/茶餐厅', color: 'rgba(255,90,31,0.10)'  },
+    { emoji: '🍜', name: '街角面馆',     desc: '汤鲜面爽, 一人 30 元搞定', reason: '🥩 本周已 4 道猪肉, 换换', url: 'https://www.google.com/maps/search/面馆',   color: 'rgba(34,197,94,0.10)'  },
+    { emoji: '🍣', name: '日料居酒屋',   desc: '换换口味, 周末小确幸',     reason: '🐟 本周缺海鲜, 补一顿',    url: 'https://www.google.com/maps/search/日料',   color: 'rgba(59,130,246,0.10)' },
+    { emoji: '🥘', name: '川菜小馆',     desc: '麻辣过瘾, 全家解馋',       reason: '🌶️ 因为爸爸爱辣',           url: 'https://www.google.com/maps/search/川菜',   color: 'rgba(236,72,153,0.10)' },
+    { emoji: '🍕', name: '社区比萨店',   desc: '孩子最爱, 周末欢乐时光',   reason: '🎒 孩子学校缺主食日',      url: 'https://www.google.com/maps/search/比萨',   color: 'rgba(168,85,247,0.10)' },
+  ];
+  const weekendSection = isWeekend() ? (
+    <div className="px-4 pt-4 pb-2">
+      <p className="font-bold uppercase tracking-[0.20em]" style={{ fontSize: 11, color: '#FF8C54' }}>
+        {t('Weekend', '周末')}
+      </p>
+      <h2 className="font-serif font-black mt-1 leading-tight" style={{ fontSize: 22, color: '#1a1a1a', letterSpacing: '-0.01em' }}>
+        {t('Family time, eat out', '周末家庭自由发挥')}
+      </h2>
+      <p className="mt-1 text-zinc-500" style={{ fontSize: 12 }}>
+        {t('Recommended spots · tap to view', '为您推荐这几家餐厅 · 点查看')}
+      </p>
+      <div className="mt-3 flex flex-col gap-2.5">
+        {RESTAURANTS_048.map(r => (
+          <div key={r.name} className="rounded-2xl px-3 py-2.5"
+            style={{ background: r.color, border: '1px solid rgba(0,0,0,0.05)' }}>
+            <div className="flex items-center gap-2.5">
+              <span style={{ fontSize: 26 }}>{r.emoji}</span>
+              <div className="flex-1 min-w-0">
+                <p className="font-bold" style={{ fontSize: 13, color: '#1a1a1a' }}>{r.name}</p>
+                <p className="text-zinc-500 truncate" style={{ fontSize: 11 }}>{r.desc}</p>
               </div>
-              {/* 推荐理由 chip — 基于用户口味 / weekStats 营养缺口 / member goal mock */}
-              <div className="mt-2 inline-flex items-center px-2.5 py-1 rounded-full"
-                style={{ background: 'rgba(0,0,0,0.05)', fontSize: 11, color: '#555' }}>
-                {r.reason}
-              </div>
+              <a href={r.url} target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-0.5 px-2.5 py-1 rounded-full active:scale-95 flex-shrink-0"
+                style={{ background: 'rgba(255,255,255,0.7)', fontSize: 11, color: '#FF5A1F', fontWeight: 700 }}>
+                {t('View', '查看')}
+                <span className="material-symbols-outlined" style={{ fontSize: 14 }}>arrow_forward</span>
+              </a>
             </div>
-          ))}
-        </div>
-        <button
-          onClick={() => navigate('/weekly')}
-          className="mt-7 w-full py-4 rounded-2xl font-bold text-white active:scale-[0.98] transition-all flex items-center justify-center gap-2"
-          style={{ background: 'linear-gradient(135deg, #FF5A1F, #FF8C54)', fontSize: 15, boxShadow: '0 8px 28px rgba(255,90,31,0.30)' }}>
-          {t('View next week menu', '查看下周菜单')}
-          <span className="material-symbols-outlined" style={{ fontSize: 18 }}>arrow_forward</span>
-        </button>
-        <p className="mt-4 text-center text-zinc-400" style={{ fontSize: 11 }}>
-          {t('Restaurant picks are placeholders — real integration coming soon', '餐厅为占位推荐 · 真接入下个 sprint')}
-        </p>
+            <div className="mt-1.5 inline-flex items-center px-2 py-0.5 rounded-full"
+              style={{ background: 'rgba(0,0,0,0.05)', fontSize: 10, color: '#555' }}>
+              {r.reason}
+            </div>
+          </div>
+        ))}
       </div>
-    );
-  }
+      <button onClick={() => navigate('/weekly')}
+        className="mt-3 w-full py-2.5 rounded-xl font-bold text-white active:scale-[0.98] transition-all flex items-center justify-center gap-1"
+        style={{ background: 'linear-gradient(135deg, #FF5A1F, #FF8C54)', fontSize: 13, boxShadow: '0 4px 14px rgba(255,90,31,0.25)' }}>
+        {t('Next week menu', '查看下周菜单')}
+        <span className="material-symbols-outlined" style={{ fontSize: 14 }}>arrow_forward</span>
+      </button>
+    </div>
+  ) : null;
 
   return (
     <div className="min-h-screen max-w-md mx-auto relative"
@@ -1077,6 +1072,10 @@ export default function Home() {
         background: "linear-gradient(180deg, #FAF6F0 0%, #F4EEE3 100%)",
         paddingBottom: 100,
       }}>
+
+      {/* TICKET-048 §B — 周末顶部追加餐厅推荐 section (老板拍板"home 老 layout 100%
+          保留 + 周末追加"). 工作日不显此 section. 每卡含 "查看 →" 链接跳 Google Maps. */}
+      {weekendSection}
 
       {/* TICKET-061 §B — β 反馈提示 banner (dismissable + localStorage 持久化)
           仅 β 阶段显示；关闭后 localStorage.beta_banner_dismissed=true 永久不再显示。 */}
