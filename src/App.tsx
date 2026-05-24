@@ -9,6 +9,7 @@ import Home from './pages/Home';
 import Login from './pages/Login';
 import QuickSetup from './pages/QuickSetup';
 import Onboarding from './pages/Onboarding';
+import OnboardingV2 from './pages/OnboardingV2';
 import HelperPrep from './pages/HelperPrep';
 import HelperCook from './pages/HelperCook';
 import HelperHome from './pages/HelperHome';
@@ -109,24 +110,10 @@ function RootRedirect() {
     return <Navigate to={`/login?ref=${encodeURIComponent(refParam)}`} replace />;
   }
 
-  // TICKET-005 §E — β 老用户 onboarding_v3 强制重做。v3 图片驱动 onboarding
-  // 引入 9 个新 axis（table_style / protein_main_class / staple_pref / protein_pref /
-  // beef_style / chicken_style / seafood_style / veggie_method / oil_level /
-  // breakfast_cuisine），让 prefs 在图片选择中自然产生强差异化；v1/v2 用户的旧
-  // prefs 让 Algorithm 073 axis 32-40 读不到值，必须重走 /setup 进入新算法路径。
-  // v3 是 v2 的超集（保留所有 v2 字段语义），v3 done 隐含 v2 done。
-  // - quickPrefs 存在 + 没 onboarding_v3_done → 触发：清 quickPrefs + 标记
-  //   needs_v3_onboarding（升级 banner 显示）。userId / nutri_role / appLanguage
-  //   等纯认证 + 偏好 key 不动。
-  // - 完成 v3 后 QuickSetup.finish() 写 onboarding_v3_done=true（同时写
-  //   onboarding_v2_done 兜底），本检查停止再触发。
-  const hasV3 = localStorage.getItem('onboarding_v3_done') === 'true';
-  const hasOldPrefs = !!localStorage.getItem('quickPrefs');
-  if (hasOldPrefs && !hasV3) {
-    localStorage.removeItem('quickPrefs');
-    localStorage.setItem('needs_v3_onboarding', 'true');
-    return <Navigate to="/setup" replace />;
-  }
+  // TICKET-005 §E — (RETIRED by TICKET-042 §C 2026-05-25) 原"β 老用户 v3 强制
+  // 重做"分支已废弃。SPEC §0.2 老板拍板新 onboarding (3 组图 + 2 问) 后, 旧
+  // quickPrefs 用户按 §C 第 3 条 "保兼容, 不强制走新 onboarding" 直接 /home,
+  // 不再被拽回 /setup 重做. /setup 路由保留可访问 (旧用户主动重做 / 测试入口).
 
   // Silent re-auth for WeChat users who lost localStorage between sessions
   // (公众号 / 朋友圈 / 群聊 link clicks open in webview contexts whose
@@ -153,8 +140,20 @@ function RootRedirect() {
 
   const role = localStorage.getItem("nutri_role");
   if (role === "helper") return <Navigate to="/helper" replace />;
-  const hasPrefs = !!localStorage.getItem("quickPrefs");
-  return hasPrefs ? <Home /> : <Navigate to="/setup" replace />;
+
+  // TICKET-042 §C — 新 onboarding 流程 (SPEC §0.2 老板拍板 "3 组图 + 2 问"):
+  //   - 有旧 quickPrefs → 走 /home (保兼容, 不强制旧用户重做新 onboarding)
+  //   - 有 onboarding_v3_done / onboarding_v2_done 标记 → /home (新流程已完工)
+  //   - 都没有 (纯新用户) → /onboarding-v2 (3 组图 + 2 问 ~ 20 秒)
+  // 注: preference_vector 是 DB 字段, RootRedirect 同步组件不能 await DB query,
+  // 用 localStorage onboarding_v3_done 作为权威信号 (OnboardingV2.finish() 写入).
+  const hasQuickPrefs = !!localStorage.getItem("quickPrefs");
+  const hasV3Done = localStorage.getItem("onboarding_v3_done") === "true";
+  const hasV2Done = localStorage.getItem("onboarding_v2_done") === "true";
+  if (hasQuickPrefs || hasV3Done || hasV2Done) {
+    return <Home />;
+  }
+  return <Navigate to="/onboarding-v2" replace />;
 }
 
 // TICKET-038 REVISED — /about 路由被废，但老推广链接仍带 ?ref=<inviterId>
@@ -252,6 +251,10 @@ function AppShell() {
       <Route path="/setup" element={<QuickSetup />} />
       <Route path="/login" element={<Login />} />
       <Route path="/onboarding" element={<Onboarding />} />
+      {/* TICKET-042 §B — 新 onboarding (3 组图 + 2 问) SPEC §0.2 老板拍板.
+          RequireAuth 防匿名访客直进; 新用户先过 /login → RootRedirect 路由到
+          /onboarding-v2 (无 preference_vector + 无 quickPrefs). */}
+      <Route path="/onboarding-v2" element={<RequireAuth><OnboardingV2 /></RequireAuth>} />
       <Route path="/auth/wechat/in"   element={<WeChatIn />} />
       <Route path="/auth/wechat/done" element={<WeChatCallback />} />
       <Route path="/pricing" element={<Pricing />} />
