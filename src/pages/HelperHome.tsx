@@ -108,6 +108,13 @@ export default function HelperHome() {
   const [codeLoading, setCodeLoading] = useState(false);
   const [codeDone, setCodeDone] = useState(false);
 
+  // TICKET-052 §H — helper 端最小化 onboarding：只问国籍 (PH / ID).
+  // 老板拍板"helper 不再问口味/辣度/goal 等任何题"。origin_country 写入
+  // user_profiles.origin_country (migration 081 已加列)，仅在 null/空时显
+  // 提示卡；选完即隐藏。
+  const [originCountry, setOriginCountry] = useState<string | null | undefined>(undefined);
+  const [savingOrigin, setSavingOrigin] = useState(false);
+
   const now = new Date();
   const hour = now.getHours();
   const greeting = hour < 12
@@ -134,8 +141,14 @@ export default function HelperHome() {
     const userId = getUserId();
     if (!userId) return;
 
-    supabase.from("user_profiles").select("display_name").eq("id", userId).maybeSingle()
-      .then(({ data }) => { if ((data as any)?.display_name) setHelperName((data as any).display_name); });
+    supabase.from("user_profiles").select("display_name, origin_country").eq("id", userId).maybeSingle()
+      .then(({ data }) => {
+        if ((data as any)?.display_name) setHelperName((data as any).display_name);
+        // TICKET-052 §H — undefined = 未拉取过 (隐 prompt 直到 fetch 回);
+        // null / 空字符串 = 已知没填 → 显 prompt; 'PH'/'ID' = 已填 → 隐.
+        setOriginCountry(((data as { origin_country?: string | null })?.origin_country) ?? null);
+      })
+      .catch(() => { setOriginCountry(null); });
 
     // Bind status + pull the employer's menu. Three-step query because
     // helper has no direct foreign key to households.user_weekly_menus:
@@ -280,6 +293,17 @@ export default function HelperHome() {
     setCodeLoading(false);
   }
 
+  async function saveOriginCountry(code: "PH" | "ID") {
+    const uid = getUserId();
+    if (!uid) return;
+    setSavingOrigin(true);
+    const { error } = await supabase
+      .from("user_profiles")
+      .upsert({ id: uid, origin_country: code }, { onConflict: "id" });
+    setSavingOrigin(false);
+    if (!error) setOriginCountry(code);
+  }
+
   function handleInvite() {
     const url = `${window.location.origin}/login?role=helper`;
     const text = encodeURIComponent(
@@ -333,6 +357,40 @@ export default function HelperHome() {
           </span>
         </div>
       </div>
+
+      {/* TICKET-052 §H — origin country one-shot prompt.
+          Helper 端最小化 onboarding：只问国籍 (PH / ID). undefined = 还没 fetch,
+          先不渲染避免闪烁；null/空 = 已知没填，显两 chip；'PH'/'ID' = 已答过隐藏. */}
+      {originCountry === null || originCountry === "" ? (
+        <div className="relative z-10 mx-5 mb-4 px-4 py-4 rounded-2xl"
+          style={{ background: "rgba(255,255,255,0.85)", border: "1px solid rgba(255,90,31,0.20)", boxShadow: "0 4px 14px rgba(255,90,31,0.10)" }}>
+          <p className="font-bold mb-2.5" style={{ fontSize: 14, color: "#1a1a1a" }}>
+            {t3("Where are you from?", "你来自哪里？", "Saan ka galing?")}
+          </p>
+          <div className="grid grid-cols-2 gap-2.5">
+            <button
+              onClick={() => saveOriginCountry("PH")}
+              disabled={savingOrigin}
+              className="rounded-2xl py-3 flex flex-col items-center gap-1 active:scale-95 transition-all"
+              style={{ background: "rgba(0, 56, 168, 0.08)", border: "1.5px solid rgba(0, 56, 168, 0.25)" }}>
+              <span style={{ fontSize: 28 }}>🇵🇭</span>
+              <span className="font-bold" style={{ fontSize: 12, color: "#1a1a1a" }}>
+                {t3("Philippines", "菲律宾", "Pilipinas")}
+              </span>
+            </button>
+            <button
+              onClick={() => saveOriginCountry("ID")}
+              disabled={savingOrigin}
+              className="rounded-2xl py-3 flex flex-col items-center gap-1 active:scale-95 transition-all"
+              style={{ background: "rgba(206, 17, 38, 0.08)", border: "1.5px solid rgba(206, 17, 38, 0.25)" }}>
+              <span style={{ fontSize: 28 }}>🇮🇩</span>
+              <span className="font-bold" style={{ fontSize: 12, color: "#1a1a1a" }}>
+                {t3("Indonesia", "印度尼西亚", "Indonesia")}
+              </span>
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {/* TICKET-009 — empty state. dishes.length === 0 时整段 menu section
           原本 gated 掉，header 下方+ banner 上方是空白，老板反馈"界面打开

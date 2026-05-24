@@ -19,12 +19,61 @@ import LanguageSwitcher from "../components/LanguageSwitcher";
 //    保留的入口：MembershipCard 的"升级到 Pro"按钮 → /pricing 看详情
 //    /banquet / /pro/wellness / /pro/school-balance 路由仍在 App.tsx 不动
 
-// ── Membership entry shown above 退出登录 ──────────────────────────────────────
+// ── 会员中心 单入口卡 (TICKET-052 §G) ──────────────────────────────────────
+// 老板拍板"Stripe 已放下"，现阶段不真链 Stripe / 不区分 trial 倒计时，
+// 全部用户进 Settings 看见 1 个"💎 会员中心"入口，点开内嵌：
+//   1. 大标语 "目前全部免费 · 30 天后再说"
+//   2. MembershipBenefits 权限列表 (复用 Pricing 的同 source-of-truth)
+//   3. 占位 "敬请期待 · 暂不开放充值"
+// 原 MembershipCard (linkTo /pricing) + 同页下方独立 MembershipBenefits
+// 块合并为这一个折叠卡。/pricing 路由仍存在 (其他位置仍可进)，本卡不再跳转。
+function MembershipHub({ isPro }: { isPro: boolean }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="bg-white rounded-[22px] shadow-[0_4px_20px_rgba(0,0,0,0.04)] overflow-hidden">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center gap-3 px-5 py-4 active:bg-black/[0.02] transition-colors text-left">
+        <span className="text-[24px]">💎</span>
+        <div className="flex-1 min-w-0">
+          <p className="text-[14px] font-bold text-on-surface">会员中心</p>
+          <p className="text-[12px] text-secondary mt-0.5">目前全部免费 · 30 天后再说</p>
+        </div>
+        <span className="material-symbols-outlined text-secondary/60 text-[20px] transition-transform duration-200 flex-shrink-0"
+          style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)" }}>
+          expand_more
+        </span>
+      </button>
+      {open && (
+        <div className="border-t border-black/5 px-4 pt-4 pb-5 bg-black/[0.015] space-y-3">
+          {/* 大标语 */}
+          <div className="rounded-[16px] px-4 py-3 text-center"
+            style={{
+              background: "linear-gradient(135deg, rgba(255,90,31,0.10), rgba(255,140,84,0.10))",
+              border: "1px solid rgba(255,90,31,0.20)",
+            }}>
+            <p className="font-bold text-[15px]" style={{ color: "#B84A0F" }}>🎉 目前全部免费</p>
+            <p className="text-[11px] text-secondary mt-1">30 天后再说 · 暂不开放充值</p>
+          </div>
+          {/* 权限列表 — 复用 source-of-truth；隐 disclaimer 防卡内套卡 disclaimer 重复 */}
+          <MembershipBenefits isPro={isPro} hideDisclaimer />
+          {/* 占位 — Stripe 放下后给用户一个明确"未来再说"信号 */}
+          <p className="text-center text-[11px] text-secondary/60 pt-1">敬请期待 · 升级方案后续上线</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── (legacy) Membership entry retained for now in case other pages still
+// import it. 当前 Settings.tsx 已切到 MembershipHub，本 fn 不再渲染但保留导出
+// 兼容（无外部 import 后可删，本 ticket 不动）。
 // TICKET-074 §F — 精简为状态卡：
 //   helper → 白色简洁「助理永久免费」
 //   paid   → 白色简洁「✨ Pro 会员 · {plan} · 到期 {endsAt}」
 //   trial  → 小橙色入口「免费试用 · 剩 X 天 · 看看 Pro →」（精简，非大块推广）
 //   expired→ 橙色 CTA「免费版 · 升级 Pro 解锁全部 →」（精简）
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function MembershipCard() {
   const navigate = useNavigate();
   const { proReason, plan, endsAt } = useSubscription();
@@ -283,19 +332,59 @@ export default function Settings() {
   const [openId,    setOpenId]    = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<FamilyMember | null>(null);
 
-  // 我的口味 — surface onboarding answers, inline editable.
+  // 我的口味 — TICKET-052 §F: 单入口卡 + 多维度 + 200 字自由文本。
+  // 原 3 个独立下拉折叠为 1 个 "🎯 我的口味偏好" 入口，展开后同屏显示
+  // goal / spice / hometown 三组 chip + taste_pref_free_text textarea
+  // (写 user_profiles.taste_pref_free_text，migration 081 已加列).
   const [quickPrefs, setQuickPrefs] = useState<Record<string, string | string[]>>(readQuickPrefs);
-  const [openTaste,  setOpenTaste]  = useState<keyof typeof TASTE_OPTIONS | null>(null);
+  const [tasteOpen, setTasteOpen] = useState(false);
   const pickTaste = (key: keyof typeof TASTE_OPTIONS, value: string) => {
     writeQuickPref(key, value);
     setQuickPrefs(p => ({ ...p, [key]: value }));
-    setOpenTaste(null);
   };
   const currentTasteLabel = (key: keyof typeof TASTE_OPTIONS): string => {
     const id = quickPrefs[key];
     const opt = TASTE_OPTIONS[key].find(o => o.id === id);
     return opt ? `${opt.icon} ${opt.label}` : "未设置";
   };
+
+  // 自由文本口味描述（≤ 200 字，写 user_profiles.taste_pref_free_text）
+  const [tasteFreeText, setTasteFreeText] = useState<string>("");
+  const [tasteFreeSaving, setTasteFreeSaving] = useState(false);
+  const [tasteFreeMsg, setTasteFreeMsg] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const uid = getUserId();
+      if (!uid) return;
+      const { data } = await supabase
+        .from("user_profiles")
+        .select("taste_pref_free_text")
+        .eq("id", uid)
+        .maybeSingle();
+      if (cancelled) return;
+      if (data) setTasteFreeText(((data as { taste_pref_free_text?: string | null }).taste_pref_free_text) ?? "");
+    })();
+    return () => { cancelled = true; };
+  }, []);
+  async function saveTasteFreeText() {
+    const uid = getUserId();
+    if (!uid) { setTasteFreeMsg("未登录"); return; }
+    setTasteFreeSaving(true);
+    setTasteFreeMsg(null);
+    const trimmed = tasteFreeText.slice(0, 200);
+    const { error } = await supabase
+      .from("user_profiles")
+      .upsert({ id: uid, taste_pref_free_text: trimmed }, { onConflict: "id" });
+    setTasteFreeSaving(false);
+    if (error) {
+      setTasteFreeMsg("保存失败");
+      setTimeout(() => setTasteFreeMsg(null), 2000);
+    } else {
+      setTasteFreeMsg("✓ 已保存");
+      setTimeout(() => setTasteFreeMsg(null), 1800);
+    }
+  }
 
   const [helperName, setHelperName] = useState(() => localStorage.getItem("helperName") || "Ika");
   const [helperLang, setHelperLang] = useState(() => localStorage.getItem("helperLang") || "tagalog");
@@ -665,56 +754,86 @@ export default function Settings() {
             </div>
           </div>
 
-          {/* ── 我的口味 ── inline editor for the three global onboarding
-              answers (目标 / 辣度 / 家乡味). 忌口 + 健康状况 live on the
-              family member cards below — kept distinct so per-member needs
-              don't get conflated with the household default. */}
+          {/* ── 我的口味（单入口） ── TICKET-052 §F
+              原 3 个独立下拉折叠为单卡 "🎯 我的口味偏好"，展开后同屏显示
+              goal/spice/hometown chip + 200 字自由描述 textarea。
+              chip 选中即写 quickPrefs / localStorage / debounce 同步 DB；
+              textarea 单独走 saveTasteFreeText 写 user_profiles.
+              taste_pref_free_text. */}
           <div className="pt-1">
             <p className="text-[11px] font-bold text-secondary/50 uppercase tracking-wider px-1 mb-2">我的口味</p>
             <div className="bg-white rounded-[22px] shadow-[0_4px_20px_rgba(0,0,0,0.05)] overflow-hidden">
-              {(Object.keys(TASTE_OPTIONS) as (keyof typeof TASTE_OPTIONS)[]).map((key, idx) => {
-                const isOpen = openTaste === key;
-                const isLast = idx === Object.keys(TASTE_OPTIONS).length - 1;
-                return (
-                  <div key={key} className={isLast ? "" : "border-b border-black/5"}>
-                    <button
-                      onClick={() => setOpenTaste(isOpen ? null : key)}
-                      className="w-full flex items-center gap-3 px-5 py-4 active:bg-black/[0.02] transition-colors text-left">
-                      <div className="w-9 h-9 rounded-full bg-[#FFF3E0] flex items-center justify-center text-[18px]">
-                        {TASTE_ICONS[key]}
+              <button
+                onClick={() => setTasteOpen(o => !o)}
+                className="w-full flex items-center gap-3 px-5 py-4 active:bg-black/[0.02] transition-colors text-left">
+                <div className="w-9 h-9 rounded-full bg-[#FFF3E0] flex items-center justify-center text-[18px]">🎯</div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[14px] font-bold text-on-surface">我的口味偏好</p>
+                  <p className="text-[12px] text-secondary mt-0.5 truncate">{(() => {
+                    const dims = (["goal", "spice", "hometown"] as const).filter(k => quickPrefs[k]);
+                    if (dims.length === 0) return "未设置 · 点开调整 3 项口味 + 自由描述";
+                    return `已设置 ${dims.length}/3${tasteFreeText ? " · 有自由描述" : ""}`;
+                  })()}</p>
+                </div>
+                <span className="material-symbols-outlined text-secondary/60 text-[20px] transition-transform duration-200 flex-shrink-0"
+                  style={{ transform: tasteOpen ? "rotate(180deg)" : "rotate(0deg)" }}>
+                  expand_more
+                </span>
+              </button>
+              {tasteOpen && (
+                <div className="border-t border-black/5 bg-black/[0.015] px-4 pt-4 pb-4 space-y-4">
+                  {(Object.keys(TASTE_OPTIONS) as (keyof typeof TASTE_OPTIONS)[]).map(key => (
+                    <div key={key}>
+                      <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2 px-1">
+                        {TASTE_ICONS[key]} {TASTE_LABELS[key]} · <span className="opacity-60">{currentTasteLabel(key)}</span>
+                      </label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {TASTE_OPTIONS[key].map(opt => {
+                          const sel = quickPrefs[key] === opt.id;
+                          return (
+                            <button
+                              key={opt.id}
+                              onClick={() => pickTaste(key, opt.id)}
+                              className={`flex flex-col items-center gap-1 py-2.5 px-2 rounded-2xl active:scale-95 transition-all ${
+                                sel ? "bg-[#FF5A1F]/10 border-[1.5px] border-[#FF5A1F]" : "bg-white border-[1.5px] border-black/5"
+                              }`}>
+                              <span className="text-[18px]">{opt.icon}</span>
+                              <span className={`text-[11px] font-semibold ${sel ? "text-[#FF5A1F]" : "text-secondary"}`}>{opt.label}</span>
+                            </button>
+                          );
+                        })}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[14px] font-bold text-on-surface">{TASTE_LABELS[key]}</p>
-                        <p className="text-[12px] text-secondary mt-0.5 truncate">{currentTasteLabel(key)}</p>
-                      </div>
-                      <span className="material-symbols-outlined text-secondary/60 text-[20px] transition-transform duration-200 flex-shrink-0"
-                        style={{ transform: isOpen ? "rotate(180deg)" : "rotate(0deg)" }}>
-                        expand_more
-                      </span>
-                    </button>
-                    {isOpen && (
-                      <div className="px-3 pb-3 border-t border-black/5 bg-black/[0.015]">
-                        <div className="grid grid-cols-3 gap-2 pt-3">
-                          {TASTE_OPTIONS[key].map(opt => {
-                            const sel = quickPrefs[key] === opt.id;
-                            return (
-                              <button
-                                key={opt.id}
-                                onClick={() => pickTaste(key, opt.id)}
-                                className={`flex flex-col items-center gap-1 py-3 px-2 rounded-2xl active:scale-95 transition-all ${
-                                  sel ? "bg-[#FF5A1F]/10 border-[1.5px] border-[#FF5A1F]" : "bg-white border-[1.5px] border-black/5"
-                                }`}>
-                                <span className="text-[20px]">{opt.icon}</span>
-                                <span className={`text-[11px] font-semibold ${sel ? "text-[#FF5A1F]" : "text-secondary"}`}>{opt.label}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
+                    </div>
+                  ))}
+                  {/* 200-char free-text taste description */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2 px-1">
+                      ✍️ 还想告诉我们 · 最多 200 字
+                    </label>
+                    <textarea
+                      value={tasteFreeText}
+                      onChange={e => setTasteFreeText(e.target.value.slice(0, 200))}
+                      placeholder="例：爱吃江浙菜 · 不吃花椒 · 牛羊肉每周不超过 2 次 …"
+                      rows={4}
+                      maxLength={200}
+                      className="w-full bg-white border border-black/5 rounded-[14px] px-3 py-2.5 text-[13px] text-on-surface outline-none focus:border-primary resize-none"
+                    />
+                    <div className="flex items-center justify-between mt-1.5 px-1">
+                      <span className="text-[10px] text-secondary/60">{tasteFreeText.length}/200</span>
+                      <button
+                        onClick={saveTasteFreeText}
+                        disabled={tasteFreeSaving}
+                        className="px-3 py-1 rounded-full text-[11px] font-bold active:scale-95 transition-all"
+                        style={{
+                          background: tasteFreeSaving ? "rgba(0,0,0,0.08)" : "#FF5A1F",
+                          color: tasteFreeSaving ? "#888" : "white",
+                        }}>
+                        {tasteFreeSaving ? "保存中…" : tasteFreeMsg ?? "保存自由描述"}
+                      </button>
+                    </div>
                   </div>
-                );
-              })}
+                </div>
+              )}
             </div>
           </div>
 
@@ -1120,16 +1239,10 @@ export default function Settings() {
             </span>
           </button>
 
-          {/* ── Membership ── */}
-          <MembershipCard />
-
-          {/* Detailed benefits block — sits below the card so non-members
-              who tapped the upgrade gradient land on a concrete list of
-              what they're paying for. Members see the same list as a
-              record of unlocked features. The block carries its own
-              legal disclaimer (health-advice scope, coming-soon timing,
-              cancellation terms) so we don't make promises we can't keep. */}
-          <MembershipBenefits isPro={proReason === 'paid' || proReason === 'helper'} />
+          {/* ── 会员中心 (TICKET-052 §G) — 单入口折叠卡替代原 MembershipCard +
+              MembershipBenefits 双块布局。点开内嵌 "目前全部免费 · 30 天后
+              再说" 大标语 + 权限列表 + 敬请期待占位 (不再跳 /pricing). */}
+          <MembershipHub isPro={proReason === 'paid' || proReason === 'helper'} />
 
           {/* TICKET-067 §C — 独立 小美料理机 toggle card 已删除，并入"做饭辅助"分组卡 */}
 
