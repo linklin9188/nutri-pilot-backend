@@ -6,7 +6,7 @@ import BottomTabBar from "../components/BottomTabBar";
 import HelperBottomTabBar from "../components/HelperBottomTabBar";
 import { useLanguage } from "../contexts/LanguageContext";
 import { getHKAlias } from "../lib/hkNames";
-import { ALGO_VERSION as WEEKLY_ALGO_VERSION } from "../hooks/useWeeklyMenu";
+import { ALGO_VERSION as WEEKLY_ALGO_VERSION, useWeeklyMenu } from "../hooks/useWeeklyMenu";
 import { supabase } from "../lib/supabase";
 import { useSubscription } from "../lib/subscription";
 import { getUserId } from "../lib/userId";
@@ -548,6 +548,13 @@ export default function VerifyIngredients() {
   const { isPro } = useSubscription();
   const [proGateOpen, setProGateOpen] = useState(false);
 
+  // TICKET-048 P0: 用 useWeeklyMenu hook 拿菜单, 替代单纯 loadWeekMenu()
+  // localStorage 读. useWeeklyMenu 内部 DB-first 优先级 (loadFromDB → LS → 生成),
+  // 确保用户走 BottomTabBar 直接打开 /verify 时也能从 DB 拉到菜单 — 之前只读
+  // LS 会在用户没先打开过 Home tab / 换浏览器 / LS 被清空的情况下显示空清单
+  // (老板 2026-05-25 真测发现).
+  const { weeklyMenu: hookWeeklyMenu, loading: hookMenuLoading } = useWeeklyMenu(0);
+
   // If the user just arrived from /banquet, default to that view.
   const arrivedFromBanquet = typeof window !== 'undefined'
     && window.location.search.includes('from=banquet')
@@ -593,12 +600,13 @@ export default function VerifyIngredients() {
   const [orderingSkuId, setOrderingSkuId] = useState<string | null>(null);
   // Cache the schedule per current ingredients/mode so we don't recompute on
   // every render (computing requires reading the weekly menu off localStorage).
+  // TICKET-048 P0: hookWeeklyMenu 优先, fallback 到 LS (deep-link / 老缓存).
   const schedule = useMemo<ShoppingTrip[]>(() => {
     if (mode !== 'week') return [];
-    const weekMenu = loadWeekMenu();
+    const weekMenu = hookWeeklyMenu ?? loadWeekMenu();
     if (!weekMenu) return [];
     return buildShoppingSchedule(ingredients, weekMenu);
-  }, [ingredients, mode]);
+  }, [ingredients, mode, hookWeeklyMenu]);
 
   // Load active SKUs once on mount. status='pending' supplier → returns [],
   // chip / stock / 一键下单 全部自动隐藏. 老板切到 'active' 后此 UI 自动生效.
@@ -672,7 +680,9 @@ export default function VerifyIngredients() {
         // and scale each day's portions by that day's headcount, then
         // aggregate. Without this, the shopping list silently used a single
         // headcount for the whole week and over- or under-bought.
-        const weekMenu = loadWeekMenu();
+        // TICKET-048 P0: hookWeeklyMenu 优先 (DB-first), 回退 LS — 修「采购清单空」
+        // 真因: DB 有菜单但 localStorage 没 → loadWeekMenu() 返 null → ingredients=[].
+        const weekMenu = hookWeeklyMenu ?? loadWeekMenu();
         const days: any[] = weekMenu?.days ?? [];
         const allDishes = days.flatMap((d: any) => [...(d.dishes ?? []), ...(d.lunchDishes ?? [])]);
         await hydratePrepSteps(allDishes);
@@ -695,8 +705,15 @@ export default function VerifyIngredients() {
         return;
       }
 
+      // mode === 'today': 复用 hookWeeklyMenu (DB-first), fallback LS.
       const { adults, kids } = readHeadcount();
-      const dishes = getDishes(mode);
+      const todayMenu = hookWeeklyMenu ?? loadWeekMenu();
+      let dishes: any[] = [];
+      if (todayMenu) {
+        const todayStr = getTodayLocal();
+        const todayEntry = (todayMenu.days ?? []).find((d: any) => d.date === todayStr) ?? todayMenu.days?.[0];
+        dishes = todayEntry ? [...(todayEntry.dishes ?? []), ...(todayEntry.lunchDishes ?? [])] : [];
+      }
       setDishCount(dishes.length);
 
       await hydratePrepSteps(dishes);
@@ -709,7 +726,9 @@ export default function VerifyIngredients() {
 
     run();
     return () => { cancelled = true; };
-  }, [mode]);
+    // hookWeeklyMenu changes when DB load completes or regen — pull deps in
+    // so ingredients refresh once the hook resolves.
+  }, [mode, hookWeeklyMenu]);
 
   const toggleHave = (nameZh: string) => {
     setHaveIt(prev => {
@@ -918,8 +937,18 @@ export default function VerifyIngredients() {
           </div>
         )}
 
+        {/* TICKET-048 P0: hookWeeklyMenu loading 状态 — 避免菜单还在 DB 加载时
+            就闪过「还没有菜单」误导用户。 */}
+        {ingredients.length === 0 && hookMenuLoading && mode !== 'banquet' && (
+          <div className="text-center py-20 text-gray-400">
+            <span className="material-symbols-outlined text-5xl mb-3 block animate-pulse">restaurant_menu</span>
+            <p className="font-medium">菜单加载中…</p>
+            <p className="text-sm mt-1 text-gray-300">正在从云端获取本周菜单</p>
+          </div>
+        )}
+
         {/* Empty state — message + CTA differ by role */}
-        {ingredients.length === 0 && (
+        {ingredients.length === 0 && !hookMenuLoading && (
           <div className="text-center py-20 text-gray-400">
             <span className="material-symbols-outlined text-5xl mb-3 block">shopping_basket</span>
             {isHelper ? (

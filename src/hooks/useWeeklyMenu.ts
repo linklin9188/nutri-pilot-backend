@@ -3537,6 +3537,11 @@ export function useWeeklyMenu(weekOffset: number = 0) {
 
       const cached = await loadFromDB(userId, weekStart, lsKey);
       if (cached && !cancelled) {
+        // TICKET-048 P0: 把 DB-hit 的 menu 镜像写 localStorage, 让只读 LS 的
+        // consumer (e.g. VerifyIngredients.loadWeekMenu) 在 DB-first 路径下
+        // 也能拿到菜单. 之前 DB hit 时只 setState 不写 LS, 导致跨页面读源
+        // 不一致, 采购清单显示空 (老板 2026-05-25 真测发现).
+        safeSetWeeklyMenuCache(lsKey, JSON.stringify(cached));
         setWeeklyMenu(cached);
         setLoading(false);
         return;
