@@ -1,4 +1,5 @@
 import { refineCut } from './ingredientCuts';
+import { normalizeIngredientName } from './ingredientNormalization';
 
 /**
  * dishIngredients.ts
@@ -388,12 +389,23 @@ export interface AggregatedIngredient {
    *  in the shopping list so the shopper knows what to grab if the primary
    *  item is sold out. */
   substitutes?: string[];
+  /** TICKET-049 P1 — 规范化聚合后的原始变体名集合。例：canonical=葱 时
+   *  variants 可能是 ['葱段','葱丝']，UI 在 canonical 名下方用小字展示
+   *  (葱段 + 葱丝) 让用户知道为什么这两道菜合一起。只有 length >= 2 才需要
+   *  显示 —— 单一变体 = 没合并 = 无信息量。 */
+  variants?: string[];
 }
 
 /**
  * Aggregate ingredients across multiple dishes (for weekly shopping).
  * Combines same ingredient type + category, sums quantities.
  * Condiments are capped to avoid over-ordering.
+ *
+ * TICKET-049 P1: key 由 nameZh 改成 normalizeIngredientName(nameZh) ——
+ * 把"葱段 / 葱丝"等切法变体先规范化到 canonical 名（葱）再聚合，老板
+ * 真测发现的"同一根葱出现两行"被这里彻底拍平。canonical 名直接覆盖
+ * AggregatedIngredient.nameZh，UI 显示的就是合并后的清单名；原始变体名
+ * 记到 variants[] 给 UI 用小字 (葱段 + 葱丝) 透传可见性。
  */
 export function aggregateIngredients(
   allIngredients: ShoppingIngredient[],
@@ -401,8 +413,9 @@ export function aggregateIngredients(
   const map = new Map<string, AggregatedIngredient>();
 
   for (const ing of allIngredients) {
-    // Key: nameZh (condiments share across all dishes)
-    const key = ing.nameZh;
+    // TICKET-049: 规范化后的 canonical 名作为聚合 key。
+    const canonical = normalizeIngredientName(ing.nameZh);
+    const key = canonical;
 
     if (map.has(key)) {
       const existing = map.get(key)!;
@@ -420,9 +433,15 @@ export function aggregateIngredients(
       if (ing.substitutes && ing.substitutes.length > 0) {
         existing.substitutes = [...new Set([...(existing.substitutes ?? []), ...ing.substitutes])].slice(0, 3);
       }
+      // TICKET-049: 记录原始变体名（dedupe）。
+      if (!existing.variants!.includes(ing.nameZh)) {
+        existing.variants!.push(ing.nameZh);
+      }
     } else {
       map.set(key, {
-        nameZh: ing.nameZh,
+        nameZh: canonical,
+        // name 字段保留首次出现的英文括号版本 —— canonical 名通常不带英文，
+        // 拿原始 name 当 fallback 比硬替换合理。
         name: ing.name,
         type: ing.type,
         weightGrams: ing.weightGrams,
@@ -430,6 +449,7 @@ export function aggregateIngredients(
         unit: ing.unit,
         dishes: [ing.dishTitle],
         substitutes: ing.substitutes,
+        variants: [ing.nameZh],
       });
     }
   }

@@ -1018,6 +1018,13 @@ export default function VerifyIngredients() {
                         style={{ color: have ? '#ef4444' : '#1a1a1a', textDecoration: have ? 'line-through' : 'none' }}>
                         {item.nameZh}
                       </p>
+                      {/* TICKET-049 P1: 规范化合并后的原始变体名小字注释 —
+                          例：canonical=葱 + variants=[葱段,葱丝] → 显示 "(葱段 + 葱丝)" */}
+                      {item.variants && item.variants.length >= 2 && (
+                        <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">
+                          ({item.variants.join(' + ')})
+                        </p>
+                      )}
                     </div>
                     {/* 我家有 chip — visual toggle on the row right side. Not
                         an independent button (the whole row is already a
@@ -1109,6 +1116,14 @@ export default function VerifyIngredients() {
                             );
                           })()}
                         </div>
+                        {/* TICKET-049 P1: 规范化合并后的原始变体名小字注释 —
+                            例：canonical=葱 + variants=[葱段,葱丝] → 显示 "(葱段 + 葱丝)"
+                            放在 dishes 上面、紧贴主名，让用户立刻看到合并原因 */}
+                        {item.variants && item.variants.length >= 2 && (
+                          <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">
+                            ({item.variants.join(' + ')})
+                          </p>
+                        )}
                         {item.dishes.length > 0 && (
                           <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-1">
                             {item.dishes.slice(0, 2).join(' · ')}
