@@ -186,7 +186,10 @@ export default function Login() {
 
   const goAfterLogin = (r: Role) => {
     if (r === "helper") { navigate("/helper"); return; }
-    navigate(localStorage.getItem("quickPrefs") ? "/" : "/setup");
+    // TICKET-047 QA: 用 "/" 让 RootRedirect 根据三态 (quickPrefs / v3_done / v2_done)
+    // 统一路由，避免老链路硬跳 /setup 绕开 TICKET-042 新 OnboardingV2 (3 组图 + 2 问)。
+    // 老 quickPrefs 用户 → Home; 完成过 OnboardingV2 → Home; 纯新用户 → /onboarding-v2.
+    navigate("/");
   };
 
   // TICKET-043 §B — 中介推荐码 attribution. 容错: 不命中只写 referred_by_code

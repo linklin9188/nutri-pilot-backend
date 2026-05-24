@@ -53,13 +53,16 @@ export default function WeChatCallback() {
     // Tell any listening hooks that prefs / identity changed.
     window.dispatchEvent(new Event('nutri-prefs-changed'));
 
-    // Show success splash for ~850ms before navigating. New users still go
-    // to /setup, returning users to /. Helper role keeps its own landing.
+    // Show success splash for ~850ms before navigating. Helper role keeps
+    // its own landing; employer always navigates to '/' so RootRedirect
+    // can route based on three-state (quickPrefs / v3_done / v2_done) and
+    // surface TICKET-042 OnboardingV2 (3 组图 + 2 问) for genuinely new users.
+    // TICKET-047 QA: previous newUserDest='/setup' bypassed RootRedirect and
+    // forced new WeChat users into the legacy QuickSetup 11-question path.
     setIsNewUser(isNew);
     setPhase('success');
     const role = localStorage.getItem('nutri_role');
-    const newUserDest = role === 'helper' ? '/helper' : '/setup';
-    const dest = isNew ? newUserDest : '/';
+    const dest = role === 'helper' ? '/helper' : '/';
     const t = setTimeout(() => navigate(dest, { replace: true }), 850);
     return () => clearTimeout(t);
   }, [navigate]);
