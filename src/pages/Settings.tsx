@@ -386,7 +386,7 @@ export default function Settings() {
     }
   }
 
-  const [helperName, setHelperName] = useState(() => localStorage.getItem("helperName") || "Ika");
+  const [helperName, setHelperName] = useState(() => localStorage.getItem("helperName") || "菲佣");
   const [helperLang, setHelperLang] = useState(() => localStorage.getItem("helperLang") || "tagalog");
   const [helperSaved, setHelperSaved] = useState(false);
   const [helperOpen,  setHelperOpen]  = useState(false);
