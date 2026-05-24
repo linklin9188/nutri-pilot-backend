@@ -196,6 +196,61 @@ app.get('/api/_egress-ip', async (_req, res) => {
   }
 });
 
+// TICKET-20260524-024 §B — persist HTML5 geolocation coordinates that the
+// browser captured after the user granted GPS permission. Front-end calls
+// this after navigator.geolocation.getCurrentPosition() resolves.
+//
+// POST /api/user/location
+//   headers: X-User-Id: <uuid>
+//   body:    { lat: number, lng: number, gps_accepted_at?: string ISO }
+//
+// Stored on user_profiles.location_lat / location_lng / gps_accepted_at.
+app.post('/api/user/location', express.json({ limit: '1kb' }), async (req, res) => {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    return res.status(500).json({ error: 'supabase not configured' });
+  }
+  const userId = String(req.header('X-User-Id') ?? '').trim();
+  if (!userId) return res.status(400).json({ error: 'X-User-Id header required' });
+
+  const { lat, lng, gps_accepted_at } = req.body ?? {};
+  if (typeof lat !== 'number' || typeof lng !== 'number') {
+    return res.status(400).json({ error: 'lat / lng must be numbers' });
+  }
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    return res.status(400).json({ error: 'lat / lng out of range' });
+  }
+
+  const acceptedAt = (typeof gps_accepted_at === 'string' && gps_accepted_at)
+    ? gps_accepted_at
+    : new Date().toISOString();
+
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/user_profiles?id=eq.${encodeURIComponent(userId)}`, {
+      method: 'PATCH',
+      headers: {
+        apikey:        SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        'Content-Type':'application/json',
+        Prefer:        'return=minimal',
+      },
+      body: JSON.stringify({
+        location_lat:    lat,
+        location_lng:    lng,
+        gps_accepted_at: acceptedAt,
+      }),
+    });
+    if (!r.ok) {
+      const t = await r.text();
+      console.error('[/api/user/location]', r.status, t.slice(0, 200));
+      return res.status(502).json({ error: `supabase ${r.status}` });
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[/api/user/location]', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Serve static assets with long cache (they are content-hashed by Vite)
 app.use('/assets', express.static(path.join(__dirname, 'dist/assets'), {
   maxAge: '1y',

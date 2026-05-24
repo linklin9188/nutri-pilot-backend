@@ -103,15 +103,26 @@ Deno.serve(async (req: Request) => {
     const scope   = token.scope ?? "";
 
     // 2. Fetch user info if scope includes snsapi_userinfo
-    let nickname:    string | null = null;
-    let headimgurl:  string | null = null;
+    // TICKET-20260524-024 §A — capture all snsapi_userinfo fields (老板拍板
+    // "先获取所有能获取的数据,未来都有用"). Schema: avatar_url / nickname /
+    // city / province / country / wechat_sex (Database 026 已 push 9 列).
+    let nickname:   string | null = null;
+    let headimgurl: string | null = null;
+    let city:       string | null = null;
+    let province:   string | null = null;
+    let country:    string | null = null;
+    let wechatSex:  number | null = null;
     if (scope.includes("snsapi_userinfo") && token.access_token) {
       const infoUrl = `https://api.weixin.qq.com/sns/userinfo?access_token=${token.access_token}&openid=${openid}&lang=zh_CN`;
       const infoRes = await fetch(infoUrl);
       const info: WeChatUserInfo = await infoRes.json();
       if (!info.errcode) {
-        nickname   = info.nickname    ?? null;
-        headimgurl = info.headimgurl  ?? null;
+        nickname   = info.nickname   ?? null;
+        headimgurl = info.headimgurl ?? null;
+        city       = info.city       ?? null;
+        province   = info.province   ?? null;
+        country    = info.country    ?? null;
+        wechatSex  = typeof info.sex === "number" ? info.sex : null;
       } else {
         console.warn("WeChat userinfo fetch failed (continuing with openid only):", info);
       }
@@ -162,6 +173,12 @@ Deno.serve(async (req: Request) => {
         wechat_openid:   openid,
         wechat_unionid:  unionid,
         display_name:    nickname,
+        nickname,
+        avatar_url:      headimgurl,
+        city,
+        province,
+        country,
+        wechat_sex:      wechatSex,
         updated_at:      new Date().toISOString(),
       });
       if (error) {
@@ -169,10 +186,16 @@ Deno.serve(async (req: Request) => {
         return htmlError("创建用户失败");
       }
     } else {
-      // Refresh display_name / unionid in case they were missing before.
+      // Refresh fields that may have been missing or stale on the existing row.
+      // 老板 §A 决策：先存所有能存的，未来都有用 — 每次回调都同步刷新一遍。
       const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
-      if (nickname) patch.display_name = nickname;
-      if (unionid)  patch.wechat_unionid = unionid;
+      if (nickname)   { patch.display_name = nickname; patch.nickname = nickname; }
+      if (unionid)    patch.wechat_unionid = unionid;
+      if (headimgurl) patch.avatar_url     = headimgurl;
+      if (city)       patch.city           = city;
+      if (province)   patch.province       = province;
+      if (country)    patch.country        = country;
+      if (wechatSex !== null) patch.wechat_sex = wechatSex;
       await supabase.from("user_profiles").update(patch).eq("id", userId);
     }
 
