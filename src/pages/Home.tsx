@@ -1014,12 +1014,16 @@ export default function Home() {
 
   // TICKET-048 §A+§B — 撤 042 §A "整个 home 替换为餐厅页" (老板拍板 home 老 layout
   // 必须 100% 保留 + 周末只在顶部追加餐厅 section). 每卡加"查看 →"链接.
+  // TICKET-051 §B — 老板真测发现 Google Maps 跳全球乱跳，URL 改成 /?api=1&query=
+  //   并强制末尾追加 "香港" 关键词，把 region 锁在 HK。
+  const mapsHK = (q: string) =>
+    `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q + ' 香港')}`;
   const RESTAURANTS_048 = [
-    { emoji: '🍱', name: '家附近茶餐厅', desc: '港式快靓正, 老少咸宜',    reason: '🍃 偏清淡, 这家清蒸好',    url: 'https://www.google.com/maps/search/茶餐厅', color: 'rgba(255,90,31,0.10)'  },
-    { emoji: '🍜', name: '街角面馆',     desc: '汤鲜面爽, 一人 30 元搞定', reason: '🥩 本周已 4 道猪肉, 换换', url: 'https://www.google.com/maps/search/面馆',   color: 'rgba(34,197,94,0.10)'  },
-    { emoji: '🍣', name: '日料居酒屋',   desc: '换换口味, 周末小确幸',     reason: '🐟 本周缺海鲜, 补一顿',    url: 'https://www.google.com/maps/search/日料',   color: 'rgba(59,130,246,0.10)' },
-    { emoji: '🥘', name: '川菜小馆',     desc: '麻辣过瘾, 全家解馋',       reason: '🌶️ 因为爸爸爱辣',           url: 'https://www.google.com/maps/search/川菜',   color: 'rgba(236,72,153,0.10)' },
-    { emoji: '🍕', name: '社区比萨店',   desc: '孩子最爱, 周末欢乐时光',   reason: '🎒 孩子学校缺主食日',      url: 'https://www.google.com/maps/search/比萨',   color: 'rgba(168,85,247,0.10)' },
+    { emoji: '🍱', name: '家附近茶餐厅', desc: '港式快靓正, 老少咸宜',    reason: '🍃 偏清淡, 这家清蒸好',    url: mapsHK('茶餐厅'), color: 'rgba(255,90,31,0.10)'  },
+    { emoji: '🍜', name: '街角面馆',     desc: '汤鲜面爽, 一人 30 元搞定', reason: '🥩 本周已 4 道猪肉, 换换', url: mapsHK('面馆'),   color: 'rgba(34,197,94,0.10)'  },
+    { emoji: '🍣', name: '日料居酒屋',   desc: '换换口味, 周末小确幸',     reason: '🐟 本周缺海鲜, 补一顿',    url: mapsHK('日本料理'), color: 'rgba(59,130,246,0.10)' },
+    { emoji: '🥘', name: '川菜小馆',     desc: '麻辣过瘾, 全家解馋',       reason: '🌶️ 因为爸爸爱辣',           url: mapsHK('川菜'),   color: 'rgba(236,72,153,0.10)' },
+    { emoji: '🍕', name: '社区比萨店',   desc: '孩子最爱, 周末欢乐时光',   reason: '🎒 孩子学校缺主食日',      url: mapsHK('比萨'),   color: 'rgba(168,85,247,0.10)' },
   ];
   const weekendSection = isWeekend() ? (
     <div className="px-4 pt-4 pb-2">

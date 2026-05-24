@@ -566,10 +566,14 @@ export default function Login() {
               {t("Continue with WeChat", "微信登录")}
             </button>
             {/* TICKET-038 §C — 微信按钮下方 trial caption (老板 01:20 拍板:
-                "在下面用小字体显示 （免费试用30天）"). 5-lang per TRIAL_CAPTION. */}
-            <p className="text-center text-white/45" style={{ fontSize: 11, marginTop: -4 }}>
-              {TRIAL_CAPTION[language]}
-            </p>
+                "在下面用小字体显示 （免费试用30天）"). 5-lang per TRIAL_CAPTION.
+                TICKET-051 §C — 老板拍板"菲佣界面不要显示免费试用 本来就是免费的"，
+                trial 文案仅雇主可见，helper 选中时隐藏。 */}
+            {role === "employer" && (
+              <p className="text-center text-white/45" style={{ fontSize: 11, marginTop: -4 }}>
+                {TRIAL_CAPTION[language]}
+              </p>
+            )}
 
             </>
 
