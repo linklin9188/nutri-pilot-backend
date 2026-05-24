@@ -153,6 +153,13 @@ export default function Login() {
   const [inviteErr, setInviteErr] = useState("");
   const [inviteBusy, setInviteBusy] = useState(false);
 
+  // TICKET-043 §B — 中介推荐码 (选填). PDPO 合规: 不显示"你的中介是 X"
+  // 避免泄露中介客户名单, 只内部 attribution 写 user_profiles.
+  // ?ref=AIEATS_DEMO URL 自动预填 (中介自定义分享链可一键填码).
+  const [agencyCode, setAgencyCode] = useState(() =>
+    (searchParams.get("ref") ?? "").toUpperCase()
+  );
+
   // TICKET-037 §B — WeChat 自动登录路径的进度条 + 手动降级。
   // 当用户从微信里第一次进入 /login（isWxFlow=true）且没有缓存的
   // wechat_session 时，先显示一个"微信识别中…"覆盖层，4 秒后自动落到
@@ -180,6 +187,31 @@ export default function Login() {
   const goAfterLogin = (r: Role) => {
     if (r === "helper") { navigate("/helper"); return; }
     navigate(localStorage.getItem("quickPrefs") ? "/" : "/setup");
+  };
+
+  // TICKET-043 §B — 中介推荐码 attribution. 容错: 不命中只写 referred_by_code
+  // 留 record (不报错). 命中写 referred_by_agency_id + referred_by_code.
+  // PDPO 合规: 不暴露 agency.name / contact 给 UI, 只内部 attribution.
+  const attributeReferralCode = async (userId: string, rawCode: string) => {
+    const code = rawCode.trim().toUpperCase();
+    if (!code) return;
+    try {
+      const { data: agency } = await supabase
+        .from('agencies')
+        .select('id')
+        .eq('referral_code', code)
+        .eq('status', 'active')
+        .maybeSingle();
+      await supabase
+        .from('user_profiles')
+        .update({
+          referred_by_agency_id: agency?.id ?? null,
+          referred_by_code: code,
+        })
+        .eq('id', userId);
+    } catch {
+      // silent — attribution 失败不阻塞登录
+    }
   };
 
   // TICKET-068 §B — 邀请码提交：households 查 → upsert user_profiles +
@@ -215,6 +247,12 @@ export default function Login() {
         { onConflict: 'id' }
       );
 
+      // TICKET-043 §B — 推荐码 attribution (helper 路径). 在 user_profiles
+      // upsert 之后跑, 否则 update 找不到 row.
+      if (agencyCode.trim()) {
+        await attributeReferralCode(helperId, agencyCode);
+      }
+
       await supabase.from('household_members').upsert(
         { household_id: hh.id, helper_id: helperId, status: 'active' },
         { onConflict: 'household_id,helper_id' }
@@ -233,6 +271,12 @@ export default function Login() {
 
   const handleWeChat = () => {
     setError("");
+    // TICKET-043 §B — 推荐码若有则缓存 localStorage, 给 WeChat OAuth 回调
+    // 用 (edge function 落 userId 后, /auth/wechat/done 路由可读出并 attribute).
+    // 当前 ship 真 OAuth 路径不处理 (需 edge fn 配套), 只 dev fallback 立即 attribute.
+    if (agencyCode.trim()) {
+      try { localStorage.setItem('nutri_pending_ref_code', agencyCode.trim().toUpperCase()); } catch {}
+    }
     const res = launchWeChat();
     if (!res.triggered) {
       // Outside WeChat browser: keep the dev fallback so testing on
@@ -240,6 +284,14 @@ export default function Login() {
       // and never see the fallback.
       if (!/MicroMessenger/i.test(navigator.userAgent)) {
         devTestLogin(role, "wechat");
+        // TICKET-043 §B — dev fallback 路径立即 attribute. 真 WeChat OAuth
+        // 路径需另外在 /auth/wechat/done 消费 nutri_pending_ref_code (TODO).
+        if (agencyCode.trim()) {
+          const uid = getUserId();
+          if (uid) {
+            attributeReferralCode(uid, agencyCode).catch(() => {});
+          }
+        }
         goAfterLogin(role);
         return;
       }
@@ -267,6 +319,10 @@ export default function Login() {
         { id: helperId, display_name: nickname.trim() },
         { onConflict: "id" },
       );
+      // TICKET-043 §B — 推荐码 attribution (learner 路径)
+      if (agencyCode.trim()) {
+        await attributeReferralCode(helperId, agencyCode);
+      }
     } catch {
       // upsert failure non-fatal — still persist locally so user can browse.
     }
@@ -489,6 +545,23 @@ export default function Login() {
                 👩‍🍳 {t("I'm a helper", "我是菲佣")}
               </button>
             </div>
+
+            {/* TICKET-043 §B — 中介推荐码 (选填). PDPO 合规: 仅 input, 不显
+                "你的中介是 X" 避免泄露中介客户名单. employer/helper 双角色都可填. */}
+            <input
+              type="text"
+              inputMode="text"
+              autoCapitalize="characters"
+              value={agencyCode}
+              onChange={e => setAgencyCode(e.target.value.toUpperCase())}
+              placeholder={t("Referral code (optional)", "中介推荐码（选填）")}
+              className="w-full h-10 rounded-xl px-3 text-white outline-none mb-1"
+              style={{
+                background: "rgba(255,255,255,0.05)",
+                border: "1px dashed rgba(255,255,255,0.18)",
+                fontSize: 12, letterSpacing: "0.06em",
+              }}
+            />
 
             {/* TICKET-047 修订 — helper 角色才显邀请码 box, employer 直接看微信登录 */}
             {role === "helper" && (
