@@ -10,7 +10,6 @@ import { fetchSwapOptions, type SupabaseDish } from "../hooks/useSupabaseMenu";
 import { useWeeklyMenu, isWeekend, todayDayIndex } from "../hooks/useWeeklyMenu";
 import { isNewUserSession, isWithinTrial } from "../lib/userLifecycle";
 import WeekendDiningReport from "../components/WeekendDiningReport";
-import NextWeekMenuPreview from "../components/NextWeekMenuPreview";
 import {
   analyzeFridgePhoto, fileToBase64,
   type ScanScene, type ScanLocale,
@@ -1057,12 +1056,8 @@ export default function Home() {
           </div>
         ))}
       </div>
-      <button onClick={() => navigate('/weekly')}
-        className="mt-3 w-full py-2.5 rounded-xl font-bold text-white active:scale-[0.98] transition-all flex items-center justify-center gap-1"
-        style={{ background: 'linear-gradient(135deg, #FF5A1F, #FF8C54)', fontSize: 13, boxShadow: '0 4px 14px rgba(255,90,31,0.25)' }}>
-        {t('Next week menu', '查看下周菜单')}
-        <span className="material-symbols-outlined" style={{ fontSize: 14 }}>arrow_forward</span>
-      </button>
+      {/* TICKET-049 — 老板拍板"周末首页不显示下周菜单，下周菜单在菜单页面显示"。
+          原 "查看下周菜单 →" CTA 删除；周末首页 = 纯餐厅推荐。 */}
     </div>
   ) : null;
 
@@ -1272,7 +1267,8 @@ export default function Home() {
             branch kicks in. */}
         {(isWeekend() && !isNewUserSession()) ? <>
           <WeekendDiningReport />
-          <NextWeekMenuPreview />
+          {/* TICKET-049 — 删 NextWeekMenuPreview "下周菜单" nav card (老板拍板
+              下周菜单在 /weekly 页面显示，首页周末分支不再有 menu 导航入口)。 */}
         </> : <>
 
         {/* 家庭成员补全 nudge — 仅对「家有小孩、家庭成员档案不全、未被
