@@ -5,7 +5,7 @@ import { type CookStep } from "../hooks/useSupabaseMenu";
 import { useLanguage } from "../contexts/LanguageContext";
 import { getUserId } from "../lib/userId";
 import { getDishTitle } from "../lib/dishTitleI18n";
-import HelperBottomTabBar from "../components/HelperBottomTabBar";
+import HelperTabBar from "../components/HelperTabBar";
 
 interface DishWithCook {
   id: string;
@@ -193,7 +193,7 @@ function DishListScreen({ dishes, loading, onSelect }: {
           })
         )}
       </main>
-      <HelperBottomTabBar />
+      <HelperTabBar active="cook" />
     </div>
   );
 }

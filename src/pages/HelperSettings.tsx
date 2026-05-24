@@ -26,7 +26,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { getUserId, clearUserId } from "../lib/userId";
 import { useLanguage } from "../contexts/LanguageContext";
-import HelperBottomTabBar from "../components/HelperBottomTabBar";
+import HelperTabBar from "../components/HelperTabBar";
 
 interface HelperProfile {
   display_name?: string | null;
@@ -461,7 +461,7 @@ export default function HelperSettings() {
         </div>
       </div>
 
-      <HelperBottomTabBar />
+      <HelperTabBar active="settings" />
     </div>
   );
 }

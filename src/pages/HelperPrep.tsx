@@ -6,6 +6,7 @@ import { supabase } from "../lib/supabase";
 import { type PrepStep } from "../hooks/useSupabaseMenu";
 import { useFeedbackEngine } from "../hooks/useFeedbackEngine";
 import { formatIngredientQty } from "../lib/quantity";
+import HelperTabBar from "../components/HelperTabBar";
 
 // Tray labels per language. ABCD ordering is locked (kitchen physical
 // trays are labeled), so only the human-readable name shifts with locale.
@@ -480,8 +481,9 @@ export default function HelperPrep() {
         </button>
       </div>
 
-      {/* Footer — global cook button */}
-      <footer className="fixed bottom-0 w-full max-w-md mx-auto z-50 p-5 bg-gradient-to-t from-[#f4f4f6] via-[#f4f4f6]/95 to-transparent">
+      {/* Footer — global cook button. TICKET-041 §2: shift up so the new
+          5-tab HelperTabBar can sit on the 0 row. */}
+      <footer className="fixed bottom-[72px] w-full max-w-md mx-auto z-40 p-5 bg-gradient-to-t from-[#f4f4f6] via-[#f4f4f6]/95 to-transparent">
         {dishes.length > 0 && (
           <button
             onClick={() => goToCook(singleDishId ?? dishes[0].id)}
@@ -504,6 +506,8 @@ export default function HelperPrep() {
           </button>
         )}
       </footer>
+
+      <HelperTabBar active="prep" />
     </div>
   );
 }

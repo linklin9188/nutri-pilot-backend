@@ -28,6 +28,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { getUserId } from '../lib/userId';
 import { useLanguage } from '../contexts/LanguageContext';
+import HelperTabBar from '../components/HelperTabBar';
 
 interface PostRow {
   id: string;
@@ -523,10 +524,10 @@ export default function HelperCommunity() {
         )}
       </div>
 
-      {/* Detail modal */}
+      {/* Detail modal — TICKET-041 §2: 升到 z-[60] 盖过新 5-tab HelperTabBar (z-50). */}
       {openPost && (
         <div
-          className="fixed inset-0 z-40 flex items-end sm:items-center justify-center"
+          className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center"
           style={{ background: 'rgba(0,0,0,0.55)' }}
           onClick={closeDetail}
         >
@@ -652,13 +653,15 @@ export default function HelperCommunity() {
         </div>
       )}
 
-      {/* Toast */}
+      {/* Toast — 上移到 TabBar 之上 (TabBar ~72px + safe-area). */}
       {toast && (
         <div className="fixed left-1/2 -translate-x-1/2 px-4 py-2 rounded-full text-white font-semibold z-50"
-          style={{ bottom: 80, background: 'rgba(0,0,0,0.85)', fontSize: 12, boxShadow: '0 4px 18px rgba(0,0,0,0.3)' }}>
+          style={{ bottom: 96, background: 'rgba(0,0,0,0.85)', fontSize: 12, boxShadow: '0 4px 18px rgba(0,0,0,0.3)' }}>
           {toast}
         </div>
       )}
+
+      <HelperTabBar active="community" />
     </div>
   );
 }
