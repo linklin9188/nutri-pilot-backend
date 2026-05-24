@@ -1260,7 +1260,7 @@ async function prefetchWeekStats(weekStart: string, userId: string): Promise<voi
   } catch { /* fetch 失败 → deriveBadges 💪 退 placeholder */ }
 }
 
-function getCurrentFestival(today: Date): string | null {
+export function getCurrentFestival(today: Date): string | null {
   const year = today.getFullYear();
   const todayMs = today.getTime();
   for (const f of FESTIVALS) {

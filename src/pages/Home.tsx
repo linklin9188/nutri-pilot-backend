@@ -7,7 +7,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchSwapOptions, type SupabaseDish } from "../hooks/useSupabaseMenu";
-import { useWeeklyMenu, isWeekend, todayDayIndex } from "../hooks/useWeeklyMenu";
+import { useWeeklyMenu, isWeekend, todayDayIndex, getCurrentFestival } from "../hooks/useWeeklyMenu";
 import { isWithinTrial } from "../lib/userLifecycle";
 import WeekendDiningReport from "../components/WeekendDiningReport";
 import {
@@ -108,10 +108,14 @@ const FESTIVAL_LABEL: Record<string, { name: string; icon: string; chips: string
   chongyang: { name: '重阳',      icon: '🌼', chips: ['菊花酒', '糕点', '羊肉'] },
 };
 
-// Hook that dynamically imports getCurrentFestival from useWeeklyMenu and
-// returns the active slug (±3 days window) — null when nothing matches OR
-// when Algorithm 025 hasn't exported the helper yet (silent skip, per
-// TICKET-027 §B fallback rule).
+// Returns the active festival slug (±3 days window) — null when nothing matches.
+//
+// TICKET-052 PERF: 原 dynamic import probe (`await import('../hooks/useWeeklyMenu')`)
+// 与文件顶部 static import 同时存在导致 dual import — bundler 把 useWeeklyMenu
+// 整 module 打进主 chunk 后 dynamic 路径完全无效（且 getCurrentFestival 当时未
+// export，typeof fn !== 'function' 总是 silent skip，banner 在 prod 实际永远不
+// 工作）。改为直接 static import + 同步调用，bundle 少一份冗余拷贝，banner 也
+// 真正生效。
 //
 // Dev override (TICKET-030 §C): `?debug_festival=<slug>` on localhost or
 // vite-dev forces the banner to render with that slug so all 7 banners can
@@ -133,23 +137,16 @@ function useActiveFestival(): string | null {
           || host.endsWith('.local');
         if (debug && isDev) {
           setSlug(debug);
-          return; // dev fast-path; skip the dynamic-import probe below
+          return; // dev fast-path
         }
       } catch { /* malformed URL — fall through to production path */ }
     }
 
-    // 2. Production path — dynamic import probe (per TICKET-027 §B).
-    let cancelled = false;
-    (async () => {
-      try {
-        const mod = await import('../hooks/useWeeklyMenu');
-        const fn = (mod as any).getCurrentFestival;
-        if (typeof fn !== 'function') return; // not exported yet — silent skip
-        const found = fn(new Date());
-        if (!cancelled && typeof found === 'string') setSlug(found);
-      } catch { /* dynamic import failed — silent skip per ticket */ }
-    })();
-    return () => { cancelled = true; };
+    // 2. Production path — static getCurrentFestival call.
+    try {
+      const found = getCurrentFestival(new Date());
+      if (typeof found === 'string') setSlug(found);
+    } catch { /* defensive — never crash Home on a date-helper edge case */ }
   }, []);
   return slug;
 }
