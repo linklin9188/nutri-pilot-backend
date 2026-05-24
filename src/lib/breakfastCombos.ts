@@ -245,21 +245,44 @@ export const BREAKFAST_PROTEIN_KEYWORDS = [
   '蛋','蛋羹','鸡蛋','培根','火腿','瘦肉','牛奶','酸奶','豆浆','豆腐脑',
   '腐竹','鸡丝','鱼片','虾','瘦肉粥','皮蛋','奶酪','芝士','肠','肉',
 ];
-export const BREAKFAST_VITAMIN_FIBER_KEYWORDS = [
+// §D (TICKET-028) 老板 spec: 早餐 4 件大类 = 碳水/蛋白/蔬菜/水果. v62 之前
+// BREAKFAST_VITAMIN_FIBER_KEYWORDS 混合蔬菜+水果+杂粮, v62 拆分:
+//   - BREAKFAST_VEG_KEYWORDS: 纯蔬菜 (青菜/番茄/沙拉/蘑菇/杂粮根茎)
+//   - BREAKFAST_FRUIT_KEYWORDS: 纯水果 (苹果/香蕉/橙/梨/蓝莓/草莓/果汁/水果)
+// classifyBreakfastSlot 加 'fruit' case, 优先级: protein > fruit > veg > liquid > carb
+export const BREAKFAST_VEG_KEYWORDS = [
   '蔬菜','青菜','番茄','黄瓜','胡萝卜','菠菜','油菜','生菜','沙拉',
+  '蘑菇','西兰花','卷心菜','花椰菜','苋菜','茄子','洋葱','彩椒','豆芽',
+  '杂粮','坚果','核桃','杏仁','南瓜','红薯','玉米','土豆',
+];
+export const BREAKFAST_FRUIT_KEYWORDS = [
   '苹果','香蕉','橙','梨','蓝莓','草莓','水果','果','果汁','蔬果汁',
-  '杂粮','坚果','核桃','杏仁','南瓜','红薯','玉米',
+  '葡萄','桃','西瓜','哈密瓜','奇异果','猕猴桃','芒果','菠萝','榴莲','柚子',
+  '柠檬','樱桃','荔枝','龙眼','椰子','柿子','石榴','无花果','百香果',
+];
+// §A (TICKET-007 legacy) — v62 起 vit_fib 拆成 veg + fruit, 保留旧 keyword 名
+// alias 给老代码 (compat) 但实际不再使用; classifyBreakfastSlot 路径切到新 4 类。
+export const BREAKFAST_VITAMIN_FIBER_KEYWORDS = [
+  ...BREAKFAST_VEG_KEYWORDS, ...BREAKFAST_FRUIT_KEYWORDS,
 ];
 export const BREAKFAST_LIQUID_KEYWORDS = [
-  '温水','果汁','豆浆','米浆','汤','茶','奶茶','咖啡','柠檬水','蜂蜜水','米汤',
+  '温水','豆浆','米浆','汤','茶','奶茶','咖啡','柠檬水','蜂蜜水','米汤',
 ];
 
-export type BreakfastNutritionSlot = 'carb' | 'protein' | 'vitamin_fiber' | 'liquid' | 'unknown';
+// §D (TICKET-028) v62: 'vitamin_fiber' 拆成 'veg' + 'fruit' 反映老板 spec.
+// 'liquid' 保留 (牛奶/豆浆/茶 早餐液体类), 但 classifyBreakfastSlot 路径
+// 优先归到 protein (牛奶/豆浆是蛋白来源); 纯 liquid (茶/水/咖啡) 走 liquid.
+// 旧 'vitamin_fiber' 类型保留作 deprecated alias (不再返回), 防止现有 import
+// 报错.
+export type BreakfastNutritionSlot = 'carb' | 'protein' | 'veg' | 'fruit' | 'vitamin_fiber' | 'liquid' | 'unknown';
 
 export function classifyBreakfastSlot(dish: { title_zh?: string | null }): BreakfastNutritionSlot {
   const t = dish.title_zh || '';
+  // §D (TICKET-028) v62 新优先级: protein > fruit > veg > liquid > carb
+  // fruit 在 veg 前是因 '水果汁' 应归 fruit 而非 liquid (含 '果' 关键词).
   if (BREAKFAST_PROTEIN_KEYWORDS.some(kw => t.includes(kw))) return 'protein';
-  if (BREAKFAST_VITAMIN_FIBER_KEYWORDS.some(kw => t.includes(kw))) return 'vitamin_fiber';
+  if (BREAKFAST_FRUIT_KEYWORDS.some(kw => t.includes(kw))) return 'fruit';
+  if (BREAKFAST_VEG_KEYWORDS.some(kw => t.includes(kw))) return 'veg';
   if (BREAKFAST_LIQUID_KEYWORDS.some(kw => t.includes(kw))) return 'liquid';
   if (BREAKFAST_CARB_KEYWORDS.some(kw => t.includes(kw))) return 'carb';
   return 'unknown';

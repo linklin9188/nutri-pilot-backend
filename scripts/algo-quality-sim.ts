@@ -105,6 +105,15 @@ const PROFILES: Profile[] = [
   { name: '22-双病老人-控糖控盐',      hometown: 'cantonese', dietary_goal: 'maintain', taste_pref: 'light',
     imagePrefs: { protein_main_class: ['white','seafood'], oil_level: 'low',
                   seafood_style: ['steam','soup'], breakfast_cuisine: 'hk' } },
+  // ── TICKET-028 P0 — 2大2小 + 爸爸辣海鲜 (老板真测) ───────────────────────
+  // 老板 08:45: "两大两小, 一个大的可以吃辣, 喜欢吃海鲜, 生成一周菜单"
+  // sim 单 profile 不模 family member, per-member slot allocation 是 prod
+  // generateWeekPlan 真功能 (familyPrefs.homeMembers + memberMainSlots). sim
+  // 跑此 profile 抓 imagePrefs spicy + seafood 命中率, prod 行为在报告说明。
+  { name: '23-2大2小-爸爸辣海鲜',     hometown: 'east', dietary_goal: 'maintain', taste_pref: 'spicy',
+    imagePrefs: { protein_main_class: ['seafood'], oil_level: 'mid',
+                  seafood_style: ['steam','stirfry'],
+                  staple_pref: ['rice'], protein_pref: ['fish','shrimp'] } },
 ];
 
 // ── Hometown → DB bucket (镜像 src/lib/hometownBuckets.ts) ────────────────
@@ -824,6 +833,79 @@ async function main() {
       const verdict = jacc < 0.30 ? '✅ 算法真在干活' : jacc > 0.70 ? '❌ 算法假在跑 P0' : '⚠️ 部分分化 mid';
       console.log(`\n▼ 【结论判定】 全 Jaccard ${(jacc*100).toFixed(1)}% → ${verdict}`);
       console.log(`   阈值: < 30% = ✅ 真在干活 / > 70% = ❌ 假在跑 / 30-70% = ⚠️ mid`);
+    }
+
+    // ─── TICKET-028 P0 2大2小 + 爸爸辣海鲜 完整 5 天菜单 dump ─────────────────
+    console.log(`\n=== 【TICKET-028 P0 2大2小 + 爸爸辣海鲜 完整 5 天菜单 — 老板 08:45 真测】===\n`);
+    const dadResult = results.find(r => r.profile.name === '23-2大2小-爸爸辣海鲜');
+    if (dadResult) {
+      console.log(`▼ profile: ${dadResult.profile.name}`);
+      console.log(`  hometown=${dadResult.profile.hometown} (江浙近海) | goal=${dadResult.profile.dietary_goal} | taste=${dadResult.profile.taste_pref} (爸爸辣)`);
+      console.log(`  imagePrefs: pmc=[${(dadResult.profile.imagePrefs.protein_main_class ?? []).join(',')}] | oil=${dadResult.profile.imagePrefs.oil_level} | seafood_style=[${(dadResult.profile.imagePrefs.seafood_style ?? []).join(',')}]`);
+      console.log(`  protein_pref=[${(dadResult.profile.imagePrefs.protein_pref ?? []).join(',')}] | staple=[${(dadResult.profile.imagePrefs.staple_pref ?? []).join(',')}]\n`);
+      // 按 day × meal 输出 grid
+      console.log(`▼ 5 天完整菜单 (5 workdays × 7 slots = 35 道):\n`);
+      const DAYS = ['周一', '周二', '周三', '周四', '周五'];
+      const SLOT_LABELS: Record<string, string> = {
+        bf_staple: '早 主食', bf_side: '早 配',
+        lu_staple: '午 主食', lu_main: '午 主菜',
+        di_main1: '晚 主菜1', di_main2: '晚 主菜2', di_veg: '晚 蔬/汤',
+      };
+      for (let day = 0; day < 5; day++) {
+        console.log(`  ── ${DAYS[day]} ──`);
+        const dayPicks = dadResult.picks.filter(pk => pk.dayIndex === day);
+        for (const pk of dayPicks) {
+          const d = pk.dish;
+          const pmc = d.protein_main_class ?? _proteinClassOf(d.main_ingredient ?? '');
+          const flavors = (d.flavor_tags ?? []) as string[];
+          const isSpicy = flavors.includes('spicy') || flavors.includes('medium_spicy');
+          const spicyMark = isSpicy ? '🌶️' : '  ';
+          const seafoodMark = pmc === 'seafood' ? '🐟' : '  ';
+          console.log(`    ${(SLOT_LABELS[pk.slot] ?? pk.slot).padEnd(7)} ${spicyMark}${seafoodMark} ${(d.title_zh ?? '').padEnd(22)} pmc=${(pmc||'-').padEnd(8)} origin=${(d.origin_cuisine||'-').padEnd(12)} score=${pk.score.toFixed(2)}`);
+        }
+      }
+      // 算法说明指标
+      const dinnerMains = dadResult.picks.filter(pk => pk.meal === '晚餐' && /main/.test(pk.slot));
+      const allMains = dadResult.picks.filter(pk => /main/.test(pk.slot));
+      const dinnerSeafood = dinnerMains.filter(pk => {
+        const pmc = pk.dish.protein_main_class ?? _proteinClassOf(pk.dish.main_ingredient ?? '');
+        return pmc === 'seafood';
+      });
+      const dinnerSpicy = dinnerMains.filter(pk => {
+        const ft = (pk.dish.flavor_tags ?? []) as string[];
+        return ft.includes('spicy') || ft.includes('medium_spicy');
+      });
+      const allSeafood = dadResult.picks.filter(pk => {
+        const pmc = pk.dish.protein_main_class ?? _proteinClassOf(pk.dish.main_ingredient ?? '');
+        return pmc === 'seafood';
+      });
+      const allSpicy = dadResult.picks.filter(pk => {
+        const ft = (pk.dish.flavor_tags ?? []) as string[];
+        return ft.includes('spicy') || ft.includes('medium_spicy');
+      });
+      console.log(`\n▼ 算法命中率指标:`);
+      const allMainSeafood = allMains.filter(pk => {
+        const pmc = pk.dish.protein_main_class ?? _proteinClassOf(pk.dish.main_ingredient ?? '');
+        return pmc === 'seafood';
+      });
+      const allMainSpicy = allMains.filter(pk => {
+        const ft = (pk.dish.flavor_tags ?? []) as string[];
+        return ft.includes('spicy') || ft.includes('medium_spicy');
+      });
+      console.log(`  dinner main 海鲜命中率: ${dinnerSeafood.length}/${dinnerMains.length} = ${(dinnerSeafood.length/dinnerMains.length*100).toFixed(0)}% (期望 ≥40%)`);
+      console.log(`  dinner main 辣度命中率: ${dinnerSpicy.length}/${dinnerMains.length} = ${(dinnerSpicy.length/dinnerMains.length*100).toFixed(0)}% (期望 ≥40%)`);
+      console.log(`  全 main slot (午+晚 共 15) 海鲜命中率: ${allMainSeafood.length}/${allMains.length} = ${(allMainSeafood.length/allMains.length*100).toFixed(0)}%`);
+      console.log(`  全 main slot 辣度命中率: ${allMainSpicy.length}/${allMains.length} = ${(allMainSpicy.length/allMains.length*100).toFixed(0)}%`);
+      console.log(`  全 35 道海鲜数: ${allSeafood.length}/35 (${(allSeafood.length/35*100).toFixed(0)}%)`);
+      console.log(`  全 35 道带辣数: ${allSpicy.length}/35 (${(allSpicy.length/35*100).toFixed(0)}%)`);
+      // cuisine 分布
+      const cuiCounts: Record<string, number> = {};
+      for (const pk of dadResult.picks) {
+        const c = pk.dish.origin_cuisine || '其他';
+        cuiCounts[c] = (cuiCounts[c] ?? 0) + 1;
+      }
+      const cuiSorted = Object.entries(cuiCounts).sort((a, b) => b[1] - a[1]);
+      console.log(`  cuisine 分布: ${cuiSorted.map(([k, v]) => `${k}=${v}`).join(' | ')}`);
     }
 
     // ─── TICKET-021 §B NUTRIENT_BOOL_FALLBACK 7 映射 audit ──────────────────
