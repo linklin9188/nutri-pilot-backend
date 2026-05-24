@@ -12,12 +12,13 @@ import LanguageSwitcher from "../components/LanguageSwitcher";
 // 全配 (zh/zh-Hant/en/tl/id). 不用 t() / t4() 因 zh-Hant 字形独立。
 // TICKET-040 — eyebrow 简化为 "爱吃 Aieats" (原 "AIEATS · 妈妈们的智能菜单"
 // 跟 H1 重复). H1 / sub 不动.
-const LOGIN_HERO: Record<Language, { eyebrow: string; h1: string; sub: string }> = {
-  "zh":      { eyebrow: "爱吃 Aieats", h1: "妈妈们的智能菜单",          sub: "按节气推应季菜 · 同步校园菜谱 · 给宝贝不重复的营养呵护" },
-  "zh-Hant": { eyebrow: "愛吃 Aieats", h1: "媽媽們的智能菜單",          sub: "按節氣推應季菜 · 同步校園菜譜 · 給寶貝不重複的營養呵護" },
-  "en":      { eyebrow: "Aieats",      h1: "Smart menu for moms",       sub: "Seasonal recipes by solar terms · aligned with school cafeteria · no-repeat nutrition for your baby." },
-  "tl":      { eyebrow: "Aieats",      h1: "Smart menu para sa nanay",  sub: "Mga seasonal na recipe · ka-aligned ng school cafeteria · walang-ulit na nutrisyon para sa anak mo." },
-  "id":      { eyebrow: "Aieats",      h1: "Menu pintar untuk mama",    sub: "Resep musiman · selaras dengan kafetaria sekolah · nutrisi tanpa pengulangan untuk si kecil." },
+// TICKET-040 §A 强化 (08:30) — eyebrow 放大成 LOGO + 加 slogan "家人吃啥我来惦记～".
+const LOGIN_HERO: Record<Language, { eyebrow: string; h1: string; sub: string; slogan: string }> = {
+  "zh":      { eyebrow: "爱吃 Aieats", h1: "妈妈们的智能菜单",          sub: "按节气推应季菜 · 同步校园菜谱 · 给宝贝不重复的营养呵护",                                                       slogan: "家人吃啥我来惦记～" },
+  "zh-Hant": { eyebrow: "愛吃 Aieats", h1: "媽媽們的智能菜單",          sub: "按節氣推應季菜 · 同步校園菜譜 · 給寶貝不重複的營養呵護",                                                       slogan: "家人吃啥我來惦記～" },
+  "en":      { eyebrow: "Aieats",      h1: "Smart menu for moms",       sub: "Seasonal recipes by solar terms · aligned with school cafeteria · no-repeat nutrition for your baby.",         slogan: "Family meals, we keep them in mind~" },
+  "tl":      { eyebrow: "Aieats",      h1: "Smart menu para sa nanay",  sub: "Mga seasonal na recipe · ka-aligned ng school cafeteria · walang-ulit na nutrisyon para sa anak mo.",          slogan: "Pagkain ng pamilya, kami ang nag-iisip~" },
+  "id":      { eyebrow: "Aieats",      h1: "Menu pintar untuk mama",    sub: "Resep musiman · selaras dengan kafetaria sekolah · nutrisi tanpa pengulangan untuk si kecil.",                  slogan: "Hidangan keluarga, kami yang mengingat~" },
 };
 
 interface ChannelChip {
@@ -377,13 +378,13 @@ export default function Login() {
           transition={{ duration: 0.6 }}
           className="flex-1 flex flex-col justify-end px-7 pb-10 z-10 relative">
 
-          {/* TICKET-038 REVISED §B — about hero 合并到 login. eyebrow + H1 + 副标
-              + 5 chip 横排, 让朋友点链接落地一眼明白产品做什么. 原 '爱吃 ·
-              Aieats' brand block 删除 (eyebrow + H1 已说明品牌). */}
+          {/* TICKET-038 REVISED §B — about hero 合并到 login.
+              TICKET-040 §A 强化 (08:30): eyebrow 放大成 LOGO + 加 slogan. */}
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.10, duration: 0.5, ease: "easeOut" }} className="mb-5">
-            <p className="font-bold uppercase tracking-[0.20em] mb-2"
-              style={{ fontSize: 11, color: "#FF8C54" }}>
+            {/* eyebrow = 品牌 LOGO 位 (老板拍板比 H1 大一号, 去 uppercase/tracking, serif bold) */}
+            <p className="font-serif font-bold mb-2"
+              style={{ fontSize: 34, color: "#FF8C54", letterSpacing: "0.01em", lineHeight: 1 }}>
               {LOGIN_HERO[language].eyebrow}
             </p>
             <h1 className="font-serif font-black text-white leading-tight"
@@ -394,6 +395,10 @@ export default function Login() {
               style={{ width: 36, height: 2, background: "#FF5A1F", boxShadow: "0 0 12px rgba(255,90,31,0.6)" }} />
             <p className="text-white/70 leading-relaxed" style={{ fontSize: 14 }}>
               {LOGIN_HERO[language].sub}
+            </p>
+            {/* TICKET-040 §A 强化 slogan — italic serif, 14, text-white/55 */}
+            <p className="italic font-serif mt-3 text-white/55" style={{ fontSize: 14, letterSpacing: "0.02em" }}>
+              {LOGIN_HERO[language].slogan}
             </p>
           </motion.div>
 
