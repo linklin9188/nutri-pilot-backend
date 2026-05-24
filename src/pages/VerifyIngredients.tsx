@@ -11,6 +11,129 @@ import { supabase } from "../lib/supabase";
 import { useSubscription } from "../lib/subscription";
 import { getUserId } from "../lib/userId";
 
+// ── Supplier direct-shipping (TICKET-038 第 4 步 §3) ─────────────────────
+// Phase 2 骨架: 页面加载时拉一次 active SKU 列表 (supplier.status='active' +
+// sku.active=true), 每个食材按 ingredient_keywords 做 case-insensitive 命中
+// 检测; 命中 → 拉库存 cache + 显示 "🛒 由 X 直供" chip; 点 "一键下单" 调
+// supplier-order-track edge fn 拿 redirect_url 新窗口打开.
+//
+// 当前 seed 的 supplier status='pending', 所以 activeSkus 为空, 整个供应商
+// UI 自动隐藏 (no-op). 等老板谈完真供货商 UPDATE suppliers SET status='active'
+// 后此 UI 自动激活, 前端 0 改动.
+interface ActiveSupplierSku {
+  sku_id:              string;
+  supplier_id:         string;
+  sku_name:            string;
+  order_url:           string;
+  ingredient_keywords: string[];
+  supplier_name:       string;
+}
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+
+/**
+ * Fetch active SKUs joined with their (status='active') supplier. Returns []
+ * on any failure — supplier UI must never block the shopping list.
+ */
+async function fetchActiveSupplierSkus(): Promise<ActiveSupplierSku[]> {
+  try {
+    const { data, error } = await supabase
+      .from('supplier_skus')
+      .select(`
+        id,
+        supplier_id,
+        sku_name,
+        order_url,
+        ingredient_keywords,
+        active,
+        suppliers!supplier_skus_supplier_id_fkey ( name, status )
+      `)
+      .eq('active', true);
+    if (error || !data) return [];
+    return (data as any[])
+      .filter(r => r.suppliers?.status === 'active')
+      .map(r => ({
+        sku_id:              r.id,
+        supplier_id:         r.supplier_id,
+        sku_name:            r.sku_name,
+        order_url:           r.order_url,
+        ingredient_keywords: Array.isArray(r.ingredient_keywords) ? r.ingredient_keywords : [],
+        supplier_name:       r.suppliers?.name ?? '',
+      }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Case-insensitive keyword match. Empty keyword list → never matches.
+ * Returns the first matching SKU or null.
+ */
+function matchSkuForIngredient(
+  ingredientNameZh: string,
+  skus: ActiveSupplierSku[],
+): ActiveSupplierSku | null {
+  const lname = ingredientNameZh.toLowerCase();
+  for (const sku of skus) {
+    for (const kw of sku.ingredient_keywords) {
+      if (!kw) continue;
+      const lkw = kw.toLowerCase();
+      if (lname.includes(lkw) || lkw.includes(lname)) return sku;
+    }
+  }
+  return null;
+}
+
+/** GET /functions/v1/supplier-inventory-check?sku_id=... — returns null on failure. */
+async function fetchStockCount(skuId: string): Promise<number | null> {
+  try {
+    const url = `${SUPABASE_URL}/functions/v1/supplier-inventory-check?sku_id=${encodeURIComponent(skuId)}`;
+    const res = await fetch(url, {
+      method:  'GET',
+      headers: {
+        'apikey':        SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+    });
+    if (!res.ok) return null;
+    const j = await res.json() as { stock_count?: number };
+    return typeof j.stock_count === 'number' ? j.stock_count : null;
+  } catch {
+    return null;
+  }
+}
+
+/** POST /functions/v1/supplier-order-track — returns redirect_url or null. */
+async function trackOrderAndGetRedirect(
+  skuId: string,
+  sourceDishId: string | null,
+): Promise<string | null> {
+  try {
+    const url = `${SUPABASE_URL}/functions/v1/supplier-order-track`;
+    const res = await fetch(url, {
+      method:  'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        'apikey':        SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({
+        sku_id:         skuId,
+        source_dish_id: sourceDishId,
+        source_page:    'verify-ingredients',
+        user_id:        getUserId() || null,
+      }),
+    });
+    if (!res.ok) return null;
+    const j = await res.json() as { ok?: boolean; redirect_url?: string };
+    if (!j.ok || !j.redirect_url) return null;
+    return j.redirect_url;
+  } catch {
+    return null;
+  }
+}
+
 // ── Hydrate dishes with prep_steps_json from DB ──────────────────────────
 // Generated weekly menus persisted to localStorage often DON'T include the
 // JSONB prep_steps payload (kept it lean). dishIngredients.ts now prefers
@@ -462,6 +585,12 @@ export default function VerifyIngredients() {
 
   // 'by-category' (existing) vs 'by-trip' (split into 2-3 shopping days).
   const [view, setView] = useState<'category' | 'trip'>('category');
+
+  // TICKET-038 §3 — active 供应商 SKU 列表 + 库存 cache (按 sku_id 索引).
+  // 加载一次, 整页共享. 失败保持 [] 让现有清单功能不受影响.
+  const [activeSkus, setActiveSkus] = useState<ActiveSupplierSku[]>([]);
+  const [stockBySkuId, setStockBySkuId] = useState<Record<string, number | null>>({});
+  const [orderingSkuId, setOrderingSkuId] = useState<string | null>(null);
   // Cache the schedule per current ingredients/mode so we don't recompute on
   // every render (computing requires reading the weekly menu off localStorage).
   const schedule = useMemo<ShoppingTrip[]>(() => {
@@ -470,6 +599,42 @@ export default function VerifyIngredients() {
     if (!weekMenu) return [];
     return buildShoppingSchedule(ingredients, weekMenu);
   }, [ingredients, mode]);
+
+  // Load active SKUs once on mount. status='pending' supplier → returns [],
+  // chip / stock / 一键下单 全部自动隐藏. 老板切到 'active' 后此 UI 自动生效.
+  useEffect(() => {
+    let cancelled = false;
+    fetchActiveSupplierSkus().then(skus => {
+      if (cancelled) return;
+      setActiveSkus(skus);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  // 食材清单变化或 SKU 列表变化 → 对每个 (有命中 SKU 的) 食材拉一次库存.
+  // 不阻塞主清单渲染; 库存返 null 时 chip 隐藏 "剩 N 件" 字样.
+  useEffect(() => {
+    if (activeSkus.length === 0 || ingredients.length === 0) return;
+    let cancelled = false;
+    const skuIdsToFetch = new Set<string>();
+    for (const ing of ingredients) {
+      const sku = matchSkuForIngredient(ing.nameZh, activeSkus);
+      if (sku && !(sku.sku_id in stockBySkuId)) skuIdsToFetch.add(sku.sku_id);
+    }
+    if (skuIdsToFetch.size === 0) return;
+    (async () => {
+      const results = await Promise.all(
+        [...skuIdsToFetch].map(async id => [id, await fetchStockCount(id)] as const),
+      );
+      if (cancelled) return;
+      setStockBySkuId(prev => {
+        const next = { ...prev };
+        for (const [id, count] of results) next[id] = count;
+        return next;
+      });
+    })();
+    return () => { cancelled = true; };
+  }, [activeSkus, ingredients]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     let cancelled = false;
@@ -552,6 +717,21 @@ export default function VerifyIngredients() {
       persistHomeInventory(next);
       return next;
     });
+  };
+
+  // 一键下单: POST track 拿 redirect_url → 新窗口打开. 失败 silent (不弹 alert
+  // 干扰清单流). orderingSkuId 用来 disable 按钮防双击.
+  const handleSupplierOrder = async (skuId: string) => {
+    if (orderingSkuId) return;
+    setOrderingSkuId(skuId);
+    try {
+      const redirectUrl = await trackOrderAndGetRedirect(skuId, null);
+      if (redirectUrl) {
+        window.open(redirectUrl, '_blank');
+      }
+    } finally {
+      setOrderingSkuId(null);
+    }
   };
 
   // Group by category
@@ -841,97 +1021,145 @@ export default function VerifyIngredients() {
             <div className="bg-white rounded-2xl overflow-hidden shadow-sm">
               {items.map((item, i) => {
                 const have = !!haveIt[item.nameZh];
+                const matchedSku = activeSkus.length > 0
+                  ? matchSkuForIngredient(item.nameZh, activeSkus)
+                  : null;
+                const stockCount = matchedSku ? stockBySkuId[matchedSku.sku_id] : undefined;
+                const isOrdering = !!matchedSku && orderingSkuId === matchedSku.sku_id;
                 return (
-                  <button
+                  <div
                     key={item.nameZh}
-                    onClick={() => toggleHave(item.nameZh)}
-                    className={`w-full flex items-center gap-4 px-4 py-3.5 transition-all active:scale-[0.99] ${
-                      i !== items.length - 1 ? 'border-b border-black/[0.05]' : ''
-                    }`}
-                    style={{ background: have ? 'rgba(37,211,102,0.04)' : 'white' }}
+                    className={i !== items.length - 1 ? 'border-b border-black/[0.05]' : ''}
                   >
-                    {/* Checkbox */}
-                    <div
-                      className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 transition-all"
-                      style={{ background: have ? '#ef4444' : 'rgba(0,0,0,0.08)' }}
+                    <button
+                      onClick={() => toggleHave(item.nameZh)}
+                      className="w-full flex items-center gap-4 px-4 py-3.5 transition-all active:scale-[0.99]"
+                      style={{ background: have ? 'rgba(37,211,102,0.04)' : 'white' }}
                     >
-                      {have && (
-                        <span
-                          className="material-symbols-outlined text-white"
-                          style={{ fontSize: 16, fontVariationSettings: "'FILL' 1" }}
-                        >
-                          check
-                        </span>
-                      )}
-                    </div>
+                      {/* Checkbox */}
+                      <div
+                        className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 transition-all"
+                        style={{ background: have ? '#ef4444' : 'rgba(0,0,0,0.08)' }}
+                      >
+                        {have && (
+                          <span
+                            className="material-symbols-outlined text-white"
+                            style={{ fontSize: 16, fontVariationSettings: "'FILL' 1" }}
+                          >
+                            check
+                          </span>
+                        )}
+                      </div>
 
-                    {/* Name */}
-                    <div className="flex-1 text-left">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <p
-                          className="font-semibold text-[15px]"
+                      {/* Name */}
+                      <div className="flex-1 text-left">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p
+                            className="font-semibold text-[15px]"
+                            style={{
+                              color: have ? '#ef4444' : '#1a1a1a',
+                              textDecoration: have ? 'line-through' : 'none',
+                            }}
+                          >
+                            {item.nameZh}
+                          </p>
+                          {(() => {
+                            // Show Cantonese / Hong Kong-style name when different
+                            // from the Mandarin one — saves wet-market confusion
+                            // for mainlanders just arrived in HK.
+                            const alias = getHKAlias(item.nameZh);
+                            if (!alias?.yue || alias.yue === item.nameZh) return null;
+                            return (
+                              <span
+                                className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md"
+                                style={{ background: 'rgba(255,90,31,0.10)', color: '#FF5A1F' }}
+                                title={alias.note ?? ''}
+                              >
+                                港: {alias.yue.split(' / ')[0]}
+                              </span>
+                            );
+                          })()}
+                        </div>
+                        {item.dishes.length > 0 && (
+                          <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-1">
+                            {item.dishes.slice(0, 2).join(' · ')}
+                            {item.dishes.length > 2 ? ` +${item.dishes.length - 2}` : ''}
+                          </p>
+                        )}
+                        {/* Suzie's Twist substitutes — when the primary item is
+                            sold out the shopper knows what to grab instead.
+                            Source: prep_steps_json.substitutes_zh, surfaced
+                            through aggregateIngredients. */}
+                        {item.substitutes && item.substitutes.length > 0 && (
+                          <p className="text-[10px] mt-0.5 line-clamp-1"
+                            style={{ color: have ? 'rgba(0,0,0,0.25)' : '#B45309' }}>
+                            {t('Swap: ', '或买：')}{item.substitutes.slice(0, 3).join(' / ')}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Weight + status */}
+                      <div className="flex flex-col items-end gap-0.5">
+                        <span className="text-[14px] font-bold"
                           style={{
                             color: have ? '#ef4444' : '#1a1a1a',
                             textDecoration: have ? 'line-through' : 'none',
                           }}
                         >
-                          {item.nameZh}
-                        </p>
-                        {(() => {
-                          // Show Cantonese / Hong Kong-style name when different
-                          // from the Mandarin one — saves wet-market confusion
-                          // for mainlanders just arrived in HK.
-                          const alias = getHKAlias(item.nameZh);
-                          if (!alias?.yue || alias.yue === item.nameZh) return null;
-                          return (
-                            <span
-                              className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md"
-                              style={{ background: 'rgba(255,90,31,0.10)', color: '#FF5A1F' }}
-                              title={alias.note ?? ''}
-                            >
-                              港: {alias.yue.split(' / ')[0]}
-                            </span>
-                          );
-                        })()}
+                          {formatWeight(item, weightUnit)}
+                        </span>
+                        <span
+                          className="text-[10px] font-bold px-2 py-0.5 rounded-full transition-colors"
+                          style={{
+                            background: have ? 'rgba(37,211,102,0.18)' : 'rgba(0,0,0,0.06)',
+                            color:      have ? '#16A34A' : 'rgba(0,0,0,0.45)',
+                          }}>
+                          {have ? '✓ 我家有' : '我家有？'}
+                        </span>
                       </div>
-                      {item.dishes.length > 0 && (
-                        <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-1">
-                          {item.dishes.slice(0, 2).join(' · ')}
-                          {item.dishes.length > 2 ? ` +${item.dishes.length - 2}` : ''}
-                        </p>
-                      )}
-                      {/* Suzie's Twist substitutes — when the primary item is
-                          sold out the shopper knows what to grab instead.
-                          Source: prep_steps_json.substitutes_zh, surfaced
-                          through aggregateIngredients. */}
-                      {item.substitutes && item.substitutes.length > 0 && (
-                        <p className="text-[10px] mt-0.5 line-clamp-1"
-                          style={{ color: have ? 'rgba(0,0,0,0.25)' : '#B45309' }}>
-                          {t('Swap: ', '或买：')}{item.substitutes.slice(0, 3).join(' / ')}
-                        </p>
-                      )}
-                    </div>
+                    </button>
 
-                    {/* Weight + status */}
-                    <div className="flex flex-col items-end gap-0.5">
-                      <span className="text-[14px] font-bold"
+                    {/* TICKET-038 §3 — Supplier 直供 bar. 只在该食材命中 active
+                        SKU 且非「已有」时显示. Placed BELOW the toggle button
+                        on purpose: nested buttons are invalid HTML, and we
+                        need 「一键下单」 to be its own clickable button
+                        without bubbling toggle-have. */}
+                    {matchedSku && !have && (
+                      <div
+                        className="flex items-center gap-2 px-4 py-2"
                         style={{
-                          color: have ? '#ef4444' : '#1a1a1a',
-                          textDecoration: have ? 'line-through' : 'none',
+                          background: 'linear-gradient(90deg, rgba(255,90,31,0.06), rgba(255,140,84,0.03))',
+                          borderTop: '1px dashed rgba(255,90,31,0.18)',
                         }}
                       >
-                        {formatWeight(item, weightUnit)}
-                      </span>
-                      <span
-                        className="text-[10px] font-bold px-2 py-0.5 rounded-full transition-colors"
-                        style={{
-                          background: have ? 'rgba(37,211,102,0.18)' : 'rgba(0,0,0,0.06)',
-                          color:      have ? '#16A34A' : 'rgba(0,0,0,0.45)',
-                        }}>
-                        {have ? '✓ 我家有' : '我家有？'}
-                      </span>
-                    </div>
-                  </button>
+                        <span
+                          className="text-[11px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1"
+                          style={{ background: 'rgba(255,90,31,0.12)', color: '#FF5A1F' }}
+                        >
+                          🛒 由 {matchedSku.supplier_name} 直供
+                        </span>
+                        {typeof stockCount === 'number' && (
+                          <span
+                            className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                            style={{
+                              background: stockCount > 10 ? 'rgba(37,211,102,0.12)' : 'rgba(239,68,68,0.10)',
+                              color:      stockCount > 10 ? '#16A34A' : '#ef4444',
+                            }}
+                          >
+                            剩 {stockCount} 件
+                          </span>
+                        )}
+                        <button
+                          onClick={() => handleSupplierOrder(matchedSku.sku_id)}
+                          disabled={isOrdering}
+                          className="ml-auto px-3 py-1 rounded-full text-[11px] font-bold text-white transition-all active:scale-95 disabled:opacity-60"
+                          style={{ background: 'linear-gradient(135deg, #FF5A1F, #FF8C54)' }}
+                        >
+                          {isOrdering ? '跳转中…' : '一键下单 →'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
