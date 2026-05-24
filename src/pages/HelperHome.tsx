@@ -331,18 +331,38 @@ export default function HelperHome() {
               {helperName || t3("My Tasks", "我的任务", "Mga Gawain Ko")}
             </h1>
           </div>
-          {/* Language toggle — helper cycle is EN → Tagalog → Indonesian.
-              Replaces the old non-interactive support_agent icon. */}
-          <button
-            onClick={cycleLanguageForRole}
-            className="w-12 h-12 rounded-2xl flex items-center justify-center active:scale-95 transition-transform"
-            style={{ background: "rgba(37,211,102,0.15)", border: "1.5px solid rgba(37,211,102,0.3)" }}
-            title="EN / Tagalog / Indonesian"
-            aria-label="Switch language">
-            <span className="font-black text-[#25D366]" style={{ fontSize: 14, letterSpacing: '0.04em' }}>
-              {langChip}
-            </span>
-          </button>
+          {/* Right header cluster — settings icon + language toggle.
+              TICKET-036 §1 — settings entry placed left of langChip so the
+              language affordance stays in the same visual slot users already
+              know. Whole 7-section settings hub lives at /helper-settings. */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigate("/helper-settings")}
+              className="w-12 h-12 rounded-2xl flex items-center justify-center active:scale-95 transition-transform"
+              style={{ background: "rgba(0,0,0,0.05)", border: "1.5px solid rgba(0,0,0,0.08)" }}
+              title="Settings"
+              aria-label="Settings"
+            >
+              <span
+                className="material-symbols-outlined"
+                style={{ fontSize: 22, color: "rgba(0,0,0,0.65)" }}
+              >
+                settings
+              </span>
+            </button>
+            {/* Language toggle — helper cycle is EN → Tagalog → Indonesian.
+                Replaces the old non-interactive support_agent icon. */}
+            <button
+              onClick={cycleLanguageForRole}
+              className="w-12 h-12 rounded-2xl flex items-center justify-center active:scale-95 transition-transform"
+              style={{ background: "rgba(37,211,102,0.15)", border: "1.5px solid rgba(37,211,102,0.3)" }}
+              title="EN / Tagalog / Indonesian"
+              aria-label="Switch language">
+              <span className="font-black text-[#25D366]" style={{ fontSize: 14, letterSpacing: '0.04em' }}>
+                {langChip}
+              </span>
+            </button>
+          </div>
         </div>
 
         {/* Date + dish count */}
