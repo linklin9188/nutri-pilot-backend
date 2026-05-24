@@ -98,11 +98,11 @@ function defaultForRole(): Language {
     const tl = detectFromBrowser();
     return tl === 'tl' || tl === 'id' ? tl : 'en';
   }
-  // TICKET-074 §G — Employer side: 简体中文 first（老板 2026-05-21 拍板）。
-  // 主战场是 HK + 大陆妈妈，绝大多数读中文更顺。Home 顶部 chip 仍按 role
-  // 提供 简 / 繁 / EN 切换。已显式选过语言的用户（localStorage.appLanguage
-  // 有值）不受影响 — hasExplicitPref 优先于 defaultForRole()。
-  return 'zh';
+  // TICKET-045 (老板 2026-05-24 12:05 拍板覆盖) — Employer 默认改 **繁体中文**.
+  // HK 老板娘 + TW 用户主战场, 真测发现英文 fallback 不可接受. 简体大陆访客
+  // 走 detectFromBrowser zh 分支 (zh-CN / zh-Hans) 仍返 'zh', 不破大陆.
+  // (TICKET-074 §G 5-21 拍板"简体 first" 由 045 12:05 拍板覆盖.)
+  return 'zh-Hant';
 }
 
 export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {

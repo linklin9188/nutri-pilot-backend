@@ -173,13 +173,14 @@ function AppShell() {
   // (HK 妈妈自选繁体)的.
   useEffect(() => {
     try {
-      if (sessionStorage.getItem('nutri_lang_reset_done') === '1') return;
+      // TICKET-045 — bump sentinel key 让 234c0f6 session (zh sentinel '1') 重 reset 一次到 zh-Hant
+      if (sessionStorage.getItem('nutri_lang_reset_done_v045') === '1') return;
       const role = localStorage.getItem('nutri_role');
       if (role === 'helper') return;
       if (language === 'en' || language === 'tl' || language === 'id') {
-        setLanguage('zh');
+        setLanguage('zh-Hant');  // TICKET-045 老板二改: zh → zh-Hant 默认繁体
       }
-      sessionStorage.setItem('nutri_lang_reset_done', '1');
+      sessionStorage.setItem('nutri_lang_reset_done_v045', '1');
     } catch { /* private mode — non-critical */ }
     // mount-once: 用户在 session 内切回 EN 不被反复覆盖.
     // eslint-disable-next-line react-hooks/exhaustive-deps

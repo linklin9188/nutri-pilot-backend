@@ -9,6 +9,7 @@ import { getUserId } from "../lib/userId";
 import { syncProfileToDB } from "../lib/profileSync";
 import { isWithinTrial, trialDaysRemaining } from "../lib/userLifecycle";
 import ShareCard from "../components/ShareCard";
+import LanguageSwitcher from "../components/LanguageSwitcher";
 
 // TICKET-071 §C — LanguageCard 已删除（Home 顶部 chip popover 已覆盖语言切换，
 // 避免重复 UI）。Settings 「下发指令语言」section (line ~928) 是菲佣指令语言
@@ -572,6 +573,9 @@ export default function Settings() {
   return (
     <div className="flex justify-center items-start min-h-screen text-on-surface bg-[#f5f5f7]">
       <div className="w-full max-w-md min-h-screen relative overflow-x-hidden pb-28">
+
+        {/* TICKET-045 §B — Settings 顶部加 LanguageSwitcher (老板拍板已登录用户改语言入口). */}
+        <LanguageSwitcher className="fixed top-4 right-4 z-50" />
 
         {/* ── Header ── */}
         <header className="sticky top-0 w-full z-50 bg-[#f5f5f7]/90 backdrop-blur-md px-4 h-16 flex items-center gap-3">
