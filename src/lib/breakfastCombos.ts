@@ -30,6 +30,15 @@ export interface BreakfastCombo {
   description: string;
 }
 
+// §A (TICKET-031) 早餐蛋类 5 工作日轮换 — 老板真测发现周一至周五早餐 protein
+// 永远是「茶叶蛋」, 其他 4 蛋 (白煮蛋 / 鸡蛋羹 / 煎鸡蛋 / 葱花炒鸡蛋) 永不出。
+// root cause: 14 个 combo 里 13 个 side[0]='茶叶蛋', resolveSlot 即使 shuffle 也
+// 只是打乱 keywords 顺序 — 但 '茶叶蛋' 始终是唯一蛋 keyword, 永远命中第一. 修法:
+// 用 sentinel placeholder 替换硬编码菜名, resolveSlot 见 placeholder 时按 dayIndex
+// % 5 在 BREAKFAST_PROTEIN_EGG_POOL 5 蛋池里循环取. 保证可预测的 5-day 轮换 (非随机).
+export const EGG_PLACEHOLDER = '__EGG_DAY_ROTATION__'; // sentinel, 不会误命中真实 dish title
+export const BREAKFAST_PROTEIN_EGG_POOL = ['茶叶蛋', '白煮蛋', '鸡蛋羹', '煎鸡蛋', '葱花炒鸡蛋'];
+
 export const BREAKFAST_COMBOS: BreakfastCombo[] = [
   // ── 北方家常 ────────────────────────────────────────────────────
   {
@@ -38,7 +47,7 @@ export const BREAKFAST_COMBOS: BreakfastCombo[] = [
     hometowns: ['northern'],
     drink:  ['豆浆', '黄豆浆', '黑豆豆浆', '燕麦豆浆'],
     staple: ['油条', '葱油饼'],
-    side:   ['茶叶蛋', '卤蛋', '鸡蛋灌饼'],
+    side:   [EGG_PLACEHOLDER, '卤蛋', '鸡蛋灌饼'],
     description: '油条配豆浆，北方人最爱的经典组合',
   },
   {
@@ -47,7 +56,7 @@ export const BREAKFAST_COMBOS: BreakfastCombo[] = [
     hometowns: ['northern'],
     drink:  ['八宝粥', '小米粥', '燕麦粥', '杂粮粥'],
     staple: ['包子', '小笼包', '生煎包', '素菜包', '红糖馒头', '馒头'],
-    side:   ['茶叶蛋', '凉拌黄瓜', '凉拌海带', '酱牛肉'],
+    side:   [EGG_PLACEHOLDER, '凉拌黄瓜', '凉拌海带', '酱牛肉'],
     description: '八宝粥配蒸包子，温热饱腹的传统早餐',
   },
   {
@@ -56,7 +65,7 @@ export const BREAKFAST_COMBOS: BreakfastCombo[] = [
     hometowns: ['northern'],
     drink:  ['豆浆', '八宝粥'],
     staple: ['煎饼果子', '煎饼', '素菜煎饼'],
-    side:   ['茶叶蛋', '酱牛肉'],
+    side:   [EGG_PLACEHOLDER, '酱牛肉'],
     description: '煎饼果子配豆浆，北方上班族的速战早餐',
   },
 
@@ -67,7 +76,7 @@ export const BREAKFAST_COMBOS: BreakfastCombo[] = [
     hometowns: ['cantonese'],
     drink:  ['皮蛋瘦肉粥', '白粥', '生滚粥'],
     staple: ['油条', '虾饺', '烧麦', '糕'],
-    side:   ['茶叶蛋', '鸡蛋羹', '腌菜'],
+    side:   [EGG_PLACEHOLDER, '鸡蛋羹', '腌菜'],
     description: '一碗皮蛋瘦肉粥配油条，港人最熟悉的味道',
   },
   {
@@ -76,7 +85,7 @@ export const BREAKFAST_COMBOS: BreakfastCombo[] = [
     hometowns: ['cantonese'],
     drink:  ['白粥', '皮蛋瘦肉粥'],
     staple: ['虾饺', '烧麦', '糯米鸡', '叉烧包', '蒸排骨'],
-    side:   ['茶叶蛋', '蒸蛋'],
+    side:   [EGG_PLACEHOLDER, '蒸蛋'],
     description: '广州 / 香港人周末的点心早茶组合',
   },
 
@@ -87,7 +96,7 @@ export const BREAKFAST_COMBOS: BreakfastCombo[] = [
     hometowns: ['cantonese'],
     drink:  ['港式奶茶', '奶茶', '鸳鸯', '柠檬茶', '阿华田', '好立克', '咖啡'],
     staple: ['菠萝包', '鸡尾包', '蛋挞', '西多士', '粢饭', '脆脆猪', '火腿通心粉'],
-    side:   ['煎蛋', '炒蛋', '蛋饼'],
+    side:   ['煎蛋', '炒蛋', '蛋饼', EGG_PLACEHOLDER],
     avoidTags: ['dairy'],  // 港式奶茶有奶
     description: '茶餐厅经典：菠萝包 + 港式奶茶 + 火腿通心粉',
   },
@@ -97,7 +106,7 @@ export const BREAKFAST_COMBOS: BreakfastCombo[] = [
     hometowns: ['cantonese'],
     drink:  ['白粥', '皮蛋瘦肉粥', '鱼腩粥'],
     staple: ['沙嗲牛肉面', '雪菜肉丝米粉', '五香肉丁面', '火腿通心粉', '云吞面'],
-    side:   ['茶叶蛋', '凉拌黄瓜'],
+    side:   [EGG_PLACEHOLDER, '凉拌黄瓜'],
     description: '港人爱去街边粥粉面店的传统早餐',
   },
 
@@ -108,7 +117,7 @@ export const BREAKFAST_COMBOS: BreakfastCombo[] = [
     hometowns: ['jiangnan'],
     drink:  ['核桃黑芝麻糊', '黑芝麻糊', '芝麻糊', '花生芝麻糊', '豆浆'],
     staple: ['生煎包', '小笼包', '蒸饺', '汤圆'],
-    side:   ['茶叶蛋', '蒸蛋', '凉拌三丝'],
+    side:   [EGG_PLACEHOLDER, '蒸蛋', '凉拌三丝'],
     description: '生煎包蘸醋配一碗黑芝麻糊，江南人的经典',
   },
   {
@@ -117,7 +126,7 @@ export const BREAKFAST_COMBOS: BreakfastCombo[] = [
     hometowns: ['jiangnan'],
     drink:  ['豆浆', '白粥', '黑芝麻糊'],
     staple: ['小笼包', '生煎包', '蟹粉小笼', '蒸饺'],
-    side:   ['茶叶蛋', '凉拌海带'],
+    side:   [EGG_PLACEHOLDER, '凉拌海带'],
     description: '苏沪人推崇的早茶组合',
   },
 
@@ -128,7 +137,7 @@ export const BREAKFAST_COMBOS: BreakfastCombo[] = [
     hometowns: ['sichuan'],
     drink:  ['豆浆', '八宝粥'],
     staple: ['红油抄手', '担担面', '酸辣粉', '煎饼'],
-    side:   ['茶叶蛋', '凉拌黄瓜'],
+    side:   [EGG_PLACEHOLDER, '凉拌黄瓜'],
     description: '川渝人爱辣，早上来份红油抄手开胃',
   },
 
@@ -140,7 +149,7 @@ export const BREAKFAST_COMBOS: BreakfastCombo[] = [
     drink:  ['燕麦粥', '小米粥', '八宝粥', '银耳莲子', '黑芝麻糊'],
     // §G (TICKET-006) wet drink mutex — '红薯粥' 移走 (粥类归 drink slot, 避免 staple/drink 同框双粥)
     staple: ['蒸红薯', '玉米', '蒸南瓜', '全麦馒头', '馒头'],
-    side:   ['鸡蛋羹', '蒸蛋', '茶叶蛋', '凉拌黄瓜'],
+    side:   ['鸡蛋羹', '蒸蛋', EGG_PLACEHOLDER, '凉拌黄瓜'],
     description: '清淡养胃，适合老人 / 孕妇 / 病后恢复',
   },
   {
@@ -150,7 +159,7 @@ export const BREAKFAST_COMBOS: BreakfastCombo[] = [
     drink:  ['银耳莲子', '银耳莲子羹', '燕麦粥', '小米粥', '汤圆'],
     // §G (TICKET-006) wet drink mutex — '红薯粥' 移走 (drink slot 已含 5 个粥/羹/汤圆)
     staple: ['蒸南瓜', '红糖馒头', '蒸红薯'],
-    side:   ['茶叶蛋', '鸡蛋羹'],
+    side:   [EGG_PLACEHOLDER, '鸡蛋羹'],
     description: '温和滋补，养脾胃',
   },
 
@@ -161,7 +170,7 @@ export const BREAKFAST_COMBOS: BreakfastCombo[] = [
     hometowns: ['*'],
     drink:  ['牛奶', '低脂奶', '酸奶', '豆浆'],
     staple: ['全麦馒头', '红糖馒头', '蒸红薯', '玉米'],
-    side:   ['水煮蛋', '茶叶蛋'],
+    side:   ['水煮蛋', EGG_PLACEHOLDER],
     avoidTags: ['dairy'],
     description: '上班族 / 学生 的简单家常组合',
   },
@@ -173,7 +182,7 @@ export const BREAKFAST_COMBOS: BreakfastCombo[] = [
     hometowns: ['*'],
     drink:  ['豆浆', '白粥', '小米粥', '八宝粥'],
     staple: ['包子', '小笼包', '馒头', '油条', '生煎包', '烧麦'],
-    side:   ['茶叶蛋', '鸡蛋灌饼'],
+    side:   [EGG_PLACEHOLDER, '鸡蛋灌饼'],
     description: '不挑地区的家常早餐 fallback',
   },
 ];
@@ -311,11 +320,25 @@ function resolveSlot(
   keywords: string[],
   used: Set<string>,
   shuffleSeed?: number,
+  dayIndex?: number,
 ): ResolvedSlot['dish'] {
   // §G (TICKET-005) shuffleSeed undefined → 老行为 (顺序遍历, 兼容遗留调用).
   // 新调用从 resolveCombo 传入 dayIndex * 31 + slotIndex, 打散 keywords 顺序.
   const order = shuffleSeed !== undefined ? shuffleSeeded(keywords, shuffleSeed) : keywords;
   for (const kw of order) {
+    // §A (TICKET-031) EGG_PLACEHOLDER 不是真 keyword, 按 dayIndex % 5 在
+    // BREAKFAST_PROTEIN_EGG_POOL 5 蛋池里轮换: 起点 dayIndex, 依次 +1 +2 +3 +4
+    // (mod 5) 找命中. 5 蛋都 miss 才 fallback 到 combo 后续 keyword. 保证周一-五
+    // protein 5 蛋不重复.
+    if (kw === EGG_PLACEHOLDER) {
+      const base = (dayIndex ?? 0) % BREAKFAST_PROTEIN_EGG_POOL.length;
+      for (let i = 0; i < BREAKFAST_PROTEIN_EGG_POOL.length; i++) {
+        const eggKw = BREAKFAST_PROTEIN_EGG_POOL[(base + i) % BREAKFAST_PROTEIN_EGG_POOL.length];
+        const match = pool.find(d => !used.has(d.id) && d.title_zh.includes(eggKw));
+        if (match) return match;
+      }
+      continue;
+    }
     const match = pool.find(d => !used.has(d.id) && d.title_zh.includes(kw));
     if (match) return match;
   }
@@ -349,7 +372,8 @@ function resolveCombo(combo: BreakfastCombo, pool: BreakfastPickInput['pool'], d
     // 跨 day 自动轮换. slotIndex (drink=0 / staple=1 / side=2) 让 3 个 slot
     // 之间不耦合 (不会出现 drink 和 side 同时移位同样次).
     const seed = (dayIndex * 31 + slotIndex) | 0;
-    const dish = resolveSlot(pool, keywords, used, seed);
+    // §A (TICKET-031) dayIndex 透传给 resolveSlot 让 EGG_PLACEHOLDER 按 dayIndex%5 轮换.
+    const dish = resolveSlot(pool, keywords, used, seed, dayIndex);
     if (dish) used.add(dish.id);
     return { slot, dish, candidates: keywords } as ResolvedSlot;
   });
