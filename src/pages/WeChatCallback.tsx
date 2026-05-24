@@ -12,6 +12,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { setUserId } from '../lib/userId';
 import { markLogin } from '../lib/userLifecycle';
+import { supabase } from '../lib/supabase';
 
 export default function WeChatCallback() {
   const navigate = useNavigate();
@@ -50,6 +51,39 @@ export default function WeChatCallback() {
     markLogin();
     // Clear the WeChat oauth state (anti-CSRF cookie used by launchWeChat).
     sessionStorage.removeItem('wechat_oauth_state');
+
+    // TICKET-050 P0 — 消费 nutri_pending_ref_code (中介裂变 attribution).
+    // Login.tsx FB/IG 路径已在 TICKET-043 §B 修复, 真 WeChat OAuth 路径之前
+    // 漏一对一: localStorage 推荐码写了但没人消费 → 微信注册用户的 agency
+    // attribution 全丢. 此处补齐. 容错: 不命中也写 code 留 record, 失败
+    // 静默 + finally 清 localStorage 避免重复 attribute.
+    const pendingRefCode = localStorage.getItem('nutri_pending_ref_code');
+    if (pendingRefCode) {
+      (async () => {
+        try {
+          const code = pendingRefCode.trim().toUpperCase();
+          if (!code) return;
+          const { data: agency } = await supabase
+            .from('agencies')
+            .select('id')
+            .eq('referral_code', code)
+            .eq('status', 'active')
+            .maybeSingle();
+          await supabase
+            .from('user_profiles')
+            .update({
+              referred_by_agency_id: agency?.id ?? null,
+              referred_by_code: code,
+            })
+            .eq('id', userId);
+        } catch (e) {
+          console.warn('referral attribution failed:', e);
+        } finally {
+          try { localStorage.removeItem('nutri_pending_ref_code'); } catch { /* quota */ }
+        }
+      })();
+    }
+
     // Tell any listening hooks that prefs / identity changed.
     window.dispatchEvent(new Event('nutri-prefs-changed'));
 

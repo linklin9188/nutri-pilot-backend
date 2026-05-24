@@ -287,8 +287,9 @@ export default function Login() {
       // and never see the fallback.
       if (!/MicroMessenger/i.test(navigator.userAgent)) {
         devTestLogin(role, "wechat");
-        // TICKET-043 §B — dev fallback 路径立即 attribute. 真 WeChat OAuth
-        // 路径需另外在 /auth/wechat/done 消费 nutri_pending_ref_code (TODO).
+        // TICKET-043 §B — dev fallback 路径立即 attribute.
+        // 真 WeChat OAuth 路径在 WeChatCallback.tsx 消费 nutri_pending_ref_code
+        // (TICKET-050 P0 已修).
         if (agencyCode.trim()) {
           const uid = getUserId();
           if (uid) {
