@@ -497,7 +497,26 @@ async function persistProfileToDb(answers: Record<string, any>): Promise<void> {
 
 export default function QuickSetup() {
   const navigate = useNavigate();
-  const { t, isChinese } = useLanguage();
+  const { t, isChinese, language, setLanguage } = useLanguage();
+
+  // TICKET-040 §B — 雇主走 onboarding 默认繁体中文（老板拍板"现在雇主登陆的
+  // 题目都是英文的, 改成繁体中文"）. 若用户在 /login 手动切过 EN / Tagalog /
+  // Indonesian 残留到 appLanguage, 进 /setup 强制 reset 到 zh-Hant. helper
+  // role 不动（Tagalog/Indonesian 才是菲佣/印佣母语）. zh / zh-Hant 用户也
+  // 不动（已是中文路径）.
+  // QUESTIONS_V3 当前只有 zh / en 两份, t() 路径 zh-Hant fallback 到 zh
+  // 简体——HK 妈妈都能读简体, 关键是"不要英文". 若未来加 zh-Hant 专属翻译
+  // 表 (QUESTIONS_V3_HANT) 自动生效不需要改这里.
+  useEffect(() => {
+    const role = localStorage.getItem('nutri_role');
+    if (role === 'helper') return;
+    if (language === 'en' || language === 'tl' || language === 'id') {
+      setLanguage('zh-Hant');
+    }
+    // 仅 mount 时跑一次, 不监听 language 后续变化（用户在 setup 内主动切
+    // 回 EN 不应被反复强制）.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [multiSel, setMultiSel] = useState<string[]>([]);
