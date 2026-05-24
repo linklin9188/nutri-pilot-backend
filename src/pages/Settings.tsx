@@ -143,11 +143,99 @@ function MembershipCard() {
 
 type LifeStage = "普通成人" | "孕期" | "哺乳期" | "备孕" | "老人" | "儿童";
 
+// TICKET TELEPOT-20260525-039 §3 — extend FamilyMember with spec §1.2's 12 fields.
+// Storage still localStorage (`nutri_family_members`) — algo side reads from
+// localStorage (see `familyPrefs.ts`); household_members DB has helper_id NOT NULL
+// FK→user_profiles which forbids "non-helper family rows" without first inserting
+// a synthetic user_profiles row. DB write deferred to a future棒 to keep this
+// surgical. All new fields nullable/optional so old persisted entries decode fine.
 interface FamilyMember {
   id: string;
   name: string;
   lifeStage: LifeStage;
   needs: string[];
+  // ── spec §1.2 个人 12 字段 (除 name 已有, 全部 optional/nullable) ──
+  relation?: string;          // self / spouse / son / daughter / father / mother / etc
+  gender?: string;            // male / female
+  age_years?: number;
+  height_cm?: number;
+  weight_kg?: number;
+  dietary_goal?: string;      // muscle_gain / fat_loss / pregnancy_prep / child_growth / elder_wellness / general
+  allergens?: string[];       // seafood / gluten / nuts / milk / eggs / pork / beef / lamb
+  chronic_diseases?: string[];// hypertension / diabetes / gout / high_cholesterol
+  dietary_mode?: string;      // omnivore / vegetarian / vegan / halal / kosher
+  tcm_constitution?: string;  // balanced / qi_deficient / yang_deficient / yin_deficient / phlegm_damp / damp_heat / blood_stasis / special_diathesis
+  pregnancy_status?: string;  // none / trying / early / mid / late / breastfeeding
+}
+
+// TICKET-039 §3 — spec §1.2 option tables. Single source of truth used by both
+// the collapsed-3-info row and the expanded 12-field drawer.
+const RELATION_OPTIONS = [
+  { id: "self",     label: "我自己", icon: "👤" },
+  { id: "spouse",   label: "配偶",   icon: "💑" },
+  { id: "son",      label: "儿子",   icon: "👦" },
+  { id: "daughter", label: "女儿",   icon: "👧" },
+  { id: "father",   label: "父亲",   icon: "👨" },
+  { id: "mother",   label: "母亲",   icon: "👩" },
+  { id: "etc",      label: "其他",   icon: "👥" },
+];
+const GENDER_OPTIONS = [
+  { id: "male",   label: "男", icon: "♂" },
+  { id: "female", label: "女", icon: "♀" },
+];
+const DIETARY_GOAL_OPTIONS = [
+  { id: "general",         label: "日常均衡", icon: "🥗" },
+  { id: "muscle_gain",     label: "增肌",     icon: "💪" },
+  { id: "fat_loss",        label: "减脂",     icon: "🔥" },
+  { id: "pregnancy_prep",  label: "备孕",     icon: "🤰" },
+  { id: "child_growth",    label: "学龄增长", icon: "🌱" },
+  { id: "elder_wellness",  label: "老人养生", icon: "🍵" },
+];
+const ALLERGEN_OPTIONS = [
+  { id: "seafood", label: "海鲜" },
+  { id: "nuts",    label: "坚果" },
+  { id: "gluten",  label: "麸质" },
+  { id: "milk",    label: "奶" },
+  { id: "eggs",    label: "蛋" },
+  { id: "pork",    label: "猪" },
+  { id: "beef",    label: "牛" },
+  { id: "lamb",    label: "羊" },
+];
+const CHRONIC_OPTIONS = [
+  { id: "hypertension",      label: "高血压" },
+  { id: "diabetes",          label: "糖尿病" },
+  { id: "gout",              label: "痛风" },
+  { id: "high_cholesterol",  label: "高胆固醇" },
+];
+const DIETARY_MODE_OPTIONS = [
+  { id: "omnivore",   label: "杂食",       icon: "🍽" },
+  { id: "vegetarian", label: "素食(蛋奶)", icon: "🥦" },
+  { id: "vegan",      label: "纯素",       icon: "🌱" },
+  { id: "halal",      label: "清真",       icon: "🕌" },
+  { id: "kosher",     label: "犹太洁食",   icon: "✡" },
+];
+const TCM_CONSTITUTION_OPTIONS = [
+  { id: "balanced",          label: "平和" },
+  { id: "qi_deficient",      label: "气虚" },
+  { id: "yang_deficient",    label: "阳虚" },
+  { id: "yin_deficient",     label: "阴虚" },
+  { id: "phlegm_damp",       label: "痰湿" },
+  { id: "damp_heat",         label: "湿热" },
+  { id: "blood_stasis",      label: "血瘀" },
+  { id: "special_diathesis", label: "特禀" },
+];
+const PREGNANCY_STATUS_OPTIONS = [
+  { id: "none",          label: "无" },
+  { id: "trying",        label: "备孕" },
+  { id: "early",         label: "孕早期" },
+  { id: "mid",           label: "孕中期" },
+  { id: "late",          label: "孕晚期" },
+  { id: "breastfeeding", label: "哺乳期" },
+];
+// Helper: human-readable label for the collapsed 3-info row
+function labelOf<T extends { id: string; label: string }>(opts: T[], id?: string): string {
+  if (!id) return "";
+  return opts.find(o => o.id === id)?.label ?? id;
 }
 
 // ─── constants ────────────────────────────────────────────────────────────────
@@ -386,6 +474,67 @@ export default function Settings() {
     }
   }
 
+  // ── TICKET-039 §2 — 算法反推 chip + 手动调抽屉 ────────────────────────────
+  // 读 user_profiles 9 字段（spec §1.1 全家层面）显示为只读 chip group
+  //   hometown_cuisine / cuisine_preference / spice_tolerance / taste_intensity
+  //   cooking_methods_pref / excluded_meats / excluded_ingredients
+  //   cooking_frequency_per_week / budget_level
+  // 5 个 advanced 字段（cooking_methods_pref / excluded_meats / excluded_ingredients
+  // / cooking_frequency_per_week / budget_level）放抽屉里让用户手动覆盖。
+  // 前 4 个（hometown_cuisine / cuisine_preference / spice_tolerance /
+  // taste_intensity）继续走 onboarding 图片 + intent + QuickSetup 入口写,
+  // 这里只 readonly 展示。
+  interface ProfileV2 {
+    hometown_cuisine?: string | null;
+    cuisine_preference?: string | null;
+    spice_tolerance?: string | null;
+    taste_intensity?: string | null;
+    cooking_methods_pref?: string[] | null;
+    excluded_meats?: string[] | null;
+    excluded_ingredients?: string[] | null;
+    cooking_frequency_per_week?: number | null;
+    budget_level?: string | null;
+  }
+  const [profileV2, setProfileV2] = useState<ProfileV2>({});
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [advancedSaving, setAdvancedSaving] = useState(false);
+  const [advancedMsg, setAdvancedMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const uid = getUserId();
+      if (!uid) return;
+      const { data } = await supabase
+        .from("user_profiles")
+        .select("hometown_cuisine, cuisine_preference, spice_tolerance, taste_intensity, cooking_methods_pref, excluded_meats, excluded_ingredients, cooking_frequency_per_week, budget_level")
+        .eq("id", uid)
+        .maybeSingle();
+      if (cancelled || !data) return;
+      setProfileV2(data as ProfileV2);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  async function saveAdvancedPrefs(patch: Partial<ProfileV2>) {
+    const uid = getUserId();
+    if (!uid) { setAdvancedMsg("未登录"); return; }
+    setAdvancedSaving(true);
+    setAdvancedMsg(null);
+    const { error } = await supabase
+      .from("user_profiles")
+      .upsert({ id: uid, ...patch }, { onConflict: "id" });
+    setAdvancedSaving(false);
+    if (error) {
+      setAdvancedMsg("保存失败");
+      setTimeout(() => setAdvancedMsg(null), 2000);
+    } else {
+      setProfileV2(p => ({ ...p, ...patch }));
+      setAdvancedMsg("✓ 已保存");
+      setTimeout(() => setAdvancedMsg(null), 1500);
+    }
+  }
+
   const [helperName, setHelperName] = useState(() => localStorage.getItem("helperName") || "菲佣");
   const [helperLang, setHelperLang] = useState(() => localStorage.getItem("helperLang") || "tagalog");
   const [helperSaved, setHelperSaved] = useState(false);
@@ -459,9 +608,14 @@ export default function Settings() {
   const SUPPORT_EMAIL = ["support", "nothinkeats.com"].join("@");
 
   // TICKET-063 §A — 个人头像 + 昵称 + role + 家庭成员卡
+  // TICKET-039 §1 — 合并 UI-031c: 读 user_profiles.avatar_url + nickname (微信 OAuth fill).
+  //   头像优先级: avatar_b64 (用户自传) > avatar_url (微信) > 橙渐变首字母圆
+  //   昵称优先级: display_name (用户改) > nickname (微信原始) > userId.slice(0,8)
   const myRole = (typeof window !== "undefined" ? localStorage.getItem("nutri_role") : null) || "employer";
   const [myAvatar, setMyAvatar] = useState<string | null>(null);
+  const [myAvatarUrl, setMyAvatarUrl] = useState<string | null>(null);
   const [myDisplayName, setMyDisplayName] = useState<string | null>(null);
+  const [myNickname, setMyNickname] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [avatarMsg, setAvatarMsg] = useState<string | null>(null);
   interface HouseholdHelper { helper_id: string; name: string | null; avatar_b64: string | null; }
@@ -473,16 +627,19 @@ export default function Settings() {
     (async () => {
       const uid = getUserId();
       if (!uid) return;
-      // 自己 profile
+      // 自己 profile — TICKET-039 §1: 加 avatar_url + nickname (微信 OAuth fill 来源).
       const { data: me } = await supabase
         .from("user_profiles")
-        .select("display_name, avatar_b64")
+        .select("display_name, avatar_b64, avatar_url, nickname")
         .eq("id", uid)
         .maybeSingle();
       if (cancelled) return;
       if (me) {
-        setMyAvatar((me as { avatar_b64?: string | null }).avatar_b64 ?? null);
-        setMyDisplayName((me as { display_name?: string | null }).display_name ?? null);
+        const m = me as { avatar_b64?: string | null; avatar_url?: string | null; display_name?: string | null; nickname?: string | null };
+        setMyAvatar(m.avatar_b64 ?? null);
+        setMyAvatarUrl(m.avatar_url ?? null);
+        setMyDisplayName(m.display_name ?? null);
+        setMyNickname(m.nickname ?? null);
       }
       // 家里 helpers — 仅雇主拉
       if (myRole === "employer") {
@@ -699,12 +856,17 @@ export default function Settings() {
                   e.target.value = "";
                 }}
               />
-              {myAvatar ? (
+              {/* TICKET-039 §1: avatar_b64 (用户自传) > avatar_url (微信 OAuth) > 橙渐变首字母 */}
+              {(myAvatar || myAvatarUrl) ? (
                 <img
-                  src={myAvatar}
+                  src={myAvatar || myAvatarUrl || ""}
                   alt=""
                   className="w-16 h-16 rounded-full object-cover border-2 border-white"
                   style={{ boxShadow: "0 4px 14px rgba(255,90,31,0.30)" }}
+                  onError={(e) => {
+                    // 微信 avatar_url 跨域 / 防盗链失败 → 兜底橙圆
+                    (e.currentTarget as HTMLImageElement).style.display = "none";
+                  }}
                 />
               ) : (
                 <div
@@ -712,7 +874,7 @@ export default function Settings() {
                   style={{ background: "linear-gradient(135deg, #FF8C54, #FF5A1F)", boxShadow: "0 4px 14px rgba(255,90,31,0.30)" }}
                 >
                   <span className="text-white font-black" style={{ fontSize: 24 }}>
-                    {(myDisplayName?.[0] ?? "你").toUpperCase()}
+                    {((myDisplayName || myNickname || getUserId() || "你")[0] ?? "你").toUpperCase()}
                   </span>
                 </div>
               )}
@@ -733,7 +895,8 @@ export default function Settings() {
             </label>
             <div className="flex-1 min-w-0">
               <p className="font-bold text-[16px] truncate">
-                {myDisplayName || (getUserId()?.slice(0, 8) ?? "你")}
+                {/* TICKET-039 §1: display_name > nickname (微信原始) > userId.slice(0,8) */}
+                {myDisplayName || myNickname || (getUserId()?.slice(0, 8) ?? "你")}
               </p>
               <div className="mt-1 inline-flex items-center gap-1.5">
                 <span
@@ -782,6 +945,220 @@ export default function Settings() {
               </button>
               {tasteOpen && (
                 <div className="border-t border-black/5 bg-black/[0.015] px-4 pt-4 pb-4 space-y-4">
+                  {/* TICKET-039 §2 — 算法反推 chip group (read-only 可视化).
+                      数据源 user_profiles 9 字段，由 onboarding 图片选择 + intent +
+                      用户行为反推填入。让用户先看到"算法理解了什么"再决定要不要手动调。 */}
+                  {(() => {
+                    const chips: { icon: string; label: string }[] = [];
+                    const p = profileV2;
+                    if (p.spice_tolerance) {
+                      const m: Record<string, string> = { none: "完全不辣", mild: "微微辣", medium: "中辣", heavy: "重辣" };
+                      chips.push({ icon: "🌶", label: m[p.spice_tolerance] ?? p.spice_tolerance });
+                    }
+                    if (p.taste_intensity) {
+                      const m: Record<string, string> = { light: "清淡", medium: "适中", rich: "浓郁" };
+                      chips.push({ icon: "🍵", label: m[p.taste_intensity] ?? p.taste_intensity });
+                    }
+                    if (p.cuisine_preference) {
+                      const m: Record<string, string> = { chinese: "中餐", western: "西餐", japanese_korean: "日韩", mixed: "中西混搭" };
+                      chips.push({ icon: "🍝", label: m[p.cuisine_preference] ?? p.cuisine_preference });
+                    }
+                    if (p.hometown_cuisine) {
+                      const m: Record<string, string> = {
+                        cantonese: "粤菜家乡", sichuan: "川菜家乡", northern: "北方家乡", jiangnan: "江南家乡",
+                        hakka: "客家家乡", northwest: "西北家乡", northeast: "东北家乡",
+                      };
+                      chips.push({ icon: "🏠", label: m[p.hometown_cuisine] ?? `${p.hometown_cuisine}家乡` });
+                    }
+                    if (Array.isArray(p.excluded_meats) && p.excluded_meats.length > 0) {
+                      const meatLabel: Record<string, string> = { pork: "猪", beef: "牛", lamb: "羊", chicken: "鸡", duck: "鸭" };
+                      const list = p.excluded_meats.map(m => meatLabel[m] ?? m).join("/");
+                      chips.push({ icon: "🥩", label: `不吃${list}` });
+                    }
+                    if (Array.isArray(p.cooking_methods_pref) && p.cooking_methods_pref.length > 0) {
+                      const methodLabel: Record<string, string> = {
+                        steam: "蒸", stir_fry: "炒", braise: "炖", boil: "煮", grill: "烤", deep_fry: "炸",
+                      };
+                      const list = p.cooking_methods_pref.slice(0, 3).map(m => methodLabel[m] ?? m).join("·");
+                      chips.push({ icon: "🍳", label: `爱${list}` });
+                    }
+                    if (p.budget_level) {
+                      const m: Record<string, string> = { economy: "实惠", medium: "适中预算", premium: "高端" };
+                      chips.push({ icon: "💰", label: m[p.budget_level] ?? p.budget_level });
+                    }
+                    return (
+                      <div className="rounded-[16px] p-3" style={{ background: "rgba(255,90,31,0.04)", border: "1px solid rgba(255,90,31,0.10)" }}>
+                        <p className="text-[11px] font-bold mb-2" style={{ color: "#B84A0F" }}>🤖 算法理解到的你</p>
+                        {chips.length === 0 ? (
+                          <p className="text-[12px] text-secondary leading-relaxed">
+                            还没反推到偏好。先去 onboarding 选几道你喜欢的菜，或下方手动调几个字段。
+                          </p>
+                        ) : (
+                          <div className="flex flex-wrap gap-1.5">
+                            {chips.map((c, i) => (
+                              <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11.5px] font-semibold bg-white" style={{ color: "#1a1a1a", border: "1px solid rgba(255,90,31,0.20)" }}>
+                                <span>{c.icon}</span>{c.label}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        <p className="text-[10.5px] text-secondary mt-2 leading-snug">
+                          算法根据你的图片选择和使用历史自动反推。
+                          <button onClick={() => setAdvancedOpen(o => !o)} className="text-[#FF5A1F] font-bold ml-1 active:opacity-70">
+                            想手动调？{advancedOpen ? "收起 ▲" : "点这里 →"}
+                          </button>
+                        </p>
+                      </div>
+                    );
+                  })()}
+
+                  {/* TICKET-039 §2 — 手动覆盖抽屉 (5 advanced 字段 → user_profiles upsert) */}
+                  {advancedOpen && (
+                    <div className="rounded-[16px] bg-white border border-black/5 p-3 space-y-4">
+                      {/* cooking_methods_pref 多选 chip */}
+                      <div>
+                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2">🍳 烹饪方式 (多选)</label>
+                        <div className="flex flex-wrap gap-1.5">
+                          {[
+                            { id: "steam",    label: "蒸" },
+                            { id: "stir_fry", label: "炒" },
+                            { id: "braise",   label: "炖/焖" },
+                            { id: "boil",     label: "煮/汆" },
+                            { id: "grill",    label: "烤" },
+                            { id: "deep_fry", label: "炸" },
+                          ].map(opt => {
+                            const arr = profileV2.cooking_methods_pref ?? [];
+                            const sel = arr.includes(opt.id);
+                            return (
+                              <button
+                                key={opt.id}
+                                onClick={() => {
+                                  const next = sel ? arr.filter(x => x !== opt.id) : [...arr, opt.id];
+                                  saveAdvancedPrefs({ cooking_methods_pref: next });
+                                }}
+                                className={`px-3 py-1.5 rounded-full text-[12px] font-semibold border transition-all active:scale-95 ${
+                                  sel ? "bg-primary/10 text-primary border-primary/30" : "bg-black/[0.03] text-secondary border-transparent"
+                                }`}>
+                                {sel && "✓ "}{opt.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* excluded_meats 多选 chip */}
+                      <div>
+                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2">🥩 不吃的肉 (多选)</label>
+                        <div className="flex flex-wrap gap-1.5">
+                          {[
+                            { id: "pork",    label: "猪" },
+                            { id: "beef",    label: "牛" },
+                            { id: "lamb",    label: "羊" },
+                            { id: "chicken", label: "鸡" },
+                            { id: "duck",    label: "鸭" },
+                          ].map(opt => {
+                            const arr = profileV2.excluded_meats ?? [];
+                            const sel = arr.includes(opt.id);
+                            return (
+                              <button
+                                key={opt.id}
+                                onClick={() => {
+                                  const next = sel ? arr.filter(x => x !== opt.id) : [...arr, opt.id];
+                                  saveAdvancedPrefs({ excluded_meats: next });
+                                }}
+                                className={`px-3 py-1.5 rounded-full text-[12px] font-semibold border transition-all active:scale-95 ${
+                                  sel ? "bg-primary/10 text-primary border-primary/30" : "bg-black/[0.03] text-secondary border-transparent"
+                                }`}>
+                                {sel && "✓ "}{opt.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* excluded_ingredients 多选 chip */}
+                      <div>
+                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2">🚫 食材忌口 (多选)</label>
+                        <div className="flex flex-wrap gap-1.5">
+                          {[
+                            { id: "bitter_melon", label: "苦瓜" },
+                            { id: "eggplant",     label: "茄子" },
+                            { id: "cilantro",     label: "香菜" },
+                            { id: "tofu",         label: "豆腐" },
+                            { id: "green_onion",  label: "葱" },
+                            { id: "ginger",       label: "姜" },
+                            { id: "garlic",       label: "蒜" },
+                          ].map(opt => {
+                            const arr = profileV2.excluded_ingredients ?? [];
+                            const sel = arr.includes(opt.id);
+                            return (
+                              <button
+                                key={opt.id}
+                                onClick={() => {
+                                  const next = sel ? arr.filter(x => x !== opt.id) : [...arr, opt.id];
+                                  saveAdvancedPrefs({ excluded_ingredients: next });
+                                }}
+                                className={`px-3 py-1.5 rounded-full text-[12px] font-semibold border transition-all active:scale-95 ${
+                                  sel ? "bg-primary/10 text-primary border-primary/30" : "bg-black/[0.03] text-secondary border-transparent"
+                                }`}>
+                                {sel && "✓ "}{opt.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* cooking_frequency_per_week slider 1-7 */}
+                      <div>
+                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2">
+                          📅 每周做菜天数 · <span className="text-primary">{profileV2.cooking_frequency_per_week ?? "—"}</span>
+                          <span className="opacity-60 ml-1">天 (剩下外卖)</span>
+                        </label>
+                        <input
+                          type="range"
+                          min={1}
+                          max={7}
+                          step={1}
+                          value={profileV2.cooking_frequency_per_week ?? 4}
+                          onChange={e => saveAdvancedPrefs({ cooking_frequency_per_week: parseInt(e.target.value, 10) })}
+                          className="w-full accent-[#FF5A1F]"
+                        />
+                      </div>
+
+                      {/* budget_level 单选 */}
+                      <div>
+                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2">💰 食材预算定位</label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {[
+                            { id: "economy", label: "实惠", icon: "💸" },
+                            { id: "medium",  label: "适中", icon: "💰" },
+                            { id: "premium", label: "高端", icon: "💎" },
+                          ].map(opt => {
+                            const sel = profileV2.budget_level === opt.id;
+                            return (
+                              <button
+                                key={opt.id}
+                                onClick={() => saveAdvancedPrefs({ budget_level: opt.id })}
+                                className={`flex flex-col items-center gap-1 py-2.5 px-2 rounded-2xl border-[1.5px] active:scale-95 transition-all ${
+                                  sel ? "bg-[#FF5A1F]/10 border-[#FF5A1F]" : "bg-white border-black/5"
+                                }`}>
+                                <span className="text-[18px]">{opt.icon}</span>
+                                <span className={`text-[11px] font-semibold ${sel ? "text-[#FF5A1F]" : "text-secondary"}`}>{opt.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* 保存状态 */}
+                      {(advancedSaving || advancedMsg) && (
+                        <p className="text-[11px] text-center font-bold" style={{ color: advancedMsg?.startsWith("✓") ? "#16A34A" : "#B84A0F" }}>
+                          {advancedSaving ? "保存中…" : advancedMsg}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
                   {(Object.keys(TASTE_OPTIONS) as (keyof typeof TASTE_OPTIONS)[]).map(key => (
                     <div key={key}>
                       <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2 px-1">
@@ -839,16 +1216,26 @@ export default function Settings() {
 
           <p className="text-[11px] font-bold text-secondary/50 uppercase tracking-wider px-1 mb-2 pt-3">家庭成员档案</p>
 
-          {/* ── Member cards ── */}
+          {/* ── Member cards — TICKET-039 §3 重构 ──
+              默认显示 头像 + 名字 + 关系 + 健康目标 (3 核心信息)
+              点开抽屉显示 spec §1.2 完整 12 字段
+              删除按钮带 confirm dialog
+              数据存 localStorage `nutri_family_members` (算法侧 familyPrefs.ts
+              同款读取)，DB 写 household_members 待后续棒 (helper_id NOT NULL FK
+              约束阻挡 "非 helper 家人 row"，schema 升级走另一 ticket). */}
           {members.map((m, idx) => {
             const isOpen = openId === m.id;
             const stage  = getStageStyle(m.lifeStage);
             const draft  = isOpen ? editDraft : null;
 
+            // 显示用 helpers (collapsed row 3 核心)
+            const relLabel  = labelOf(RELATION_OPTIONS, m.relation);
+            const goalLabel = labelOf(DIETARY_GOAL_OPTIONS, m.dietary_goal);
+
             return (
               <div key={m.id} className="bg-white rounded-[22px] shadow-[0_4px_20px_rgba(0,0,0,0.06)] overflow-hidden">
 
-                {/* Card header row */}
+                {/* Card header row — 3 核心信息: 头像 / 名字 / 关系 + 健康目标 */}
                 <button
                   className="w-full flex items-center gap-4 px-5 py-4 active:bg-black/[0.02] transition-colors text-left"
                   onClick={() => openMember(m)}
@@ -859,16 +1246,25 @@ export default function Settings() {
                     </span>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <span className="text-[16px] font-black text-on-surface">{m.name || "新成员"}</span>
+                      {relLabel && (
+                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-black/[0.05] text-secondary">
+                          {relLabel}
+                        </span>
+                      )}
+                      {/* lifeStage chip 保留 (兼容老数据) */}
                       <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${stage.bg} ${stage.color}`}>
                         {stage.emoji} {m.lifeStage}
                       </span>
                     </div>
-                    {m.needs.length > 0
-                      ? <p className="text-[12px] text-secondary truncate">{m.needs.join(" · ")}</p>
-                      : <p className="text-[12px] text-secondary/40">点击完善需求</p>
-                    }
+                    {goalLabel ? (
+                      <p className="text-[12px] text-secondary truncate">🎯 {goalLabel}{m.needs.length > 0 ? ` · ${m.needs.slice(0, 2).join(" · ")}` : ""}</p>
+                    ) : m.needs.length > 0 ? (
+                      <p className="text-[12px] text-secondary truncate">{m.needs.join(" · ")}</p>
+                    ) : (
+                      <p className="text-[12px] text-secondary/40">点击完善 12 字段档案</p>
+                    )}
                   </div>
                   <span
                     className="material-symbols-outlined text-secondary/60 text-xl flex-shrink-0 transition-transform duration-200"
@@ -878,14 +1274,14 @@ export default function Settings() {
                   </span>
                 </button>
 
-                {/* Inline editor */}
+                {/* Inline editor — spec §1.2 完整 12 字段抽屉 */}
                 {isOpen && draft && (
                   <div className="border-t border-black/5 px-5 pb-5">
                     <div className="pt-4 space-y-5">
 
-                      {/* Name */}
+                      {/* 1. name */}
                       <div>
-                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2">叫什么</label>
+                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2">姓名 / 称呼</label>
                         <input
                           type="text"
                           value={draft.name}
@@ -895,22 +1291,245 @@ export default function Settings() {
                         />
                       </div>
 
-                      {/* Life stage */}
+                      {/* 2. relation */}
                       <div>
-                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2">生命阶段</label>
+                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2">关系</label>
+                        <div className="grid grid-cols-4 gap-2">
+                          {RELATION_OPTIONS.map(opt => {
+                            const sel = draft.relation === opt.id;
+                            return (
+                              <button
+                                key={opt.id}
+                                onClick={() => setEditDraft(prev => prev ? { ...prev, relation: opt.id } : prev)}
+                                className={`flex flex-col items-center gap-0.5 py-2 px-1 rounded-[12px] border-[1.5px] active:scale-95 transition-all ${
+                                  sel ? "bg-[#FF5A1F]/10 border-[#FF5A1F]" : "bg-black/[0.02] border-transparent"
+                                }`}>
+                                <span className="text-[16px]">{opt.icon}</span>
+                                <span className={`text-[11px] font-semibold ${sel ? "text-[#FF5A1F]" : "text-secondary"}`}>{opt.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* 3. gender */}
+                      <div>
+                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2">性别</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          {GENDER_OPTIONS.map(opt => {
+                            const sel = draft.gender === opt.id;
+                            return (
+                              <button
+                                key={opt.id}
+                                onClick={() => setEditDraft(prev => prev ? { ...prev, gender: opt.id } : prev)}
+                                className={`py-2.5 rounded-[12px] border-[1.5px] text-[13px] font-bold active:scale-95 transition-all ${
+                                  sel ? "bg-[#FF5A1F]/10 border-[#FF5A1F] text-[#FF5A1F]" : "bg-black/[0.02] border-transparent text-secondary"
+                                }`}>
+                                <span className="text-[16px] mr-1">{opt.icon}</span>{opt.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* 4-6. age / height / weight (3 列 number) */}
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-1.5">年龄</label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={120}
+                            value={draft.age_years ?? ""}
+                            onChange={e => {
+                              const v = e.target.value;
+                              setEditDraft(prev => prev ? { ...prev, age_years: v === "" ? undefined : parseInt(v, 10) } : prev);
+                            }}
+                            placeholder="—"
+                            className="w-full bg-[#f5f5f7] border border-black/5 rounded-[12px] px-3 py-2.5 text-[14px] font-bold text-on-surface outline-none focus:border-primary"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-1.5">身高 cm</label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={250}
+                            value={draft.height_cm ?? ""}
+                            onChange={e => {
+                              const v = e.target.value;
+                              setEditDraft(prev => prev ? { ...prev, height_cm: v === "" ? undefined : parseInt(v, 10) } : prev);
+                            }}
+                            placeholder="—"
+                            className="w-full bg-[#f5f5f7] border border-black/5 rounded-[12px] px-3 py-2.5 text-[14px] font-bold text-on-surface outline-none focus:border-primary"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-1.5">体重 kg</label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={300}
+                            step={0.1}
+                            value={draft.weight_kg ?? ""}
+                            onChange={e => {
+                              const v = e.target.value;
+                              setEditDraft(prev => prev ? { ...prev, weight_kg: v === "" ? undefined : parseFloat(v) } : prev);
+                            }}
+                            placeholder="—"
+                            className="w-full bg-[#f5f5f7] border border-black/5 rounded-[12px] px-3 py-2.5 text-[14px] font-bold text-on-surface outline-none focus:border-primary"
+                          />
+                        </div>
+                      </div>
+
+                      {/* 7. dietary_goal */}
+                      <div>
+                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2">健康目标</label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {DIETARY_GOAL_OPTIONS.map(opt => {
+                            const sel = draft.dietary_goal === opt.id;
+                            return (
+                              <button
+                                key={opt.id}
+                                onClick={() => setEditDraft(prev => prev ? { ...prev, dietary_goal: opt.id } : prev)}
+                                className={`flex flex-col items-center gap-0.5 py-2.5 px-1 rounded-[12px] border-[1.5px] active:scale-95 transition-all ${
+                                  sel ? "bg-[#FF5A1F]/10 border-[#FF5A1F]" : "bg-black/[0.02] border-transparent"
+                                }`}>
+                                <span className="text-[18px]">{opt.icon}</span>
+                                <span className={`text-[11px] font-semibold ${sel ? "text-[#FF5A1F]" : "text-secondary"}`}>{opt.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* 8. allergens (硬过滤) */}
+                      <div>
+                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2">过敏原 (多选 · 硬过滤)</label>
+                        <div className="flex flex-wrap gap-1.5">
+                          {ALLERGEN_OPTIONS.map(opt => {
+                            const arr = draft.allergens ?? [];
+                            const sel = arr.includes(opt.id);
+                            return (
+                              <button
+                                key={opt.id}
+                                onClick={() => {
+                                  const next = sel ? arr.filter(x => x !== opt.id) : [...arr, opt.id];
+                                  setEditDraft(prev => prev ? { ...prev, allergens: next } : prev);
+                                }}
+                                className={`px-3 py-1.5 rounded-full text-[12px] font-semibold border transition-all active:scale-95 ${
+                                  sel ? "bg-red-50 text-red-600 border-red-200" : "bg-black/[0.03] text-secondary border-transparent"
+                                }`}>
+                                {sel && "✓ "}{opt.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* 9. chronic_diseases */}
+                      <div>
+                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2">慢病情况 (多选)</label>
+                        <div className="flex flex-wrap gap-1.5">
+                          {CHRONIC_OPTIONS.map(opt => {
+                            const arr = draft.chronic_diseases ?? [];
+                            const sel = arr.includes(opt.id);
+                            return (
+                              <button
+                                key={opt.id}
+                                onClick={() => {
+                                  const next = sel ? arr.filter(x => x !== opt.id) : [...arr, opt.id];
+                                  setEditDraft(prev => prev ? { ...prev, chronic_diseases: next } : prev);
+                                }}
+                                className={`px-3 py-1.5 rounded-full text-[12px] font-semibold border transition-all active:scale-95 ${
+                                  sel ? "bg-primary/10 text-primary border-primary/30" : "bg-black/[0.03] text-secondary border-transparent"
+                                }`}>
+                                {sel && "✓ "}{opt.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* 10. dietary_mode */}
+                      <div>
+                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2">饮食模式</label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {DIETARY_MODE_OPTIONS.map(opt => {
+                            const sel = draft.dietary_mode === opt.id;
+                            return (
+                              <button
+                                key={opt.id}
+                                onClick={() => setEditDraft(prev => prev ? { ...prev, dietary_mode: opt.id } : prev)}
+                                className={`flex flex-col items-center gap-0.5 py-2 px-1 rounded-[12px] border-[1.5px] active:scale-95 transition-all ${
+                                  sel ? "bg-[#FF5A1F]/10 border-[#FF5A1F]" : "bg-black/[0.02] border-transparent"
+                                }`}>
+                                <span className="text-[16px]">{opt.icon}</span>
+                                <span className={`text-[10.5px] font-semibold leading-tight ${sel ? "text-[#FF5A1F]" : "text-secondary"}`}>{opt.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* 11. tcm_constitution */}
+                      <div>
+                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2">中医体质 (8 选 1)</label>
+                        <div className="flex flex-wrap gap-1.5">
+                          {TCM_CONSTITUTION_OPTIONS.map(opt => {
+                            const sel = draft.tcm_constitution === opt.id;
+                            return (
+                              <button
+                                key={opt.id}
+                                onClick={() => setEditDraft(prev => prev ? { ...prev, tcm_constitution: opt.id } : prev)}
+                                className={`px-3 py-1.5 rounded-full text-[12px] font-semibold border transition-all active:scale-95 ${
+                                  sel ? "bg-primary/10 text-primary border-primary/30" : "bg-black/[0.03] text-secondary border-transparent"
+                                }`}>
+                                {opt.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* 12. pregnancy_status (女性才显示) */}
+                      {draft.gender === "female" && (
+                        <div>
+                          <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2">怀孕状态</label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {PREGNANCY_STATUS_OPTIONS.map(opt => {
+                              const sel = draft.pregnancy_status === opt.id;
+                              return (
+                                <button
+                                  key={opt.id}
+                                  onClick={() => setEditDraft(prev => prev ? { ...prev, pregnancy_status: opt.id } : prev)}
+                                  className={`px-3 py-1.5 rounded-full text-[12px] font-semibold border transition-all active:scale-95 ${
+                                    sel ? "bg-primary/10 text-primary border-primary/30" : "bg-black/[0.03] text-secondary border-transparent"
+                                  }`}>
+                                  {opt.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* lifeStage (兼容老算法 — getEatingMembers 仍读此字段) */}
+                      <div>
+                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2">生命阶段 (兼容老算法)</label>
                         <div className="grid grid-cols-3 gap-2">
                           {LIFE_STAGES.map(s => (
                             <button
                               key={s.value}
                               onClick={() => setEditDraft(prev => prev ? { ...prev, lifeStage: s.value } : prev)}
-                              className={`flex flex-col items-center py-3 rounded-[14px] border-2 transition-all active:scale-95 ${
+                              className={`flex flex-col items-center py-2 rounded-[12px] border-[1.5px] transition-all active:scale-95 ${
                                 draft.lifeStage === s.value
                                   ? `border-primary ${s.bg}`
                                   : "border-black/[0.08] bg-black/[0.02]"
                               }`}
                             >
-                              <span className="text-2xl mb-0.5">{s.emoji}</span>
-                              <span className={`text-[12px] font-bold ${draft.lifeStage === s.value ? "text-primary" : "text-secondary"}`}>
+                              <span className="text-xl mb-0.5">{s.emoji}</span>
+                              <span className={`text-[11px] font-bold ${draft.lifeStage === s.value ? "text-primary" : "text-secondary"}`}>
                                 {s.value}
                               </span>
                             </button>
@@ -918,20 +1537,20 @@ export default function Settings() {
                         </div>
                       </div>
 
-                      {/* Need tags */}
+                      {/* legacy needs tags (保留 — 算法 familyPrefs 仍读 needs 数组) */}
                       <div>
-                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-3">特殊需求</label>
+                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-3">额外标签 (兼容老算法)</label>
                         {NEED_GROUPS.map(({ group, tags }) => (
-                          <div key={group} className="mb-4">
-                            <p className="text-[11px] text-secondary/50 font-semibold mb-2">{group}</p>
-                            <div className="flex flex-wrap gap-2">
+                          <div key={group} className="mb-3">
+                            <p className="text-[11px] text-secondary/50 font-semibold mb-1.5">{group}</p>
+                            <div className="flex flex-wrap gap-1.5">
                               {tags.map(tag => {
                                 const sel = draft.needs.includes(tag);
                                 return (
                                   <button
                                     key={tag}
                                     onClick={() => toggleNeed(tag)}
-                                    className={`px-3.5 py-2 rounded-[10px] text-[13px] font-semibold border transition-all active:scale-[0.96] ${
+                                    className={`px-3 py-1.5 rounded-[10px] text-[12px] font-semibold border transition-all active:scale-[0.96] ${
                                       sel
                                         ? "bg-primary/10 text-primary border-primary/30"
                                         : "bg-black/[0.03] text-secondary border-transparent"
@@ -954,13 +1573,15 @@ export default function Settings() {
                         保存
                       </button>
 
-                      {/* Remove */}
+                      {/* Remove with confirm */}
                       {members.length > 1 && (
                         <button
-                          onClick={() => removeMember(m.id)}
+                          onClick={() => {
+                            if (window.confirm(`确定移除「${m.name || "此成员"}」？不可撤销。`)) removeMember(m.id);
+                          }}
                           className="w-full py-2 text-[13px] font-semibold text-red-400 active:scale-[0.98] transition-transform"
                         >
-                          移除此成员
+                          🗑 移除此成员
                         </button>
                       )}
                     </div>
