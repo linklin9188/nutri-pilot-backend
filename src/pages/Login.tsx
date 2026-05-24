@@ -463,27 +463,35 @@ export default function Login() {
               {roleHint}
             </p>
 
-            {/* TICKET-047 §A — 加雇主登录卡 (老板 14:05 真测发现 046 漏了雇主入口).
-                雇主登录走相同微信 OAuth (handleWeChat), 但视觉独立显眼让用户知道
-                "这是我的入口". 橙色边框 vs 菲佣绿色 vs 微信主推绿色. */}
-            <button
-              onClick={handleWeChat}
-              className="w-full rounded-2xl p-4 active:scale-[0.97] transition-all flex flex-col items-center gap-1"
-              style={{
-                background: "rgba(255,90,31,0.10)",
-                border: "1.5px solid rgba(255,90,31,0.45)",
-                boxShadow: "0 6px 22px rgba(255,90,31,0.18)",
-              }}>
-              <span style={{ fontSize: 28 }}>🏠</span>
-              <span className="font-bold text-white" style={{ fontSize: 15 }}>
-                {t("Sign in as employer", "雇主登录")}
-              </span>
-              <span className="text-white/55 text-center" style={{ fontSize: 11 }}>
-                {t("WeChat sign-in · plan menus for family", "微信扫码 · 为家庭准备菜单")}
-              </span>
-            </button>
+            {/* TICKET-047 修订 (CEO 14:25 拨乱反正) — 删雇主独立卡, 改 role toggle.
+                微信登录是唯一 OAuth 入口, 雇主/菲佣是任务角色切换 (非独立 OAuth). */}
+            <div className="grid grid-cols-2 gap-2 mb-1">
+              <button
+                onClick={() => setRole("employer")}
+                className="rounded-2xl py-3 font-bold transition-all active:scale-95"
+                style={{
+                  background: role === "employer" ? "rgba(255,90,31,0.18)" : "rgba(255,255,255,0.05)",
+                  border: role === "employer" ? "1.5px solid rgba(255,90,31,0.55)" : "1px solid rgba(255,255,255,0.10)",
+                  color: role === "employer" ? "white" : "rgba(255,255,255,0.55)",
+                  fontSize: 13,
+                }}>
+                🏠 {t("I'm an employer", "我是雇主")}
+              </button>
+              <button
+                onClick={() => setRole("helper")}
+                className="rounded-2xl py-3 font-bold transition-all active:scale-95"
+                style={{
+                  background: role === "helper" ? "rgba(37,211,102,0.18)" : "rgba(255,255,255,0.05)",
+                  border: role === "helper" ? "1.5px solid rgba(37,211,102,0.55)" : "1px solid rgba(255,255,255,0.10)",
+                  color: role === "helper" ? "white" : "rgba(255,255,255,0.55)",
+                  fontSize: 13,
+                }}>
+                👩‍🍳 {t("I'm a helper", "我是菲佣")}
+              </button>
+            </div>
 
-            {/* TICKET-046 §C — 菲佣 + 微信 卡并列. TICKET-047 §B Learner 移底部 secondary. */}
+            {/* TICKET-047 修订 — helper 角色才显邀请码 box, employer 直接看微信登录 */}
+            {role === "helper" && (
             <>
               {/* TICKET-068 §B — 菲佣邀请码登录入口（跳过 OAuth 直接进 /helper） */}
               <div className="flex flex-col gap-3 rounded-2xl p-4"
@@ -539,15 +547,8 @@ export default function Login() {
               </div>
 
             </>
+            )}
 
-            {/* TICKET-046 — 微信主推卡分隔 (雇主卡上方已有, 这里区分 employer/helper 卡 vs 通用微信) */}
-            <div className="flex items-center gap-3 my-1">
-              <div className="flex-1 h-px bg-white/15" />
-              <span className="text-white/45" style={{ fontSize: 12 }}>
-                {t("or sign in with WeChat", "或微信登录")}
-              </span>
-              <div className="flex-1 h-px bg-white/15" />
-            </div>
             <>
             {/* WeChat — always shown */}
             <button
