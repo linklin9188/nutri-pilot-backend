@@ -69,6 +69,268 @@ app.get('/api/admin/me', requireAdmin, (req, res) => {
   res.json({ is_admin: true, username: req.adminUsername });
 });
 
+// ── TICKET TELEPOT-20260525-046 P1 第 4 步 — supplier admin helpers ────────
+// 用 service_role key 调 Supabase REST，所有路由都 requireAdmin 守护。
+// 复用 SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY env（与 /api/admin/stats 同）。
+
+function sbBase() {
+  return SUPABASE_URL.replace(/\/$/, '');
+}
+function sbHeaders(extra) {
+  return {
+    apikey:        SUPABASE_SERVICE_ROLE_KEY,
+    Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+    ...(extra ?? {}),
+  };
+}
+function sbConfigured(res) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    res.status(503).json({
+      error: 'supabase not configured — set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY in Railway env',
+    });
+    return false;
+  }
+  return true;
+}
+async function sbFetch(method, path, body) {
+  const r = await fetch(`${sbBase()}${path}`, {
+    method,
+    headers: sbHeaders({
+      'Content-Type': 'application/json',
+      Prefer:         method === 'POST' || method === 'PATCH' ? 'return=representation' : '',
+    }),
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const text = await r.text();
+  let json = null;
+  try { json = text ? JSON.parse(text) : null; } catch {/* keep null */}
+  return { ok: r.ok, status: r.status, json, text };
+}
+
+// ── Suppliers CRUD ────────────────────────────────────────────────────────
+app.get('/api/admin/suppliers', requireAdmin, async (_req, res) => {
+  if (!sbConfigured(res)) return;
+  const r = await sbFetch('GET', '/rest/v1/suppliers?select=*&order=created_at.desc');
+  if (!r.ok) return res.status(502).json({ error: `supabase ${r.status}: ${(r.text || '').slice(0, 200)}` });
+  res.json({ suppliers: r.json ?? [] });
+});
+
+app.post('/api/admin/suppliers', requireAdmin, express.json(), async (req, res) => {
+  if (!sbConfigured(res)) return;
+  const payload = pickSupplierFields(req.body ?? {});
+  if (!payload.name) return res.status(400).json({ error: 'name required' });
+  const r = await sbFetch('POST', '/rest/v1/suppliers', payload);
+  if (!r.ok) return res.status(502).json({ error: `supabase ${r.status}: ${(r.text || '').slice(0, 200)}` });
+  res.json({ supplier: Array.isArray(r.json) ? r.json[0] : r.json });
+});
+
+app.patch('/api/admin/suppliers/:id', requireAdmin, express.json(), async (req, res) => {
+  if (!sbConfigured(res)) return;
+  const id = String(req.params.id || '').trim();
+  if (!id) return res.status(400).json({ error: 'id required' });
+  const payload = pickSupplierFields(req.body ?? {});
+  payload.updated_at = new Date().toISOString();
+  const r = await sbFetch(
+    'PATCH',
+    `/rest/v1/suppliers?id=eq.${encodeURIComponent(id)}`,
+    payload,
+  );
+  if (!r.ok) return res.status(502).json({ error: `supabase ${r.status}: ${(r.text || '').slice(0, 200)}` });
+  res.json({ supplier: Array.isArray(r.json) ? r.json[0] : r.json });
+});
+
+function pickSupplierFields(body) {
+  const out = {};
+  const keys = [
+    'name', 'brand_logo_url', 'category', 'contact_whatsapp', 'contact_url',
+    'api_base_url', 'api_auth_type', 'api_status', 'status',
+  ];
+  for (const k of keys) {
+    if (k in body) {
+      const v = body[k];
+      out[k] = v === '' ? null : v;
+    }
+  }
+  return out;
+}
+
+// ── Supplier SKUs CRUD ────────────────────────────────────────────────────
+app.get('/api/admin/skus', requireAdmin, async (req, res) => {
+  if (!sbConfigured(res)) return;
+  const supplierId = String(req.query.supplier_id ?? '').trim();
+  const q = supplierId
+    ? `/rest/v1/supplier_skus?select=*&supplier_id=eq.${encodeURIComponent(supplierId)}&order=created_at.desc`
+    : `/rest/v1/supplier_skus?select=*&order=created_at.desc`;
+  const r = await sbFetch('GET', q);
+  if (!r.ok) return res.status(502).json({ error: `supabase ${r.status}: ${(r.text || '').slice(0, 200)}` });
+  res.json({ skus: r.json ?? [] });
+});
+
+app.post('/api/admin/skus', requireAdmin, express.json(), async (req, res) => {
+  if (!sbConfigured(res)) return;
+  const payload = pickSkuFields(req.body ?? {});
+  if (!payload.sku_name) return res.status(400).json({ error: 'sku_name required' });
+  if (!payload.supplier_id) return res.status(400).json({ error: 'supplier_id required' });
+  if (!payload.order_url) payload.order_url = 'https://aieats.app/supplier-placeholder';
+  if (!Array.isArray(payload.ingredient_keywords)) payload.ingredient_keywords = [];
+  if (typeof payload.active !== 'boolean') payload.active = true;
+  const r = await sbFetch('POST', '/rest/v1/supplier_skus', payload);
+  if (!r.ok) return res.status(502).json({ error: `supabase ${r.status}: ${(r.text || '').slice(0, 200)}` });
+  res.json({ sku: Array.isArray(r.json) ? r.json[0] : r.json });
+});
+
+app.patch('/api/admin/skus/:id', requireAdmin, express.json(), async (req, res) => {
+  if (!sbConfigured(res)) return;
+  const id = String(req.params.id || '').trim();
+  if (!id) return res.status(400).json({ error: 'id required' });
+  const payload = pickSkuFields(req.body ?? {});
+  payload.updated_at = new Date().toISOString();
+  const r = await sbFetch(
+    'PATCH',
+    `/rest/v1/supplier_skus?id=eq.${encodeURIComponent(id)}`,
+    payload,
+  );
+  if (!r.ok) return res.status(502).json({ error: `supabase ${r.status}: ${(r.text || '').slice(0, 200)}` });
+  res.json({ sku: Array.isArray(r.json) ? r.json[0] : r.json });
+});
+
+function pickSkuFields(body) {
+  const out = {};
+  const passthrough = [
+    'supplier_id', 'sku_name', 'sku_image_url', 'unit', 'order_url',
+    'inventory_check_endpoint_path', 'sku_external_id',
+  ];
+  for (const k of passthrough) {
+    if (k in body) {
+      const v = body[k];
+      out[k] = v === '' ? null : v;
+    }
+  }
+  if ('price_hkd' in body) {
+    const n = Number(body.price_hkd);
+    out.price_hkd = Number.isFinite(n) ? n : null;
+  }
+  if ('ingredient_keywords' in body) {
+    const v = body.ingredient_keywords;
+    out.ingredient_keywords = Array.isArray(v)
+      ? v.map(s => String(s).trim()).filter(Boolean)
+      : [];
+  }
+  if ('active' in body) {
+    out.active = !!body.active;
+  }
+  return out;
+}
+
+// ── 导流报表 — 按 supplier × 当周聚合 ────────────────────────────────────
+// 返回:
+//   suppliers: [{ supplier_id, supplier_name, click_count, unique_users,
+//                 top_skus: [{ sku_id, sku_name, count }],
+//                 top_dishes: [{ dish_id, dish_name, count }] }]
+//   week_start_iso: ISO（本周一 00:00 UTC）
+app.get('/api/admin/supplier-report', requireAdmin, async (_req, res) => {
+  if (!sbConfigured(res)) return;
+  try {
+    // 本周一 00:00 UTC
+    const now = new Date();
+    const dow = now.getUTCDay(); // 0=Sun
+    const daysSinceMon = (dow + 6) % 7;
+    const monday = new Date(Date.UTC(
+      now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - daysSinceMon,
+      0, 0, 0, 0,
+    ));
+    const weekStartIso = monday.toISOString();
+
+    const [suppliersR, skusR, clicksR] = await Promise.all([
+      sbFetch('GET', '/rest/v1/suppliers?select=id,name'),
+      sbFetch('GET', '/rest/v1/supplier_skus?select=id,sku_name,supplier_id'),
+      sbFetch(
+        'GET',
+        `/rest/v1/supplier_click_log?select=user_id,sku_id,source_dish_id,clicked_at&clicked_at=gte.${encodeURIComponent(weekStartIso)}`,
+      ),
+    ]);
+    if (!suppliersR.ok || !skusR.ok || !clicksR.ok) {
+      return res.status(502).json({
+        error: `supabase fetch failed: suppliers=${suppliersR.status} skus=${skusR.status} clicks=${clicksR.status}`,
+      });
+    }
+    const suppliers = suppliersR.json ?? [];
+    const skus = skusR.json ?? [];
+    const clicks = clicksR.json ?? [];
+
+    const skuById = new Map(skus.map(s => [s.id, s]));
+    const skusBySupplier = new Map();
+    for (const s of skus) {
+      if (!skusBySupplier.has(s.supplier_id)) skusBySupplier.set(s.supplier_id, new Set());
+      skusBySupplier.get(s.supplier_id).add(s.id);
+    }
+
+    // 取所有用到的 dish_id → name
+    const dishIds = Array.from(new Set(
+      clicks.map(c => c.source_dish_id).filter(Boolean),
+    ));
+    let dishById = new Map();
+    if (dishIds.length) {
+      const inList = dishIds.map(id => `"${id}"`).join(',');
+      const dr = await sbFetch(
+        'GET',
+        `/rest/v1/dishes?select=id,title&id=in.(${inList})`,
+      );
+      if (dr.ok && Array.isArray(dr.json)) {
+        dishById = new Map(dr.json.map(d => [d.id, d.title]));
+      }
+    }
+
+    const out = suppliers.map(sup => {
+      const skuSet = skusBySupplier.get(sup.id) ?? new Set();
+      const supClicks = clicks.filter(c => c.sku_id && skuSet.has(c.sku_id));
+      const click_count = supClicks.length;
+      const userSet = new Set();
+      let anonCount = 0;
+      for (const c of supClicks) {
+        if (c.user_id) userSet.add(c.user_id);
+        else anonCount = 1; // 所有匿名算 1 个
+      }
+      const unique_users = userSet.size + anonCount;
+
+      const bySku = new Map();
+      const byDish = new Map();
+      for (const c of supClicks) {
+        if (c.sku_id) bySku.set(c.sku_id, (bySku.get(c.sku_id) ?? 0) + 1);
+        if (c.source_dish_id) byDish.set(c.source_dish_id, (byDish.get(c.source_dish_id) ?? 0) + 1);
+      }
+      const top_skus = Array.from(bySku.entries())
+        .sort((a, b) => b[1] - a[1]).slice(0, 5)
+        .map(([sku_id, count]) => ({
+          sku_id,
+          sku_name: skuById.get(sku_id)?.sku_name ?? '(unknown)',
+          count,
+        }));
+      const top_dishes = Array.from(byDish.entries())
+        .sort((a, b) => b[1] - a[1]).slice(0, 5)
+        .map(([dish_id, count]) => ({
+          dish_id,
+          dish_name: dishById.get(dish_id) ?? '(unknown)',
+          count,
+        }));
+
+      return {
+        supplier_id: sup.id,
+        supplier_name: sup.name,
+        click_count,
+        unique_users,
+        top_skus,
+        top_dishes,
+      };
+    });
+
+    res.json({ suppliers: out, week_start_iso: weekStartIso });
+  } catch (e) {
+    console.error('[/api/admin/supplier-report]', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/api/admin/stats', requireAdmin, async (_req, res) => {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     return res.status(503).json({
