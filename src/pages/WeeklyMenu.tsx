@@ -6,7 +6,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
-import { useWeeklyMenu, todayDayIndex, isFruitVeggieInSeason, getCurrentSolarTermZh } from "../hooks/useWeeklyMenu";
+import { useWeeklyMenu, todayDayIndex, isFruitVeggieInSeason, getCurrentSolarTermZh, isWeekend, getWeekStartISO } from "../hooks/useWeeklyMenu";
 import WeekendDiningReport from "../components/WeekendDiningReport";
 import { type SupabaseDish } from "../hooks/useSupabaseMenu";
 import { supabase } from "../lib/supabase";
@@ -508,7 +508,12 @@ export default function WeeklyMenu() {
   // TICKET-030 §B — lang-aware UI strings. isChinese 已在 DishCard 内 used,
   // 这里加 t / language 给顶层 toast / banner / hero.
   const { t, language } = useLanguage();
-  const { weeklyMenu, loading, swapDish } = useWeeklyMenu();
+  // TICKET-042 §B — 周末访问默认显示下周菜单 (周末用户为下周做饭计划).
+  // 周一-五访问 → 本周菜单 (weekOffset=0), 周六/日 → 下周菜单 (weekOffset=1).
+  const isWk = isWeekend();
+  const weekOffset = isWk ? 1 : 0;
+  const { weeklyMenu, loading, swapDish } = useWeeklyMenu(weekOffset);
+  const targetWeekStart = getWeekStartISO(weekOffset);
   // TICKET-017 §C — 换一道按钮 state（key="dayIdx:slotIdx" busy 标记 + 提示 toast）
   const [swapBusy, setSwapBusy] = useState<string | null>(null);
   const [swapToast, setSwapToast] = useState<string | null>(null);
@@ -806,14 +811,18 @@ export default function WeeklyMenu() {
           </p>
         </div>
 
-        {/* Title — own line, full width */}
+        {/* Title — own line, full width.
+            TICKET-042 §B — 周末访问标题改 "下周菜单" + 显示下周一日期, 让老板
+            一眼明白当前看的是下周不是本周. */}
         <h1 className="font-serif font-black text-white mt-2" style={{ fontSize: 32, letterSpacing: "-0.01em", lineHeight: 1.05 }}>
-          本周菜单
+          {isWk ? '下周菜单' : '本周菜单'}
         </h1>
         <p className="text-white/45 mt-1" style={{ fontSize: 12 }}>
-          {weeklyMenu
-            ? `5 天家庭餐 + 周末外食 · ${weeklyMenu.days.reduce((n,d) => n + (d.dishes?.length ?? 0) + (d.lunchDishes?.length ?? 0), 0)} 道菜`
-            : "AI 智能规划 · 每周更新"}
+          {isWk
+            ? `周一 ${targetWeekStart.slice(5).replace('-', '/')} 开始 · AI 已规划好`
+            : weeklyMenu
+              ? `5 天家庭餐 + 周末外食 · ${weeklyMenu.days.reduce((n,d) => n + (d.dishes?.length ?? 0) + (d.lunchDishes?.length ?? 0), 0)} 道菜`
+              : "AI 智能规划 · 每周更新"}
         </p>
 
         {/* Action buttons row */}

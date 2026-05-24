@@ -1013,6 +1013,55 @@ export default function Home() {
     }
   };
 
+  // TICKET-042 §A — 周末模式: Home 不显菜单, 改显"周末推荐餐厅" hero
+  // (老板拍板"周六日的主页是推荐餐厅. 下周菜单在菜单界面"). 周一-五正常菜单 UI.
+  // hook 已全部在前面调用过, 这里 conditional return 不破 React rules.
+  if (isWeekend()) {
+    const RESTAURANTS = [
+      { emoji: '🍱', name: '家附近茶餐厅',     desc: '港式快靓正, 老少咸宜',         color: 'rgba(255,90,31,0.10)'  },
+      { emoji: '🍜', name: '街角面馆',         desc: '汤鲜面爽, 一人 30 元搞定',      color: 'rgba(34,197,94,0.10)'  },
+      { emoji: '🍣', name: '日料居酒屋',       desc: '换换口味, 周末小确幸',         color: 'rgba(59,130,246,0.10)' },
+      { emoji: '🥘', name: '川菜小馆',         desc: '麻辣过瘾, 全家解馋',           color: 'rgba(236,72,153,0.10)' },
+      { emoji: '🍕', name: '社区比萨店',       desc: '孩子最爱, 周末欢乐时光',       color: 'rgba(168,85,247,0.10)' },
+    ];
+    return (
+      <div className="min-h-screen max-w-md mx-auto relative px-5"
+        style={{ background: "linear-gradient(180deg, #FAF6F0 0%, #F4EEE3 100%)", paddingBottom: 100, paddingTop: 'calc(env(safe-area-inset-top, 0px) + 24px)' }}>
+        <p className="font-bold uppercase tracking-[0.20em] mt-2" style={{ fontSize: 11, color: '#FF8C54' }}>
+          {t('Weekend', '周末')}
+        </p>
+        <h1 className="font-serif font-black mt-2 leading-tight" style={{ fontSize: 30, color: '#1a1a1a', letterSpacing: '-0.01em' }}>
+          {t('Family time, eat out today', '周末家庭自由发挥')}
+        </h1>
+        <p className="mt-2 text-zinc-500 leading-relaxed" style={{ fontSize: 14 }}>
+          {t('Try these nearby spots · Next week menu is AI-planned', '试试这些餐厅 · 下周菜单已规划')}
+        </p>
+        <div className="mt-6 flex flex-col gap-3">
+          {RESTAURANTS.map(r => (
+            <div key={r.name} className="rounded-2xl px-4 py-3 flex items-center gap-3"
+              style={{ background: r.color, border: '1px solid rgba(0,0,0,0.05)' }}>
+              <span style={{ fontSize: 32 }}>{r.emoji}</span>
+              <div className="flex-1">
+                <p className="font-bold" style={{ fontSize: 14, color: '#1a1a1a' }}>{r.name}</p>
+                <p className="text-zinc-500" style={{ fontSize: 12 }}>{r.desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+        <button
+          onClick={() => navigate('/weekly')}
+          className="mt-7 w-full py-4 rounded-2xl font-bold text-white active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+          style={{ background: 'linear-gradient(135deg, #FF5A1F, #FF8C54)', fontSize: 15, boxShadow: '0 8px 28px rgba(255,90,31,0.30)' }}>
+          {t('View next week menu', '查看下周菜单')}
+          <span className="material-symbols-outlined" style={{ fontSize: 18 }}>arrow_forward</span>
+        </button>
+        <p className="mt-4 text-center text-zinc-400" style={{ fontSize: 11 }}>
+          {t('Restaurant picks are placeholders — real integration coming soon', '餐厅为占位推荐 · 真接入下个 sprint')}
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen max-w-md mx-auto relative"
       style={{
