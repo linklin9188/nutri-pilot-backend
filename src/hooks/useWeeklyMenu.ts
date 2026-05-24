@@ -121,7 +121,8 @@ const WORKDAYS_PER_WEEK = 5;
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v65'; // v65: TICKET-034 Settings §2 嵌入向量推荐 — recommendVector.ts (manual 20 维: cuisine 5+spice 1+ingredient family 8+cooking 6); user 选 onboarding 图片 → userVectorFromSelectedDishes 写 user_profiles.preference_vector; 推荐 cascade: 有 vector → recommendDishesByVector (cosineSimilarity top 100 → nutritionRerank by dietary_goal → 过敏硬过滤) 截 pool top 150 喂 generateWeekPlan; 无 vector (旧用户) → fallback 现有 scoreDish/scoreForWeek 兼容. dishes.feature_vector 100% 填充 (924/924, by scripts/compute-dish-feature-vector.ts). bump 让全 v64 缓存失效, 新算法立即生效。
+export const ALGO_VERSION = 'v66'; // v66: TICKET-040 早餐 spec 校准 (老板 25/05 凌晨) — 早餐 4 类合并为 3 类: 碳水 + 蛋白 + 维生素 (veg OR fruit 任一即够, 不强制两者都要). breakfastCombos.ts BREAKFAST_VEG/FRUIT_KEYWORDS 保留 (数据仍用), 改 generateWeekPlan supplement check 从 AND 改 OR. bump 让全 v65 缓存失效。
+// v65: TICKET-034 Settings §2 嵌入向量推荐 — recommendVector.ts (manual 20 维: cuisine 5+spice 1+ingredient family 8+cooking 6); user 选 onboarding 图片 → userVectorFromSelectedDishes 写 user_profiles.preference_vector; 推荐 cascade: 有 vector → recommendDishesByVector (cosineSimilarity top 100 → nutritionRerank by dietary_goal → 过敏硬过滤) 截 pool top 150 喂 generateWeekPlan; 无 vector (旧用户) → fallback 现有 scoreDish/scoreForWeek 兼容. dishes.feature_vector 100% 填充 (924/924, by scripts/compute-dish-feature-vector.ts). bump 让全 v64 缓存失效, 新算法立即生效。
 // v64: TICKET-031b P1 swap 同类匹配修 — fetchSwapOptions (useSupabaseMenu.ts:704+) 加 proteinFamilyOf() + family 硬过滤 3 层 (strict same family → same family OR unknown → cross-family 殿后)。修前老板真测 /home 红烧鲫鱼 (fish, main_protein) 点换菜出大盘鸡 / 意式柠檬鸡 / 葱烧海参 (chicken+other) 因原算法只硬过滤 course_type='main_protein', main_ingredient 退化成软排序。修后 fish 候选硬过滤 family='seafood', 鸡 (white)/牛 (red) 绝不进入. main_ingredient='other'/'carb' 等非主蛋白 dish 走原 course_type only 兼容. bump 让全 v63 缓存失效。
 // v63: TICKET-031 §A 早餐蛋类 5 工作日轮换 — breakfastCombos.ts 加 EGG_PLACEHOLDER + BREAKFAST_PROTEIN_EGG_POOL (5 蛋); 13 处 side[0]='茶叶蛋' 硬编码 → placeholder; hk-tea-restaurant 港式 3 蛋后追加 placeholder; resolveSlot 加 dayIndex 参数解析 placeholder 为 dayIndex%5 轮换 → 周一-五 protein 5 蛋不重. bump 让全 v62 缓存失效。
 // v62: TICKET-028 §D 老板 spec 早餐 4 大营养类 (碳水/蛋白/蔬菜/水果): src/lib/breakfastCombos.ts BREAKFAST_VITAMIN_FIBER_KEYWORDS 拆为 BREAKFAST_VEG_KEYWORDS + BREAKFAST_FRUIT_KEYWORDS; classifyBreakfastSlot 加 'veg' 'fruit' 两类 + 优先级 protein > fruit > veg > liquid > carb; useWeeklyMenu generateWeekPlan breakfast 改成 检查 veg + fruit 各 1 道 supplement (老 vit_fib 单 slot 拆分). 'vitamin_fiber' alias 保留 backward compat. bump 让全 v61 缓存失效, 让早餐 4 件 立即生效。
@@ -3113,30 +3114,35 @@ function generateWeekPlan(
           avoidTags: [],
         });
         const rawDishes = result.dishes ?? [];
-        // §D (TICKET-028) 老板 spec — 早餐必须 4 大营养类: 碳水/蛋白/蔬菜/水果.
-        // pickBreakfastCombo 返 3 slot (drink/staple/side) 覆盖 carb + protein +
-        // liquid (≈ 蛋白来源 牛奶/豆浆 / 碳水). v62 supplement 改成检查 veg + fruit
-        // 各 1 道 (拆分原 vit_fib 单 slot). 老板原话 "早餐 4 件 4 大营养类别全覆盖".
+        // §D (TICKET-040 v66) 老板 spec 校准 — 早餐 3 大营养类: 碳水 + 蛋白 + 维生素.
+        // 老板 2026-05-25 凌晨明示: 之前 4 类 (碳水/蛋白/蔬菜/水果) 合并蔬菜+水果为
+        // "维生素"类, **任一即够**. pickBreakfastCombo 返 3 slot (drink/staple/side)
+        // 覆盖 carb + protein + liquid. supplement 检查 veg OR fruit 任一存在即够,
+        // 不强制两者都要. 若都缺, 优先补 fruit (饱腹感低、晨起易消化), fruit pool
+        // 空则退 veg. breakfastCombos.ts BREAKFAST_VEG/FRUIT_KEYWORDS + classifyBreakfastSlot
+        // 4 类分类保留 (数据仍用于 slot candidates 同类补菜与 reader).
         const hasVeg = rawDishes.some((d: any) => classifyBreakfastSlot(d) === 'veg');
         const hasFruit = rawDishes.some((d: any) => classifyBreakfastSlot(d) === 'fruit');
-        const supplementSlots: Array<'veg' | 'fruit'> = [];
-        if (!hasVeg) supplementSlots.push('veg');
-        if (!hasFruit) supplementSlots.push('fruit');
-        for (const targetSlot of supplementSlots) {
-          if (breakfastPool.length === 0) break;
-          const usedIds = new Set(rawDishes.map((d: any) => d.id));
-          const supPool = breakfastPool.filter((d: any) => {
-            if (usedIds.has(d.id)) return false;
-            if (classifyBreakfastSlot(d) !== targetSlot) return false;
-            // §G (TICKET-006) wet drink mutex 守门 — supplement 不能引入"红薯粥/
-            // 玉米汁" 类 wet drink 破坏一顿早餐最多 1 个 wet drink 的约束
-            const t = d.title_zh || '';
-            if (WET_DRINK_KEYWORDS.some(kw => t.includes(kw))) return false;
-            return true;
-          });
-          if (supPool.length > 0) {
-            // dayIndex % len 稳定抽样, 跨 day 自动轮换
-            rawDishes.push(supPool[dayIndex % supPool.length] as any);
+        const hasVitamin = hasVeg || hasFruit;
+        if (!hasVitamin && breakfastPool.length > 0) {
+          // 任一即够 — 优先尝试 fruit (晨起易消化), 没有再 fall back 到 veg.
+          const tryOrder: Array<'fruit' | 'veg'> = ['fruit', 'veg'];
+          for (const targetSlot of tryOrder) {
+            const usedIds = new Set(rawDishes.map((d: any) => d.id));
+            const supPool = breakfastPool.filter((d: any) => {
+              if (usedIds.has(d.id)) return false;
+              if (classifyBreakfastSlot(d) !== targetSlot) return false;
+              // §G (TICKET-006) wet drink mutex 守门 — supplement 不能引入"红薯粥/
+              // 玉米汁" 类 wet drink 破坏一顿早餐最多 1 个 wet drink 的约束
+              const t = d.title_zh || '';
+              if (WET_DRINK_KEYWORDS.some(kw => t.includes(kw))) return false;
+              return true;
+            });
+            if (supPool.length > 0) {
+              // dayIndex % len 稳定抽样, 跨 day 自动轮换
+              rawDishes.push(supPool[dayIndex % supPool.length] as any);
+              break; // 补到一个就停 — 任一即够
+            }
           }
         }
         // §C3 scoreForWeek 二次评分（mealTime='早餐'）—— 不改 hometown 模板
