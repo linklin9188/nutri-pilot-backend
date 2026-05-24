@@ -47,6 +47,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { getUserId, setUserId } from '../lib/userId';
+import { useLanguage } from '../contexts/LanguageContext';
 import {
   userVectorFromSelectedDishes,
   dishToVector,
@@ -54,13 +55,25 @@ import {
 } from '../lib/recommendVector';
 
 // ─── 代表菜 catalog ─────────────────────────────────────────────────────
+// TICKET-051 P0 i18n — RepDish.label 拆 zh/en/tl 三语言. dish.title_en
+// fallback 不在这里做（onboarding 不读 DB 表里的 title_*, 直接走静态）.
+// 后续 ticket 如要从 DB 抓 title_tl 再覆盖, 在 fetch image_url 那段 SELECT
+// title_zh, title_en, title_zh_hant 并按 lang 映射即可.
 interface RepDish {
   /** dishes.id (UUID) */
   id: string;
-  /** UI 显示标题（短 label，菜实际中文名）*/
+  /** UI 显示标题 zh（简体）*/
   label: string;
-  /** UI 副标题（描述/分类）*/
+  /** UI 显示标题 en（英文）*/
+  labelEn: string;
+  /** UI 显示标题 tl（菲律宾语；fallback en）*/
+  labelTl: string;
+  /** UI 副标题（描述/分类）zh */
   desc?: string;
+  /** UI 副标题 en */
+  descEn?: string;
+  /** UI 副标题 tl */
+  descTl?: string;
   /** emoji fallback（image_url 加载失败时显示）*/
   emoji: string;
   /** dishes.image_url（fetch 后填充）*/
@@ -73,68 +86,76 @@ interface RepDish {
 
 const REP_DISHES: RepDish[] = [
   // 组 1 食材大类
-  { id: '42cfc65a-e8a0-43cf-82b4-9361e124b85d', label: '红烧肉',        desc: '🥩 红肉', emoji: '🥩', group: 1, order: 1 },
-  { id: '4ca15383-429c-4826-847d-381dea7a5d85', label: '宫保鸡丁',      desc: '🐔 白肉', emoji: '🐔', group: 1, order: 2 },
-  { id: '1f628ef1-fc09-4f9c-97a1-c9f2d60c86d7', label: '椒盐虾',        desc: '🦐 海鲜', emoji: '🦐', group: 1, order: 3 },
-  { id: '87d31cc3-94da-4110-b186-b4d8009356a3', label: '蒜香西兰花',    desc: '🥬 素菜', emoji: '🥬', group: 1, order: 4 },
+  { id: '42cfc65a-e8a0-43cf-82b4-9361e124b85d', label: '红烧肉',        labelEn: 'Braised Pork Belly',  labelTl: 'Braised Pork Belly',  desc: '🥩 红肉', descEn: '🥩 Red meat',  descTl: '🥩 Pulang karne', emoji: '🥩', group: 1, order: 1 },
+  { id: '4ca15383-429c-4826-847d-381dea7a5d85', label: '宫保鸡丁',      labelEn: 'Kung Pao Chicken',    labelTl: 'Kung Pao Manok',      desc: '🐔 白肉', descEn: '🐔 White meat', descTl: '🐔 Puting karne', emoji: '🐔', group: 1, order: 2 },
+  { id: '1f628ef1-fc09-4f9c-97a1-c9f2d60c86d7', label: '椒盐虾',        labelEn: 'Salt & Pepper Shrimp', labelTl: 'Hipon sa Asin at Paminta', desc: '🦐 海鲜', descEn: '🦐 Seafood', descTl: '🦐 Pagkaing-dagat', emoji: '🦐', group: 1, order: 3 },
+  { id: '87d31cc3-94da-4110-b186-b4d8009356a3', label: '蒜香西兰花',    labelEn: 'Garlic Broccoli',     labelTl: 'Broccoli sa Bawang',  desc: '🥬 素菜', descEn: '🥬 Vegetable', descTl: '🥬 Gulay', emoji: '🥬', group: 1, order: 4 },
   // 组 2 口味菜系
-  { id: 'd94044cf-7d16-4239-a577-8945420aeea4', label: '麻婆豆腐',      desc: '🌶 辣中餐', emoji: '🌶', group: 2, order: 1 },
-  { id: 'a9945a8b-b53e-405f-bb38-c5447d3e5bae', label: '清炒虾仁',      desc: '🍵 清淡中餐', emoji: '🍵', group: 2, order: 2 },
-  { id: '2d8694e7-2ed5-4c8e-b43c-ca2b43f2d8f9', label: '经典肉酱意面',  desc: '🍝 西餐', emoji: '🍝', group: 2, order: 3 },
-  { id: '77f5aae9-2a47-46c1-bc60-0f8cb1288452', label: '日式炸鸡块',    desc: '🍱 日韩', emoji: '🍱', group: 2, order: 4 },
+  { id: 'd94044cf-7d16-4239-a577-8945420aeea4', label: '麻婆豆腐',      labelEn: 'Mapo Tofu',           labelTl: 'Mapo Tofu',           desc: '🌶 辣中餐', descEn: '🌶 Spicy Chinese', descTl: '🌶 Maanghang na Tsino', emoji: '🌶', group: 2, order: 1 },
+  { id: 'a9945a8b-b53e-405f-bb38-c5447d3e5bae', label: '清炒虾仁',      labelEn: 'Stir-fried Shrimp',   labelTl: 'Ginisang Hipon',      desc: '🍵 清淡中餐', descEn: '🍵 Light Chinese', descTl: '🍵 Magaang Tsino', emoji: '🍵', group: 2, order: 2 },
+  { id: '2d8694e7-2ed5-4c8e-b43c-ca2b43f2d8f9', label: '经典肉酱意面',  labelEn: 'Spaghetti Bolognese', labelTl: 'Spaghetti Bolognese', desc: '🍝 西餐', descEn: '🍝 Western', descTl: '🍝 Kanluraning pagkain', emoji: '🍝', group: 2, order: 3 },
+  { id: '77f5aae9-2a47-46c1-bc60-0f8cb1288452', label: '日式炸鸡块',    labelEn: 'Japanese Karaage',    labelTl: 'Karaage (Pritong Manok)', desc: '🍱 日韩', descEn: '🍱 Japan/Korea', descTl: '🍱 Hapon/Korea', emoji: '🍱', group: 2, order: 4 },
   // 组 3 烹饪浓淡
-  { id: '6c71d29c-5a0d-4bef-b4e2-88114878be7c', label: '清蒸鲈鱼',      desc: '🐟 清蒸', emoji: '🐟', group: 3, order: 1 },
-  { id: '9af7ced4-85d1-4038-aa5b-5a9214e16a25', label: '不油腻红烧肉',  desc: '🍖 红烧', emoji: '🍖', group: 3, order: 2 },
-  { id: 'f68f9dde-9847-432c-b496-1285567187ca', label: '柠檬鸡片',      desc: '🍤 油炸', emoji: '🍤', group: 3, order: 3 },
-  { id: '1a3fead7-6f3c-4e77-b8cc-33eded80214e', label: '凉拌黄瓜',      desc: '🥗 凉拌', emoji: '🥗', group: 3, order: 4 },
+  { id: '6c71d29c-5a0d-4bef-b4e2-88114878be7c', label: '清蒸鲈鱼',      labelEn: 'Steamed Sea Bass',    labelTl: 'Pinasingawan na Apahap', desc: '🐟 清蒸', descEn: '🐟 Steamed', descTl: '🐟 Pasingawan', emoji: '🐟', group: 3, order: 1 },
+  { id: '9af7ced4-85d1-4038-aa5b-5a9214e16a25', label: '不油腻红烧肉',  labelEn: 'Light Braised Pork',  labelTl: 'Magaang Braised Pork', desc: '🍖 红烧', descEn: '🍖 Red-braised', descTl: '🍖 Pinula', emoji: '🍖', group: 3, order: 2 },
+  { id: 'f68f9dde-9847-432c-b496-1285567187ca', label: '柠檬鸡片',      labelEn: 'Lemon Chicken',       labelTl: 'Manok na may Limon',  desc: '🍤 油炸', descEn: '🍤 Fried', descTl: '🍤 Pritong', emoji: '🍤', group: 3, order: 3 },
+  { id: '1a3fead7-6f3c-4e77-b8cc-33eded80214e', label: '凉拌黄瓜',      labelEn: 'Smashed Cucumber Salad', labelTl: 'Pipinong Salad',   desc: '🥗 凉拌', descEn: '🥗 Cold dish', descTl: '🥗 Malamig na ulam', emoji: '🥗', group: 3, order: 4 },
 ];
 
-const GROUP_TITLES: Record<1 | 2 | 3, { title: string; sub: string; emoji: string }> = {
-  1: { title: '哪些菜你家爱吃？', sub: '食材大类 · 多选，至少 1 张', emoji: '🍽' },
-  2: { title: '什么风味更对胃口？', sub: '口味菜系 · 多选，至少 1 张', emoji: '🌶' },
-  3: { title: '偏清淡还是浓郁？',  sub: '烹饪手法 · 多选，至少 1 张', emoji: '🐟' },
+// GROUP_TITLES 现在按 lang 在组件内取（见 currentGroupTitle）.
+const GROUP_TITLES: Record<1 | 2 | 3, { title: { zh: string; en: string; tl: string }; sub: { zh: string; en: string; tl: string }; emoji: string }> = {
+  1: { title: { zh: '哪些菜你家爱吃？', en: 'What does your family love?', tl: 'Ano ang gusto ng pamilya mo?' }, sub: { zh: '食材大类 · 多选，至少 1 张', en: 'Ingredients · pick at least 1', tl: 'Sangkap · pumili ng kahit 1' }, emoji: '🍽' },
+  2: { title: { zh: '什么风味更对胃口？', en: 'Which flavors suit you?', tl: 'Anong lasa ang gusto mo?' }, sub: { zh: '口味菜系 · 多选，至少 1 张', en: 'Cuisines · pick at least 1', tl: 'Pagluluto · pumili ng kahit 1' }, emoji: '🌶' },
+  3: { title: { zh: '偏清淡还是浓郁？', en: 'Light or rich cooking?', tl: 'Magaan o malasa?' }, sub: { zh: '烹饪手法 · 多选，至少 1 张', en: 'Cooking style · pick at least 1', tl: 'Paraan ng pagluluto · pumili ng kahit 1' }, emoji: '🐟' },
 };
 
 // ─── 忌口 chip ──────────────────────────────────────────────────────────
 interface AvoidOption {
   value: string;
   label: string;
+  labelEn: string;
+  labelTl: string;
   emoji: string;
   /** kind=meat → 写 excluded_meats; kind=allergen → 写 avoid_tags; kind=none → 单选清空 */
   kind: 'meat' | 'allergen' | 'none';
 }
 
 const AVOID_OPTIONS: AvoidOption[] = [
-  { value: 'seafood', label: '海鲜', emoji: '🦐', kind: 'allergen' },
-  { value: 'nuts',    label: '坚果', emoji: '🥜', kind: 'allergen' },
-  { value: 'gluten',  label: '麸质', emoji: '🌾', kind: 'allergen' },
-  { value: 'milk',    label: '奶',   emoji: '🥛', kind: 'allergen' },
-  { value: 'eggs',    label: '蛋',   emoji: '🥚', kind: 'allergen' },
-  { value: 'pork',    label: '不吃猪', emoji: '🐷', kind: 'meat' },
-  { value: 'beef',    label: '不吃牛', emoji: '🐮', kind: 'meat' },
-  { value: 'lamb',    label: '不吃羊', emoji: '🐑', kind: 'meat' },
-  { value: 'none',    label: '无',   emoji: '✓',  kind: 'none' },
+  { value: 'seafood', label: '海鲜', labelEn: 'Seafood',  labelTl: 'Pagkaing-dagat', emoji: '🦐', kind: 'allergen' },
+  { value: 'nuts',    label: '坚果', labelEn: 'Nuts',     labelTl: 'Mani',           emoji: '🥜', kind: 'allergen' },
+  { value: 'gluten',  label: '麸质', labelEn: 'Gluten',   labelTl: 'Gluten',         emoji: '🌾', kind: 'allergen' },
+  { value: 'milk',    label: '奶',   labelEn: 'Dairy',    labelTl: 'Gatas',          emoji: '🥛', kind: 'allergen' },
+  { value: 'eggs',    label: '蛋',   labelEn: 'Eggs',     labelTl: 'Itlog',          emoji: '🥚', kind: 'allergen' },
+  { value: 'pork',    label: '不吃猪', labelEn: 'No pork', labelTl: 'Walang baboy',  emoji: '🐷', kind: 'meat' },
+  { value: 'beef',    label: '不吃牛', labelEn: 'No beef', labelTl: 'Walang baka',   emoji: '🐮', kind: 'meat' },
+  { value: 'lamb',    label: '不吃羊', labelEn: 'No lamb', labelTl: 'Walang tupa',   emoji: '🐑', kind: 'meat' },
+  { value: 'none',    label: '无',   labelEn: 'None',     labelTl: 'Wala',           emoji: '✓',  kind: 'none' },
 ];
 
 // ─── 目标 5 选 1 ─────────────────────────────────────────────────────────
 interface GoalOption {
   value: string;
   label: string;
+  labelEn: string;
+  labelTl: string;
   desc: string;
+  descEn: string;
+  descTl: string;
   emoji: string;
 }
 
 const GOAL_OPTIONS: GoalOption[] = [
-  { value: 'fat_loss',        label: '减脂',     desc: '低脂低热量', emoji: '🏃' },
-  { value: 'muscle_gain',     label: '增肌',     desc: '高蛋白',     emoji: '💪' },
-  { value: 'general',         label: '家庭',     desc: '均衡日常',   emoji: '🏠' },
-  { value: 'child_growth',    label: '学龄增长', desc: '高钙均衡',   emoji: '🧒' },
-  { value: 'elder_wellness',  label: '老人养生', desc: '低盐低油',   emoji: '👵' },
+  { value: 'fat_loss',        label: '减脂',     labelEn: 'Fat loss',      labelTl: 'Pagpapayat',          desc: '低脂低热量', descEn: 'Low fat & calories', descTl: 'Mababang taba',     emoji: '🏃' },
+  { value: 'muscle_gain',     label: '增肌',     labelEn: 'Muscle gain',   labelTl: 'Pagpapalaki ng muscle', desc: '高蛋白',     descEn: 'High protein',       descTl: 'Mataas na protina', emoji: '💪' },
+  { value: 'general',         label: '家庭',     labelEn: 'Family',        labelTl: 'Pamilya',             desc: '均衡日常',   descEn: 'Balanced everyday',  descTl: 'Balanseng araw-araw', emoji: '🏠' },
+  { value: 'child_growth',    label: '学龄增长', labelEn: 'Child growth',  labelTl: 'Paglaki ng bata',     desc: '高钙均衡',   descEn: 'High calcium',       descTl: 'Mataas na calcium', emoji: '🧒' },
+  { value: 'elder_wellness',  label: '老人养生', labelEn: 'Elder wellness', labelTl: 'Kalusugan ng matanda', desc: '低盐低油',  descEn: 'Low salt & oil',     descTl: 'Mababang asin/langis', emoji: '👵' },
 ];
 
 // ─── 主组件 ──────────────────────────────────────────────────────────────
 export default function OnboardingV2() {
   const navigate = useNavigate();
+  const { t3 } = useLanguage();
 
   /** step 0=组1选菜, 1=组2选菜, 2=组3选菜, 3=2 问页, 4=完成中 */
   const [step, setStep] = useState<number>(0);
@@ -218,7 +239,11 @@ export default function OnboardingV2() {
     if (step < 3) {
       // 校验当前组至少 1 张
       if (currentGroupSelectedCount < 1) {
-        setErrorMsg('每组至少选 1 张你家爱吃的');
+        setErrorMsg(t3(
+          'Pick at least 1 dish per group',
+          '每组至少选 1 张你家爱吃的',
+          'Pumili ng kahit 1 bawat grupo',
+        ));
         return;
       }
       setStep(step + 1);
@@ -296,7 +321,7 @@ export default function OnboardingV2() {
 
       if (upsertErr) {
         console.error('[OnboardingV2] upsert profile failed:', upsertErr.message);
-        setErrorMsg('保存失败，请重试');
+        setErrorMsg(t3('Save failed, please retry', '保存失败，请重试', 'Hindi na-save, subukan muli'));
         setSaving(false);
         return;
       }
@@ -321,7 +346,11 @@ export default function OnboardingV2() {
       navigate('/');
     } catch (e) {
       console.error('[OnboardingV2] finish failed:', e);
-      setErrorMsg('保存失败，请检查网络后重试');
+      setErrorMsg(t3(
+        'Save failed, please check your connection and retry',
+        '保存失败，请检查网络后重试',
+        'Hindi na-save, suriin ang koneksyon at subukan muli',
+      ));
       setSaving(false);
     }
   };
@@ -377,10 +406,10 @@ export default function OnboardingV2() {
                 <span className="text-[40px] leading-none">{currentGroupTitle.emoji}</span>
                 <h2 className="mt-3 font-serif font-black text-white leading-tight"
                   style={{ fontSize: 26, letterSpacing: '0.01em' }}>
-                  {currentGroupTitle.title}
+                  {t3(currentGroupTitle.title.en, currentGroupTitle.title.zh, currentGroupTitle.title.tl)}
                 </h2>
                 <p className="mt-2 text-white/40 font-light" style={{ fontSize: 13, letterSpacing: '0.04em' }}>
-                  {currentGroupTitle.sub}
+                  {t3(currentGroupTitle.sub.en, currentGroupTitle.sub.zh, currentGroupTitle.sub.tl)}
                 </p>
               </div>
 
@@ -403,7 +432,7 @@ export default function OnboardingV2() {
                         : { background: 'rgba(255,255,255,0.06)', border: '1.5px solid rgba(255,255,255,0.09)', boxShadow: '0 2px 8px rgba(0,0,0,0.10)', minHeight: 200 }
                       }>
                       {url ? (
-                        <img src={url} alt={d.label}
+                        <img src={url} alt={t3(d.labelEn, d.label, d.labelTl)}
                           className="w-full h-32 object-cover rounded-xl mb-2"
                           onError={(e) => {
                             // 加载失败 → 隐藏 img, 露出 emoji fallback
@@ -417,12 +446,12 @@ export default function OnboardingV2() {
                       )}
                       <span className="text-white font-semibold mt-1"
                         style={{ fontSize: 14, lineHeight: 1.3 }}>
-                        {d.label}
+                        {t3(d.labelEn, d.label, d.labelTl)}
                       </span>
                       {d.desc && (
                         <span className="text-white/45 font-light mt-1"
                           style={{ fontSize: 11, lineHeight: 1.3 }}>
-                          {d.desc}
+                          {t3(d.descEn ?? d.desc, d.desc, d.descTl ?? d.desc)}
                         </span>
                       )}
                       {sel && (
@@ -457,8 +486,12 @@ export default function OnboardingV2() {
                   letterSpacing: '0.04em',
                 }}>
                 {currentGroupSelectedCount >= 1
-                  ? `已选 ${currentGroupSelectedCount} 张 · 下一步 →`
-                  : '至少选 1 张'}
+                  ? t3(
+                      `${currentGroupSelectedCount} selected · Next →`,
+                      `已选 ${currentGroupSelectedCount} 张 · 下一步 →`,
+                      `${currentGroupSelectedCount} napili · Sunod →`,
+                    )
+                  : t3('Pick at least 1', '至少选 1 张', 'Pumili ng kahit 1')}
               </button>
             </>
           ) : (
@@ -468,17 +501,25 @@ export default function OnboardingV2() {
                 <span className="text-[40px] leading-none">📝</span>
                 <h2 className="mt-3 font-serif font-black text-white leading-tight"
                   style={{ fontSize: 26, letterSpacing: '0.01em' }}>
-                  最后两题
+                  {t3('Last two questions', '最后两题', 'Huling dalawang tanong')}
                 </h2>
                 <p className="mt-2 text-white/40 font-light" style={{ fontSize: 13, letterSpacing: '0.04em' }}>
-                  忌口 + 近期目标 — 算法用来做硬过滤和营养重排
+                  {t3(
+                    'Allergies + goal — algorithm uses them for hard filter & nutrition re-rank',
+                    '忌口 + 近期目标 — 算法用来做硬过滤和营养重排',
+                    'Allergy + layunin — ginagamit ng algorithm para sa filter at nutrisyon',
+                  )}
                 </p>
               </div>
 
               {/* 忌口 */}
               <div className="mb-6">
                 <p className="text-white font-semibold mb-3" style={{ fontSize: 15 }}>
-                  忌口（多选，没有就选「无」）
+                  {t3(
+                    'Avoid (multi-select, tap "None" if none)',
+                    '忌口（多选，没有就选「无」）',
+                    'Iwasan (maraming pwede, i-tap ang "Wala" kung wala)',
+                  )}
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {AVOID_OPTIONS.map(opt => {
@@ -493,7 +534,7 @@ export default function OnboardingV2() {
                           : { background: 'rgba(255,255,255,0.06)', border: '1.5px solid rgba(255,255,255,0.09)', fontSize: 13, color: 'rgba(255,255,255,0.75)' }
                         }>
                         <span>{opt.emoji}</span>
-                        <span>{opt.label}</span>
+                        <span>{t3(opt.labelEn, opt.label, opt.labelTl)}</span>
                       </button>
                     );
                   })}
@@ -503,7 +544,7 @@ export default function OnboardingV2() {
               {/* 目标 5 选 1 */}
               <div className="mb-6">
                 <p className="text-white font-semibold mb-3" style={{ fontSize: 15 }}>
-                  近期目标（单选）
+                  {t3('Current goal (single select)', '近期目标（单选）', 'Layunin (isa lang)')}
                 </p>
                 <div className="grid grid-cols-2 gap-2">
                   {GOAL_OPTIONS.map(opt => {
@@ -519,9 +560,9 @@ export default function OnboardingV2() {
                         }>
                         <div className="flex items-center gap-2">
                           <span style={{ fontSize: 22 }}>{opt.emoji}</span>
-                          <span className="text-white font-semibold" style={{ fontSize: 14 }}>{opt.label}</span>
+                          <span className="text-white font-semibold" style={{ fontSize: 14 }}>{t3(opt.labelEn, opt.label, opt.labelTl)}</span>
                         </div>
-                        <p className="text-white/45 mt-1" style={{ fontSize: 11 }}>{opt.desc}</p>
+                        <p className="text-white/45 mt-1" style={{ fontSize: 11 }}>{t3(opt.descEn, opt.desc, opt.descTl)}</p>
                       </button>
                     );
                   })}
@@ -543,7 +584,9 @@ export default function OnboardingV2() {
                   fontSize: 15,
                   letterSpacing: '0.04em',
                 }}>
-                {saving ? '保存中…' : '完成 → 看本周菜单'}
+                {saving
+                  ? t3('Saving…', '保存中…', 'Sini-save…')
+                  : t3('Done → See this week menu', '完成 → 看本周菜单', 'Tapos → Tingnan ang menu')}
               </button>
 
               <button
@@ -556,7 +599,7 @@ export default function OnboardingV2() {
                   fontSize: 13,
                   color: 'rgba(255,255,255,0.55)',
                 }}>
-                ← 返回改菜单
+                {t3('← Back to dish selection', '← 返回改菜单', '← Bumalik sa pagpili')}
               </button>
             </>
           )}
