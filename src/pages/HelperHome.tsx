@@ -71,7 +71,7 @@ function buildTasks(t3: (en: string, zh: string, tl: string) => string) {
                 "Ibahagi ang pagkain · Premyo tuwing Biyernes"),
       gradient: "linear-gradient(135deg, #f7971e, #ffd200)",
       shadow: "rgba(255,210,0,0.35)",
-      route: "/community",
+      route: "/helper-community",   // TICKET-044 — 切到 helper_posts feed (旧 /community 是 employer/community_posts 路径)
     },
   ];
 }

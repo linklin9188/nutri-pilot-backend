@@ -14,6 +14,7 @@ import HelperCook from './pages/HelperCook';
 import HelperHome from './pages/HelperHome';
 import LearnerHome from './pages/LearnerHome';
 import Community from './pages/Community';
+import HelperCommunity from './pages/HelperCommunity';
 import VerifyIngredients from './pages/VerifyIngredients';
 import DeliveryTracking from './pages/DeliveryTracking';
 import AIPilot from './pages/AIPilot';
@@ -258,6 +259,8 @@ function AppShell() {
         </RequireAuth>
       } />
       <Route path="/community" element={<RequireAuth><Community /></RequireAuth>} />
+      {/* TICKET-044 — 菲佣社区 feed (migration 079 helper_posts/likes/comments) */}
+      <Route path="/helper-community" element={<RequireAuth helperRole><HelperCommunity /></RequireAuth>} />
       <Route path="/banquet"  element={<RequireAuth><Banquet /></RequireAuth>} />
       <Route path="/weekend"  element={<RequireAuth><WeekendDining /></RequireAuth>} />
       <Route path="/pro/wellness"       element={<RequireAuth><ProWellness /></RequireAuth>} />
