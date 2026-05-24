@@ -421,7 +421,12 @@ export default function Home() {
 
   // Smell 1 阶段 2 (v40): useRecommendDishes 链路已彻底删除；
   // useWeeklyMenu 是 Home 唯一菜单源（breakfast/lunch/dinner/fruit 全管）。
-  const { weeklyMenu, loading: weeklyLoading, regenerate: regenerateWeekly } = useWeeklyMenu();
+  // TICKET-040 §D — 周末访问自动取下周菜单 (老板真测周日 08:00 看到空白
+  // 菜单+手动按钮反馈"今天是周日 应该是生成明天和下周的菜单"). 周菜单走
+  // 5-day 工作日制 (周一-五), 周末家庭自由发挥, 所以周末看的应是"下周"计划.
+  // 周一到周五 → weekOffset=0 (本周), 周末 → weekOffset=1 (下周).
+  // getWeekStartISO(weekOffset) 已支持, useWeeklyMenu 接 weekOffset 参数.
+  const { weeklyMenu, loading: weeklyLoading, regenerate: regenerateWeekly } = useWeeklyMenu(isWeekend() ? 1 : 0);
   // TICKET-022 §B — 5-channel TagBadge chip 上 production. Lookup keyed by
   // dish.id → SlotPlan from today's slots[]. Used to render badges on each
   // dish row in displayMenu so users see "为什么推这道" reasoning chips.

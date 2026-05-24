@@ -35,7 +35,7 @@ import NetworkBanner from './components/NetworkBanner';
 import { syncFavoritesFromCloud } from './lib/favorites';
 import { syncProfileFromDB } from './lib/profileSync';
 import { getUserId } from './lib/userId';
-import { LanguageProvider } from './contexts/LanguageContext';
+import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
 import { supabase } from './lib/supabase';
 import { maybeAttemptSilent } from './lib/wechatSilentLogin';
 import { useWeChatShare } from './hooks/useWeChatShare';
@@ -162,6 +162,27 @@ function AboutRedirect() {
 // next tab click.
 function AppShell() {
   useWeChatShare();  // 全局默认分享配置（微信群分享显示 hero 卡）
+  const { language, setLanguage } = useLanguage();
+
+  // TICKET-040 §B (老板 10:30 HKT 二次拍板) — "用户打开后默认简体中文,
+  // 不是英文 所有文字 包括菜单". 全局 session-once reset: 雇主用户若 sticky
+  // 在 en/tl/id (常因测试 LanguageSwitcher 切过) 进 app 第一次自动 reset 到
+  // zh 简体. session 内用户主动切回 EN 不会被反复覆盖 (sentinel 防抖).
+  // helper role 不动 (Tagalog/Indonesian 是菲佣/印佣母语). zh-Hant 不动
+  // (HK 妈妈自选繁体)的.
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem('nutri_lang_reset_done') === '1') return;
+      const role = localStorage.getItem('nutri_role');
+      if (role === 'helper') return;
+      if (language === 'en' || language === 'tl' || language === 'id') {
+        setLanguage('zh');
+      }
+      sessionStorage.setItem('nutri_lang_reset_done', '1');
+    } catch { /* private mode — non-critical */ }
+    // mount-once: 用户在 session 内切回 EN 不被反复覆盖.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     // Pull cloud-saved favorites into the local cache on boot. Anonymous

@@ -499,19 +499,17 @@ export default function QuickSetup() {
   const navigate = useNavigate();
   const { t, isChinese, language, setLanguage } = useLanguage();
 
-  // TICKET-040 §B — 雇主走 onboarding 默认繁体中文（老板拍板"现在雇主登陆的
-  // 题目都是英文的, 改成繁体中文"）. 若用户在 /login 手动切过 EN / Tagalog /
-  // Indonesian 残留到 appLanguage, 进 /setup 强制 reset 到 zh-Hant. helper
-  // role 不动（Tagalog/Indonesian 才是菲佣/印佣母语）. zh / zh-Hant 用户也
-  // 不动（已是中文路径）.
-  // QUESTIONS_V3 当前只有 zh / en 两份, t() 路径 zh-Hant fallback 到 zh
-  // 简体——HK 妈妈都能读简体, 关键是"不要英文". 若未来加 zh-Hant 专属翻译
-  // 表 (QUESTIONS_V3_HANT) 自动生效不需要改这里.
+  // TICKET-040 §B (老板 10:30 HKT 二次拍板) — 用户打开默认**简体中文**, 不是
+  // 繁体, 也不是英文. 所有文字都简体含菜单. 覆盖前版 zh-Hant 决策 (回到
+  // CLAUDE.md TICKET-074 §G 5-21 拍板简体优先). 若用户在 /login 手动切过
+  // EN / Tagalog / Indonesian 残留到 appLanguage, 进 /setup 强制 reset 到
+  // zh 简体. helper role 不动（Tagalog/Indonesian 才是菲佣/印佣母语）.
+  // zh / zh-Hant 用户也不动（已是中文路径, 各自看自己字形）.
   useEffect(() => {
     const role = localStorage.getItem('nutri_role');
     if (role === 'helper') return;
     if (language === 'en' || language === 'tl' || language === 'id') {
-      setLanguage('zh-Hant');
+      setLanguage('zh');
     }
     // 仅 mount 时跑一次, 不监听 language 后续变化（用户在 setup 内主动切
     // 回 EN 不应被反复强制）.
