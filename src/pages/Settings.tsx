@@ -245,6 +245,27 @@ function labelOf<T extends { id: string; label: string }>(opts: T[], id?: string
   return opts.find(o => o.id === id)?.label ?? id;
 }
 
+// TICKET-081 P0 — 家庭成员 UI 精简到 4 输入 (老板真测 #21).
+// 算法真用 vs 没用 (CEO 实查):
+//   真用: name / relation(adult|child) / avoid_tags / dietary_mode
+//   没用: age / height / weight / gender / dietary_goal / chronic / tcm / pregnancy + relation 子角色
+// COMMON_AVOIDS 是抽屉里的过敏/不吃啥多选 chip.
+// id 必须用算法侧 ALLERGEN_TO_INGREDIENTS (useSupabaseMenu.ts:614) 的英文 key,
+// 否则 hardFilter 不删菜. legacyNeed 是中文标签, 写入 m.needs 让 familyPrefs.ts
+// convertNutriMembers (NEEDS_TO_ALLERGY map) 反向也能解析 → algo 双路径都生效.
+type T4 = (en: string, zh: string, tl: string, id: string) => string;
+const COMMON_AVOIDS: Array<{ id: string; label: T4; legacyNeed?: string }> = [
+  { id: "seafood",   label: (t) => t("Seafood",  "海鲜",   "Pagkaing-dagat",      "Makanan laut"),     legacyNeed: "不吃海鲜" },
+  { id: "tree_nuts", label: (t) => t("Nuts",     "坚果",   "Mani / Nuts",         "Kacang"),           legacyNeed: undefined  },
+  { id: "dairy",     label: (t) => t("Dairy",    "乳制品", "Gatas",               "Susu"),             legacyNeed: "忌乳制品" },
+  { id: "gluten",    label: (t) => t("Gluten",   "麸质",   "Gluten",              "Gluten"),           legacyNeed: undefined  },
+  { id: "eggs",      label: (t) => t("Eggs",     "鸡蛋",   "Itlog",               "Telur"),            legacyNeed: undefined  },
+  { id: "soy",       label: (t) => t("Soy",      "大豆",   "Toyo / Soya",         "Kedelai"),          legacyNeed: undefined  },
+  { id: "peanut",    label: (t) => t("Peanut",   "花生",   "Mani",                "Kacang tanah"),     legacyNeed: "花生过敏" },
+  { id: "beef",      label: (t) => t("Beef",     "牛肉",   "Karne ng baka",       "Daging sapi"),      legacyNeed: "忌牛羊肉" },
+  { id: "pork",      label: (t) => t("Pork",     "猪肉",   "Baboy",               "Daging babi"),      legacyNeed: undefined  },
+];
+
 // ─── constants ────────────────────────────────────────────────────────────────
 
 const LIFE_STAGES: { value: LifeStage; emoji: string; color: string; bg: string }[] = [
@@ -1030,7 +1051,20 @@ export default function Settings() {
       setEditDraft(null);
     } else {
       setOpenId(m.id);
-      setEditDraft({ ...m });
+      // TICKET-081: 老数据 (allergens 缺失但 needs 含中文忌口) → 反向 sync 让 chip 高亮.
+      // 反向 map 必须跟 COMMON_AVOIDS.legacyNeed 一致.
+      const NEED_TO_AVOID: Record<string, string> = {
+        "不吃海鲜": "seafood",
+        "忌乳制品": "dairy",
+        "花生过敏": "peanut",
+        "忌牛羊肉": "beef", // 老 needs 不分牛羊, 默认映 beef chip
+      };
+      const seeded = new Set(m.allergens ?? []);
+      for (const n of (m.needs ?? [])) {
+        const id = NEED_TO_AVOID[n];
+        if (id) seeded.add(id);
+      }
+      setEditDraft({ ...m, allergens: Array.from(seeded) });
     }
   }
 
@@ -1297,45 +1331,63 @@ export default function Settings() {
               换设备 / 清缓存不再丢家人. household_members 仍保留 helper-only 语义. */}
           {members.map((m, idx) => {
             const isOpen = openId === m.id;
-            const stage  = getStageStyle(m.lifeStage);
             const draft  = isOpen ? editDraft : null;
 
-            // 显示用 helpers (collapsed row 3 核心)
-            const relLabel  = labelOf(RELATION_OPTIONS, m.relation);
-            const goalLabel = labelOf(DIETARY_GOAL_OPTIONS, m.dietary_goal);
+            // TICKET-081: 卡片只显 4 件事: emoji (按 relation) + 名字 + 大人/孩子 chip + 过敏摘要
+            const isChild = m.relation === "child" || m.lifeStage === "儿童";
+            const adultChildEmoji = isChild ? "🧒" : "🧑";
+            const adultChildLabel = isChild
+              ? t4("Child", "孩子", "Bata", "Anak")
+              : t4("Adult", "大人", "Matanda", "Dewasa");
+            // 过敏摘要 — 来源优先级: allergens (英文 id, 新 UI 写) → needs 数组里的中文忌口
+            const avoidLabels: string[] = (() => {
+              const seen: string[] = [];
+              for (const id of (m.allergens ?? [])) {
+                const opt = COMMON_AVOIDS.find(o => o.id === id);
+                if (opt) seen.push(opt.label(t4));
+              }
+              if (seen.length === 0) {
+                // 兼容老数据: 直接展示 needs 里的中文忌口标签
+                for (const n of (m.needs ?? [])) {
+                  if (["不吃海鲜", "忌乳制品", "花生过敏", "忌牛羊肉", "不吃香菜", "素食"].includes(n)) {
+                    seen.push(n);
+                  }
+                }
+              }
+              return seen;
+            })();
+            const avoidSummary = avoidLabels.length === 0
+              ? ""
+              : avoidLabels.slice(0, 2).join(" · ") + (avoidLabels.length > 2 ? " …" : "");
 
             return (
               <div key={m.id} className="bg-white rounded-[22px] shadow-[0_4px_20px_rgba(0,0,0,0.06)] overflow-hidden">
 
-                {/* Card header row — 3 核心信息: 头像 / 名字 / 关系 + 健康目标 */}
+                {/* Card header row — TICKET-081 精简: emoji + 名字 + 大人/孩子 + 过敏摘要 */}
                 <button
                   className="w-full flex items-center gap-4 px-5 py-4 active:bg-black/[0.02] transition-colors text-left"
                   onClick={() => openMember(m)}
                 >
                   <div className={`w-12 h-12 rounded-full ${AVATAR_COLORS[idx % AVATAR_COLORS.length]} flex items-center justify-center flex-shrink-0 shadow-sm`}>
-                    <span className="text-white text-[20px] font-black select-none">
-                      {m.name ? m.name[0] : "?"}
+                    <span className="text-white text-[22px] select-none" aria-hidden>
+                      {adultChildEmoji}
                     </span>
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      <span className="text-[16px] font-black text-on-surface">{m.name || "新成员"}</span>
-                      {relLabel && (
-                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-black/[0.05] text-secondary">
-                          {relLabel}
-                        </span>
-                      )}
-                      {/* lifeStage chip 保留 (兼容老数据) */}
-                      <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${stage.bg} ${stage.color}`}>
-                        {stage.emoji} {m.lifeStage}
+                      <span className="text-[16px] font-black text-on-surface">
+                        {m.name || t4("New member", "新成员", "Bagong miyembro", "Anggota baru")}
+                      </span>
+                      <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${isChild ? "bg-blue-50 text-blue-600" : "bg-slate-100 text-slate-600"}`}>
+                        {adultChildLabel}
                       </span>
                     </div>
-                    {goalLabel ? (
-                      <p className="text-[12px] text-secondary truncate">🎯 {goalLabel}{m.needs.length > 0 ? ` · ${m.needs.slice(0, 2).join(" · ")}` : ""}</p>
-                    ) : m.needs.length > 0 ? (
-                      <p className="text-[12px] text-secondary truncate">{m.needs.join(" · ")}</p>
+                    {avoidSummary ? (
+                      <p className="text-[12px] text-secondary truncate">🚫 {avoidSummary}</p>
                     ) : (
-                      <p className="text-[12px] text-secondary/40">点击完善 12 字段档案</p>
+                      <p className="text-[12px] text-secondary/40">
+                        {t4("Tap to edit", "点击编辑", "Pindutin upang i-edit", "Ketuk untuk edit")}
+                      </p>
                     )}
                   </div>
                   <span
@@ -1346,295 +1398,133 @@ export default function Settings() {
                   </span>
                 </button>
 
-                {/* Inline editor — spec §1.2 完整 12 字段抽屉 */}
+                {/* Inline editor — TICKET-081 P0 精简到 4 输入 (老板真测 #21).
+                    删 9 字段 (age/height/weight/gender/dietary_goal/chronic/tcm/pregnancy
+                    + relation 子角色 spouse/father/mother/etc). 算法不用, UI 噪音.
+                    保留 4 真用字段: name / relation(adult|child) / avoid_tags / dietary_mode.
+                    DB schema 不动 (family_members 9 字段保留 nullable, uiToDB 写 null OK).
+                    relation 二选一时, lifeStage 同步派生 (adult→普通成人 / child→儿童).
+                    allergens 写英文 id (匹配 useSupabaseMenu.ts ALLERGEN_TO_INGREDIENTS),
+                    同时回写中文到 needs 数组让 familyPrefs.convertNutriMembers 双路径都生效. */}
                 {isOpen && draft && (
                   <div className="border-t border-black/5 px-5 pb-5">
                     <div className="pt-4 space-y-5">
 
-                      {/* 1. name */}
+                      {/* 1. 名字 */}
                       <div>
-                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2">姓名 / 称呼</label>
+                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2">
+                          {t4("Name", "名字", "Pangalan", "Nama")}
+                        </label>
                         <input
                           type="text"
                           value={draft.name}
                           onChange={e => setEditDraft(prev => prev ? { ...prev, name: e.target.value } : prev)}
-                          placeholder="妈妈 / 爸爸 / 小明…"
+                          placeholder={t4("e.g. Mom / Dad / Kid", "妈妈 / 爸爸 / 小明…", "Hal. Mama / Papa / Bata", "Mis. Ibu / Ayah / Anak")}
                           className="w-full bg-[#f5f5f7] border border-black/5 rounded-[14px] px-4 py-3 text-[15px] font-bold text-on-surface outline-none focus:border-primary transition-colors"
                         />
                       </div>
 
-                      {/* 2. relation */}
+                      {/* 2. 大人 / 孩子 二选一 — 派生 lifeStage 保持兼容 */}
                       <div>
-                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2">关系</label>
-                        <div className="grid grid-cols-4 gap-2">
-                          {RELATION_OPTIONS.map(opt => {
-                            const sel = draft.relation === opt.id;
-                            return (
-                              <button
-                                key={opt.id}
-                                onClick={() => setEditDraft(prev => prev ? { ...prev, relation: opt.id } : prev)}
-                                className={`flex flex-col items-center gap-0.5 py-2 px-1 rounded-[12px] border-[1.5px] active:scale-95 transition-all ${
-                                  sel ? "bg-[#FF5A1F]/10 border-[#FF5A1F]" : "bg-black/[0.02] border-transparent"
-                                }`}>
-                                <span className="text-[16px]">{opt.icon}</span>
-                                <span className={`text-[11px] font-semibold ${sel ? "text-[#FF5A1F]" : "text-secondary"}`}>{opt.label}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* 3. gender */}
-                      <div>
-                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2">性别</label>
+                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2">
+                          {t4("Type", "类型", "Uri", "Tipe")}
+                        </label>
                         <div className="grid grid-cols-2 gap-2">
-                          {GENDER_OPTIONS.map(opt => {
-                            const sel = draft.gender === opt.id;
+                          {(["adult", "child"] as const).map(kind => {
+                            const sel = (kind === "child")
+                              ? (draft.relation === "child" || draft.lifeStage === "儿童")
+                              : (draft.relation !== "child" && draft.lifeStage !== "儿童");
+                            const emoji = kind === "child" ? "🧒" : "🧑";
+                            const lbl = kind === "child"
+                              ? t4("Child", "孩子", "Bata", "Anak")
+                              : t4("Adult", "大人", "Matanda", "Dewasa");
                             return (
                               <button
-                                key={opt.id}
-                                onClick={() => setEditDraft(prev => prev ? { ...prev, gender: opt.id } : prev)}
-                                className={`py-2.5 rounded-[12px] border-[1.5px] text-[13px] font-bold active:scale-95 transition-all ${
+                                key={kind}
+                                onClick={() => setEditDraft(prev => prev ? {
+                                  ...prev,
+                                  relation: kind,
+                                  lifeStage: kind === "child" ? "儿童" : "普通成人",
+                                } : prev)}
+                                className={`flex items-center justify-center gap-2 py-3 rounded-[14px] border-[1.5px] text-[14px] font-bold active:scale-95 transition-all ${
                                   sel ? "bg-[#FF5A1F]/10 border-[#FF5A1F] text-[#FF5A1F]" : "bg-black/[0.02] border-transparent text-secondary"
                                 }`}>
-                                <span className="text-[16px] mr-1">{opt.icon}</span>{opt.label}
+                                <span className="text-[18px]">{emoji}</span>
+                                <span>{lbl}</span>
                               </button>
                             );
                           })}
                         </div>
                       </div>
 
-                      {/* 4-6. age / height / weight (3 列 number) */}
-                      <div className="grid grid-cols-3 gap-2">
-                        <div>
-                          <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-1.5">年龄</label>
-                          <input
-                            type="number"
-                            min={0}
-                            max={120}
-                            value={draft.age_years ?? ""}
-                            onChange={e => {
-                              const v = e.target.value;
-                              setEditDraft(prev => prev ? { ...prev, age_years: v === "" ? undefined : parseInt(v, 10) } : prev);
-                            }}
-                            placeholder="—"
-                            className="w-full bg-[#f5f5f7] border border-black/5 rounded-[12px] px-3 py-2.5 text-[14px] font-bold text-on-surface outline-none focus:border-primary"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-1.5">身高 cm</label>
-                          <input
-                            type="number"
-                            min={0}
-                            max={250}
-                            value={draft.height_cm ?? ""}
-                            onChange={e => {
-                              const v = e.target.value;
-                              setEditDraft(prev => prev ? { ...prev, height_cm: v === "" ? undefined : parseInt(v, 10) } : prev);
-                            }}
-                            placeholder="—"
-                            className="w-full bg-[#f5f5f7] border border-black/5 rounded-[12px] px-3 py-2.5 text-[14px] font-bold text-on-surface outline-none focus:border-primary"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-1.5">体重 kg</label>
-                          <input
-                            type="number"
-                            min={0}
-                            max={300}
-                            step={0.1}
-                            value={draft.weight_kg ?? ""}
-                            onChange={e => {
-                              const v = e.target.value;
-                              setEditDraft(prev => prev ? { ...prev, weight_kg: v === "" ? undefined : parseFloat(v) } : prev);
-                            }}
-                            placeholder="—"
-                            className="w-full bg-[#f5f5f7] border border-black/5 rounded-[12px] px-3 py-2.5 text-[14px] font-bold text-on-surface outline-none focus:border-primary"
-                          />
-                        </div>
-                      </div>
-
-                      {/* 7. dietary_goal */}
+                      {/* 3. 过敏 / 不吃啥 多选 — 算法真用 (hardFilter + vector 衰减) */}
                       <div>
-                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2">健康目标</label>
-                        <div className="grid grid-cols-3 gap-2">
-                          {DIETARY_GOAL_OPTIONS.map(opt => {
-                            const sel = draft.dietary_goal === opt.id;
-                            return (
-                              <button
-                                key={opt.id}
-                                onClick={() => setEditDraft(prev => prev ? { ...prev, dietary_goal: opt.id } : prev)}
-                                className={`flex flex-col items-center gap-0.5 py-2.5 px-1 rounded-[12px] border-[1.5px] active:scale-95 transition-all ${
-                                  sel ? "bg-[#FF5A1F]/10 border-[#FF5A1F]" : "bg-black/[0.02] border-transparent"
-                                }`}>
-                                <span className="text-[18px]">{opt.icon}</span>
-                                <span className={`text-[11px] font-semibold ${sel ? "text-[#FF5A1F]" : "text-secondary"}`}>{opt.label}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* 8. allergens (硬过滤) */}
-                      <div>
-                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2">过敏原 (多选 · 硬过滤)</label>
+                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2">
+                          {t4("Allergies & dislikes", "过敏 / 不吃啥", "Allergy at ayaw", "Alergi & tidak suka")}
+                        </label>
                         <div className="flex flex-wrap gap-1.5">
-                          {ALLERGEN_OPTIONS.map(opt => {
+                          {COMMON_AVOIDS.map(opt => {
                             const arr = draft.allergens ?? [];
                             const sel = arr.includes(opt.id);
                             return (
                               <button
                                 key={opt.id}
                                 onClick={() => {
-                                  const next = sel ? arr.filter(x => x !== opt.id) : [...arr, opt.id];
-                                  setEditDraft(prev => prev ? { ...prev, allergens: next } : prev);
+                                  const prevArr = draft.allergens ?? [];
+                                  const nextArr = sel ? prevArr.filter(x => x !== opt.id) : [...prevArr, opt.id];
+                                  // 同步维护 needs 数组里的中文标签, 兼容 familyPrefs.convertNutriMembers
+                                  // (NEEDS_TO_ALLERGY: '不吃海鲜' → seafood etc.)
+                                  const prevNeeds = draft.needs ?? [];
+                                  let nextNeeds = prevNeeds;
+                                  if (opt.legacyNeed) {
+                                    if (sel) {
+                                      nextNeeds = prevNeeds.filter(n => n !== opt.legacyNeed);
+                                    } else if (!prevNeeds.includes(opt.legacyNeed)) {
+                                      nextNeeds = [...prevNeeds, opt.legacyNeed];
+                                    }
+                                  }
+                                  setEditDraft(prev => prev ? {
+                                    ...prev,
+                                    allergens: nextArr,
+                                    needs: nextNeeds,
+                                  } : prev);
                                 }}
                                 className={`px-3 py-1.5 rounded-full text-[12px] font-semibold border transition-all active:scale-95 ${
                                   sel ? "bg-red-50 text-red-600 border-red-200" : "bg-black/[0.03] text-secondary border-transparent"
                                 }`}>
-                                {sel && "✓ "}{opt.label}
+                                {sel && "✓ "}{opt.label(t4)}
                               </button>
                             );
                           })}
                         </div>
                       </div>
 
-                      {/* 9. chronic_diseases */}
+                      {/* 4. 饮食习惯 三选一 — 算法真用 (素食/全素物理删肉) */}
                       <div>
-                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2">慢病情况 (多选)</label>
-                        <div className="flex flex-wrap gap-1.5">
-                          {CHRONIC_OPTIONS.map(opt => {
-                            const arr = draft.chronic_diseases ?? [];
-                            const sel = arr.includes(opt.id);
-                            return (
-                              <button
-                                key={opt.id}
-                                onClick={() => {
-                                  const next = sel ? arr.filter(x => x !== opt.id) : [...arr, opt.id];
-                                  setEditDraft(prev => prev ? { ...prev, chronic_diseases: next } : prev);
-                                }}
-                                className={`px-3 py-1.5 rounded-full text-[12px] font-semibold border transition-all active:scale-95 ${
-                                  sel ? "bg-primary/10 text-primary border-primary/30" : "bg-black/[0.03] text-secondary border-transparent"
-                                }`}>
-                                {sel && "✓ "}{opt.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* 10. dietary_mode */}
-                      <div>
-                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2">饮食模式</label>
+                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2">
+                          {t4("Diet", "饮食习惯", "Diyeta", "Pola makan")}
+                        </label>
                         <div className="grid grid-cols-3 gap-2">
-                          {DIETARY_MODE_OPTIONS.map(opt => {
-                            const sel = draft.dietary_mode === opt.id;
+                          {([
+                            { id: "omnivore",   emoji: "🍽", lbl: t4("Eats all",   "都吃", "Kumakain ng lahat", "Semua") },
+                            { id: "vegetarian", emoji: "🥦", lbl: t4("Vegetarian", "素食", "Vegetarian",        "Vegetarian") },
+                            { id: "vegan",      emoji: "🌱", lbl: t4("Vegan",      "全素", "Vegan",             "Vegan") },
+                          ] as const).map(opt => {
+                            // 默认 omnivore 高亮 (未设置时)
+                            const sel = (draft.dietary_mode ?? "omnivore") === opt.id;
                             return (
                               <button
                                 key={opt.id}
                                 onClick={() => setEditDraft(prev => prev ? { ...prev, dietary_mode: opt.id } : prev)}
-                                className={`flex flex-col items-center gap-0.5 py-2 px-1 rounded-[12px] border-[1.5px] active:scale-95 transition-all ${
+                                className={`flex flex-col items-center gap-0.5 py-2.5 px-1 rounded-[12px] border-[1.5px] active:scale-95 transition-all ${
                                   sel ? "bg-[#FF5A1F]/10 border-[#FF5A1F]" : "bg-black/[0.02] border-transparent"
                                 }`}>
-                                <span className="text-[16px]">{opt.icon}</span>
-                                <span className={`text-[10.5px] font-semibold leading-tight ${sel ? "text-[#FF5A1F]" : "text-secondary"}`}>{opt.label}</span>
+                                <span className="text-[18px]">{opt.emoji}</span>
+                                <span className={`text-[12px] font-semibold ${sel ? "text-[#FF5A1F]" : "text-secondary"}`}>{opt.lbl}</span>
                               </button>
                             );
                           })}
                         </div>
-                      </div>
-
-                      {/* 11. tcm_constitution */}
-                      <div>
-                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2">中医体质 (8 选 1)</label>
-                        <div className="flex flex-wrap gap-1.5">
-                          {TCM_CONSTITUTION_OPTIONS.map(opt => {
-                            const sel = draft.tcm_constitution === opt.id;
-                            return (
-                              <button
-                                key={opt.id}
-                                onClick={() => setEditDraft(prev => prev ? { ...prev, tcm_constitution: opt.id } : prev)}
-                                className={`px-3 py-1.5 rounded-full text-[12px] font-semibold border transition-all active:scale-95 ${
-                                  sel ? "bg-primary/10 text-primary border-primary/30" : "bg-black/[0.03] text-secondary border-transparent"
-                                }`}>
-                                {opt.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* 12. pregnancy_status (女性才显示) */}
-                      {draft.gender === "female" && (
-                        <div>
-                          <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2">怀孕状态</label>
-                          <div className="flex flex-wrap gap-1.5">
-                            {PREGNANCY_STATUS_OPTIONS.map(opt => {
-                              const sel = draft.pregnancy_status === opt.id;
-                              return (
-                                <button
-                                  key={opt.id}
-                                  onClick={() => setEditDraft(prev => prev ? { ...prev, pregnancy_status: opt.id } : prev)}
-                                  className={`px-3 py-1.5 rounded-full text-[12px] font-semibold border transition-all active:scale-95 ${
-                                    sel ? "bg-primary/10 text-primary border-primary/30" : "bg-black/[0.03] text-secondary border-transparent"
-                                  }`}>
-                                  {opt.label}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* lifeStage (兼容老算法 — getEatingMembers 仍读此字段) */}
-                      <div>
-                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-2">生命阶段 (兼容老算法)</label>
-                        <div className="grid grid-cols-3 gap-2">
-                          {LIFE_STAGES.map(s => (
-                            <button
-                              key={s.value}
-                              onClick={() => setEditDraft(prev => prev ? { ...prev, lifeStage: s.value } : prev)}
-                              className={`flex flex-col items-center py-2 rounded-[12px] border-[1.5px] transition-all active:scale-95 ${
-                                draft.lifeStage === s.value
-                                  ? `border-primary ${s.bg}`
-                                  : "border-black/[0.08] bg-black/[0.02]"
-                              }`}
-                            >
-                              <span className="text-xl mb-0.5">{s.emoji}</span>
-                              <span className={`text-[11px] font-bold ${draft.lifeStage === s.value ? "text-primary" : "text-secondary"}`}>
-                                {s.value}
-                              </span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* legacy needs tags (保留 — 算法 familyPrefs 仍读 needs 数组) */}
-                      <div>
-                        <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-3">额外标签 (兼容老算法)</label>
-                        {NEED_GROUPS.map(({ group, tags }) => (
-                          <div key={group} className="mb-3">
-                            <p className="text-[11px] text-secondary/50 font-semibold mb-1.5">{group}</p>
-                            <div className="flex flex-wrap gap-1.5">
-                              {tags.map(tag => {
-                                const sel = draft.needs.includes(tag);
-                                return (
-                                  <button
-                                    key={tag}
-                                    onClick={() => toggleNeed(tag)}
-                                    className={`px-3 py-1.5 rounded-[10px] text-[12px] font-semibold border transition-all active:scale-[0.96] ${
-                                      sel
-                                        ? "bg-primary/10 text-primary border-primary/30"
-                                        : "bg-black/[0.03] text-secondary border-transparent"
-                                    }`}
-                                  >
-                                    {sel && "✓ "}{tag}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ))}
                       </div>
 
                       {/* Save */}
@@ -1642,18 +1532,24 @@ export default function Settings() {
                         onClick={saveMember}
                         className="w-full py-3 bg-primary text-white rounded-[14px] text-[14px] font-bold active:scale-[0.98] transition-transform shadow-[0_4px_16px_rgba(255,90,31,0.25)]"
                       >
-                        保存
+                        {t4("Save", "保存", "I-save", "Simpan")}
                       </button>
 
                       {/* Remove with confirm */}
                       {members.length > 1 && (
                         <button
                           onClick={() => {
-                            if (window.confirm(`确定移除「${m.name || "此成员"}」？不可撤销。`)) removeMember(m.id);
+                            const msg = t4(
+                              `Remove "${m.name || "this member"}"? This cannot be undone.`,
+                              `确定移除「${m.name || "此成员"}」？不可撤销。`,
+                              `Tanggalin si "${m.name || "miyembro"}"? Hindi na maibabalik.`,
+                              `Hapus "${m.name || "anggota"}"? Tidak bisa dibatalkan.`,
+                            );
+                            if (window.confirm(msg)) removeMember(m.id);
                           }}
                           className="w-full py-2 text-[13px] font-semibold text-red-400 active:scale-[0.98] transition-transform"
                         >
-                          🗑 移除此成员
+                          {t4("Remove", "🗑 移除此成员", "🗑 Tanggalin", "🗑 Hapus")}
                         </button>
                       )}
                     </div>
