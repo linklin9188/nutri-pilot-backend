@@ -346,6 +346,85 @@ export function userVectorFromSelectedDishes(selectedDishVectors: number[][]): n
   return sum.map(x => x / n);
 }
 
+// ─── 2b. computeHouseholdVector — TICKET-072 P0 ─────────────────────────
+// 家庭 vector = user 单人 onboarding vector + 家人 12 字段反推 bias 加权平均.
+//
+// 家人没做过 onboarding 选菜, 没有自己的 preference_vector. 但他们的
+// avoid_tags / dietary_mode 是物理约束: 老婆不吃海鲜 → seafood 维度抑制;
+// 父亲是素食 → 全肉类维度抑制. 这些是 hard signal, 必须进 vector.
+//
+// 策略: 在 baseVec 基础上, 对家人 avoid_tags 命中的 ingredient_family 维度
+// 做 ×0.5 衰减; dietary_mode='vegetarian'/'vegan' 全肉类维度做更强衰减
+// (vegetarian ×0.3, vegan ×0.1). 多个家人取最严的衰减系数 (min).
+//
+// 返回 20-dim vector. 若 members 空, 退回 baseVec 不变.
+//
+// 注意: 不改 spice / cuisine / cooking_method 维度. 这些是口味偏好不是约束,
+// onboarding user 选过的菜已经表达了, 家人无权强行覆盖.
+type HouseholdMemberHint = {
+  avoid_tags?: string[] | null;
+  dietary_mode?: string | null;
+  allergens?: string[] | null;  // 兼容旧 localStorage 字段名
+};
+
+const AVOID_TAG_TO_VECTOR_DIM: Record<string, number[]> = {
+  seafood:    [IDX_ING_SEAFOOD],
+  fish:       [IDX_ING_SEAFOOD],
+  shrimp:     [IDX_ING_SEAFOOD],
+  shellfish:  [IDX_ING_SEAFOOD],
+  beef:       [IDX_ING_RED_MEAT],
+  pork:       [IDX_ING_RED_MEAT],
+  lamb:       [IDX_ING_RED_MEAT],
+  mutton:     [IDX_ING_RED_MEAT],
+  beef_lamb:  [IDX_ING_RED_MEAT],
+  red_meat:   [IDX_ING_RED_MEAT],
+  chicken:    [IDX_ING_WHITE_MEAT],
+  duck:       [IDX_ING_WHITE_MEAT],
+  poultry:    [IDX_ING_WHITE_MEAT],
+  milk:       [IDX_ING_EGG],   // dairy 在 INGREDIENT_TO_FAMILY 映 EGG bucket (历史 quirk)
+  dairy:      [IDX_ING_EGG],
+  eggs:       [IDX_ING_EGG],
+  egg:        [IDX_ING_EGG],
+  // gluten / peanut / nuts 没单独 ingredient 维度, scoreDish 侧 allergen 硬过滤已覆盖
+};
+
+export function computeHouseholdVector(baseVec: number[], members: HouseholdMemberHint[]): number[] {
+  if (!Array.isArray(baseVec) || baseVec.length !== VECTOR_DIM) {
+    return new Array<number>(VECTOR_DIM).fill(0);
+  }
+  if (!members || members.length === 0) return baseVec.slice();
+
+  // 1. 收集每个维度的最严衰减系数 (1.0 = 不变)
+  const decay = new Array<number>(VECTOR_DIM).fill(1.0);
+  for (const m of members) {
+    const tags: string[] = [];
+    // 兼容: DB schema 用 avoid_tags, 旧 localStorage 用 allergens
+    if (Array.isArray(m.avoid_tags))  tags.push(...m.avoid_tags);
+    if (Array.isArray(m.allergens))   tags.push(...m.allergens);
+
+    for (const t of tags) {
+      const dims = AVOID_TAG_TO_VECTOR_DIM[String(t).toLowerCase()];
+      if (!dims) continue;
+      for (const d of dims) decay[d] = Math.min(decay[d], 0.5);
+    }
+
+    const mode = (m.dietary_mode ?? '').toLowerCase();
+    if (mode === 'vegetarian') {
+      decay[IDX_ING_RED_MEAT]   = Math.min(decay[IDX_ING_RED_MEAT],   0.3);
+      decay[IDX_ING_WHITE_MEAT] = Math.min(decay[IDX_ING_WHITE_MEAT], 0.3);
+      decay[IDX_ING_SEAFOOD]    = Math.min(decay[IDX_ING_SEAFOOD],    0.3);
+    } else if (mode === 'vegan') {
+      decay[IDX_ING_RED_MEAT]   = Math.min(decay[IDX_ING_RED_MEAT],   0.1);
+      decay[IDX_ING_WHITE_MEAT] = Math.min(decay[IDX_ING_WHITE_MEAT], 0.1);
+      decay[IDX_ING_SEAFOOD]    = Math.min(decay[IDX_ING_SEAFOOD],    0.1);
+      decay[IDX_ING_EGG]        = Math.min(decay[IDX_ING_EGG],        0.1);
+    }
+  }
+
+  // 2. 应用衰减到 baseVec
+  return baseVec.map((v, i) => v * decay[i]);
+}
+
 // ─── 3. cosineSimilarity ────────────────────────────────────────────────
 export function cosineSimilarity(v1: number[], v2: number[]): number {
   if (v1.length !== v2.length) return 0;

@@ -10,6 +10,13 @@ import { syncProfileToDB } from "../lib/profileSync";
 import { isWithinTrial, trialDaysRemaining } from "../lib/userLifecycle";
 import ShareCard from "../components/ShareCard";
 import LanguageSwitcher from "../components/LanguageSwitcher";
+// TICKET-072 P0 — family_members DB CRUD. localStorage 双写保留供算法 fast read.
+import {
+  loadFamilyMembers as loadFamilyMembersDB,
+  upsertFamilyMember as upsertFamilyMemberDB,
+  deleteFamilyMember as deleteFamilyMemberDB,
+  type FamilyMemberDB,
+} from "../lib/familyMembers";
 
 // TICKET-071 §C — LanguageCard 已删除（Home 顶部 chip popover 已覆盖语言切换，
 // 避免重复 UI）。Settings 「下发指令语言」section (line ~928) 是菲佣指令语言
@@ -302,6 +309,111 @@ function loadMembers(): FamilyMember[] {
   return [{ id: "1", name: "我", lifeStage: "普通成人", needs: migrateOldPrefs() }];
 }
 
+// TICKET-072 P0 — UI ↔ DB 字段映射.
+// UI FamilyMember 是 Settings 抽屉/卡片用的扁平结构 (lifeStage 中文枚举 + needs 中文 tag 数组).
+// DB family_members 是 spec §1.2 结构化 12 字段 (relation/gender/age_years/avoid_tags/...).
+// 双向 lossless 不可能 (lifeStage 在 DB 没对应列), 我们尽量保留 ID/name/全部 12 字段 +
+// 双写 localStorage 时 lifeStage / needs 还原, 让旧 reader (familyPrefs.ts convertNutriMembers)
+// 不破坏. 若 DB 来源缺 lifeStage 信息, 用 pregnancy_status / age_years 反推.
+function uiToDB(m: FamilyMember): Partial<FamilyMemberDB> {
+  // needs 数组里包含 goal / allergen / chronic 混合, 拆开
+  const ALLERGEN_NEEDS: Record<string, string> = {
+    "不吃海鲜": "seafood", "忌乳制品": "milk", "花生过敏": "peanut",
+    "忌牛羊肉": "beef_lamb", "素食": "vegetarian_mark",
+    "不吃香菜": "cilantro",
+  };
+  const CHRONIC_NEEDS: Record<string, string> = {
+    "高血压": "hypertension", "糖尿病": "diabetes", "痛风": "gout",
+    "贫血": "anemia", "低血压": "low_blood_pressure",
+  };
+  const GOAL_NEEDS: Record<string, string> = {
+    "减脂": "fat_loss", "增肌": "muscle_gain",
+    "养生": "elder_wellness", "均衡营养": "general",
+  };
+  const avoid: string[] = (m.allergens ?? []).slice();
+  const chronic: string[] = (m.chronic_diseases ?? []).slice();
+  let goal: string | null = m.dietary_goal ?? null;
+  for (const n of (m.needs ?? [])) {
+    if (ALLERGEN_NEEDS[n] && !avoid.includes(ALLERGEN_NEEDS[n])) avoid.push(ALLERGEN_NEEDS[n]);
+    if (CHRONIC_NEEDS[n] && !chronic.includes(CHRONIC_NEEDS[n])) chronic.push(CHRONIC_NEEDS[n]);
+    if (GOAL_NEEDS[n] && !goal) goal = GOAL_NEEDS[n];
+  }
+  // pregnancy / lifeStage 映射
+  let pregnancy = m.pregnancy_status ?? null;
+  if (!pregnancy) {
+    if (m.lifeStage === "孕期") pregnancy = "mid";
+    else if (m.lifeStage === "哺乳期") pregnancy = "breastfeeding";
+    else if (m.lifeStage === "备孕") pregnancy = "trying";
+  }
+  // id 必须 uuid 格式才能塞 DB. 旧 localStorage 里的 id 是 Date.now() 字符串,
+  // 这种情况让 DB DEFAULT gen_random_uuid() 接管, 不传 id.
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(m.id);
+  return {
+    ...(isUuid ? { id: m.id } : {}),
+    name:             m.name || "成员",
+    relation:         m.relation ?? "self",
+    gender:           m.gender ?? null,
+    age_years:        m.age_years ?? null,
+    height_cm:        m.height_cm ?? null,
+    weight_kg:        m.weight_kg ?? null,
+    dietary_goal:     goal,
+    avoid_tags:       avoid,
+    chronic_diseases: chronic,
+    dietary_mode:     m.dietary_mode ?? null,
+    tcm_constitution: m.tcm_constitution ?? null,
+    pregnancy_status: pregnancy,
+  };
+}
+
+function dbToUI(d: FamilyMemberDB): FamilyMember {
+  // DB → UI: 还原 lifeStage / needs 让 Settings 卡片 + 算法 reader 行为一致.
+  let lifeStage: LifeStage = "普通成人";
+  if (d.pregnancy_status === "mid" || d.pregnancy_status === "early" || d.pregnancy_status === "late") lifeStage = "孕期";
+  else if (d.pregnancy_status === "breastfeeding") lifeStage = "哺乳期";
+  else if (d.pregnancy_status === "trying") lifeStage = "备孕";
+  else if (d.age_years !== null && d.age_years !== undefined && d.age_years >= 60) lifeStage = "老人";
+  else if (d.age_years !== null && d.age_years !== undefined && d.age_years <= 14) lifeStage = "儿童";
+
+  const needs: string[] = [];
+  const ALLERGEN_REVERSE: Record<string, string> = {
+    seafood: "不吃海鲜", milk: "忌乳制品", peanut: "花生过敏",
+    beef_lamb: "忌牛羊肉", cilantro: "不吃香菜",
+  };
+  const CHRONIC_REVERSE: Record<string, string> = {
+    hypertension: "高血压", diabetes: "糖尿病", gout: "痛风",
+    anemia: "贫血", low_blood_pressure: "低血压",
+  };
+  const GOAL_REVERSE: Record<string, string> = {
+    fat_loss: "减脂", muscle_gain: "增肌",
+    elder_wellness: "养生", general: "均衡营养",
+  };
+  for (const a of (d.avoid_tags ?? [])) {
+    if (ALLERGEN_REVERSE[a]) needs.push(ALLERGEN_REVERSE[a]);
+  }
+  for (const c of (d.chronic_diseases ?? [])) {
+    if (CHRONIC_REVERSE[c]) needs.push(CHRONIC_REVERSE[c]);
+  }
+  if (d.dietary_goal && GOAL_REVERSE[d.dietary_goal]) needs.push(GOAL_REVERSE[d.dietary_goal]);
+
+  return {
+    id:                d.id,
+    name:              d.name,
+    lifeStage,
+    needs,
+    relation:          d.relation,
+    gender:            d.gender ?? undefined,
+    age_years:         d.age_years ?? undefined,
+    height_cm:         d.height_cm ?? undefined,
+    weight_kg:         d.weight_kg ?? undefined,
+    dietary_goal:      d.dietary_goal ?? undefined,
+    allergens:         (d.avoid_tags ?? []),
+    chronic_diseases:  (d.chronic_diseases ?? []),
+    dietary_mode:      d.dietary_mode ?? undefined,
+    tcm_constitution:  d.tcm_constitution ?? undefined,
+    pregnancy_status:  d.pregnancy_status ?? undefined,
+  };
+}
+
 function persistMembers(members: FamilyMember[]) {
   localStorage.setItem("nutri_family_members", JSON.stringify(members));
   const adults = members.filter(m => m.lifeStage !== "儿童").length;
@@ -558,6 +670,9 @@ export default function Settings() {
   const [inviteCode, setInviteCode] = useState<string>("");
   const [codeCopied, setCodeCopied] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+  // TICKET-072 P0 — householdId state, family_members DB CRUD 全靠它当 FK.
+  // 与 inviteCode useEffect 同一查询返回, 避免双重 round-trip.
+  const [householdId, setHouseholdId] = useState<string>("");
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -565,12 +680,13 @@ export default function Settings() {
       if (!userId) return;
       const { data } = await supabase
         .from("households")
-        .select("invite_code")
+        .select("id, invite_code")
         .eq("employer_id", userId)
         .order("created_at", { ascending: false })
         .limit(1);
       let code = (data?.[0] as any)?.invite_code as string | undefined;
-      if (!code) {
+      let hhId = (data?.[0] as any)?.id as string | undefined;
+      if (!code || !hhId) {
         // Trigger BEFORE INSERT generates a fresh 6-digit code. Surface insert
         // errors instead of silently dropping (B-2 §A2): if RLS or a constraint
         // rejects the row, the user sees a blank invite-code field but we
@@ -578,15 +694,64 @@ export default function Settings() {
         const { data: newRow, error: insertErr } = await supabase
           .from("households")
           .insert({ employer_id: userId })
-          .select("invite_code")
+          .select("id, invite_code")
           .single();
         if (insertErr) console.error("households insert failed", insertErr);
         code = (newRow as any)?.invite_code;
+        hhId = (newRow as any)?.id;
       }
-      if (!cancelled && code) setInviteCode(code);
+      if (!cancelled) {
+        if (code) setInviteCode(code);
+        if (hhId) setHouseholdId(hhId);
+      }
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // TICKET-072 P0 — family_members DB sync.
+  //   1. mount + householdId 就位 → 从 DB 拉成员
+  //   2. DB 为空 + localStorage 有数据 → 一次性迁移 (写 nutri_family_migrated_v1=1 防重)
+  //   3. 拉到的 DB 行 → 转 Settings UI 用的 FamilyMember 格式 → setMembers + localStorage 双写
+  // localStorage 写保留是算法侧 (familyPrefs / useWeeklyMenu / Home / VerifyIngredients
+  // / HelperPrep) 仍读 nutri_family_members 同步 cache, 见 CLAUDE.md.
+  useEffect(() => {
+    if (!householdId) return;
+    let cancelled = false;
+    (async () => {
+      let dbMembers = await loadFamilyMembersDB(householdId);
+      // 首次进入新表 → 从 localStorage 迁移
+      if (dbMembers.length === 0 && localStorage.getItem("nutri_family_migrated_v1") !== "1") {
+        const lsRaw = localStorage.getItem("nutri_family_members");
+        if (lsRaw) {
+          try {
+            const lsMembers = JSON.parse(lsRaw) as FamilyMember[];
+            for (const m of lsMembers) {
+              await upsertFamilyMemberDB({
+                ...uiToDB(m),
+                household_id: householdId,
+              });
+            }
+          } catch (e) {
+            console.warn("[Settings] localStorage → DB migration failed (non-fatal)", e);
+          }
+        }
+        localStorage.setItem("nutri_family_migrated_v1", "1");
+        dbMembers = await loadFamilyMembersDB(householdId);
+      }
+      if (cancelled) return;
+      if (dbMembers.length > 0) {
+        const ui = dbMembers.map(dbToUI);
+        setMembers(ui);
+        // localStorage 同步 — 算法 fast read cache
+        localStorage.setItem("nutri_family_members", JSON.stringify(ui));
+        const adults = ui.filter(m => m.lifeStage !== "儿童").length;
+        const kids   = ui.filter(m => m.lifeStage === "儿童").length;
+        localStorage.setItem("nutri_adults", String(Math.max(1, adults)));
+        localStorage.setItem("nutri_kids",   String(kids));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [householdId]);
 
   function toggleHasHelper() {
     const next = !hasHelper;
@@ -836,26 +1001,53 @@ export default function Settings() {
     }
   }
 
-  function addMember() {
-    const m: FamilyMember = { id: Date.now().toString(), name: "", lifeStage: "普通成人", needs: [] };
+  // TICKET-072 P0 — addMember 改 async, 先 INSERT DB 拿真 uuid 再插 state.
+  // 失败 (无 householdId / DB error) 回退本地临时 id, 让用户能继续编辑,
+  // saveMember 时再尝试 upsert. 不阻断 UI.
+  async function addMember() {
+    let newId: string = Date.now().toString();
+    if (householdId) {
+      const inserted = await upsertFamilyMemberDB({
+        household_id: householdId,
+        name: "",
+        relation: "self",
+      });
+      if (inserted?.id) newId = inserted.id;
+    }
+    const m: FamilyMember = { id: newId, name: "", lifeStage: "普通成人", needs: [] };
     const next = [...members, m];
     setMembers(next);
+    // 不调 persistMembers — DB INSERT 已完成 (或失败), localStorage 也同步
+    localStorage.setItem("nutri_family_members", JSON.stringify(next));
     setOpenId(m.id);
     setEditDraft({ ...m });
   }
 
-  function saveMember() {
+  async function saveMember() {
     if (!editDraft) return;
     const next = members.map(m => m.id === editDraft.id ? editDraft : m);
     setMembers(next);
+    // DB upsert (主存)
+    if (householdId) {
+      await upsertFamilyMemberDB({
+        ...uiToDB(editDraft),
+        household_id: householdId,
+      });
+    }
+    // localStorage 双写 (算法 fast read)
     persistMembers(next);
     setOpenId(null);
     setEditDraft(null);
   }
 
-  function removeMember(id: string) {
+  async function removeMember(id: string) {
     const next = members.filter(m => m.id !== id);
     setMembers(next);
+    // DB DELETE (主存); 旧 localStorage id 不是 uuid 时 deleteFamilyMemberDB 会 noop 报错也无伤
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    if (isUuid) {
+      await deleteFamilyMemberDB(id);
+    }
     persistMembers(next);
     setOpenId(null);
     setEditDraft(null);
@@ -1067,9 +1259,9 @@ export default function Settings() {
               默认显示 头像 + 名字 + 关系 + 健康目标 (3 核心信息)
               点开抽屉显示 spec §1.2 完整 12 字段
               删除按钮带 confirm dialog
-              数据存 localStorage `nutri_family_members` (算法侧 familyPrefs.ts
-              同款读取)，DB 写 household_members 待后续棒 (helper_id NOT NULL FK
-              约束阻挡 "非 helper 家人 row"，schema 升级走另一 ticket). */}
+              TICKET-072 P0: 数据主存 DB `family_members` (新表 migration 089),
+              localStorage `nutri_family_members` 是算法 fast read cache 双写保留.
+              换设备 / 清缓存不再丢家人. household_members 仍保留 helper-only 语义. */}
           {members.map((m, idx) => {
             const isOpen = openId === m.id;
             const stage  = getStageStyle(m.lifeStage);

@@ -33,7 +33,7 @@ import { isNewUserSession } from '../lib/userLifecycle';
 import { pickBreakfastCombo, classifyBreakfastSlot, WET_DRINK_KEYWORDS } from '../lib/breakfastCombos';
 import { syncProfileFromDB } from '../lib/profileSync';
 import { loadPantryItems } from './usePantry';
-import { recommendDishesByVector, VECTOR_DIM } from '../lib/recommendVector';
+import { recommendDishesByVector, computeHouseholdVector, VECTOR_DIM } from '../lib/recommendVector';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -3863,6 +3863,13 @@ export function useWeeklyMenu(weekOffset: number = 0) {
         // 旧用户 (preference_vector 缺失) → skip cascade → 走原 scoreDish/scoreForWeek
         // 路径不动. 保留 150 candidate (远大于 5 slot×5 day = 25) 确保 generateWeekPlan
         // 内部多样性/dedup/营养均衡过滤仍有空间.
+        //
+        // TICKET-072 (2026-05-25): family_members 数据从 localStorage 升 DB.
+        // vector 计算从 single-user 升 household 加权: computeHouseholdVector 在
+        // user vec 基础上, 按家人 avoid_tags / dietary_mode 对 ingredient family
+        // 维度做衰减 (老婆不吃海鲜 → SEAFOOD 维度 ×0.5; 父亲素食 → 全肉类 ×0.3).
+        // localStorage 双写保证 read 路径行为一致 (Settings 持久化时双写
+        // nutri_family_members), 故不 bump v68.
         let finalPool = pool;
         if (preferenceVector) {
           const allergyAll: string[] = [];
@@ -3871,7 +3878,18 @@ export function useWeeklyMenu(weekOffset: number = 0) {
               for (const a of m.allergies) allergyAll.push(a);
             }
           }
-          const vectorRanked = recommendDishesByVector(preferenceVector, pool as any[], {
+          // TICKET-072: 读 nutri_family_members 算 household-aware vector.
+          // 失败 / 空 → computeHouseholdVector 返回原 vec, 行为不变.
+          const familyHints: Array<{ avoid_tags?: string[]; allergens?: string[]; dietary_mode?: string | null }> = (() => {
+            try {
+              const raw = localStorage.getItem('nutri_family_members');
+              if (!raw) return [];
+              const parsed = JSON.parse(raw);
+              return Array.isArray(parsed) ? parsed : [];
+            } catch { return []; }
+          })();
+          const householdVec = computeHouseholdVector(preferenceVector, familyHints);
+          const vectorRanked = recommendDishesByVector(householdVec, pool as any[], {
             dietaryGoal: profile.dietary_goal,
             allergens: allergyAll,
             count: 150,
