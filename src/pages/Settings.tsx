@@ -628,6 +628,31 @@ export default function Settings() {
   const [myNickname, setMyNickname] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [avatarMsg, setAvatarMsg] = useState<string | null>(null);
+  // TICKET-071 — 微信 nickname 拿不到时, 用户可内联编辑 display_name (老板拍板 2 条之 #2)
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState('');
+  const [saveNameBusy, setSaveNameBusy] = useState(false);
+  async function handleSaveName() {
+    const name = nameInput.trim();
+    if (!name) return;
+    setSaveNameBusy(true);
+    try {
+      const userId = getUserId();
+      if (!userId) throw new Error('Not logged in');
+      const { error } = await supabase.from('user_profiles')
+        .update({ display_name: name })
+        .eq('id', userId);
+      if (error) throw error;
+      setMyDisplayName(name);
+      setEditingName(false);
+      setNameInput('');
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      alert(t4('Save failed', '保存失败', 'Nabigo ang pag-save', 'Gagal menyimpan') + ': ' + msg);
+    } finally {
+      setSaveNameBusy(false);
+    }
+  }
   interface HouseholdHelper { helper_id: string; name: string | null; avatar_b64: string | null; }
   const [householdHelpers, setHouseholdHelpers] = useState<HouseholdHelper[]>([]);
 
@@ -946,10 +971,40 @@ export default function Settings() {
               )}
             </label>
             <div className="flex-1 min-w-0">
-              <p className="font-bold text-[16px] truncate">
-                {/* TICKET-039 §1: display_name > nickname (微信原始) > userId.slice(0,8) */}
-                {myDisplayName || myNickname || (getUserId()?.slice(0, 8) ?? "你")}
-              </p>
+              {/* TICKET-039 §1: display_name > nickname (微信原始) > userId.slice(0,8)
+                  TICKET-071: 加 ✏️ 内联编辑 (微信 nickname 拿不到时用户自定义) */}
+              {editingName ? (
+                <div className="flex items-center gap-2 flex-1">
+                  <input
+                    value={nameInput}
+                    onChange={e => setNameInput(e.target.value.slice(0, 20))}
+                    placeholder={t4('Your name', '你的名字', 'Iyong pangalan', 'Nama Anda')}
+                    autoFocus
+                    maxLength={20}
+                    className="border border-orange-200 rounded-lg px-2 py-1 text-sm flex-1 min-w-0"
+                  />
+                  <button onClick={handleSaveName} disabled={saveNameBusy || !nameInput.trim()}
+                    className="px-3 py-1 bg-primary text-white rounded-lg text-sm font-bold disabled:opacity-40">
+                    {saveNameBusy ? '...' : t4('Save', '保存', 'I-save', 'Simpan')}
+                  </button>
+                  <button onClick={() => { setEditingName(false); setNameInput(''); }}
+                    className="text-secondary text-sm">
+                    {t4('Cancel', '取消', 'Kanselahin', 'Batal')}
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-on-surface text-base truncate">
+                    {myDisplayName || myNickname || (getUserId()?.slice(0, 8) ?? "你")}
+                  </span>
+                  <button onClick={() => {
+                    setNameInput(myDisplayName || myNickname || '');
+                    setEditingName(true);
+                  }} className="active:scale-95 flex-shrink-0" title={t4('Edit name', '编辑名字', 'I-edit ang pangalan', 'Edit nama')}>
+                    <span className="material-symbols-outlined text-secondary" style={{ fontSize: 18 }}>edit</span>
+                  </button>
+                </div>
+              )}
               <div className="mt-1 inline-flex items-center gap-1.5">
                 <span
                   className="text-[10px] font-bold px-2 py-0.5 rounded-full"
