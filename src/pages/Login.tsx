@@ -101,6 +101,30 @@ export default function Login() {
     if (src === "wx")    localStorage.setItem("nutri_source", "wx");
   }, [searchParams]);
 
+  // TICKET-064 §A — wx_refresh=avatar 自动触发 snsapi_userinfo 重授权。
+  // 背景: wechat-mp-callback (TICKET-057, commit cb0ada1) 检测到老 row 缺
+  // avatar_url → 302 跳 /login?wx_refresh=avatar 触发"补头像"流程, 但
+  // Login 原本没读这个 query, 用户卡在登录页不知道要再点微信按钮,
+  // 头像永远刷不上 (老板真测 #10)。
+  //
+  // 这里在 UA 为 MicroMessenger 时直接调 launchWeChat() —— 内部
+  // window.location.href 立即跳走 OAuth 同意页, 授权回来后 callback
+  // 会写 avatar_url, 下次 silent 检测就不会再 302 跳 wx_refresh, 不会
+  // 无限循环。非微信 UA 不自动跳 (launchWeChat 会 return triggered:false),
+  // 让用户手动选登录方式。
+  const [wxRefreshing, setWxRefreshing] = useState(false);
+  useEffect(() => {
+    const refresh = searchParams.get("wx_refresh");
+    if (refresh !== "avatar") return;
+    if (!/MicroMessenger/i.test(navigator.userAgent)) return;
+    setWxRefreshing(true);
+    // launchWeChat 内部 window.location.href = url 会跳走, 不需要 await。
+    // 3 秒兜底关掉 banner (理论上跳走后不会再渲染, 但 UA 边界 case 留底)。
+    launchWeChat();
+    const tm = setTimeout(() => setWxRefreshing(false), 3000);
+    return () => clearTimeout(tm);
+  }, [searchParams]);
+
   // WeChat-flow detection — covers all 大陆 entry paths. When true we
   // run the wxRecognizing overlay so first-time WeChat browser visitors
   // see a "微信识别中…" splash before falling through to manual login.
@@ -424,6 +448,25 @@ export default function Login() {
     <div className="font-sans min-h-screen flex flex-col max-w-md mx-auto relative overflow-hidden text-white"
       style={{ background: "#080808" }}>
       {heroBg}
+
+      {/* TICKET-064 §B — wx_refresh=avatar 自动重授权时顶部 banner 提示。
+          老板真测 #10 关键: 让用户知道页面"正在干嘛", 避免以为卡死又退出。
+          3 秒后自动消失 (此时 launchWeChat 已跳走 OAuth 同意页, 渲染不再发生)。 */}
+      {wxRefreshing && (
+        <div
+          className="fixed top-0 left-0 right-0 z-[60] flex items-center justify-center gap-2 py-2.5 px-4"
+          style={{
+            background: "rgba(7,193,96,0.92)",
+            color: "white",
+            fontSize: 13,
+            fontWeight: 600,
+            boxShadow: "0 2px 12px rgba(7,193,96,0.35)",
+          }}
+        >
+          <span className="inline-block w-3.5 h-3.5 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+          <span>{t("Refreshing your WeChat avatar…", "正在重新获取微信头像...")}</span>
+        </div>
+      )}
 
       {/* TICKET-038 REVISED — 5-lang floating switcher (zh/zh-Hant/en/tl/id);
           替换原 4-lang inline chip (漏 zh-Hant). HK/TW 妈妈用繁体首选。 */}
