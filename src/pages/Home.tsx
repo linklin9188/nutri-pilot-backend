@@ -24,6 +24,7 @@ import { useSubscription } from "../lib/subscription";
 import { recordBatchSwap, recordSwap } from "../lib/swapFeedback";
 import { useLanguage, LANGUAGE_LABEL, type Language } from "../contexts/LanguageContext";
 import IntentInputBox from "../components/IntentInputBox";
+import ChatSwapModal from "../components/ChatSwapModal";
 import { loadIntentBias } from "../lib/intentBias";
 import { getUserId } from "../lib/userId";
 import { loadCuisineMode, type CuisineMode } from "../lib/cuisineFilter";
@@ -423,7 +424,11 @@ export default function Home() {
   // 5-day 工作日制 (周一-五), 周末家庭自由发挥, 所以周末看的应是"下周"计划.
   // 周一到周五 → weekOffset=0 (本周), 周末 → weekOffset=1 (下周).
   // getWeekStartISO(weekOffset) 已支持, useWeeklyMenu 接 weekOffset 参数.
-  const { weeklyMenu, loading: weeklyLoading, regenerate: regenerateWeekly } = useWeeklyMenu(isWeekend() ? 1 : 0);
+  const { weeklyMenu, loading: weeklyLoading, regenerate: regenerateWeekly, swapDish: weeklySwapDish } = useWeeklyMenu(isWeekend() ? 1 : 0);
+  // TICKET-069 P0 — ChatSwapModal state. IntentInputBox 输入 / 点 chip → 这里开弹窗.
+  // 弹窗里用户勾选今日要换的菜, AI 按 intent bias 选 1 道替换. 老板真测 #14 拍板.
+  const [swapModalOpen, setSwapModalOpen] = useState(false);
+  const [swapIntent, setSwapIntent]       = useState('');
   // TICKET-022 §B — 5-channel TagBadge chip 上 production. Lookup keyed by
   // dish.id → SlotPlan from today's slots[]. Used to render badges on each
   // dish row in displayMenu so users see "为什么推这道" reasoning chips.
@@ -1292,7 +1297,13 @@ export default function Home() {
           就是给老板一句话调菜单的快速入口. parseIntent → saveIntentBias →
           clear weekly_menu_* cache → 派 nutri-prefs-changed 让 useWeeklyMenu 重算. */}
       <div className="px-5 mt-3 mb-2">
-        <IntentInputBox variant="home" onSuccess={regenerateWeekly} />
+        <IntentInputBox
+          variant="home"
+          onTriggerSwap={(intent) => {
+            setSwapIntent(intent);
+            setSwapModalOpen(true);
+          }}
+        />
       </div>
 
       {/* ── Editorial header — warm paper, serif greeting ─────────── */}
@@ -2103,6 +2114,17 @@ export default function Home() {
       </main>
 
       {/* TICKET-066 P0 — IntentRegenModal 弹窗已删除, Home 顶部 IntentInputBox 取代. */}
+
+      {/* TICKET-069 P0 — ChatSwapModal. IntentInputBox 触发, 用户勾今日要换的菜, AI swap.
+          老板真测 #14 拍板 1+A: 弹对话窗 + 只换今日 + AI 直接选 1 道, 不让用户 3 选 1. */}
+      <ChatSwapModal
+        open={swapModalOpen}
+        userIntent={swapIntent}
+        onClose={() => setSwapModalOpen(false)}
+        swapDish={weeklySwapDish}
+        weeklyMenu={weeklyMenu}
+        todayIdx={todayIdx >= 5 ? 0 : todayIdx}
+      />
 
       {/* TICKET-063 §B — 节庆 in-app toast (mock; Day 17 接真 push API).
           ±3 日节庆窗口内 mount 1s 后弹；点击跳 /weekly；✕ 永久 dismiss 当年此节庆。 */}

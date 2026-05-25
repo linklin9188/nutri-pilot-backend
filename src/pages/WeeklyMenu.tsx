@@ -28,6 +28,7 @@ import { elevateDayToMichelin, type MichelinDish } from "../lib/michelinFromDb";
 import ChefBookingModal from "../components/ChefBookingModal";
 import { NutritionRadarCard } from "../components/NutritionRadar";
 import IntentInputBox from "../components/IntentInputBox";
+import ChatSwapModal from "../components/ChatSwapModal";
 import { loadIntentBias, clearIntentBias, type IntentBias } from "../lib/intentBias";
 import { useLanguage } from "../contexts/LanguageContext";
 
@@ -516,6 +517,9 @@ export default function WeeklyMenu() {
   const weekOffset = isWk ? 1 : 0;
   const { weeklyMenu, loading, swapDish } = useWeeklyMenu(weekOffset);
   const targetWeekStart = getWeekStartISO(weekOffset);
+  // TICKET-069 P0 — ChatSwapModal state. 老板真测 #14 拍板 1+A.
+  const [swapModalOpen, setSwapModalOpen] = useState(false);
+  const [swapIntent, setSwapIntent]       = useState('');
   // TICKET-017 §C — 换一道按钮 state（key="dayIdx:slotIdx" busy 标记 + 提示 toast）
   const [swapBusy, setSwapBusy] = useState<string | null>(null);
   const [swapToast, setSwapToast] = useState<string | null>(null);
@@ -882,7 +886,13 @@ export default function WeeklyMenu() {
       {/* TICKET-066 P0 — chat 主入口统一. IntentInputBox 取代原 IntentRegenModal 弹窗.
           老板真测 #12 拍板 1: "说话换菜单" 是 chat 唯一 use case, 不藏起来. */}
       <div className="relative z-10 px-5 mb-3">
-        <IntentInputBox variant="weekly" />
+        <IntentInputBox
+          variant="weekly"
+          onTriggerSwap={(intent) => {
+            setSwapIntent(intent);
+            setSwapModalOpen(true);
+          }}
+        />
       </div>
 
       {/* ── Day Tabs ────────────────────────────────────────────── */}
@@ -1331,6 +1341,16 @@ export default function WeeklyMenu() {
       <BottomTabBar />
 
       {/* TICKET-066 P0 — IntentRegenModal 弹窗已删除, 顶部 IntentInputBox 取代. */}
+
+      {/* TICKET-069 P0 — ChatSwapModal. 老板真测 #14 拍板 1+A. */}
+      <ChatSwapModal
+        open={swapModalOpen}
+        userIntent={swapIntent}
+        onClose={() => setSwapModalOpen(false)}
+        swapDish={swapDish}
+        weeklyMenu={weeklyMenu}
+        todayIdx={todayIdx}
+      />
 
       {/* Chef-at-home interest form (placeholder, no real booking yet) */}
       <ChefBookingModal

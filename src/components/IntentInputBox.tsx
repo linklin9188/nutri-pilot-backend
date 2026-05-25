@@ -1,12 +1,16 @@
 /**
- * IntentInputBox — TICKET-066 P0 chat 主入口统一.
+ * IntentInputBox — TICKET-066 P0 chat 主入口统一 (TICKET-069 P0 改为弹对话窗触发器).
  *
- * 把原 IntentRegenModal 弹窗 + Home 悬浮 chat FAB 合并为 Home/WeeklyMenu 顶部
- * 永远可见的"说话换菜单"输入框. 单一 use case: 用户说一句话 → parseIntent
- * → saveIntentBias → clear weekly_menu_* 缓存 → 派事件让 useWeeklyMenu 重算.
+ * Home/WeeklyMenu 顶部"说话换菜单"输入框. 不再立即重排; 改为触发 onTriggerSwap →
+ * 父组件打开 ChatSwapModal → 用户勾选今日要换的菜 → AI 按 bias 换.
  *
- * 不做多轮对话 (那是 /chat ChatAgent 的活儿; 这里只走 quick-intent 单次).
- * 不写 chat session DB.
+ * TICKET-069 老板真测 #14 拍板 1+A:
+ *   - chip 改回 6 个中性 (无菜系名), 不再"多西北菜"暗示
+ *   - 不再 parseIntent → saveIntentBias → clear cache → 重排; 输入只是"想说什么"
+ *   - 弹 ChatSwapModal: 用户在弹窗里看今天菜单 + 勾要换的菜
+ *   - AI 按 intent 直接选 1 道换, 不让用户 3 选 1
+ *
+ * 不写 chat session DB (这是 quick swap, 不是多轮对话).
  *
  * 设计 (老板拍板):
  *   - 圆角白底输入框 (52px 高, 16px 圆角, 半透白底 + 1.5px primary 描边)
@@ -14,17 +18,17 @@
  *   - placeholder 三语
  *   - 右"发送"小按钮 (橙底)
  *   - 下方 6 个横滑 chip (overflow-x-auto)
- *   - 成功/失败 toast (3 秒自动消失)
  */
 
 import { useState } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
-import { parseIntent, saveIntentBias } from '../lib/intentBias';
-import { extractClientOverrides, applyHeadcountOverride } from '../lib/intentClientOverrides';
 
 interface Props {
-  /** 提交成功后回调 (e.g. 父组件重算菜单 / 关 modal). */
-  onSuccess?: () => void;
+  /**
+   * TICKET-069: 用户提交输入或点 chip → 父组件接此回调 → 打开 ChatSwapModal.
+   * userIntent 是原始用户文本 (chip 已按当前语言映射成 zh/en/tl 一句话).
+   */
+  onTriggerSwap?: (userIntent: string) => void;
   /** 风格变体 — home: 白底浅描边 (浅色 Home bg); weekly: 半透白 (深色 WeeklyMenu bg). */
   variant?: 'home' | 'weekly';
 }
@@ -35,76 +39,38 @@ interface ChipDef {
   tl: string;
 }
 
+// TICKET-069: 6 个中性 chip (无菜系名). 复用 IntentRegenModal QUICK_SUGGESTIONS 原版三语化.
+// 老板拍板"chip 不要偏向" → 之前的"多西北菜 / 少辣 / 清淡养胃 / 多海鲜 / 增肌期 / 减脂期"里
+// "多西北菜"是菜系偏向, 老板已 memory 标 (feedback_no_default_cuisine_bias.md).
 const QUICK_CHIPS: ChipDef[] = [
-  { en: 'More northwest',          zh: '多西北菜',     tl: 'Higit pang Hilagang-kanluran' },
-  { en: 'Less spicy',              zh: '少辣',         tl: 'Hindi maanghang' },
-  { en: 'Light & gentle',          zh: '清淡养胃',     tl: 'Banayad' },
-  { en: 'More seafood',            zh: '多海鲜',       tl: 'Higit pang seafood' },
-  { en: 'Muscle gain',             zh: '增肌期',       tl: 'Pagtaas ng kalamnan' },
-  { en: 'Cutting',                 zh: '减脂期',       tl: 'Pagbawas taba' },
+  { en: 'Eat more seafood this week',          zh: '这周多吃海鲜',         tl: 'Higit pang seafood ngayong linggo' },
+  { en: 'Kids dislike spicy, less spicy',      zh: '孩子怕辣，少点辣的',   tl: 'Hindi maanghang para sa bata' },
+  { en: 'Light and gentle on stomach',         zh: '想要清淡养胃',         tl: 'Banayad at maingat sa tiyan' },
+  { en: 'More soup for the elderly',           zh: '老人多一点汤水',       tl: 'Higit pang sabaw para sa matatanda' },
+  { en: 'Muscle gain: more protein, less carb', zh: '增肌期，多蛋白少碳水', tl: 'Pagtaas ng kalamnan: higit pang protina' },
+  { en: 'Cutting: more veg, less oil',         zh: '减脂期，多蔬菜少油',   tl: 'Pagbawas taba: higit pang gulay' },
 ];
 
-export default function IntentInputBox({ onSuccess, variant = 'home' }: Props) {
+export default function IntentInputBox({ onTriggerSwap, variant = 'home' }: Props) {
   const { t3 } = useLanguage();
-  const [text, setText]       = useState('');
-  const [loading, setLoading] = useState(false);
-  const [toast, setToast]     = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null);
+  const [text, setText] = useState('');
 
   const isWeekly = variant === 'weekly';
 
-  function showToast(kind: 'ok' | 'err', msg: string) {
-    setToast({ kind, msg });
-    window.setTimeout(() => setToast(null), 3000);
-  }
-
-  async function submit(payload: string) {
+  function submit(payload: string) {
     const raw = payload.trim();
     if (!raw) return;
-    setLoading(true);
-    try {
-      // Client-side hard overrides first (headcount / meal scope) — same as
-      // the legacy IntentRegenModal flow. These are deterministic, no quota.
-      const overrides = extractClientOverrides(raw);
-      if (overrides.headcount && overrides.headcount > 0) {
-        applyHeadcountOverride(overrides.headcount);
-      }
-
-      // Then ask Gemini (via edge fn) for soft preference bias.
-      const bias = await parseIntent(raw);
-      saveIntentBias(bias);
-
-      // Invalidate weekly_menu_* cache and ping listeners; useWeeklyMenu
-      // will pick up nutri-prefs-changed and regenerate.
-      Object.keys(localStorage)
-        .filter(k => k.startsWith('weekly_menu_'))
-        .forEach(k => localStorage.removeItem(k));
-      window.dispatchEvent(new Event('nutri-prefs-changed'));
-
-      setText('');
-      setLoading(false);
-      showToast(
-        'ok',
-        t3('Adjusted to your preference', '已按你的偏好调整', 'Inayos ayon sa iyong gusto'),
-      );
-      onSuccess?.();
-    } catch (e: any) {
-      setLoading(false);
-      showToast(
-        'err',
-        e?.message
-          ? String(e.message)
-          : t3('Failed, try again', '解析失败请重试', 'Nabigo, ulit ulitin'),
-      );
-    }
+    // TICKET-069: 不再 parseIntent 立即重排. 仅 trigger 父组件开弹窗.
+    onTriggerSwap?.(raw);
+    setText('');
   }
 
   function handleChipTap(chip: ChipDef) {
-    if (loading) return;
     submit(t3(chip.en, chip.zh, chip.tl));
   }
 
   function handleSendTap() {
-    if (loading || !text.trim()) return;
+    if (!text.trim()) return;
     submit(text);
   }
 
@@ -163,7 +129,6 @@ export default function IntentInputBox({ onSuccess, variant = 'home' }: Props) {
           type="text"
           value={text}
           onChange={e => setText(e.target.value)}
-          disabled={loading}
           onKeyDown={e => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
@@ -175,7 +140,7 @@ export default function IntentInputBox({ onSuccess, variant = 'home' }: Props) {
             '说说你想吃什么...',
             'Sabihin kung ano gusto mo kainin...',
           )}
-          className={`flex-1 min-w-0 bg-transparent outline-none ${placeholderClass} disabled:opacity-50`}
+          className={`flex-1 min-w-0 bg-transparent outline-none ${placeholderClass}`}
           style={{
             fontSize: 14,
             color: inputTextColor,
@@ -183,7 +148,7 @@ export default function IntentInputBox({ onSuccess, variant = 'home' }: Props) {
         />
         <button
           onClick={handleSendTap}
-          disabled={loading || !text.trim()}
+          disabled={!text.trim()}
           className="shrink-0 px-3 h-9 rounded-xl font-bold flex items-center justify-center active:scale-95 transition-all disabled:opacity-40"
           style={{
             background: '#FF5A1F',
@@ -193,16 +158,7 @@ export default function IntentInputBox({ onSuccess, variant = 'home' }: Props) {
           }}
           aria-label={t3('Send', '发送', 'Ipadala')}
         >
-          {loading ? (
-            <span
-              className="material-symbols-outlined animate-spin"
-              style={{ fontSize: 16 }}
-            >
-              progress_activity
-            </span>
-          ) : (
-            t3('Send', '发送', 'Ipadala')
-          )}
+          {t3('Send', '发送', 'Ipadala')}
         </button>
       </div>
 
@@ -215,37 +171,17 @@ export default function IntentInputBox({ onSuccess, variant = 'home' }: Props) {
           <button
             key={chip.en}
             onClick={() => handleChipTap(chip)}
-            disabled={loading}
-            className="shrink-0 px-3 py-1.5 rounded-full font-semibold active:scale-95 transition-all disabled:opacity-40"
+            className="shrink-0 px-3 py-1.5 rounded-full font-semibold active:scale-95 transition-all"
             style={{
               ...chipStyle,
               fontSize: 11.5,
+              whiteSpace: 'nowrap',
             }}
           >
             {t3(chip.en, chip.zh, chip.tl)}
           </button>
         ))}
       </div>
-
-      {/* Toast (black bg / red bg) — absolute bottom, 3s auto-dismiss */}
-      {toast && (
-        <div
-          className="absolute left-1/2 z-50 px-4 py-2.5 rounded-full font-bold pointer-events-none"
-          style={{
-            transform: 'translateX(-50%)',
-            bottom: -52,
-            background: toast.kind === 'ok' ? 'rgba(0,0,0,0.88)' : 'rgba(220,38,38,0.95)',
-            color: 'white',
-            fontSize: 12.5,
-            boxShadow: '0 8px 22px rgba(0,0,0,0.20)',
-            maxWidth: '92%',
-            textAlign: 'center',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {toast.msg}
-        </div>
-      )}
     </div>
   );
 }
