@@ -40,13 +40,7 @@ interface Comment {
   created_at: string;
 }
 
-interface StoryUser {
-  name: string;
-  avatar: string;
-  pts: number;
-  isTop: boolean;
-  photo: string;
-}
+// TICKET-074 P0 — StoryUser interface 删除 (原仅 MOCK_STORIES 用, 现 MOCK_STORIES 已删).
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -71,53 +65,10 @@ const QUICK_REPLIES = [
   "Which tray did you use?",
 ];
 
-// Mock data (replaced by Supabase when tables ready)
-const MOCK_STORIES: StoryUser[] = [
-  { name: "Ana M.",   avatar: "A", pts: 160, isTop: true,  photo: "https://images.unsplash.com/photo-1609501676725-7186f017a4b7?q=80&w=80" },
-  { name: "Joy R.",   avatar: "J", pts: 118, isTop: false, photo: "https://images.unsplash.com/photo-1544025162-d76694265947?q=80&w=80" },
-  { name: "Ika", avatar: "M", pts: 66,  isTop: false, photo: "https://images.unsplash.com/photo-1565299585323-38d6b0865b47?q=80&w=80" },
-  { name: "Grace T.", avatar: "G", pts: 44,  isTop: false, photo: "https://images.unsplash.com/photo-1547592180-85f173990554?q=80&w=80" },
-  { name: "Rose A.",  avatar: "R", pts: 38,  isTop: false, photo: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?q=80&w=80" },
-];
-
-const MOCK_POSTS: Post[] = [
-  {
-    id: "1", user_id: "u1", author_name: "Ana M.", author_avatar: "A",
-    author_district: "Mong Kok",
-    dish_name: "Steamed Fish 清蒸鱼",
-    caption: "Used the voice control while steaming — no touching the phone! My boss gave me a thumbs up 🎤✨",
-    photo_url: "https://images.unsplash.com/photo-1609501676725-7186f017a4b7?q=80&w=600&auto=format&fit=crop",
-    employer_likes: 7, peer_likes: 45, comment_count: 8,
-    did_peer_like: false, did_employer_like: false,
-    created_at: new Date(Date.now() - 2 * 3600000).toISOString(),
-    comments: [
-      { id: "c1", author: "Joy R.", text: "What's the recipe?", created_at: new Date(Date.now() - 3600000).toISOString() },
-      { id: "c2", author: "Ika", text: "My boss will love this!", created_at: new Date(Date.now() - 1800000).toISOString() },
-    ],
-  },
-  {
-    id: "2", user_id: "u2", author_name: "Joy R.", author_avatar: "J",
-    author_district: "Sha Tin",
-    dish_name: "Braised Pork Ribs 红烧排骨",
-    caption: "First time making this! The app guided me step by step. Boss asked me to make it again next week 😊",
-    photo_url: "https://images.unsplash.com/photo-1544025162-d76694265947?q=80&w=600&auto=format&fit=crop",
-    employer_likes: 5, peer_likes: 34, comment_count: 5,
-    did_peer_like: false, did_employer_like: false,
-    created_at: new Date(Date.now() - 5 * 3600000).toISOString(),
-    comments: [],
-  },
-  {
-    id: "3", user_id: "u3", author_name: "Ika", author_avatar: "M",
-    author_district: "Taikoo Shing",
-    dish_name: "Garlic Steamed Prawns 蒜蓉蒸虾",
-    caption: "Added extra garlic — boss said this is the best prawn dish ever! 🦐🧄",
-    photo_url: "https://images.unsplash.com/photo-1565299585323-38d6b0865b47?q=80&w=600&auto=format&fit=crop",
-    employer_likes: 3, peer_likes: 18, comment_count: 3,
-    did_peer_like: false, did_employer_like: false,
-    created_at: new Date(Date.now() - 8 * 3600000).toISOString(),
-    comments: [],
-  },
-];
+// TICKET-074 P0 — MOCK_STORIES / MOCK_POSTS 删除. /community 是 prod 路由
+// (App.tsx:291 + HelperBottomTabBar.tsx:30 + LearnerHome.tsx:252), 雇主+菲佣+Learner
+// 三类用户进去就看到 "Ana M./Joy R./Ika" 5 个不存在的菲佣 + 3 篇假 post + 假 likes/comments,
+// 是产品业务逻辑硬错 (老板原话). 初始 state 改 [], DB 空时显空状态, 不冒充真数据.
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -137,84 +88,29 @@ function filterContent(text: string): string | null {
   return null;
 }
 
-function nextFridayMs() {
-  const d = new Date();
-  const daysUntil = (5 - d.getDay() + 7) % 7 || 7;
-  d.setDate(d.getDate() + daysUntil);
-  d.setHours(18, 0, 0, 0);
-  return d.getTime() - Date.now();
-}
-
-function fmtCountdown(ms: number) {
-  if (ms <= 0) return "Sending now!";
-  const h = Math.floor(ms / 3600000);
-  if (h >= 24) return `${Math.floor(h / 24)}d ${h % 24}h`;
-  return `${h}h ${Math.floor((ms % 3600000) / 60000)}m`;
-}
+// TICKET-074 P0 — nextFridayMs / fmtCountdown 删除 (原仅 PointsPill 用).
 
 // ── Stories row ───────────────────────────────────────────────────────────────
-
+// TICKET-074 P0 — 删 MOCK_STORIES 5 个假菲佣 ("Ana M./Joy R./Ika/Grace T./Rose A.")
+// 当前只保留 helper 的 "Your story" 入口 (引导发帖); 雇主端不渲染 (StoriesRow 整段隐藏).
+// 后续真 stories 功能 ship 后再从 DB hydrate.
 function StoriesRow({ myRole }: { myRole: string }) {
+  if (myRole !== "helper") return null;
   return (
     <div className="flex gap-4 px-4 py-3 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
-      {/* Post button (helpers only) */}
-      {myRole === "helper" && (
-        <div className="flex flex-col items-center gap-1.5 flex-shrink-0">
-          <div className="w-16 h-16 rounded-full border-2 border-dashed flex items-center justify-center"
-            style={{ borderColor: "#dbdbdb" }}>
-            <span className="material-symbols-outlined" style={{ fontSize: 24, color: "#262626" }}>add</span>
-          </div>
-          <span style={{ fontSize: 11, color: "#262626" }}>Your story</span>
+      <div className="flex flex-col items-center gap-1.5 flex-shrink-0">
+        <div className="w-16 h-16 rounded-full border-2 border-dashed flex items-center justify-center"
+          style={{ borderColor: "#dbdbdb" }}>
+          <span className="material-symbols-outlined" style={{ fontSize: 24, color: "#262626" }}>add</span>
         </div>
-      )}
-      {MOCK_STORIES.map((s, i) => (
-        <div key={i} className="flex flex-col items-center gap-1.5 flex-shrink-0">
-          <div className="p-0.5 rounded-full"
-            style={{ background: s.isTop ? "linear-gradient(135deg, #F7C948, #FF6B35)" : "linear-gradient(135deg, #FF6B35, #833AB4)" }}>
-            <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-white">
-              <img src={s.photo} alt={s.name} className="w-full h-full object-cover"
-                draggable={false} onContextMenu={e => e.preventDefault()}
-                onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-            </div>
-          </div>
-          <div className="flex items-center gap-0.5">
-            {s.isTop && <span style={{ fontSize: 9 }}>🥇</span>}
-            <span style={{ fontSize: 11, color: "#262626" }}>{s.name.split(" ")[0]}</span>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ── Points pill ───────────────────────────────────────────────────────────────
-
-function PointsPill({ pts, weekPts }: { pts: number; weekPts: number }) {
-  const [ms, setMs] = useState(nextFridayMs());
-  useEffect(() => {
-    const t = setInterval(() => setMs(nextFridayMs()), 60000);
-    return () => clearInterval(t);
-  }, []);
-  const isSunday = new Date().getDay() === 0;
-
-  return (
-    <div className="mx-4 mb-1 px-4 py-2.5 rounded-2xl flex items-center gap-3"
-      style={{ background: "linear-gradient(135deg, #fff8f0, #fff3e0)", border: "1px solid #ffe0b2" }}>
-      <div>
-        <span style={{ fontSize: 18, fontWeight: 900, color: "#FF6B35" }}>{weekPts}</span>
-        <span style={{ fontSize: 12, color: "#FF6B35", fontWeight: 600 }}> pts this week</span>
-        {isSunday && (
-          <span className="ml-2 px-2 py-0.5 rounded-full text-white font-bold"
-            style={{ fontSize: 10, background: "#FF6B35" }}>2× Sunday bonus!</span>
-        )}
-      </div>
-      <div className="ml-auto text-right">
-        <p style={{ fontSize: 10, color: "#9e9e9e" }}>Friday payout</p>
-        <p style={{ fontSize: 11, fontWeight: 700, color: "#FF6B35" }}>{fmtCountdown(ms)}</p>
+        <span style={{ fontSize: 11, color: "#262626" }}>Your story</span>
       </div>
     </div>
   );
 }
+
+// TICKET-074 P0 — PointsPill 删除. 原传 pts=138 + weekPts=48 都是硬编码假数字,
+// 真 user_pts 表 ship 后再重写并接 DB 真值. HelperHome:700 已用 "--" pattern 不显假数字.
 
 // ── Post card ─────────────────────────────────────────────────────────────────
 
@@ -231,20 +127,43 @@ function PostCard({
   const [commentError, setCommentError] = useState("");
   const [localComments, setLocalComments] = useState<Comment[]>(post.comments ?? []);
 
-  function submitComment() {
+  // TICKET-074 P0 — async + insert().select().single() 拿真 comment.id.
+  // 原 bug: id = Date.now().toString() 仅本地, supabase.insert(...).then() 不 select,
+  // React key 重复风险 + 刷新页评论丢. 改: optimistic 加临时 id, DB insert 成功后替换真 id;
+  // post.id 必须是真 DB id (依赖 handleNewPost 已修, 不再是 fake Date.now), 否则 post_comments
+  // 的 FK 失败评论无法落库. 失败时回滚 optimistic + toast 让用户重试.
+  async function submitComment() {
     const err = filterContent(commentInput);
     if (err) { setCommentError(err); return; }
     if (!commentInput.trim()) return;
-    const c: Comment = {
-      id: Date.now().toString(),
+    const text = commentInput;
+    const tempId = `__pending_${Date.now()}`;
+    const optimistic: Comment = {
+      id: tempId,
       author: "You",
-      text: commentInput,
+      text,
       created_at: new Date().toISOString(),
     };
-    setLocalComments(prev => [...prev, c]);
+    setLocalComments(prev => [...prev, optimistic]);
     setCommentInput("");
     setCommentError("");
-    supabase.from("post_comments").insert({ post_id: post.id, text: commentInput }).then(() => {});
+
+    const { data: inserted, error } = await supabase
+      .from("post_comments")
+      .insert({ post_id: post.id, text })
+      .select("id, created_at")
+      .single();
+
+    if (error || !inserted) {
+      console.error("post_comments insert failed", error);
+      setLocalComments(prev => prev.filter(c => c.id !== tempId));
+      setCommentError("Comment failed, please retry");
+      return;
+    }
+
+    setLocalComments(prev => prev.map(c => c.id === tempId
+      ? { ...c, id: (inserted as any).id as string, created_at: (inserted as any).created_at ?? c.created_at }
+      : c));
   }
 
   return (
@@ -901,9 +820,11 @@ export default function Community() {
   const myUserId = getUserId() ?? "";
 
   const [tab, setTab] = useState<Tab>("feed");
-  const [posts, setPosts] = useState<Post[]>(MOCK_POSTS);
+  // TICKET-074 P0 — 删 MOCK_POSTS 初始 (3 篇假 post "清蒸鱼/红烧排骨/蒜蓉蒸虾"). 初始 [],
+  // DB 空时显空状态 (见 feed render empty-state UI), 不冒充真社区数据.
+  const [posts, setPosts] = useState<Post[]>([]);
   const [showCreate, setShowCreate] = useState(searchParams.get("action") === "post");
-  const [weekPts] = useState(48);
+  // TICKET-074 P0 — 删硬编码 weekPts=48 (假积分) + PointsPill 调用. 真 user_pts 表 ship 后再 enable.
 
   useEffect(() => {
     async function loadPosts() {
@@ -913,7 +834,9 @@ export default function Community() {
         .order("created_at", { ascending: false })
         .limit(30);
 
-      if (error || !data || data.length === 0) return; // keep mock data
+      // TICKET-074 P0 — DB 空 → posts 保持 [] (上面初始值), 渲染层显 empty-state.
+      // 旧路径 "return; // keep mock data" 让用户永远看到 3 篇 fake post — 已删.
+      if (error || !data || data.length === 0) return;
 
       const mapped: Post[] = data.map((row: any) => ({
         id: row.id,
@@ -961,10 +884,17 @@ export default function Community() {
     }
   }
 
-  function handleNewPost(partial: Partial<Post>) {
-    // Optimistic UI update
-    const p: Post = {
-      id: Date.now().toString(), user_id: myUserId,
+  // TICKET-074 P0 — async + 拿真 DB id.
+  // 原 bug: id = Date.now().toString() 是 fake, supabase.insert(...).then() 不 select,
+  // optimistic state 永远拿 fake id; 后续点赞 handleLike → rpc('increment_post_likes', {post_id: fakeId})
+  // 找不到 row 默默失败, 雇主点 👑 helper 拿不到积分; 评论 submitComment 用 post.id (fake) 插
+  // post_comments 也会因 FK 失败. insert(...).select().single() 拿真 uuid 后替换 optimistic 行,
+  // 让下游 like/comment 都打到真 id.
+  async function handleNewPost(partial: Partial<Post>) {
+    // Optimistic UI update — 临时 id 仅本 component state 用做 React key, 拿到真 id 立刻替换
+    const tempId = `__pending_${Date.now()}`;
+    const optimistic: Post = {
+      id: tempId, user_id: myUserId,
       author_name: "You", author_avatar: "Y",
       author_district: "Hong Kong",
       dish_name: partial.dish_name ?? "",
@@ -974,16 +904,32 @@ export default function Community() {
       did_peer_like: false, did_employer_like: false,
       created_at: new Date().toISOString(), comments: [],
     };
-    setPosts(prev => [p, ...prev]);
+    setPosts(prev => [optimistic, ...prev]);
 
-    // Insert only DB-schema fields
-    supabase.from("community_posts").insert({
-      helper_id: myUserId,
-      dish_name: partial.dish_name ?? "",
-      caption: partial.caption ?? "",
-      photo_url: partial.photo_url ?? "",
-      pts_earned: 15,
-    }).then(() => {});
+    // Insert + select 拿真 server-generated uuid
+    const { data: inserted, error } = await supabase
+      .from("community_posts")
+      .insert({
+        helper_id: myUserId,
+        dish_name: partial.dish_name ?? "",
+        caption: partial.caption ?? "",
+        photo_url: partial.photo_url ?? "",
+        pts_earned: 15,
+      })
+      .select("id, created_at")
+      .single();
+
+    if (error || !inserted) {
+      // 回滚 optimistic + 控制台留迹 (沿 B-2 §A2 不吞错 pattern)
+      console.error("community_posts insert failed", error);
+      setPosts(prev => prev.filter(p => p.id !== tempId));
+      return;
+    }
+
+    // 用真 DB id 替换 optimistic 行 — 后续 handleLike / submitComment 都拿真 id 打 RPC / FK
+    setPosts(prev => prev.map(p => p.id === tempId
+      ? { ...p, id: (inserted as any).id as string, created_at: (inserted as any).created_at ?? p.created_at }
+      : p));
 
     // Signal #3: times_cooked +1 on the dish
     if (partial.dish_name) {
@@ -1013,12 +959,9 @@ export default function Community() {
         </button>
       </div>
 
-      {/* Points pill — helpers only */}
-      {myRole === "helper" && tab === "feed" && (
-        <div className="pt-3">
-          <PointsPill pts={138} weekPts={weekPts} />
-        </div>
-      )}
+      {/* TICKET-074 P0 — PointsPill 隐藏 (原来传硬编码 pts=138 + weekPts=48 是假数字).
+          真 user_pts 表 ship 后再 enable + 接 DB 真值. 当前与 HelperHome:700 "--" pattern
+          一致 (不显假数字, 让用户清楚还没真积分系统). */}
 
       {/* Employer: top Feed/Rankings switcher */}
       {myRole === "employer" && (
@@ -1045,16 +988,43 @@ export default function Community() {
         {tab === "feed" ? (
           <motion.div key="feed" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <div className="mt-1">
-              {posts.map((post: Post) => (
-                <PostCard key={post.id} post={post} myRole={myRole}
-                  onLike={handleLike} onComment={() => {}} />
-              ))}
+              {posts.length === 0 ? (
+                // TICKET-074 P0 — DB 空 empty state (替原 MOCK_POSTS 3 篇假帖)
+                <div className="px-6 py-16 text-center bg-white">
+                  <p style={{ fontSize: 48, marginBottom: 12 }}>📸</p>
+                  <p className="font-bold mb-1" style={{ fontSize: 14, color: "#262626" }}>
+                    No posts yet
+                  </p>
+                  <p style={{ fontSize: 12, color: "#737373", lineHeight: 1.5 }}>
+                    {myRole === "helper"
+                      ? "Be the first to share what you cooked today!"
+                      : "Helpers haven't posted any dishes yet."}
+                  </p>
+                </div>
+              ) : (
+                posts.map((post: Post) => (
+                  <PostCard key={post.id} post={post} myRole={myRole}
+                    onLike={handleLike} onComment={() => {}} />
+                ))
+              )}
             </div>
           </motion.div>
         ) : (
           <motion.div key="rank" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <div className="mt-1">
-              <Leaderboard posts={posts} />
+              {posts.length === 0 ? (
+                <div className="px-6 py-16 text-center bg-white">
+                  <p style={{ fontSize: 48, marginBottom: 12 }}>🏆</p>
+                  <p className="font-bold mb-1" style={{ fontSize: 14, color: "#262626" }}>
+                    No ranking yet
+                  </p>
+                  <p style={{ fontSize: 12, color: "#737373", lineHeight: 1.5 }}>
+                    Ranking opens after helpers post dishes this week.
+                  </p>
+                </div>
+              ) : (
+                <Leaderboard posts={posts} />
+              )}
             </div>
           </motion.div>
         )}
