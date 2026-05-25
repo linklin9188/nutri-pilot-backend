@@ -1969,6 +1969,21 @@ export default function Settings() {
             </span>
           </button>
 
+          {/* ── My Orders quick-link (TICKET-080-A) — 进 /orders 看订单历史 ── */}
+          <button
+            onClick={() => navigate('/orders')}
+            className="w-full bg-white border border-black/5 rounded-[22px] p-4 shadow-[0_4px_20px_rgba(0,0,0,0.04)] flex items-center gap-3 active:scale-[0.98] transition-all"
+          >
+            <span className="text-[24px]">📦</span>
+            <div className="flex-1 text-left">
+              <p className="font-bold text-[14px]">我的订单</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">采购清单 / Inalca 直供下单记录</p>
+            </div>
+            <span className="material-symbols-outlined" style={{ fontSize: 18, color: "rgba(0,0,0,0.30)" }}>
+              chevron_right
+            </span>
+          </button>
+
           {/* ── 会员中心 (TICKET-052 §G) — 单入口折叠卡替代原 MembershipCard +
               MembershipBenefits 双块布局。点开内嵌 "目前全部免费 · 30 天后
               再说" 大标语 + 权限列表 + 敬请期待占位 (不再跳 /pricing). */}

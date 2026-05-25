@@ -12,6 +12,8 @@ import { useSubscription } from "../lib/subscription";
 import { getUserId } from "../lib/userId";
 import { loadActiveOrPreviewSuppliers, type SupplierWithBrand } from "../lib/suppliers";
 import SupplierBrandModal from "../components/SupplierBrandModal";
+// TICKET-080-A — 购物车 (Inalca 直供 SKU 加入购物车, 头部红点 + /cart 页)
+import { addToCart, getCartCount } from "../lib/cart";
 import {
   loadHomeInventory as loadHomeInventoryDb,
   setIngredientAvailable as setIngredientAvailableDb,
@@ -36,6 +38,10 @@ interface ActiveSupplierSku {
   ingredient_keywords: string[];
   supplier_name:       string;
   supplier_status:     'active' | 'preview';   // TICKET-077: preview → Coming Soon 按钮
+  // TICKET-080-A — price + unit (来自 supplier_skus.retail_price_hkd + unit, 094 加列).
+  // 给 +加入购物车 按钮显示 "HKD 120 / 500g"; null = 老 SKU 还没填 retail price.
+  retail_price_hkd:    number | null;
+  unit:                string | null;
 }
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
@@ -56,6 +62,9 @@ async function fetchActiveSupplierSkus(): Promise<ActiveSupplierSku[]> {
         order_url,
         ingredient_keywords,
         active,
+        retail_price_hkd,
+        price_hkd,
+        unit,
         suppliers!supplier_skus_supplier_id_fkey ( name, status )
       `)
       .eq('active', true);
@@ -72,6 +81,10 @@ async function fetchActiveSupplierSkus(): Promise<ActiveSupplierSku[]> {
         ingredient_keywords: Array.isArray(r.ingredient_keywords) ? r.ingredient_keywords : [],
         supplier_name:       r.suppliers?.name ?? '',
         supplier_status:     (r.suppliers?.status ?? 'active') as 'active' | 'preview',
+        retail_price_hkd:    typeof r.retail_price_hkd === 'number'
+                               ? r.retail_price_hkd
+                               : (typeof r.price_hkd === 'number' ? r.price_hkd : null),
+        unit:                r.unit ?? null,
       }));
   } catch {
     return [];
@@ -575,6 +588,11 @@ export default function VerifyIngredients() {
   const [previewSuppliers, setPreviewSuppliers] = useState<SupplierWithBrand[]>([]);
   const [brandModalSupplier, setBrandModalSupplier] = useState<SupplierWithBrand | null>(null);
   const [comingSoonOpen, setComingSoonOpen] = useState(false);
+
+  // TICKET-080-A — 购物车数量 (红点) + 加车按钮 loading 状态 + 加成功 toast.
+  const [cartCount, setCartCount] = useState(0);
+  const [addingToCartSkuId, setAddingToCartSkuId] = useState<string | null>(null);
+  const [cartToast, setCartToast] = useState<string | null>(null);
   // Cache the schedule per current ingredients/mode so we don't recompute on
   // every render (computing requires reading the weekly menu off localStorage).
   // TICKET-048 P0: hookWeeklyMenu 优先, fallback 到 LS (deep-link / 老缓存).
@@ -605,6 +623,25 @@ export default function VerifyIngredients() {
       setPreviewSuppliers(list);
     });
     return () => { cancelled = true; };
+  }, []);
+
+  // TICKET-080-A — 购物车数量同步: mount 时拉一次 + 监听 nutri-cart-changed 事件.
+  // addToCart 内部 dispatch 此事件, 加完车头部红点立刻刷新.
+  useEffect(() => {
+    let cancelled = false;
+    const uid = getUserId();
+    if (!uid) return;
+    const refresh = async () => {
+      const n = await getCartCount(uid);
+      if (!cancelled) setCartCount(n);
+    };
+    refresh();
+    const handler = () => { refresh(); };
+    window.addEventListener('nutri-cart-changed', handler);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('nutri-cart-changed', handler);
+    };
   }, []);
 
   // TICKET-075 §4c — 拉雇主名下第一个 household, 拿到 id 后立刻 DB-load inventory.
@@ -825,6 +862,28 @@ export default function VerifyIngredients() {
     }
   };
 
+  // TICKET-080-A — 加入购物车. preview 状态 SKU 也允许加车 (反正 080-A 不接 Stripe
+  // 真支付, 老板拍板"先让用户能看到购物流程"). 真支付 080-B 接通时如还在 preview
+  // 阶段, 同一红线 (Coming Soon) 在 checkout 页拦.
+  const handleAddToCart = async (skuId: string) => {
+    if (addingToCartSkuId) return;
+    const uid = getUserId();
+    if (!uid) { navigate('/login'); return; }
+    setAddingToCartSkuId(skuId);
+    try {
+      const ok = await addToCart(uid, skuId, 1);
+      if (ok) {
+        setCartToast(t3('Added', '已加入购物车', 'Naidagdag'));
+        setTimeout(() => setCartToast(null), 1800);
+      } else {
+        setCartToast(t3('Failed, please retry', '加入失败, 请重试', 'Subukan ulit'));
+        setTimeout(() => setCartToast(null), 1800);
+      }
+    } finally {
+      setAddingToCartSkuId(null);
+    }
+  };
+
   // Group by category
   const grouped = CATEGORY_GROUPS.map(g => ({
     group: `${g.emoji} ${g.label}`,
@@ -922,6 +981,22 @@ export default function VerifyIngredients() {
         >
           {haveCount}/{ingredients.length} {t('have', '已有')}
         </div>
+        {/* TICKET-080-A — 购物车入口 icon + 红点数量. 点跳 /cart 查看 SKU 列表. */}
+        <button
+          onClick={() => navigate('/cart')}
+          aria-label={t3('Cart', '购物车', 'Cart')}
+          className="relative p-2 rounded-full bg-black/5 active:scale-95 transition-transform"
+        >
+          <span className="material-symbols-outlined text-[20px]">shopping_cart</span>
+          {cartCount > 0 && (
+            <span
+              className="absolute -top-0.5 -right-0.5 text-white text-[10px] rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center font-bold"
+              style={{ background: '#ef4444' }}
+            >
+              {cartCount > 99 ? '99+' : cartCount}
+            </span>
+          )}
+        </button>
       </header>
 
       <main className={`flex-1 px-4 py-4 space-y-4 ${isHelper ? 'pb-36' : 'pb-52'}`}>
@@ -1292,42 +1367,76 @@ export default function VerifyIngredients() {
                         without bubbling toggle-have. */}
                     {matchedSku && !have && (
                       <div
-                        className="flex items-center gap-2 px-4 py-2"
+                        className="flex flex-col gap-2 px-4 py-2"
                         style={{
                           background: 'linear-gradient(90deg, rgba(255,90,31,0.06), rgba(255,140,84,0.03))',
                           borderTop: '1px dashed rgba(255,90,31,0.18)',
                         }}
                       >
-                        <span
-                          className="text-[11px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1"
-                          style={{ background: 'rgba(255,90,31,0.12)', color: '#FF5A1F' }}
-                        >
-                          🛒 由 {matchedSku.supplier_name} 直供
-                        </span>
-                        {typeof stockCount === 'number' && (
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span
-                            className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                            style={{
-                              background: stockCount > 10 ? 'rgba(37,211,102,0.12)' : 'rgba(239,68,68,0.10)',
-                              color:      stockCount > 10 ? '#16A34A' : '#ef4444',
-                            }}
+                            className="text-[11px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1"
+                            style={{ background: 'rgba(255,90,31,0.12)', color: '#FF5A1F' }}
                           >
-                            剩 {stockCount} 件
+                            🛒 由 {matchedSku.supplier_name} 直供
                           </span>
+                          {typeof stockCount === 'number' && (
+                            <span
+                              className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                              style={{
+                                background: stockCount > 10 ? 'rgba(37,211,102,0.12)' : 'rgba(239,68,68,0.10)',
+                                color:      stockCount > 10 ? '#16A34A' : '#ef4444',
+                              }}
+                            >
+                              剩 {stockCount} 件
+                            </span>
+                          )}
+                          <button
+                            onClick={() => handleSupplierOrder(matchedSku)}
+                            disabled={isOrdering}
+                            className="ml-auto px-3 py-1 rounded-full text-[11px] font-bold text-white transition-all active:scale-95 disabled:opacity-60"
+                            style={{ background: 'linear-gradient(135deg, #FF5A1F, #FF8C54)' }}
+                          >
+                            {/* TICKET-077: preview 状态 → "即将开放" 不露销售; active → 真下单 */}
+                            {isOrdering
+                              ? t3('Loading…', '跳转中…', 'Loading…')
+                              : matchedSku.supplier_status === 'preview'
+                                ? t3('Coming Soon', '即将开放', 'Paparating')
+                                : t3('Order →', '一键下单 →', 'Mag-order →')}
+                          </button>
+                        </div>
+
+                        {/* TICKET-080-A — 价格 + 加入购物车 行. 只在 retail_price_hkd
+                            存在时渲染 (老 SKU 无定价不显, 不阻塞旧流程). 加车按钮
+                            走 /cart → /checkout, 不抢 "一键下单 → 跳供应商" 的位. */}
+                        {typeof matchedSku.retail_price_hkd === 'number' && matchedSku.retail_price_hkd > 0 && (
+                          <div className="flex items-center justify-between gap-2 bg-white/70 rounded-xl px-2.5 py-2">
+                            <div className="flex flex-col">
+                              <p className="text-[11px] font-bold" style={{ color: '#1a1a1a' }}>
+                                {matchedSku.sku_name}
+                              </p>
+                              <p className="text-[12px] font-black" style={{ color: '#FF5A1F' }}>
+                                HKD {matchedSku.retail_price_hkd.toFixed(2)}
+                                {matchedSku.unit ? <span className="text-[10px] text-gray-500 font-normal"> / {matchedSku.unit}</span> : null}
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => handleAddToCart(matchedSku.sku_id)}
+                              disabled={addingToCartSkuId === matchedSku.sku_id}
+                              className="px-3 py-1.5 rounded-lg font-bold text-[11px] text-white active:scale-95 transition-all disabled:opacity-60 flex items-center gap-1"
+                              style={{ background: '#FF5A1F' }}
+                            >
+                              {addingToCartSkuId === matchedSku.sku_id ? (
+                                t3('...', '加入中', '...')
+                              ) : (
+                                <>
+                                  <span>+</span>
+                                  <span>{t3('Add', '加入购物车', 'Idagdag')}</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
                         )}
-                        <button
-                          onClick={() => handleSupplierOrder(matchedSku)}
-                          disabled={isOrdering}
-                          className="ml-auto px-3 py-1 rounded-full text-[11px] font-bold text-white transition-all active:scale-95 disabled:opacity-60"
-                          style={{ background: 'linear-gradient(135deg, #FF5A1F, #FF8C54)' }}
-                        >
-                          {/* TICKET-077: preview 状态 → "即将开放" 不露销售; active → 真下单 */}
-                          {isOrdering
-                            ? t3('Loading…', '跳转中…', 'Loading…')
-                            : matchedSku.supplier_status === 'preview'
-                              ? t3('Coming Soon', '即将开放', 'Paparating')
-                              : t3('Order →', '一键下单 →', 'Mag-order →')}
-                        </button>
                       </div>
                     )}
                   </div>
@@ -1443,6 +1552,21 @@ export default function VerifyIngredients() {
 
       <BottomTabBar />
       <HelperBottomTabBar />
+
+      {/* TICKET-080-A — 加入购物车 toast (短暂 1.8s 后自动消失). */}
+      {cartToast && (
+        <div
+          className="fixed left-1/2 z-[110] px-4 py-2.5 rounded-full text-white font-bold text-[13px] shadow-lg pointer-events-none"
+          style={{
+            bottom: '120px',
+            transform: 'translateX(-50%)',
+            background: 'rgba(20,20,20,0.92)',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.30)',
+          }}
+        >
+          {cartToast}
+        </div>
+      )}
 
       {/* TICKET-077 P0 — 公司介绍 modal (合作供应商点卡片触发). 不渲染销售联系方式. */}
       <SupplierBrandModal

@@ -19,6 +19,12 @@ import Community from './pages/Community';
 import HelperCommunity from './pages/HelperCommunity';
 import VerifyIngredients from './pages/VerifyIngredients';
 import DeliveryTracking from './pages/DeliveryTracking';
+// TICKET-080-A — 购物车 + 结账 + 订单 (DB schema + UI 第 1 阶段, 无支付)
+import Cart from './pages/Cart';
+import Checkout from './pages/Checkout';
+import OrderSuccess from './pages/OrderSuccess';
+import Orders from './pages/Orders';
+import OrderDetail from './pages/OrderDetail';
 // TICKET-066 P0 — AIPilot import 保留无意义 (route 改 Navigate redirect),
 // 删除以避免无用 bundle. 文件本身 src/pages/AIPilot.tsx 不删 (历史 mock 参考).
 // import AIPilot from './pages/AIPilot';
@@ -273,6 +279,12 @@ function AppShell() {
           之后。 */}
       <Route path="/verify"   element={<RequireAuth><VerifyIngredients /></RequireAuth>} />
       <Route path="/delivery" element={<RequireAuth><DeliveryTracking /></RequireAuth>} />
+      {/* TICKET-080-A — 购物车 + 结账 + 订单流 */}
+      <Route path="/cart"             element={<RequireAuth><Cart /></RequireAuth>} />
+      <Route path="/checkout"         element={<RequireAuth><Checkout /></RequireAuth>} />
+      <Route path="/order/success"    element={<RequireAuth><OrderSuccess /></RequireAuth>} />
+      <Route path="/orders"           element={<RequireAuth><Orders /></RequireAuth>} />
+      <Route path="/orders/:id"       element={<RequireAuth><OrderDetail /></RequireAuth>} />
       <Route path="/prep"     element={<RequireAuth helperRole><HelperPrep /></RequireAuth>} />
       <Route path="/cook"     element={<RequireAuth helperRole><HelperCook /></RequireAuth>} />
       {/* TICKET-066 P0 — /ai-pilot 原是 mock demo (AIPilot.tsx 33-79 行硬编码假对话),
