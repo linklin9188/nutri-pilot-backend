@@ -438,7 +438,7 @@ export default function Home() {
   }, [weeklyMenu]);
 
   // ── Language + cuisine prefs ─────────────────────────────────────
-  const { language, cycleLanguage, isChinese, setLanguage, t, t4 } = useLanguage();
+  const { language, cycleLanguage, isChinese, setLanguage, t, t3, t4 } = useLanguage();
   // TICKET-037 §C — language picker overlay + post-switch toast. cycleLanguage
   // kept available as a fallback (we still wire the button to it on legacy
   // contexts that haven't migrated to the picker UX).
@@ -733,9 +733,11 @@ export default function Home() {
   const [scanScene, setScanScene]   = useState<ScanScene>('fridge');     // 冰箱 vs 超市货架
   const [scanLocale, setScanLocale] = useState<ScanLocale>('zh');         // 简体 / 繁體 输出
   const [fridgePreview, setFridgePreview] = useState<string | null>(null);
-  // TICKET-062 §B — 拍冰箱"+加今日菜单"落地。track 已加 dish 让按钮 disable + 显示"已加入".
-  const [scanAddedDishIds, setScanAddedDishIds] = useState<Set<string>>(new Set());
-  const [scanAddingDishId, setScanAddingDishId] = useState<string | null>(null);
+  // TICKET-068 §1 — 拍冰箱 UX 收口 (替换 062 单道 + pill).
+  // scanSelectedIds: 用户在弹窗内已勾选的 dish.id 集合 (default 全部 unchecked,
+  //   从 0 开始). scanBulkAdding: 底部"看菜单"按钮按下后的进行中态, 防双击.
+  const [scanSelectedIds, setScanSelectedIds] = useState<Set<string>>(new Set());
+  const [scanBulkAdding, setScanBulkAdding] = useState(false);
   const [scanToast, setScanToast] = useState<string | null>(null);
 
   const [displayName, setDisplayName] = useState("");
@@ -1016,92 +1018,121 @@ export default function Home() {
     }
   };
 
-  // TICKET-062 §B — 拍冰箱"+加今日菜单"落地。
-  // 把扫描出来的 dish upsert 到 user_weekly_menus 当前 week + 今天 + 对应 slot。
-  // Slot 推断: dish.course_type === 'lunch' → 'lunch'，其他默认 'dinner' (CEO 拍板减少点击).
-  // 防重复: 当天 slot 已有此 dish_id → toast"已在今日菜单"不重复加。
-  // 成功后: dispatch 'nutri-weekly-menu-changed' 让 useWeeklyMenu 失效缓存重读。
-  const addScanDishToTodayMenu = async (dish: MatchedDish) => {
-    if (scanAddingDishId) return;  // 防双击
-    if (scanAddedDishIds.has(dish.id)) return;
+  // TICKET-068 P0 — 拍冰箱 UX 收口 (替换 062 单道 addScanDishToTodayMenu).
+  // 一次性把弹窗里所有勾选的 dish 批量 upsert 到今日 lunch/dinner slot
+  // (按 dish.course_type 分组, 没值默认 dinner), 然后关弹窗 + 跳 /weekly.
+  // 写表口径与 useWeeklyMenu swapDish 完全一致 (algo_version + cache_key 必填),
+  // 否则下次 loadFromDB 把这行判 stale 抹掉.
+  const handleBulkAddAndGo = async () => {
+    if (scanBulkAdding) return;
+    if (scanSelectedIds.size === 0) return;
 
     const userId = getUserId();
     if (!userId) {
-      setScanToast("请先登录再加菜");
+      setScanToast(t3('Please log in first', '请先登录再加菜', 'Mag-log in muna'));
       setTimeout(() => setScanToast(null), 2500);
       return;
     }
 
-    // weeklyMenu 缺失 (loading / DB 异常) → 仍允许操作, 用 getWeekStartISO 算 weekStart.
-    // useWeeklyMenu 当前 weekOffset = isWeekend() ? 1 : 0, 这里跟随同口径保持一致.
-    const weekStart = weeklyMenu?.weekStart ?? getWeekStartISO(isWeekend() ? 1 : 0);
-    const slotMeal: 'lunch' | 'dinner' = dish.course_type === 'lunch' ? 'lunch' : 'dinner';
-    const slotLabel = slotMeal === 'lunch' ? '午餐' : '晚餐';
-
-    setScanAddingDishId(dish.id);
+    setScanBulkAdding(true);
     try {
-      // Read existing row for (week, day, slot)
-      const { data: existing } = await supabase
-        .from('user_weekly_menus')
-        .select('dish_ids, swapped_dish_ids')
-        .eq('user_id', userId)
-        .eq('week_start', weekStart)
-        .eq('day_index', todayIdx)
-        .eq('meal_type', slotMeal)
-        .maybeSingle();
+      // weeklyMenu 缺失 (loading / DB 异常) → 仍允许操作, 跟 useWeeklyMenu
+      // weekOffset = isWeekend() ? 1 : 0 同口径
+      const weekStart = weeklyMenu?.weekStart ?? getWeekStartISO(isWeekend() ? 1 : 0);
+      const cacheKey  = getCacheKey(weekStart);
 
-      const baseIds: string[] = ((existing as any)?.swapped_dish_ids ?? (existing as any)?.dish_ids ?? []) as string[];
-      if (baseIds.includes(dish.id)) {
-        setScanAddedDishIds(prev => new Set(prev).add(dish.id));
-        setScanToast(`已在今日${slotLabel}`);
-        setTimeout(() => setScanToast(null), 2200);
-        return;
+      // 1) 按 slotMeal 分组选中的 dish
+      const selected = fridgeDishes.filter(d => scanSelectedIds.has(d.id));
+      const bySlot: Record<'lunch' | 'dinner', string[]> = { lunch: [], dinner: [] };
+      for (const d of selected) {
+        const slot: 'lunch' | 'dinner' = d.course_type === 'lunch' ? 'lunch' : 'dinner';
+        bySlot[slot].push(d.id);
       }
 
-      const nextIds = [...baseIds, dish.id];
+      // 2) 每个 slot 一次 read + upsert (去重: 已在 slot 的 ID 跳过)
+      let totalAdded = 0;
+      for (const slotMeal of ['lunch', 'dinner'] as const) {
+        const newIds = bySlot[slotMeal];
+        if (newIds.length === 0) continue;
 
-      // 写表口径与 useWeeklyMenu swapDish 完全一致 (algo_version + cache_key 必填,
-      // 否则下次 loadFromDB 把这行判 stale 抹掉). cache_key 走 getCacheKey 同源算法.
-      const cacheKey = getCacheKey(weekStart);
+        const { data: existing, error: readErr } = await supabase
+          .from('user_weekly_menus')
+          .select('dish_ids, swapped_dish_ids')
+          .eq('user_id', userId)
+          .eq('week_start', weekStart)
+          .eq('day_index', todayIdx)
+          .eq('meal_type', slotMeal)
+          .maybeSingle();
 
-      const upsertPayload: any = {
-        user_id:      userId,
-        week_start:   weekStart,
-        day_index:    todayIdx,
-        meal_type:    slotMeal,
-        dish_ids:     slotMeal === 'dinner' ? ((existing as any)?.dish_ids ?? nextIds) : nextIds,
-        algo_version: ALGO_VERSION,
-        cache_key:    cacheKey,
-      };
-      // dinner 行额外维护 swapped_dish_ids (UI 实际显示用 swapped 优先)
-      if (slotMeal === 'dinner') upsertPayload.swapped_dish_ids = nextIds;
+        if (readErr) {
+          console.warn('[scan→menu bulk] read failed:', readErr);
+          throw readErr;
+        }
 
-      const { error: upErr } = await supabase
-        .from('user_weekly_menus')
-        .upsert(upsertPayload, { onConflict: 'user_id,week_start,day_index,meal_type' });
+        const baseIds: string[] = (
+          (existing as any)?.swapped_dish_ids ??
+          (existing as any)?.dish_ids ??
+          []
+        ) as string[];
+        const dedupedNew = newIds.filter(id => !baseIds.includes(id));
+        if (dedupedNew.length === 0) continue;
 
-      if (upErr) {
-        console.warn('[scan→menu] upsert failed:', upErr);
-        setScanToast("加入失败, 请重试");
-        setTimeout(() => setScanToast(null), 2500);
-        return;
+        const mergedIds = [...baseIds, ...dedupedNew];
+
+        const upsertPayload: any = {
+          user_id:      userId,
+          week_start:   weekStart,
+          day_index:    todayIdx,
+          meal_type:    slotMeal,
+          dish_ids:     slotMeal === 'dinner' ? ((existing as any)?.dish_ids ?? mergedIds) : mergedIds,
+          algo_version: ALGO_VERSION,
+          cache_key:    cacheKey,
+        };
+        // dinner 行额外维护 swapped_dish_ids (UI 实际显示用 swapped 优先)
+        if (slotMeal === 'dinner') upsertPayload.swapped_dish_ids = mergedIds;
+
+        const { error: upErr } = await supabase
+          .from('user_weekly_menus')
+          .upsert(upsertPayload, { onConflict: 'user_id,week_start,day_index,meal_type' });
+
+        if (upErr) {
+          console.warn('[scan→menu bulk] upsert failed:', upErr);
+          throw upErr;
+        }
+
+        totalAdded += dedupedNew.length;
       }
 
-      // 抹本 week 的 localStorage cache, 让 useWeeklyMenu 重读 DB 新行
+      // 3) 抹本 week 的 localStorage cache, 让 useWeeklyMenu 重读 DB 新行
       try { localStorage.removeItem(cacheKey); } catch {}
 
-      setScanAddedDishIds(prev => new Set(prev).add(dish.id));
-      setScanToast(`已加入今天${slotLabel}, 在菜单页查看`);
-      setTimeout(() => setScanToast(null), 2800);
-
-      // 通知 useWeeklyMenu (跨页面 / 其它 hook 实例) 重新拉
+      // 4) 通知 useWeeklyMenu (跨页面 / 其它 hook 实例) 重新拉
       try { window.dispatchEvent(new Event('nutri-weekly-menu-changed')); } catch {}
+
+      // 5) toast + 1 秒后关弹窗 + 跳 /weekly
+      const n = totalAdded > 0 ? totalAdded : selected.length;
+      setScanToast(t3(
+        `Added ${n}, opening menu…`,
+        `已加入 ${n} 道, 跳菜单页...`,
+        `Idinagdag ang ${n}, binubuksan ang menu…`,
+      ));
+      setTimeout(() => {
+        setScanToast(null);
+        // reset state (关弹窗 useEffect 也会 reset, 这里显式干净)
+        setIsFridgeScanOpen(false);
+        setFridgeDishes([]);
+        setFridgeIngredients([]);
+        setFridgePreview(null);
+        setFridgeError(null);
+        setScanSelectedIds(new Set());
+        navigate('/weekly');
+      }, 1000);
     } catch (e) {
-      console.warn('[scan→menu] error:', e);
-      setScanToast("加入失败, 请重试");
+      console.warn('[scan→menu bulk] error:', e);
+      setScanToast(t3('Failed, please retry', '加入失败请重试', 'Nabigo, subukan muli'));
       setTimeout(() => setScanToast(null), 2500);
     } finally {
-      setScanAddingDishId(null);
+      setScanBulkAdding(false);
     }
   };
 
@@ -2325,10 +2356,21 @@ export default function Home() {
       )}
 
       {/* ── Fridge Scan Drawer ───────────────────────────────────── */}
-      {isFridgeScanOpen && (
+      {isFridgeScanOpen && (() => {
+        // TICKET-068 §5 — 关弹窗时一次性 reset 所有 scan state (避免下次
+        // 打开还残留上一轮的菜 / 勾选 / 错误).
+        const closeAndReset = () => {
+          setIsFridgeScanOpen(false);
+          setFridgeDishes([]);
+          setFridgeIngredients([]);
+          setFridgePreview(null);
+          setFridgeError(null);
+          setScanSelectedIds(new Set());
+        };
+        return (
         <div className="fixed inset-0 z-[110] flex flex-col justify-end">
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setIsFridgeScanOpen(false)} />
-          {/* TICKET-062 §B — "+加今日菜单" toast (floats above bottom sheet) */}
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={closeAndReset} />
+          {/* TICKET-068 §3 — 批量加入 toast (floats above bottom sheet) */}
           {scanToast && (
             <div className="absolute top-12 left-1/2 -translate-x-1/2 z-[120] px-4 py-2 rounded-full shadow-lg pointer-events-none"
               style={{ background: 'rgba(0,0,0,0.85)', color: '#fff', fontSize: 13, fontWeight: 600 }}>
@@ -2340,7 +2382,7 @@ export default function Home() {
             <div className="flex justify-between items-center mb-3">
               <h2 className="font-bold" style={{ fontSize: 20 }}>📷 扫一扫</h2>
               <button className="w-8 h-8 rounded-full flex items-center justify-center"
-                style={{ background: "rgba(0,0,0,0.06)" }} onClick={() => setIsFridgeScanOpen(false)}>
+                style={{ background: "rgba(0,0,0,0.06)" }} onClick={closeAndReset}>
                 <span className="material-symbols-outlined" style={{ fontSize: 18 }}>close</span>
               </button>
             </div>
@@ -2442,14 +2484,38 @@ export default function Home() {
                       </p>
                       <div className="space-y-3">
                         {items.map((dish) => {
-                          const isAdded = scanAddedDishIds.has(dish.id);
-                          const isAdding = scanAddingDishId === dish.id;
-                          const slotLabel = dish.course_type === 'lunch' ? '午餐' : '晚餐';
+                          const isSelected = scanSelectedIds.has(dish.id);
                           return (
                             <div key={dish.id}
-                              className="w-full p-3 rounded-2xl border shadow-sm bg-white relative"
-                              style={{ borderColor: "rgba(0,0,0,0.06)" }}>
-                              {/* 主区: 点 → 跳 /prep 看做法 (TICKET-062 §B 保留原行为) */}
+                              className="w-full p-3 pl-12 rounded-2xl border shadow-sm bg-white relative"
+                              style={{ borderColor: isSelected ? "#FF5A1F" : "rgba(0,0,0,0.06)" }}>
+                              {/* TICKET-068 §2 — 左上勾选 checkbox (橙色 32x32 abs).
+                                  default unchecked; tap toggles scanSelectedIds set.
+                                  Selected: 实心橙 + ✓; unselected: 空心橙描边. */}
+                              <button
+                                type="button"
+                                aria-label={isSelected ? t3('Unselect', '取消选中', 'Alisin sa pagpili') : t3('Select', '选中', 'Piliin')}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setScanSelectedIds(prev => {
+                                    const next = new Set(prev);
+                                    if (next.has(dish.id)) next.delete(dish.id);
+                                    else next.add(dish.id);
+                                    return next;
+                                  });
+                                }}
+                                className="absolute top-3 left-3 w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+                                style={{
+                                  background: isSelected ? '#FF5A1F' : '#fff',
+                                  border: isSelected ? '2px solid #FF5A1F' : '2px solid #FF5A1F',
+                                }}>
+                                {isSelected && (
+                                  <span className="material-symbols-outlined" style={{ fontSize: 20, color: '#fff', fontWeight: 700 }}>
+                                    check
+                                  </span>
+                                )}
+                              </button>
+                              {/* 主区: 点 → 跳 /prep 看做法 (TICKET-062 §B 保留) */}
                               <button
                                 type="button"
                                 onClick={() => {
@@ -2498,22 +2564,6 @@ export default function Home() {
                                   </span>
                                 </div>
                               </button>
-                              {/* TICKET-062 §B — "+加今日菜单" pill (右下角, 橙色) */}
-                              <div className="flex justify-end mt-2">
-                                <button
-                                  type="button"
-                                  disabled={isAdded || isAdding}
-                                  onClick={(e) => { e.stopPropagation(); addScanDishToTodayMenu(dish); }}
-                                  className="px-3 py-1.5 rounded-full font-semibold active:scale-95 transition-transform"
-                                  style={{
-                                    fontSize: 11,
-                                    background: isAdded ? 'rgba(0,0,0,0.06)' : '#FF5A1F',
-                                    color: isAdded ? 'rgba(0,0,0,0.45)' : '#fff',
-                                    opacity: isAdding ? 0.6 : 1,
-                                  }}>
-                                  {isAdded ? `✓ 已加入今日${slotLabel}` : (isAdding ? '加入中…' : `+ 加今日${slotLabel}`)}
-                                </button>
-                              </div>
                             </div>
                           );
                         })}
@@ -2521,10 +2571,33 @@ export default function Home() {
                     </div>
                   );
                 })}
+                {/* TICKET-068 §3 — 底部大主按钮"看菜单 (已选 N 道)".
+                    disabled if 0 选 or 加入中. 点 → handleBulkAddAndGo
+                    (批量 upsert 今日 lunch/dinner slot + 跳 /weekly). */}
+                <button
+                  type="button"
+                  disabled={scanSelectedIds.size === 0 || scanBulkAdding}
+                  onClick={handleBulkAddAndGo}
+                  className="w-full h-14 rounded-2xl font-bold text-white active:scale-95 transition-transform mb-2"
+                  style={{
+                    background: scanSelectedIds.size === 0 ? '#ccc' : '#FF5A1F',
+                    fontSize: 16,
+                    opacity: scanBulkAdding ? 0.7 : 1,
+                  }}>
+                  {scanBulkAdding
+                    ? t3('Adding…', '加入中...', 'Idinadagdag...')
+                    : scanSelectedIds.size === 0
+                      ? t3('Pick at least one dish', '请勾选至少 1 道菜', 'Pumili ng kahit 1 ulam')
+                      : t3(
+                          `View Menu (${scanSelectedIds.size} selected)`,
+                          `看菜单 (已选 ${scanSelectedIds.size} 道)`,
+                          `Tingnan Menu (${scanSelectedIds.size} napili)`,
+                        )}
+                </button>
                 <button className="w-full h-12 rounded-2xl font-semibold active:scale-95"
                   style={{ fontSize: 13, background: "rgba(0,0,0,0.05)", color: "rgba(0,0,0,0.45)" }}
                   onClick={() => fridgeInputRef.current?.click()}>
-                  重新拍照
+                  {t3('Retake photo', '重新拍照', 'Kunan muli')}
                 </button>
               </>
             )}
@@ -2551,7 +2624,8 @@ export default function Home() {
             )}
           </div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
