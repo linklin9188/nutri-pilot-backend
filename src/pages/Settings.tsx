@@ -847,10 +847,13 @@ export default function Settings() {
   }
 
   async function saveHelper() {
+    // TICKET-067 P0 fix: helperName 只走 localStorage, 不写 user_profiles.
+    // 历史 bug: 这里用 getUserId() (=雇主 ID) 做 row key, 把菲佣 helperName
+    // 写进了雇主自己的 display_name, 导致 Settings 头像 / Home "Hi {昵称}" / ChatAgent
+    // 全显示菲佣名字 (老板真测截图 'Ika'). 雇主 display_name 应只由 wechat callback
+    // 用真 nickname 维护 (wechat-mp-callback/index.ts:213).
     localStorage.setItem("helperName", helperName);
     localStorage.setItem("helperLang", helperLang);
-    const userId = getUserId();
-    if (userId) await supabase.from("user_profiles").upsert({ id: userId, display_name: helperName }, { onConflict: "id" });
     setHelperSaved(true);
     setTimeout(() => { setHelperSaved(false); setHelperOpen(false); }, 1200);
   }
