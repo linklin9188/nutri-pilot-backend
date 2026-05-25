@@ -793,6 +793,32 @@ export default function Settings() {
   const [myNickname, setMyNickname] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [avatarMsg, setAvatarMsg] = useState<string | null>(null);
+  // TICKET-076 P0 — 用餐时间 (雇主设定, 算法用来反推菲佣开做时间)
+  // DB 列 'HH:MM:SS', UI input type=time 只要 'HH:MM' — 读时 slice(0,5), 写时补 ':00'
+  const [lunchTime, setLunchTime] = useState('12:00');
+  const [dinnerTime, setDinnerTime] = useState('19:00');
+  const [mealTimeBusy, setMealTimeBusy] = useState(false);
+  const [mealTimeMsg, setMealTimeMsg] = useState<string | null>(null);
+  async function handleSaveMealTimes() {
+    setMealTimeBusy(true);
+    setMealTimeMsg(null);
+    try {
+      const userId = getUserId();
+      if (!userId) throw new Error('Not logged in');
+      const { error } = await supabase.from('user_profiles').update({
+        lunch_time: lunchTime + ':00',
+        dinner_time: dinnerTime + ':00',
+      }).eq('id', userId);
+      if (error) throw error;
+      setMealTimeMsg(t4('Saved', '已保存', 'Naka-save', 'Disimpan'));
+      setTimeout(() => setMealTimeMsg(null), 1800);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setMealTimeMsg(t4('Save failed', '保存失败', 'Nabigo', 'Gagal') + ': ' + msg);
+    } finally {
+      setMealTimeBusy(false);
+    }
+  }
   // TICKET-071 — 微信 nickname 拿不到时, 用户可内联编辑 display_name (老板拍板 2 条之 #2)
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState('');
@@ -860,16 +886,23 @@ export default function Settings() {
       // 自己 profile — TICKET-039 §1: 加 avatar_url + nickname (微信 OAuth fill 来源).
       const { data: me } = await supabase
         .from("user_profiles")
-        .select("display_name, avatar_b64, avatar_url, nickname")
+        .select("display_name, avatar_b64, avatar_url, nickname, lunch_time, dinner_time")
         .eq("id", uid)
         .maybeSingle();
       if (cancelled) return;
       if (me) {
-        const m = me as { avatar_b64?: string | null; avatar_url?: string | null; display_name?: string | null; nickname?: string | null };
+        const m = me as {
+          avatar_b64?: string | null; avatar_url?: string | null;
+          display_name?: string | null; nickname?: string | null;
+          lunch_time?: string | null; dinner_time?: string | null;
+        };
         setMyAvatar(m.avatar_b64 ?? null);
         setMyAvatarUrl(m.avatar_url ?? null);
         setMyDisplayName(m.display_name ?? null);
         setMyNickname(m.nickname ?? null);
+        // TICKET-076: DB 返回 'HH:MM:SS', UI 只要 'HH:MM'
+        if (m.lunch_time)  setLunchTime(m.lunch_time.slice(0, 5));
+        if (m.dinner_time) setDinnerTime(m.dinner_time.slice(0, 5));
       }
       // 家里 helpers — 仅雇主拉
       if (myRole === "employer") {
@@ -1638,6 +1671,43 @@ export default function Settings() {
             <span className="material-symbols-outlined text-xl">person_add</span>
             添加家庭成员
           </button>
+
+          {/* TICKET-076 §Phase 2 — 用餐时间卡 (雇主设家里开饭时间, 算法反推菲佣开做时间)
+              仅雇主显示, helper 不直接编辑雇主用餐时间 (HelperSettings 是另一页). */}
+          {myRole === "employer" && (
+            <div className="bg-white rounded-[22px] p-4 shadow-[0_4px_20px_rgba(0,0,0,0.04)]">
+              <h3 className="font-bold text-[14px] mb-3">
+                {t4('Meal Times', '用餐时间', 'Oras ng Pagkain', 'Waktu Makan')}
+              </h3>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[13px]">
+                    {t4('Lunch', '午饭', 'Tanghalian', 'Makan siang')}
+                  </span>
+                  <input type="time" value={lunchTime} onChange={e => setLunchTime(e.target.value)}
+                    className="border border-orange-200 rounded-lg px-2 py-1 text-[13px]" />
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[13px]">
+                    {t4('Dinner', '晚饭', 'Hapunan', 'Makan malam')}
+                  </span>
+                  <input type="time" value={dinnerTime} onChange={e => setDinnerTime(e.target.value)}
+                    className="border border-orange-200 rounded-lg px-2 py-1 text-[13px]" />
+                </div>
+                <button onClick={handleSaveMealTimes} disabled={mealTimeBusy}
+                  className="w-full mt-1 px-4 py-2 rounded-lg font-bold text-white disabled:opacity-40 text-[13px]"
+                  style={{ background: '#FF5A1F' }}>
+                  {mealTimeBusy ? '…' : t4('Save', '保存', 'I-save', 'Simpan')}
+                </button>
+                {mealTimeMsg && (
+                  <p className="text-[11px] text-center text-secondary">{mealTimeMsg}</p>
+                )}
+              </div>
+              <p className="text-[11px] text-secondary mt-2">
+                {t4('Helper gets a reminder to start cooking', '菲佣会提前收到开做提醒', 'Maaalalahanan ang helper bago magluto', 'Helper akan diingatkan sebelum memasak')}
+              </p>
+            </div>
+          )}
 
           {/* ── Helper section — single consolidated card ──
               User direction 2026-05-17: 菲佣相关的设置全集中在一个框，

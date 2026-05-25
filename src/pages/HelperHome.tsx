@@ -34,6 +34,8 @@ import { getUserId } from "../lib/userId";
 import { useLanguage } from "../contexts/LanguageContext";
 import { getDishTitle } from "../lib/dishTitleI18n";
 import HelperTabBar from "../components/HelperTabBar";
+// TICKET-076 §Phase 3-5 — 备菜时间反推 + Web Notification 提醒
+import { loadTodayCookSchedule, type DayCookSchedule } from "../lib/cookSchedule";
 
 interface DayDish {
   id?: string;
@@ -106,6 +108,12 @@ export default function HelperHome() {
   // (做菜状态后续 ticket 接 user_cook_logs 真持久化, 这版先用 localStorage
   // 占位 key=helper_task_done:<dishId>).
   const [taskDone, setTaskDone] = useState<Set<string>>(new Set());
+
+  // TICKET-076 §Phase 4 — 今日备菜时间表 (雇主 lunch_time / dinner_time + 菜单 cook_time_min 反推)
+  const [schedule, setSchedule] = useState<DayCookSchedule | null>(null);
+  // §Phase 5 — Web Notification 权限. 'unsupported' = 浏览器不支持 Notification API (graceful degrade, 只显 UI 不挂)
+  type NotifState = 'unsupported' | 'default' | 'granted' | 'denied';
+  const [notifPerm, setNotifPerm] = useState<NotifState>('unsupported');
 
   const now = new Date();
   const hour = now.getHours();
@@ -258,7 +266,73 @@ export default function HelperHome() {
       setDishes(flatOrdered);
       localStorage.setItem("generatedMenu", JSON.stringify(flatOrdered));
     })();
+
+    // TICKET-076 §Phase 4 — 拉今日备菜时间表 (独立于上面 dishes 拉取, 复用 lib/cookSchedule 内的
+    // helperEmployerMenu, 多一次 SELECT 代价可忽略且解耦更清晰).
+    loadTodayCookSchedule(userId).then(setSchedule).catch(err => {
+      console.warn('[HelperHome] cook schedule fetch error:', err);
+    });
+
+    // TICKET-076 §Phase 5a — Notification API 探测 (Safari iOS / 旧浏览器无 API → 'unsupported' graceful degrade)
+    if (typeof Notification !== 'undefined') {
+      setNotifPerm(Notification.permission as NotifState);
+    }
   }, []);
+
+  // TICKET-076 §Phase 5c — setInterval 每分钟检查; 命中 startCookTime 推一次通知.
+  // tag 防同一时刻重弹; 后台标签页 throttle 到 ~1/min 仍能触发 (前台 / 锁屏锁着也能弹).
+  // 真后台用 service worker 更稳, 本 ticket 不做 SW.
+  useEffect(() => {
+    if (!schedule) return;
+    if (notifPerm !== 'granted') return;
+    if (typeof Notification === 'undefined') return;
+
+    const tick = () => {
+      const now = new Date();
+      const nowStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+      if (schedule.lunch && schedule.lunch.startCookTime === nowStr) {
+        try {
+          new Notification(
+            t3('Time to start lunch!', '该开始做午饭了!', 'Oras na para magluto ng tanghalian!'),
+            {
+              body: t3(`Eat at ${schedule.lunch.eatTime}`, `预计 ${schedule.lunch.eatTime} 开饭`, `Kumain sa ${schedule.lunch.eatTime}`),
+              tag: 'cook-reminder-lunch',
+            }
+          );
+        } catch { /* ignore */ }
+      }
+      if (schedule.dinner && schedule.dinner.startCookTime === nowStr) {
+        try {
+          new Notification(
+            t3('Time to start dinner!', '该开始做晚饭了!', 'Oras na para magluto ng hapunan!'),
+            {
+              body: t3(`Eat at ${schedule.dinner.eatTime}`, `预计 ${schedule.dinner.eatTime} 开饭`, `Kumain sa ${schedule.dinner.eatTime}`),
+              tag: 'cook-reminder-dinner',
+            }
+          );
+        } catch { /* ignore */ }
+      }
+    };
+    // 进页面立刻跑一次 (如果用户恰好开页时已到点)
+    tick();
+    const interval = setInterval(tick, 60000);
+    return () => clearInterval(interval);
+  // 不依赖 t3 (语言切换不重建 timer); schedule + notifPerm 变才重建.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schedule, notifPerm]);
+
+  async function requestNotifPermission() {
+    if (typeof Notification === 'undefined') return;
+    try {
+      const result = await Notification.requestPermission();
+      setNotifPerm(result as NotifState);
+      if (result === 'granted') {
+        try {
+          new Notification(t3('Reminders enabled', '提醒已开启', 'Naka-enable ang paalala'));
+        } catch { /* ignore */ }
+      }
+    } catch { /* ignore */ }
+  }
 
   async function handleJoinHousehold() {
     const code = codeInput.trim();
@@ -335,6 +409,34 @@ export default function HelperHome() {
   const taskDishes = dishes
     .filter(d => d.id && (d.title_zh || d.title_en || d.title))
     .slice(0, 5);
+
+  // TICKET-076 §Phase 4d — 给每道菜算 "N 分钟后做" / "现在做"
+  // 早饭没 schedule (lib/cookSchedule 不算 breakfast), 返回 null 不显标签.
+  function dishTimeBadge(dish: DayDish): { text: string; urgent: boolean } | null {
+    if (!schedule) return null;
+    const meal = dish.meal_type;
+    const sched = meal === 'lunch' ? schedule.lunch : meal === 'dinner' ? schedule.dinner : null;
+    if (!sched) return null;
+    const [h, m] = sched.startCookTime.split(':').map(Number);
+    const startMin = h * 60 + m;
+    const nowDate = new Date();
+    const nowMin = nowDate.getHours() * 60 + nowDate.getMinutes();
+    const diff = startMin - nowMin;
+    if (diff <= 0 && diff > -120) {
+      // 已到点 / 过去 2 小时内 — "现在做"
+      return { text: t3('Now', '现在做', 'Ngayon na'), urgent: true };
+    }
+    if (diff > 0 && diff <= 240) {
+      // 4 小时内 — "N min later"
+      const hours = Math.floor(diff / 60);
+      const mins = diff % 60;
+      const text = hours > 0
+        ? t3(`${hours}h ${mins}m later`, `${hours}小时${mins}分钟后`, `${hours}h ${mins}m mamaya`)
+        : t3(`${mins}m later`, `${mins} 分钟后`, `${mins}m mamaya`);
+      return { text, urgent: diff <= 30 };
+    }
+    return null;
+  }
 
   return (
     <div
@@ -431,6 +533,71 @@ export default function HelperHome() {
         </div>
       </div>
 
+      {/* ─────── TICKET-076 §Phase 4 — 做菜时间计划卡 ───────
+          雇主在 Settings 设了 lunch_time / dinner_time, 这里反推开做时间 + 备菜时间.
+          lunch / dinner 各一块; 没菜或菜单未生成则隐 (D 兜底).
+          §Phase 5 — 通知权限按钮: 仅 default 状态显, granted/denied/unsupported 隐. */}
+      {(schedule?.lunch || schedule?.dinner) && (
+        <div className="relative z-10 mx-5 mb-4 px-4 py-4 rounded-2xl"
+          style={{ background: "rgba(255,237,213,0.85)", border: "1px solid rgba(255,90,31,0.25)" }}>
+          <div className="flex items-center gap-2 mb-2.5">
+            <span className="material-symbols-outlined" style={{ fontSize: 18, color: "#FF5A1F" }}>schedule</span>
+            <p className="font-bold" style={{ fontSize: 13, color: "#1a1a1a" }}>
+              {t3('Cook plan today', '今日做菜计划', 'Plano ng pagluluto ngayon')}
+            </p>
+          </div>
+          <div className="space-y-3">
+            {schedule?.lunch && (
+              <div className="rounded-xl px-3 py-2.5"
+                style={{ background: "white", border: "1px solid rgba(0,0,0,0.06)" }}>
+                <p className="font-bold mb-1.5" style={{ fontSize: 12, color: "#1a1a1a" }}>
+                  🍱 {t3('Lunch', '午饭', 'Tanghalian')}
+                </p>
+                <div className="space-y-0.5" style={{ fontSize: 11 }}>
+                  <div className="flex justify-between"><span style={{ color: "rgba(0,0,0,0.55)" }}>{t3('Eat at', '开饭', 'Kumain')}</span><span className="font-bold">{schedule.lunch.eatTime}</span></div>
+                  <div className="flex justify-between"><span style={{ color: "rgba(0,0,0,0.55)" }}>{t3('Start cooking', '开做', 'Magluto')}</span><span className="font-black" style={{ color: "#FF5A1F" }}>{schedule.lunch.startCookTime}</span></div>
+                  <div className="flex justify-between"><span style={{ color: "rgba(0,0,0,0.55)" }}>{t3('Start prep', '备菜', 'Maghanda')}</span><span>{schedule.lunch.startPrepTime}</span></div>
+                </div>
+              </div>
+            )}
+            {schedule?.dinner && (
+              <div className="rounded-xl px-3 py-2.5"
+                style={{ background: "white", border: "1px solid rgba(0,0,0,0.06)" }}>
+                <p className="font-bold mb-1.5" style={{ fontSize: 12, color: "#1a1a1a" }}>
+                  🍲 {t3('Dinner', '晚饭', 'Hapunan')}
+                </p>
+                <div className="space-y-0.5" style={{ fontSize: 11 }}>
+                  <div className="flex justify-between"><span style={{ color: "rgba(0,0,0,0.55)" }}>{t3('Eat at', '开饭', 'Kumain')}</span><span className="font-bold">{schedule.dinner.eatTime}</span></div>
+                  <div className="flex justify-between"><span style={{ color: "rgba(0,0,0,0.55)" }}>{t3('Start cooking', '开做', 'Magluto')}</span><span className="font-black" style={{ color: "#FF5A1F" }}>{schedule.dinner.startCookTime}</span></div>
+                  <div className="flex justify-between"><span style={{ color: "rgba(0,0,0,0.55)" }}>{t3('Start prep', '备菜', 'Maghanda')}</span><span>{schedule.dinner.startPrepTime}</span></div>
+                </div>
+              </div>
+            )}
+          </div>
+          {/* §Phase 5b — 通知权限按钮 (仅 default 状态显) */}
+          {notifPerm === 'default' && (
+            <button
+              onClick={requestNotifPermission}
+              className="w-full mt-3 py-2 rounded-xl font-bold text-white active:scale-[0.98] transition-all flex items-center justify-center gap-1.5"
+              style={{ background: "#FF5A1F", fontSize: 12 }}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 14 }}>notifications</span>
+              {t3('Enable cooking reminders', '开启做饭提醒', 'I-enable ang paalala sa pagluluto')}
+            </button>
+          )}
+          {notifPerm === 'granted' && (
+            <p className="text-center mt-2" style={{ fontSize: 10, color: "rgba(0,0,0,0.45)" }}>
+              {t3('Reminders on', '提醒已开启', 'Naka-enable ang paalala')}
+            </p>
+          )}
+          {notifPerm === 'denied' && (
+            <p className="text-center mt-2" style={{ fontSize: 10, color: "rgba(0,0,0,0.45)" }}>
+              {t3('Reminders blocked in browser settings', '浏览器已禁通知, 请在系统设置开启', 'Naka-block ang paalala sa browser')}
+            </p>
+          )}
+        </div>
+      )}
+
       {/* ─────── 国籍 onboarding card (仅未答时) ─────── */}
       {originCountry === null || originCountry === "" ? (
         <div className="relative z-10 mx-5 mb-4 px-4 py-4 rounded-2xl"
@@ -491,6 +658,8 @@ export default function HelperHome() {
               const title = getDishTitle(dish, language) || `Dish ${i + 1}`;
               const done = dish.id ? taskDone.has(dish.id) : false;
               const eta = dish.cook_time_min ?? 15;
+              // TICKET-076 §Phase 4d — "X 分钟后做" 副标签 (只 lunch/dinner; breakfast 返回 null)
+              const timeBadge = dishTimeBadge(dish);
               return (
                 <div
                   key={dish.id || i}
@@ -554,6 +723,21 @@ export default function HelperHome() {
                             ? t3('DONE',     '已完成', 'TAPOS')
                             : t3('PENDING',  '待做',   'PENDING')}
                         </span>
+                        {/* TICKET-076 §Phase 4d — "现在做" / "N 分钟后做" 标签 */}
+                        {!done && timeBadge && (
+                          <span
+                            className="px-1.5 py-0.5 rounded-full"
+                            style={{
+                              background: timeBadge.urgent ? 'rgba(220,38,38,0.10)' : 'rgba(0,0,0,0.05)',
+                              fontSize: 9,
+                              fontWeight: 700,
+                              color: timeBadge.urgent ? '#DC2626' : 'rgba(0,0,0,0.55)',
+                              letterSpacing: '0.05em',
+                            }}
+                          >
+                            {timeBadge.text}
+                          </span>
+                        )}
                       </div>
                     </div>
                     <span className="material-symbols-outlined flex-shrink-0" style={{ fontSize: 18, color: "rgba(0,0,0,0.3)" }}>chevron_right</span>
