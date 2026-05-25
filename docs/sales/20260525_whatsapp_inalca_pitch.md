@@ -11,7 +11,7 @@
 ```
 Hi Irish,
 
-I'm Jianjiao Lin, founder of Aieats / 爱吃 (nothinkeats.com), a
+I'm Link, co-founder (together with Bobby) of Aieats / 爱吃 (nothinkeats.com/login), a
 Hong Kong AI-powered family nutrition platform. We help HK households
 (especially those with domestic helpers) decide what to cook every
 day — and procure premium ingredients in one tap.
@@ -44,9 +44,9 @@ Could we book a 30-min call this week? I can walk you through the
 app, show the SKU pricing model, and discuss commission terms.
 
 Best,
-Jianjiao Lin
-Founder, Aieats / 爱吃
-nothinkeats.com
+Link
+Co-founder, Aieats / 爱吃 (with Bobby)
+nothinkeats.com/login
 WhatsApp / WeChat: [BOSS_FILL_PHONE]
 ```
 
@@ -57,7 +57,7 @@ WhatsApp / WeChat: [BOSS_FILL_PHONE]
 ```
 你好 [供应商联系人]，
 
-我是林建杰，Aieats / 爱吃 (nothinkeats.com) 创始人。我们是
+我是 Link，跟 Bobby 一起创办 Aieats / 爱吃 (nothinkeats.com/login)。我们是
 香港一家 AI 家庭营养平台，帮助香港有菲佣的中高端家庭：
 
   · 每天不再纠结"今天做什么菜"
@@ -90,45 +90,59 @@ commission 条款。
 
 谢谢！
 
-林建杰
-Aieats / 爱吃 创始人
-nothinkeats.com
+Link
+Aieats / 爱吃 联合创始人 (与 Bobby)
+nothinkeats.com/login
 WhatsApp / 微信: [老板填手机号]
 ```
 
 ---
 
-## §3. 卡片视觉描述 — ASCII art (WhatsApp 可直接显示)
+## §3. 卡片消息 — Emoji 版 (WhatsApp 友好, 不变形)
+
+⚠️ ASCII art 在 WhatsApp 会变形 (手机字体不是等宽). 用下面这个 emoji 版本, 复制粘贴即漂亮显示:
 
 ```
-╔════════════════════════════════════════════╗
-║                                            ║
-║         Aieats / 爱吃                       ║
-║      nothinkeats.com                        ║
-║                                            ║
-║   AI Family Nutrition · Hong Kong          ║
-║                                            ║
-║   What we are:                             ║
-║   * AI weekly menu for HK families         ║
-║   * Built for helpers + employers          ║
-║   * Premium ingredients in one tap         ║
-║                                            ║
-║   What we want from you:                   ║
-║   * Wholesale + packaging + HK delivery    ║
-║   * Brand cert assets (IFS / BRC / EU)     ║
-║   * 30-min intro call                      ║
-║                                            ║
-║   What you get back:                       ║
-║   * D2C channel into HK households         ║
-║   * AI-driven, pre-justified orders        ║
-║   * Marketing + traffic + trust            ║
-║   * Commission-based, no upfront fee       ║
-║                                            ║
-║   Founder: Jianjiao Lin                    ║
-║   WA / WeChat: [BOSS_FILL]                 ║
-║                                            ║
-╚════════════════════════════════════════════╝
+🍽 *Aieats / 爱吃*
+🌐 nothinkeats.com/login
+📍 HK · AI Family Nutrition
+
+✨ *What we are*
+  • AI weekly menu for HK families
+  • Built for helpers + employers  
+  • Premium ingredients in one tap
+
+🤝 *What we want from you*
+  • Wholesale + packaging + HK delivery
+  • Brand cert assets (IFS / BRC / EU)
+  • 30-min intro call
+
+🎁 *What you get back*
+  • D2C channel into HK households
+  • AI-driven, pre-justified orders
+  • Marketing + traffic + trust
+  • Commission-based, no upfront fee
+
+👤 *Co-founders*: Link + Bobby
+💬 WA / WeChat: [BOSS_FILL]
 ```
+
+WhatsApp 的 `*text*` 会自动变粗体, emoji 真显示, 排版工整不歪.
+
+---
+
+## §3b. 真图片卡片 (可选, 推荐)
+
+WhatsApp 收信人看的最专业方式是 PNG 图片. 老板有 2 种方式生成:
+
+**方式 1: Canva (5 分钟手动, 最专业)**
+1. 进 canva.com → 搜 "Business pitch" 模板
+2. 用上面 §3 emoji 文字内容填进去
+3. 主色橙 #FF5A1F
+4. 导出 PNG → WhatsApp 直接发图
+
+**方式 2: 让我用 Python 生成 (30 分钟自动, 还行)**
+老板说要我立即派 Agent 用 PIL 画图.
 
 ---
 
@@ -144,9 +158,10 @@ WhatsApp / 微信: [老板填手机号]
 - `[BOSS_FILL_HK_FAMILY_COUNT]` → 老板填真用户数 (例: `~300`, `over 500` 等, 没有就写 `our first batch of`)
 - `[BOSS_FILL_PHONE]` → 老板手机号
 
-### Step 3: 第二条 — ASCII 卡片 (§3 整段)
+### Step 3: 第二条 — Emoji 卡片 (§3 整段)
 
-紧接着发 §3 视觉卡片。让 Irish 视觉记住品牌。
+紧接着发 §3 emoji 卡片。让 Irish 视觉记住品牌。**记得替换 §3 末尾的 `[BOSS_FILL]` 为手机号**。
+如果想更专业, 用 §3b 的 Canva 方式做 PNG 图片再发。
 
 ### Step 4: 等 Irish 回复
 
@@ -158,7 +173,7 @@ WhatsApp / 微信: [老板填手机号]
 ### Step 5: 30 分钟 call 准备
 
 call 之前老板需要:
-- 手机打开 nothinkeats.com 实时 demo (重点演示: 拍冰箱 → AI 推荐 → 一键加购物车 → 拆订单)
+- 手机打开 nothinkeats.com/login 实时 demo (重点演示: 拍冰箱 → AI 推荐 → 一键加购物车 → 拆订单)
 - 准备 5 条 Inalca SKU 的 retail price 真截图 (现在 supplier_skus 表里已经填了 HK$18/22/60/80/90)
 - 准备 commission 报价底线 (建议起谈 30%, 底线 20%, 老板自定)
 
@@ -202,7 +217,7 @@ discussion with a guaranteed monthly minimum."
    - growth `%` (周增长率, 可估)
    - exclusivity 月单量 (老板心里底线)
 
-2. **打开 nothinkeats.com 自己跑一遍**雇主 + 菲佣两个流程, 录 30 秒视频
+2. **打开 nothinkeats.com/login 自己跑一遍**雇主 + 菲佣两个流程, 录 30 秒视频
    备用 (Irish 如果要 demo 视频, 直接发)
 
 3. **复制 WhatsApp §1 + §3 发 Irish** (今天 / 明天发, 周末她可能空)

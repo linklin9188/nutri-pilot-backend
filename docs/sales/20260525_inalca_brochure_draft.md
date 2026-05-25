@@ -1,7 +1,7 @@
 # Aieats x Inalca F&B — Partnership Brochure (Draft)
 
 > **For**: Irish Zambrano @ Acmé HK / Inalca F&B HK
-> **From**: Jianjiao Lin, Founder of Aieats / 爱吃 (nothinkeats.com)
+> **From**: Link & Bobby, Co-founders of Aieats / 爱吃 (nothinkeats.com)
 > **Date**: 2026-05-25
 > **Format**: 4-page Markdown — 老板自己转 PDF (Canva / Notion export / 找设计师)
 > **Status**: DRAFT — `[BOSS_FILL]` 标记的字段老板填真数据
@@ -24,9 +24,11 @@
 
 ---
 
-### Founder — Jianjiao Lin (林建杰)
+### Co-Founders — Link & Bobby
 
-`[BOSS_FILL_FOUNDER_BIO]`
+**Link** — `[BOSS_FILL_LINK_BIO]`
+
+**Bobby** — `[BOSS_FILL_BOBBY_BIO]`
 
 > 建议老板补充内容 (200 字以内):
 > - 简短背景 (例: ex-engineer / ex-product 或某著名公司履历)
@@ -267,8 +269,8 @@ After 3 months of manual operation, integrate:
 
 ### Contact
 
-**Jianjiao Lin** (林建杰)
-Founder, Aieats / 爱吃
+**Link & Bobby**
+Co-founders, Aieats / 爱吃
 
 - Website: [nothinkeats.com](https://nothinkeats.com)
 - Email: `[BOSS_FILL_EMAIL]`
