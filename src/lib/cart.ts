@@ -19,6 +19,7 @@ export interface CartItem {
   retail_price_hkd:    number;
   unit:                string;
   qty:                 number;
+  supplier_id:         string;   // TICKET-083 — 用于 /cart 按供应商分组 + /checkout 多订单拆分
   supplier_name:       string;
   supplier_status:     'active' | 'preview' | 'pending';
 }
@@ -55,6 +56,7 @@ export async function loadCart(userId: string): Promise<CartState> {
         added_at,
         supplier_skus!cart_items_sku_id_fkey (
           sku_name,
+          supplier_id,
           retail_price_hkd,
           price_hkd,
           unit,
@@ -78,6 +80,7 @@ export async function loadCart(userId: string): Promise<CartState> {
         retail_price_hkd: retail,
         unit:             sku.unit ?? '份',
         qty:              r.qty,
+        supplier_id:      sku.supplier_id ?? '',
         supplier_name:    sku.suppliers?.name ?? '',
         supplier_status:  (sku.suppliers?.status ?? 'active') as CartItem['supplier_status'],
       };
@@ -216,6 +219,38 @@ export async function clearCart(userId: string): Promise<boolean> {
 /** 算总价 */
 export function calcSubtotal(items: CartItem[]): number {
   return items.reduce((sum, it) => sum + it.retail_price_hkd * it.qty, 0);
+}
+
+/** 一个供应商组 (Cart / Checkout 按 supplier 拆订单显示用). */
+export interface SupplierGroup {
+  supplierId:    string;
+  supplierName:  string;
+  items:         CartItem[];
+  subtotalHkd:   number;
+}
+
+/**
+ * TICKET-083 — 按 supplier_id 把 cart items 分组. 用于 /cart 按供应商展示 +
+ * /checkout 多订单拆分. 同一 supplier 内保持原 added_at 顺序.
+ */
+export function groupItemsBySupplier(items: CartItem[]): SupplierGroup[] {
+  const map = new Map<string, SupplierGroup>();
+  for (const it of items) {
+    const key = it.supplier_id || '__unknown__';
+    const existing = map.get(key);
+    if (existing) {
+      existing.items.push(it);
+      existing.subtotalHkd += it.retail_price_hkd * it.qty;
+    } else {
+      map.set(key, {
+        supplierId:   it.supplier_id,
+        supplierName: it.supplier_name,
+        items:        [it],
+        subtotalHkd:  it.retail_price_hkd * it.qty,
+      });
+    }
+  }
+  return [...map.values()];
 }
 
 /** 快速取 cart 商品数 (header 红点). 失败返 0. */

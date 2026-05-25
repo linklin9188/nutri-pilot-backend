@@ -21,6 +21,7 @@ import {
   loadCart,
   updateCartItemQty,
   removeFromCart,
+  groupItemsBySupplier,
   type CartItem,
   type CartState,
 } from '../lib/cart';
@@ -139,78 +140,95 @@ export default function Cart() {
             </button>
           </div>
         ) : (
-          /* Item list */
-          <div className="space-y-3">
-            {state.items.map(item => {
-              const lineTotal = item.retail_price_hkd * item.qty;
-              const isPending = pendingItemId === item.id;
-              return (
-                <div
-                  key={item.id}
-                  className="bg-white rounded-2xl p-3.5 shadow-sm flex gap-3"
-                  style={{ opacity: isPending ? 0.5 : 1, transition: 'opacity 0.15s' }}
-                >
-                  {/* Thumbnail placeholder — 080-A 还没接 image, 用图标占位 */}
-                  <div
-                    className="w-16 h-16 rounded-xl flex-shrink-0 flex items-center justify-center"
-                    style={{ background: 'linear-gradient(135deg, #fff5ef, #ffe6d5)' }}
+          /* TICKET-083 §6a — 按供应商分组展示. 同 supplier 一个 section, 让用户
+              一眼看出"这单是 🇮🇹 Inalca / 这单是其他". checkout 时按 section 拆订单. */
+          <div className="space-y-5">
+            {groupItemsBySupplier(state.items).map(group => (
+              <div key={group.supplierId || 'unknown'}>
+                <h3 className="font-bold text-[14px] flex items-center gap-2 mb-2 px-1">
+                  <span className="text-[18px]">🛒</span>
+                  <span style={{ color: '#1a1a1a' }}>
+                    {group.supplierName || t3('Other supplier', '其他供应商', 'Iba pang supplier')}
+                  </span>
+                  <span
+                    className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                    style={{ background: 'rgba(255,90,31,0.10)', color: '#FF5A1F' }}
                   >
-                    <span className="text-[28px]">🛍️</span>
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    <p className="font-bold text-[14px] truncate" style={{ color: '#1a1a1a' }}>
-                      {item.sku_name}
-                    </p>
-                    <p className="text-[10px] text-gray-400 mt-0.5">
-                      {item.supplier_name}
-                      {item.unit ? ` · ${item.unit}` : ''}
-                    </p>
-                    <div className="flex items-end justify-between mt-2">
-                      <div>
-                        <p className="text-[11px] text-gray-500">
-                          HKD {item.retail_price_hkd.toFixed(2)}
-                          {item.unit ? <span className="text-[9px]"> / {item.unit}</span> : null}
-                        </p>
-                        <p className="text-[14px] font-black" style={{ color: '#FF5A1F' }}>
-                          HKD {lineTotal.toFixed(2)}
-                        </p>
-                      </div>
-
-                      {/* Qty stepper */}
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleQtyChange(item, -1)}
-                          disabled={isPending}
-                          aria-label={t3('Decrease', '减少', 'Bawasan')}
-                          className="w-7 h-7 rounded-full bg-black/5 flex items-center justify-center text-[16px] font-bold active:scale-95 disabled:opacity-50"
+                    {group.items.length} {t3('items', '件', 'item')} · HKD {group.subtotalHkd.toFixed(2)}
+                  </span>
+                </h3>
+                <div className="space-y-2">
+                  {group.items.map(item => {
+                    const lineTotal = item.retail_price_hkd * item.qty;
+                    const isPending = pendingItemId === item.id;
+                    return (
+                      <div
+                        key={item.id}
+                        className="bg-white rounded-2xl p-3.5 shadow-sm flex gap-3"
+                        style={{ opacity: isPending ? 0.5 : 1, transition: 'opacity 0.15s' }}
+                      >
+                        <div
+                          className="w-16 h-16 rounded-xl flex-shrink-0 flex items-center justify-center"
+                          style={{ background: 'linear-gradient(135deg, #fff5ef, #ffe6d5)' }}
                         >
-                          −
-                        </button>
-                        <span className="text-[14px] font-bold min-w-[20px] text-center">{item.qty}</span>
-                        <button
-                          onClick={() => handleQtyChange(item, 1)}
-                          disabled={isPending}
-                          aria-label={t3('Increase', '增加', 'Dagdagan')}
-                          className="w-7 h-7 rounded-full text-white flex items-center justify-center text-[14px] font-bold active:scale-95 disabled:opacity-50"
-                          style={{ background: '#FF5A1F' }}
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
+                          <span className="text-[28px]">🛍️</span>
+                        </div>
 
-                    <button
-                      onClick={() => handleRemove(item)}
-                      disabled={isPending}
-                      className="mt-2 text-[10px] text-gray-400 hover:text-red-500 transition-colors disabled:opacity-50"
-                    >
-                      {t3('Remove', '删除', 'Tanggalin')}
-                    </button>
-                  </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-[14px] truncate" style={{ color: '#1a1a1a' }}>
+                            {item.sku_name}
+                          </p>
+                          <p className="text-[10px] text-gray-400 mt-0.5">
+                            {item.supplier_name}
+                            {item.unit ? ` · ${item.unit}` : ''}
+                          </p>
+                          <div className="flex items-end justify-between mt-2">
+                            <div>
+                              <p className="text-[11px] text-gray-500">
+                                HKD {item.retail_price_hkd.toFixed(2)}
+                                {item.unit ? <span className="text-[9px]"> / {item.unit}</span> : null}
+                              </p>
+                              <p className="text-[14px] font-black" style={{ color: '#FF5A1F' }}>
+                                HKD {lineTotal.toFixed(2)}
+                              </p>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => handleQtyChange(item, -1)}
+                                disabled={isPending}
+                                aria-label={t3('Decrease', '减少', 'Bawasan')}
+                                className="w-7 h-7 rounded-full bg-black/5 flex items-center justify-center text-[16px] font-bold active:scale-95 disabled:opacity-50"
+                              >
+                                −
+                              </button>
+                              <span className="text-[14px] font-bold min-w-[20px] text-center">{item.qty}</span>
+                              <button
+                                onClick={() => handleQtyChange(item, 1)}
+                                disabled={isPending}
+                                aria-label={t3('Increase', '增加', 'Dagdagan')}
+                                className="w-7 h-7 rounded-full text-white flex items-center justify-center text-[14px] font-bold active:scale-95 disabled:opacity-50"
+                                style={{ background: '#FF5A1F' }}
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+
+                          <button
+                            onClick={() => handleRemove(item)}
+                            disabled={isPending}
+                            className="mt-2 text-[10px] text-gray-400 hover:text-red-500 transition-colors disabled:opacity-50"
+                          >
+                            {t3('Remove', '删除', 'Tanggalin')}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
+              </div>
+            ))}
 
             {/* Disclaimer — 080-A 提醒测试版 */}
             <p className="text-center text-[10px] text-gray-400 mt-4 px-4 leading-relaxed">
@@ -224,34 +242,49 @@ export default function Cart() {
         )}
       </main>
 
-      {/* Sticky footer — 总价 + 去结账 */}
-      {state.items.length > 0 && !loading && (
-        <div
-          className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t border-black/5 px-5 py-4"
-          style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 16px) + 12px)' }}
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[11px] text-gray-500">
-                {t3('Subtotal', '商品总价', 'Subtotal')}
-              </p>
-              <p className="text-[20px] font-black" style={{ color: '#FF5A1F' }}>
-                HKD {state.subtotalHkd.toFixed(2)}
-              </p>
+      {/* Sticky footer — 总价 + 去结账. TICKET-083 §6b: 多供应商时显"将拆为 N 个订单". */}
+      {state.items.length > 0 && !loading && (() => {
+        const groups = groupItemsBySupplier(state.items);
+        const multi = groups.length > 1;
+        return (
+          <div
+            className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t border-black/5 px-5 py-4"
+            style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 16px) + 12px)' }}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[11px] text-gray-500">
+                  {t3('Subtotal', '商品总价', 'Subtotal')}
+                </p>
+                <p className="text-[20px] font-black" style={{ color: '#FF5A1F' }}>
+                  HKD {state.subtotalHkd.toFixed(2)}
+                </p>
+                {multi && (
+                  <p className="text-[10px] text-gray-500 mt-0.5">
+                    {t3(
+                      `Will split into ${groups.length} orders`,
+                      `将拆为 ${groups.length} 个订单`,
+                      `Mahahati sa ${groups.length} orders`,
+                    )}
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={handleCheckout}
+                className="px-6 py-3.5 rounded-full font-bold text-[14px] text-white active:scale-95 transition-all flex items-center gap-2"
+                style={{
+                  background: 'linear-gradient(135deg, #FF5A1F, #FF8C54)',
+                  boxShadow: '0 8px 20px rgba(255,90,31,0.30)',
+                }}
+              >
+                {multi
+                  ? t3(`Checkout · ${groups.length} orders →`, `去结账 · ${groups.length} 个订单 →`, `Checkout · ${groups.length} →`)
+                  : t3('Checkout →', '去结账 →', 'Mag-checkout →')}
+              </button>
             </div>
-            <button
-              onClick={handleCheckout}
-              className="px-6 py-3.5 rounded-full font-bold text-[14px] text-white active:scale-95 transition-all flex items-center gap-2"
-              style={{
-                background: 'linear-gradient(135deg, #FF5A1F, #FF8C54)',
-                boxShadow: '0 8px 20px rgba(255,90,31,0.30)',
-              }}
-            >
-              {t3('Checkout →', '去结账 →', 'Mag-checkout →')}
-            </button>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

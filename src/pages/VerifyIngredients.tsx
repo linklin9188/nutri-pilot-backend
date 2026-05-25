@@ -16,10 +16,15 @@ import SupplierBrandModal from "../components/SupplierBrandModal";
 import { addToCart, getCartCount } from "../lib/cart";
 import {
   loadHomeInventory as loadHomeInventoryDb,
-  setIngredientAvailable as setIngredientAvailableDb,
-  commitInventoryFromLs,
   inventoryToMap,
 } from "../lib/homeInventory";
+// TICKET-083 — 正确流程: 雇主只发清单不勾, 菲佣确认后雇主自动加车按 supplier 拆.
+import {
+  sendListToHelper,
+  loadNotification,
+  autoFillCartFromConfirmedList,
+  markNotificationRead,
+} from "../lib/purchaseFlow";
 
 // ── Supplier direct-shipping (TICKET-038 第 4 步 §3) ─────────────────────
 // Phase 2 骨架: 页面加载时拉一次 active SKU 列表 (supplier.status='active' +
@@ -561,12 +566,15 @@ export default function VerifyIngredients() {
   // 没绑就保持 null → DB 写跳过, LS 仍 work (单设备老路径). 后续 helper 加入
   // household 后, 雇主再开 /verify 自然拿到 id.
   const [householdId, setHouseholdId] = useState<string | null>(null);
-  // 雇主版"已通知菲佣"按钮态: idle / committing / done. done 时按钮变 ✓ 状态
-  const [notifyState, setNotifyState] = useState<'idle' | 'committing' | 'done'>('idle');
-  // 防 LS→DB 迁移重跑: 同 household 同日只跑一次
-  const migrateSentinelKey = householdId
-    ? `nutri_inventory_migrated_${householdId}_${todayLocalStr}`
-    : null;
+  // TICKET-083 — 雇主流程 4 态机:
+  //   idle           — 还没发过 (按钮显 "📤 发送清单给菲佣")
+  //   sending        — 正在调 sendListToHelper (按钮 disabled)
+  //   sent           — employer_sent 通知已写 + 菲佣还没确认 (按钮显"✓ 已发送 · 等菲佣")
+  //   helper_confirmed — 菲佣确认完了 + 还要买 N 件 (按钮显"✅ 菲佣已确认 · 还要买 N 件 → 去购物车")
+  const [purchaseState, setPurchaseState] = useState<'idle' | 'sending' | 'sent' | 'helper_confirmed'>('idle');
+  const [toBeBoughtCount, setToBeBoughtCount] = useState(0);
+  const [helperConfirmedNotifId, setHelperConfirmedNotifId] = useState<string | null>(null);
+  const [autoFillingCart, setAutoFillingCart] = useState(false);
   const [copied, setCopied] = useState(false);
   const [weightUnit, setWeightUnit] = useState<WeightUnit>(() =>
     (localStorage.getItem('nutri_weight_unit') as WeightUnit) || 'metric'
@@ -663,27 +671,27 @@ export default function VerifyIngredients() {
       if (!hid) return;
       setHouseholdId(hid);
 
-      // DB load — 同时把 DB 真值 merge 到 LS map (DB 是 source of truth).
+      // TICKET-083 — 雇主端纯只读: 拉 DB inventory 只为展示菲佣勾过哪些 (haveIt),
+      // 不再 LS 双写, 也不允许雇主自己 toggle. 数据源头 = 菲佣.
       const items = await loadHomeInventoryDb(hid, todayLocalStr);
       if (cancelled) return;
-      const dbMap = inventoryToMap(items);
+      setHaveIt(inventoryToMap(items));
 
-      // 兼容老用户: DB 空但 LS 有 → 一次性迁移 LS→DB + 写 sentinel 防重跑.
-      const sentinelKey = `nutri_inventory_migrated_${hid}_${todayLocalStr}`;
-      const lsMap = loadHomeInventoryLs();
-      if (items.length === 0 && Object.keys(lsMap).length > 0 && !localStorage.getItem(sentinelKey)) {
-        const pushed = await commitInventoryFromLs(hid, lsMap, 'employer', todayLocalStr);
-        if (pushed > 0) {
-          try { localStorage.setItem(sentinelKey, '1'); } catch {}
-        }
-        // 迁移完不再重读, 直接用 LS map (DB 行就是 LS 的镜像).
-        setHaveIt(lsMap);
+      // TICKET-083 — 加载今日通知状态 → 决定按钮显啥
+      //   helper_confirmed 存在 → state=helper_confirmed (优先级最高)
+      //   employer_sent 存在 → state=sent
+      //   都不存在 → state=idle
+      const helperConfirmed = await loadNotification(hid, 'helper_confirmed', todayLocalStr);
+      if (cancelled) return;
+      if (helperConfirmed) {
+        setPurchaseState('helper_confirmed');
+        setToBeBoughtCount(helperConfirmed.to_be_bought_count ?? 0);
+        setHelperConfirmedNotifId(helperConfirmed.id);
         return;
       }
-
-      // DB 有数据 → 用 DB 覆盖 LS (跨设备同步真相), 同时刷新 LS 副 cache.
-      setHaveIt(dbMap);
-      persistHomeInventoryLs(dbMap);
+      const employerSent = await loadNotification(hid, 'employer_sent', todayLocalStr);
+      if (cancelled) return;
+      if (employerSent) setPurchaseState('sent');
     })().catch(e => console.warn('[verify] household/inventory fetch:', e));
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -800,42 +808,46 @@ export default function VerifyIngredients() {
     // so ingredients refresh once the hook resolves.
   }, [mode, hookWeeklyMenu]);
 
-  // TICKET-075 §4a — 双写: LS 即时刷 + DB 异步 upsert. DB 失败不阻塞 UI
-  // (LS 已写, 用户下次开仍能看到; commitInventoryFromLs 按钮可兜底重 push).
-  const toggleHave = (nameZh: string) => {
-    setHaveIt(prev => {
-      const nextVal = !prev[nameZh];
-      const next = { ...prev, [nameZh]: nextVal };
-      persistHomeInventoryLs(next);
-      if (householdId) {
-        setIngredientAvailableDb(householdId, nameZh, nextVal, 'employer', todayLocalStr)
-          .catch(e => console.warn('[verify.toggleHave] DB write failed:', e));
-      }
-      // 用户改了任何 toggle → notify 状态回 idle, 提示需要重新确认
-      if (notifyState === 'done') setNotifyState('idle');
-      return next;
-    });
-  };
-
-  // TICKET-075 §1 + §4b — "确认采购通知菲佣"按钮: 把当前完整 haveIt map
-  // 批量 push DB (兜底单条 toggle 的零星失败), 然后切到 'done' 状态. helper
-  // 端进 HelperPrep 会拉到最新 inventory; 本期不接 push 通知, 菲佣下次开页
-  // 自然看到.
-  const handleNotifyHelper = async () => {
-    if (notifyState === 'committing') return;
+  // TICKET-083 §3b — 雇主"📤 发送清单给菲佣". 只写 employer_sent notification,
+  // 不再 batch-commit haveIt (那是 075 老逻辑, 把流程做反了).
+  // 数据源头 = 菲佣, 雇主只发清单.
+  const handleSendListToHelper = async () => {
+    if (purchaseState === 'sending') return;
     if (!householdId) {
-      // 未绑 helper → 给雇主一个友好提示, 但仍允许 LS-only 流程继续工作
       alert(t('Bind a helper first (Settings → Family)', '请先在「设置 → 家庭」绑定菲佣后再通知'));
       return;
     }
-    setNotifyState('committing');
-    const pushed = await commitInventoryFromLs(householdId, haveIt, 'employer', todayLocalStr);
-    if (pushed >= 0) {
-      setNotifyState('done');
-      // 8 秒后回 idle, 让按钮可以再次点 (用户可能 toggle 更多后再 commit)
-      setTimeout(() => setNotifyState(prev => prev === 'done' ? 'idle' : prev), 8000);
-    } else {
-      setNotifyState('idle');
+    setPurchaseState('sending');
+    const ok = await sendListToHelper(householdId, todayLocalStr);
+    setPurchaseState(ok ? 'sent' : 'idle');
+  };
+
+  // TICKET-083 §3c — 雇主收到"菲佣已确认"红卡后点 → 自动把"要买的"加进购物车
+  // (按 supplier 分组). 加完跳 /cart 让用户结账.
+  const handleAutoFillAndGoCart = async () => {
+    if (autoFillingCart) return;
+    if (!householdId) return;
+    const uid = getUserId();
+    if (!uid) { navigate('/login'); return; }
+    setAutoFillingCart(true);
+    try {
+      const result = await autoFillCartFromConfirmedList(uid, householdId, todayLocalStr);
+      // 标记 helper_confirmed 通知已读, 防 Home 红点持续弹
+      if (helperConfirmedNotifId) {
+        markNotificationRead(helperConfirmedNotifId).catch(() => {});
+      }
+      // 没匹配的 SKU 用 toast 友好提示; 不阻塞跳转 (匹配的已在车里)
+      if (result.unmatchedCount > 0) {
+        setCartToast(t3(
+          `${result.totalItemsAdded} added · ${result.unmatchedCount} unmatched`,
+          `已加 ${result.totalItemsAdded} 件 · ${result.unmatchedCount} 件无直供, 请自购`,
+          `${result.totalItemsAdded} naidagdag · ${result.unmatchedCount} bilhin sa labas`,
+        ));
+        setTimeout(() => setCartToast(null), 2200);
+      }
+      navigate('/cart');
+    } finally {
+      setAutoFillingCart(false);
     }
   };
 
@@ -1192,19 +1204,21 @@ export default function VerifyIngredients() {
               </div>
             </div>
             <div className="bg-white rounded-2xl overflow-hidden shadow-sm">
+              {/* TICKET-083 — 雇主端只读清单 (不再勾"我家有"). 菲佣端 HelperPrep
+                  才是数据源头, 雇主只看 + 等通知. 显"✓ 菲佣已确认"小字 (haveIt 来自
+                  DB inventory.is_available=true 的行). */}
               {trip.items.map((item, i) => {
                 const have = !!haveIt[item.nameZh];
                 return (
-                  <button
+                  <div
                     key={item.nameZh}
-                    onClick={() => toggleHave(item.nameZh)}
-                    className={`w-full flex items-center gap-4 px-4 py-3 transition-all active:scale-[0.99] ${
+                    className={`w-full flex items-center gap-4 px-4 py-3 ${
                       i !== trip.items.length - 1 ? 'border-b border-black/[0.05]' : ''
                     }`}
                     style={{ background: have ? 'rgba(37,211,102,0.04)' : 'white' }}
                   >
-                    <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 transition-all"
-                      style={{ background: have ? '#ef4444' : 'rgba(0,0,0,0.08)' }}>
+                    <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0"
+                      style={{ background: have ? '#16A34A' : 'rgba(0,0,0,0.08)' }}>
                       {have && (
                         <span className="material-symbols-outlined text-white"
                           style={{ fontSize: 16, fontVariationSettings: "'FILL' 1" }}>check</span>
@@ -1212,35 +1226,27 @@ export default function VerifyIngredients() {
                     </div>
                     <div className="flex-1 text-left">
                       <p className="font-semibold text-[14px]"
-                        style={{ color: have ? '#ef4444' : '#1a1a1a', textDecoration: have ? 'line-through' : 'none' }}>
+                        style={{ color: have ? '#16A34A' : '#1a1a1a', textDecoration: have ? 'line-through' : 'none' }}>
                         {item.nameZh}
                       </p>
-                      {/* TICKET-049 P1: 规范化合并后的原始变体名小字注释 —
-                          例：canonical=葱 + variants=[葱段,葱丝] → 显示 "(葱段 + 葱丝)" */}
                       {item.variants && item.variants.length >= 2 && (
                         <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">
                           ({item.variants.join(' + ')})
                         </p>
                       )}
                     </div>
-                    {/* 我家有 chip — visual toggle on the row right side. Not
-                        an independent button (the whole row is already a
-                        button; nested buttons are invalid HTML). Clicks
-                        anywhere on the row, including this chip, bubble to
-                        the parent onClick and call toggleHave. */}
-                    <span
-                      className="text-[10px] font-bold px-2 py-0.5 rounded-full transition-colors"
-                      style={{
-                        background: have ? 'rgba(37,211,102,0.18)' : 'rgba(0,0,0,0.06)',
-                        color:      have ? '#16A34A' : 'rgba(0,0,0,0.45)',
-                      }}>
-                      {have ? '✓ 我家有' : '我家有？'}
-                    </span>
+                    {have && (
+                      <span
+                        className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                        style={{ background: 'rgba(37,211,102,0.18)', color: '#16A34A' }}>
+                        {t3('Helper has', '菲佣已有', 'Meron helper')}
+                      </span>
+                    )}
                     <span className="text-[13px] font-bold"
-                      style={{ color: have ? '#ef4444' : '#1a1a1a', textDecoration: have ? 'line-through' : 'none' }}>
+                      style={{ color: have ? '#16A34A' : '#1a1a1a', textDecoration: have ? 'line-through' : 'none' }}>
                       {formatWeight(item, weightUnit)}
                     </span>
-                  </button>
+                  </div>
                 );
               })}
             </div>
@@ -1264,15 +1270,15 @@ export default function VerifyIngredients() {
                     key={item.nameZh}
                     className={i !== items.length - 1 ? 'border-b border-black/[0.05]' : ''}
                   >
-                    <button
-                      onClick={() => toggleHave(item.nameZh)}
-                      className="w-full flex items-center gap-4 px-4 py-3.5 transition-all active:scale-[0.99]"
+                    {/* TICKET-083 — 雇主端只读 (button → div). 菲佣是数据源头. */}
+                    <div
+                      className="w-full flex items-center gap-4 px-4 py-3.5"
                       style={{ background: have ? 'rgba(37,211,102,0.04)' : 'white' }}
                     >
-                      {/* Checkbox */}
+                      {/* Checkbox — 显示菲佣勾过的(绿勾), 雇主端不可点 */}
                       <div
-                        className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 transition-all"
-                        style={{ background: have ? '#ef4444' : 'rgba(0,0,0,0.08)' }}
+                        className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0"
+                        style={{ background: have ? '#16A34A' : 'rgba(0,0,0,0.08)' }}
                       >
                         {have && (
                           <span
@@ -1290,7 +1296,7 @@ export default function VerifyIngredients() {
                           <p
                             className="font-semibold text-[15px]"
                             style={{
-                              color: have ? '#ef4444' : '#1a1a1a',
+                              color: have ? '#16A34A' : '#1a1a1a',
                               textDecoration: have ? 'line-through' : 'none',
                             }}
                           >
@@ -1343,22 +1349,22 @@ export default function VerifyIngredients() {
                       <div className="flex flex-col items-end gap-0.5">
                         <span className="text-[14px] font-bold"
                           style={{
-                            color: have ? '#ef4444' : '#1a1a1a',
+                            color: have ? '#16A34A' : '#1a1a1a',
                             textDecoration: have ? 'line-through' : 'none',
                           }}
                         >
                           {formatWeight(item, weightUnit)}
                         </span>
-                        <span
-                          className="text-[10px] font-bold px-2 py-0.5 rounded-full transition-colors"
-                          style={{
-                            background: have ? 'rgba(37,211,102,0.18)' : 'rgba(0,0,0,0.06)',
-                            color:      have ? '#16A34A' : 'rgba(0,0,0,0.45)',
-                          }}>
-                          {have ? '✓ 我家有' : '我家有？'}
-                        </span>
+                        {/* TICKET-083 — 雇主端只读, 只在菲佣勾过的食材上显小绿章. */}
+                        {have && (
+                          <span
+                            className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                            style={{ background: 'rgba(37,211,102,0.18)', color: '#16A34A' }}>
+                            {t3('✓ Helper has', '✓ 菲佣已有', '✓ Meron helper')}
+                          </span>
+                        )}
                       </div>
-                    </button>
+                    </div>
 
                     {/* TICKET-038 §3 — Supplier 直供 bar. 只在该食材命中 active
                         SKU 且非「已有」时显示. Placed BELOW the toggle button
@@ -1520,31 +1526,60 @@ export default function VerifyIngredients() {
             </button>
           )}
 
-          {/* TICKET-075 §1 + §4b — 雇主版"确认采购通知菲佣"按钮.
-              点了 commit 全部 haveIt 到 DB; helper 端进 HelperPrep 拉到最新.
-              householdId 缺失 (未绑菲佣) 时按钮仍显但点了会弹提示 (handleNotifyHelper). */}
+          {/* TICKET-083 §3b/§3c — 雇主 3 态机:
+                idle              → "📤 发送清单给菲佣"
+                sending           → "通知中…" (disabled)
+                sent              → "✓ 已发送 · 等菲佣确认" (disabled, 灰)
+                helper_confirmed  → "✅ 菲佣已确认 · 还要买 N 件 → 去购物车" (橙→绿)
+              数据源头 = 菲佣, 雇主不勾"我家有" (075 反向流程已修). */}
           {!isHelper && (
             <button
-              onClick={handleNotifyHelper}
-              disabled={notifyState === 'committing'}
+              onClick={
+                purchaseState === 'helper_confirmed'
+                  ? handleAutoFillAndGoCart
+                  : handleSendListToHelper
+              }
+              disabled={
+                purchaseState === 'sending' ||
+                purchaseState === 'sent' ||
+                autoFillingCart
+              }
               className="w-full py-3 rounded-2xl font-bold text-[14px] flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-60"
               style={{
-                background: notifyState === 'done'
+                background: purchaseState === 'helper_confirmed'
                   ? 'linear-gradient(135deg, #25D366, #16A34A)'
-                  : 'linear-gradient(135deg, #FF5A1F, #FF8C54)',
+                  : purchaseState === 'sent'
+                    ? 'linear-gradient(135deg, #9ca3af, #6b7280)'
+                    : 'linear-gradient(135deg, #FF5A1F, #FF8C54)',
                 color: 'white',
                 boxShadow: '0 6px 16px rgba(255,90,31,0.20)',
               }}
             >
               <span className="material-symbols-outlined text-[18px]"
                 style={{ fontVariationSettings: "'FILL' 1" }}>
-                {notifyState === 'done' ? 'check_circle' : 'send'}
+                {purchaseState === 'helper_confirmed'
+                  ? 'shopping_cart'
+                  : purchaseState === 'sent'
+                    ? 'check_circle'
+                    : 'send'}
               </span>
-              {notifyState === 'committing'
-                ? '通知中…'
-                : notifyState === 'done'
-                  ? `已通知菲佣 · ${haveCount} 项已勾`
-                  : `确认采购清单 · 通知菲佣 (${haveCount}/${ingredients.length})`}
+              {autoFillingCart
+                ? t3('Adding to cart…', '加入购物车中…', 'Inilalagay sa cart…')
+                : purchaseState === 'sending'
+                  ? t3('Sending…', '通知中…', 'Pinapadala…')
+                  : purchaseState === 'sent'
+                    ? t3('Sent · Waiting for helper', '✓ 已发送 · 等菲佣确认', '✓ Naipadala · Hintay sa helper')
+                    : purchaseState === 'helper_confirmed'
+                      ? t3(
+                          `Helper confirmed · ${toBeBoughtCount} to buy → Cart`,
+                          `✅ 菲佣已确认 · 还要买 ${toBeBoughtCount} 件 → 去购物车`,
+                          `Kumpirmado · ${toBeBoughtCount} bibilhin → Cart`,
+                        )
+                      : t3(
+                          '📤 Send list to helper',
+                          '📤 发送清单给菲佣',
+                          '📤 Ipadala sa helper',
+                        )}
             </button>
           )}
         </div>

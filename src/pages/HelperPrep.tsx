@@ -16,6 +16,8 @@ import {
   commitInventoryFromLs,
   inventoryToMap,
 } from "../lib/homeInventory";
+// TICKET-083 — 菲佣 ④ 点 "✅ 确认完了" → 写 helper_confirmed notification, 雇主 Home 收红点
+import { confirmInventoryAndNotifyEmployer } from "../lib/purchaseFlow";
 
 /**
  * HelperPrep — Shopping "我家有 / Already have" toggle screen for the helper.
@@ -141,6 +143,11 @@ export default function HelperPrep() {
     loadInventoryLs(),
   );
 
+  // TICKET-083 — 菲佣"✅ 确认完了"按钮态. confirming → 灰 disabled; confirmed →
+  // 持久绿章 (cleared 在每日切换/下次菜单变化时自然失效).
+  const [confirmState, setConfirmState] = useState<'idle' | 'confirming' | 'confirmed'>('idle');
+  const [confirmedCount, setConfirmedCount] = useState(0);
+
   // TICKET-075 §5 — 读雇主菜单 + DB inventory 经 household 三步绑定.
   // 取代原 localStorage.generatedMenu 路径 (单设备孤岛, 切账号必断).
   useEffect(() => {
@@ -200,6 +207,7 @@ export default function HelperPrep() {
   }, [dishes]);
 
   // TICKET-075 §5b — 双写: LS 即时 + DB 异步. 失败不阻塞 UI.
+  // TICKET-083 — 改了任何 toggle 让"已确认"按钮回到 idle (用户可能漏勾再补)
   const toggleHave = (nameZh: string) => {
     setHaveIt((prev) => {
       const nextVal = !prev[nameZh];
@@ -211,13 +219,40 @@ export default function HelperPrep() {
       }
       return next;
     });
+    if (confirmState === 'confirmed') setConfirmState('idle');
   };
 
   const toBuy = ingredients.filter((i) => !haveIt[i.nameZh]);
   const haveList = ingredients.filter((i) => !!haveIt[i.nameZh]);
 
+  // TICKET-083 §4b — 菲佣 ④ "✅ 确认完了" → 写 helper_confirmed notification,
+  // 雇主 Home 顶部立刻显红卡. toBeBoughtIngredients = 没勾"我家有"的食材名.
+  const handleConfirmAndNotify = async () => {
+    if (confirmState === 'confirming') return;
+    if (!householdId) {
+      // 未绑 household → 不能通知 (helper 还没扫雇主邀请码). 给提示但不阻塞.
+      console.warn('[HelperPrep.confirm] no householdId, cannot notify');
+      return;
+    }
+    setConfirmState('confirming');
+    const helperUid = getUserId();
+    const toBeBought = toBuy.map((i) => i.nameZh);
+    const ok = await confirmInventoryAndNotifyEmployer(
+      householdId,
+      todayKey(),
+      helperUid,
+      toBeBought,
+    );
+    if (ok) {
+      setConfirmedCount(toBeBought.length);
+      setConfirmState('confirmed');
+    } else {
+      setConfirmState('idle');
+    }
+  };
+
   return (
-    <div className="bg-[#f4f4f6] font-sans text-on-surface min-h-screen pb-40 flex flex-col max-w-md mx-auto relative">
+    <div className="bg-[#f4f4f6] font-sans text-on-surface min-h-screen pb-56 flex flex-col max-w-md mx-auto relative">
       {/* Header — preserved from previous version */}
       <header className="bg-white sticky top-0 z-50 border-b border-black/5 flex justify-between items-center w-full px-5 py-4">
         <div className="flex items-center gap-3">
@@ -489,6 +524,48 @@ export default function HelperPrep() {
           </span>
         </button>
       </div>
+
+      {/* TICKET-083 §4b — 菲佣"✅ 确认完了"sticky 按钮. 点了写 helper_confirmed
+          notification, 雇主 Home 收红点 + /verify 按钮态切换. 没绑 household 或菜单
+          为空时隐藏 (没意义可点). */}
+      {!loading && ingredients.length > 0 && householdId && (
+        <div
+          className="fixed left-0 right-0 mx-auto max-w-md px-4 z-40"
+          style={{ bottom: 76 }}
+        >
+          <button
+            onClick={handleConfirmAndNotify}
+            disabled={confirmState === 'confirming' || confirmState === 'confirmed'}
+            className="w-full py-3.5 rounded-2xl font-bold text-[14px] text-white flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-80"
+            style={{
+              background: confirmState === 'confirmed'
+                ? 'linear-gradient(135deg, #25D366, #16A34A)'
+                : 'linear-gradient(135deg, #FF5A1F, #FF8C54)',
+              boxShadow: '0 8px 20px rgba(255,90,31,0.28)',
+            }}
+          >
+            <span
+              className="material-symbols-outlined text-[18px]"
+              style={{ fontVariationSettings: "'FILL' 1" }}
+            >
+              {confirmState === 'confirmed' ? 'check_circle' : 'send'}
+            </span>
+            {confirmState === 'confirming'
+              ? t3('Notifying employer…', '通知雇主中…', 'Inaabisuhan…')
+              : confirmState === 'confirmed'
+                ? t3(
+                    `Confirmed · ${confirmedCount} items notified`,
+                    `✓ 已确认 · ${confirmedCount} 件已通知雇主`,
+                    `Kumpirmado · ${confirmedCount} naipaalam`,
+                  )
+                : t3(
+                    `Confirm: ${toBuy.length} items to buy`,
+                    `✅ 确认完了 · 要买 ${toBuy.length} 件`,
+                    `Kumpirmahin · ${toBuy.length} bibilhin`,
+                  )}
+          </button>
+        </div>
+      )}
 
       <HelperTabBar active="prep" />
     </div>

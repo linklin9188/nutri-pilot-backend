@@ -15,8 +15,8 @@ import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '../contexts/LanguageContext';
 import { supabase } from '../lib/supabase';
 import { getUserId } from '../lib/userId';
-import { loadCart, type CartItem } from '../lib/cart';
-import { createOrder } from '../lib/orders';
+import { loadCart, groupItemsBySupplier, type CartItem } from '../lib/cart';
+import { createOrders } from '../lib/orders';
 
 interface TimeSlot {
   id:    string;
@@ -99,7 +99,8 @@ export default function Checkout() {
 
     setSubmitting(true);
     try {
-      const order = await createOrder(uid, {
+      // TICKET-083 §7a — createOrders (复数) 按 supplier_id 拆多张订单
+      const orders = await createOrders(uid, {
         cartItems,
         deliveryAddress:      address.trim(),
         deliveryContactName:  contactName.trim(),
@@ -107,13 +108,14 @@ export default function Checkout() {
         deliveryTimeSlot:     slotLabel,
         deliveryNote:         note.trim() || undefined,
       });
-      if (!order) {
+      if (orders.length === 0) {
         setError(t3('Order failed, please retry', '订单创建失败, 请重试', 'Subukan ulit'));
         setSubmitting(false);
         return;
       }
-      // 跳 success 页
-      navigate(`/order/success?order_id=${encodeURIComponent(order.id)}`, { replace: true });
+      // TICKET-083 §7c — 跳新 success 页 (ids=A,B 多订单)
+      const ids = orders.map(o => o.id).join(',');
+      navigate(`/orders/success?ids=${encodeURIComponent(ids)}`, { replace: true });
     } catch {
       setError(t3('Network error, please retry', '网络错误, 请重试', 'Network error, subukan ulit'));
       setSubmitting(false);
@@ -142,32 +144,62 @@ export default function Checkout() {
           </div>
         ) : (
           <>
-            {/* 订单摘要 */}
-            <section className="bg-white rounded-2xl p-4 shadow-sm">
-              <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">
-                {t3('Order Summary', '订单摘要', 'Buod ng Order')} · {cartItems.length}
-              </p>
-              <div className="space-y-1.5">
-                {cartItems.map(it => (
-                  <div key={it.id} className="flex items-center justify-between text-[12px]">
-                    <span className="truncate flex-1 pr-2" style={{ color: '#1a1a1a' }}>
-                      {it.sku_name} <span className="text-gray-400">×{it.qty}</span>
-                    </span>
-                    <span className="font-bold">HKD {(it.retail_price_hkd * it.qty).toFixed(2)}</span>
+            {/* TICKET-083 §7b — 订单摘要按供应商分组 + 多订单拆分提示 */}
+            {(() => {
+              const groups = groupItemsBySupplier(cartItems);
+              const multi  = groups.length > 1;
+              return (
+                <section className="bg-white rounded-2xl p-4 shadow-sm">
+                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">
+                    {multi
+                      ? t3(
+                          `Will create ${groups.length} orders`,
+                          `你将创建 ${groups.length} 个订单`,
+                          `Gagawa ng ${groups.length} orders`,
+                        )
+                      : t3('Order Summary', '订单摘要', 'Buod ng Order')} · {cartItems.length}
+                  </p>
+                  <div className="space-y-3">
+                    {groups.map(g => (
+                      <div key={g.supplierId || 'unknown'}>
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <span className="text-[12px]">🛒</span>
+                          <p className="text-[12px] font-bold" style={{ color: '#1a1a1a' }}>
+                            {g.supplierName || t3('Other supplier', '其他供应商', 'Iba pang supplier')}
+                          </p>
+                          <span
+                            className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                            style={{ background: 'rgba(255,90,31,0.10)', color: '#FF5A1F' }}
+                          >
+                            {g.items.length} {t3('items', '件', 'item')} · HKD {g.subtotalHkd.toFixed(2)}
+                          </span>
+                        </div>
+                        <div className="space-y-1 pl-5">
+                          {g.items.map(it => (
+                            <div key={it.id} className="flex items-center justify-between text-[12px]">
+                              <span className="truncate flex-1 pr-2" style={{ color: '#1a1a1a' }}>
+                                {it.sku_name} <span className="text-gray-400">×{it.qty}</span>
+                              </span>
+                              <span className="font-bold">HKD {(it.retail_price_hkd * it.qty).toFixed(2)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-              <div className="border-t border-black/5 mt-3 pt-3 flex items-center justify-between">
-                <span className="text-[13px] font-bold">{t3('Subtotal', '商品总价', 'Subtotal')}</span>
-                <span className="text-[15px] font-black" style={{ color: '#FF5A1F' }}>
-                  HKD {subtotal.toFixed(2)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between mt-1.5">
-                <span className="text-[11px] text-gray-500">{t3('Delivery fee', '运费', 'Delivery fee')}</span>
-                <span className="text-[12px] text-gray-500">{t3('Free', '免运费', 'Libre')}</span>
-              </div>
-            </section>
+                  <div className="border-t border-black/5 mt-3 pt-3 flex items-center justify-between">
+                    <span className="text-[13px] font-bold">{t3('Subtotal', '商品总价', 'Subtotal')}</span>
+                    <span className="text-[15px] font-black" style={{ color: '#FF5A1F' }}>
+                      HKD {subtotal.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between mt-1.5">
+                    <span className="text-[11px] text-gray-500">{t3('Delivery fee', '运费', 'Delivery fee')}</span>
+                    <span className="text-[12px] text-gray-500">{t3('Free', '免运费', 'Libre')}</span>
+                  </div>
+                </section>
+              );
+            })()}
 
             {/* 收货地址 */}
             <section className="bg-white rounded-2xl p-4 shadow-sm space-y-3">

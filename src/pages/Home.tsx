@@ -21,6 +21,8 @@ import {
 import { supabase } from "../lib/supabase";
 import BottomTabBar from "../components/BottomTabBar";
 import TrialBanner from "../components/TrialBanner";
+// TICKET-083 §5a — 雇主端: 菲佣"✅ 确认完了"后, Home 顶部显红卡 → 点 → 自动加购物车
+import PurchaseNotificationBanner from "../components/PurchaseNotificationBanner";
 import { useSubscription } from "../lib/subscription";
 import { recordBatchSwap, recordSwap } from "../lib/swapFeedback";
 import { useLanguage, LANGUAGE_LABEL, type Language } from "../contexts/LanguageContext";
@@ -1386,6 +1388,10 @@ export default function Home() {
       {/* TICKET-078 — 30 天免费体验 banner. 仅在 trial 剩 ≤7 天或已过期时
           自显示, paid 永不渲染. 点 [升级 →] 跳 /pricing. */}
       <TrialBanner />
+
+      {/* TICKET-083 §5a — 采购通知红卡. 菲佣"✅ 确认完了"后雇主收到, 点 → 自动加车 → /cart.
+          没绑 household / 没未读 helper_confirmed → 组件自隐藏 (return null). */}
+      <PurchaseNotificationBanner />
 
       {/* TICKET-066 P0 — chat 主入口统一. 替换原悬浮 FAB + IntentRegenModal 弹窗,
           唯一 use case "说话换菜单". 老板真测 #12 拍板 1: chat 不是泛用对话,

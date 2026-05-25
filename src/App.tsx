@@ -283,6 +283,9 @@ function AppShell() {
       <Route path="/cart"             element={<RequireAuth><Cart /></RequireAuth>} />
       <Route path="/checkout"         element={<RequireAuth><Checkout /></RequireAuth>} />
       <Route path="/order/success"    element={<RequireAuth><OrderSuccess /></RequireAuth>} />
+      {/* TICKET-083 §7c — 多订单 success 页 (?ids=A,B), 复用 OrderSuccess 组件.
+          必须放在 /orders/:id 之前避免被 :id 抢. */}
+      <Route path="/orders/success"   element={<RequireAuth><OrderSuccess /></RequireAuth>} />
       <Route path="/orders"           element={<RequireAuth><Orders /></RequireAuth>} />
       <Route path="/orders/:id"       element={<RequireAuth><OrderDetail /></RequireAuth>} />
       <Route path="/prep"     element={<RequireAuth helperRole><HelperPrep /></RequireAuth>} />

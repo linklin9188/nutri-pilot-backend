@@ -21,7 +21,7 @@
 
 import { supabase } from './supabase';
 import type { CartItem } from './cart';
-import { clearCart } from './cart';
+import { clearCart, groupItemsBySupplier } from './cart';
 
 export interface CreateOrderInput {
   cartItems:              CartItem[];
@@ -86,10 +86,97 @@ const ORDER_ITEM_USER_SELECT = `
 // 注意: 显式不 SELECT unit_wholesale_price_hkd + commission_hkd. 老板私密.
 
 /**
- * createOrder — 在 cart → checkout 提交时调.
+ * 私有: 给定一组 cartItems 创建一个 order (含 wholesale 拉取 + items + history).
+ * 调用方决定要不要 clearCart (createOrder 单次清; createOrders 多订单完成后统一清).
+ */
+async function _createSingleOrder(
+  userId: string,
+  input:  CreateOrderInput,
+  subCartItems: CartItem[],
+): Promise<OrderRow | null> {
+  if (!subCartItems || subCartItems.length === 0) return null;
+  // Step 1: 拉 wholesale
+  const skuIds = subCartItems.map(it => it.sku_id);
+  const { data: skuRows } = await supabase
+    .from('supplier_skus')
+    .select('id, wholesale_price_hkd')
+    .in('id', skuIds);
+  const wholesaleMap = new Map<string, number>();
+  for (const r of (skuRows as any[]) || []) {
+    if (typeof r.wholesale_price_hkd === 'number') wholesaleMap.set(r.id, r.wholesale_price_hkd);
+  }
+
+  let subtotal = 0;
+  let commissionTotal = 0;
+  const itemsToInsert: any[] = [];
+  for (const it of subCartItems) {
+    const lineSubtotal = it.retail_price_hkd * it.qty;
+    const wholesale = wholesaleMap.get(it.sku_id);
+    const lineCommission = typeof wholesale === 'number'
+      ? (it.retail_price_hkd - wholesale) * it.qty
+      : null;
+    subtotal += lineSubtotal;
+    if (lineCommission !== null) commissionTotal += lineCommission;
+    itemsToInsert.push({
+      sku_id:                   it.sku_id,
+      sku_name_snapshot:        it.sku_name,
+      qty:                      it.qty,
+      unit_retail_price_hkd:    it.retail_price_hkd,
+      unit_wholesale_price_hkd: typeof wholesale === 'number' ? wholesale : null,
+      subtotal_hkd:             lineSubtotal,
+      commission_hkd:           lineCommission,
+    });
+  }
+
+  const deliveryFee = 0;
+  const total = subtotal + deliveryFee;
+
+  const { data: order, error: orderErr } = await supabase
+    .from('orders')
+    .insert({
+      user_id:                userId,
+      household_id:           input.householdId ?? null,
+      delivery_address:       input.deliveryAddress,
+      delivery_contact_name:  input.deliveryContactName,
+      delivery_contact_phone: input.deliveryContactPhone,
+      delivery_time_slot:     input.deliveryTimeSlot,
+      delivery_note:          input.deliveryNote ?? null,
+      subtotal_hkd:           subtotal,
+      delivery_fee_hkd:       deliveryFee,
+      total_hkd:              total,
+      commission_total_hkd:   commissionTotal,
+      status:                 'pending_payment',
+    })
+    .select(ORDER_USER_SELECT)
+    .single();
+  if (orderErr || !order) {
+    console.warn('[orders] _createSingleOrder INSERT failed:', orderErr);
+    return null;
+  }
+  const orderId = (order as any).id as string;
+
+  const itemsWithOrderId = itemsToInsert.map(it => ({ ...it, order_id: orderId }));
+  const { error: itemsErr } = await supabase
+    .from('order_items')
+    .insert(itemsWithOrderId);
+  if (itemsErr) {
+    console.warn('[orders] order_items INSERT failed:', itemsErr);
+  }
+
+  await supabase
+    .from('order_status_history')
+    .insert({ order_id: orderId, status: 'pending_payment', note: '订单已创建, 等待支付' });
+
+  return order as OrderRow;
+}
+
+/**
+ * createOrder — 单订单 (back-compat 入口). 内部走 _createSingleOrder + clearCart.
  *
  * 080-A: status='pending_payment', 不接 Stripe. 080-B 接通后 createOrder 后立刻
  * 触发 create-checkout-session.
+ *
+ * TICKET-083: 多供应商场景请改用 createOrders 拆多张订单.
  */
 export async function createOrder(
   userId: string,
@@ -98,92 +185,45 @@ export async function createOrder(
   if (!userId) return null;
   if (!input.cartItems || input.cartItems.length === 0) return null;
   try {
-    // Step 1: 算 subtotal + 拉 wholesale (老板私密快照写 DB).
-    // 拉 SKU 当前 wholesale_price_hkd (cart 没缓存, 防 cart 篡改 retail; retail 用 cart 里的).
-    const skuIds = input.cartItems.map(it => it.sku_id);
-    const { data: skuRows } = await supabase
-      .from('supplier_skus')
-      .select('id, wholesale_price_hkd')
-      .in('id', skuIds);
-    const wholesaleMap = new Map<string, number>();
-    for (const r of (skuRows as any[]) || []) {
-      if (typeof r.wholesale_price_hkd === 'number') wholesaleMap.set(r.id, r.wholesale_price_hkd);
-    }
-
-    let subtotal = 0;
-    let commissionTotal = 0;
-    const itemsToInsert: any[] = [];
-    for (const it of input.cartItems) {
-      const lineSubtotal = it.retail_price_hkd * it.qty;
-      const wholesale = wholesaleMap.get(it.sku_id);
-      const lineCommission = typeof wholesale === 'number'
-        ? (it.retail_price_hkd - wholesale) * it.qty
-        : null;
-      subtotal += lineSubtotal;
-      if (lineCommission !== null) commissionTotal += lineCommission;
-      itemsToInsert.push({
-        sku_id:                   it.sku_id,
-        sku_name_snapshot:        it.sku_name,
-        qty:                      it.qty,
-        unit_retail_price_hkd:    it.retail_price_hkd,
-        unit_wholesale_price_hkd: typeof wholesale === 'number' ? wholesale : null,
-        subtotal_hkd:             lineSubtotal,
-        commission_hkd:           lineCommission,
-      });
-    }
-
-    const deliveryFee = 0;   // 080-A 免运费占位; 080-C 接 Inalca 后按区域算
-    const total = subtotal + deliveryFee;
-
-    // Step 2: INSERT orders
-    const { data: order, error: orderErr } = await supabase
-      .from('orders')
-      .insert({
-        user_id:                userId,
-        household_id:           input.householdId ?? null,
-        delivery_address:       input.deliveryAddress,
-        delivery_contact_name:  input.deliveryContactName,
-        delivery_contact_phone: input.deliveryContactPhone,
-        delivery_time_slot:     input.deliveryTimeSlot,
-        delivery_note:          input.deliveryNote ?? null,
-        subtotal_hkd:           subtotal,
-        delivery_fee_hkd:       deliveryFee,
-        total_hkd:              total,
-        commission_total_hkd:   commissionTotal,
-        status:                 'pending_payment',
-      })
-      .select(ORDER_USER_SELECT)
-      .single();
-    if (orderErr || !order) {
-      console.warn('[orders] createOrder INSERT failed:', orderErr);
-      return null;
-    }
-
-    const orderId = (order as any).id as string;
-
-    // Step 3: INSERT order_items (FK order_id 必须在 step 2 之后)
-    const itemsWithOrderId = itemsToInsert.map(it => ({ ...it, order_id: orderId }));
-    const { error: itemsErr } = await supabase
-      .from('order_items')
-      .insert(itemsWithOrderId);
-    if (itemsErr) {
-      console.warn('[orders] order_items INSERT failed:', itemsErr);
-      // 已写入 orders 头但 items 失败 — 留 pending_payment 不孤立 (用户可看到订单号
-      // 联系客服). 不 rollback, RLS+anon-first 没事务支持.
-    }
-
-    // Step 4: INSERT order_status_history (开局事件)
-    await supabase
-      .from('order_status_history')
-      .insert({ order_id: orderId, status: 'pending_payment', note: '订单已创建, 等待支付' });
-
-    // Step 5: 清购物车
+    const order = await _createSingleOrder(userId, input, input.cartItems);
+    if (!order) return null;
     await clearCart(userId);
-
-    return order as OrderRow;
+    return order;
   } catch (e) {
     console.warn('[orders] createOrder exception:', e);
     return null;
+  }
+}
+
+/**
+ * createOrders — TICKET-083 §7a 多订单. 按 supplier_id 拆 cartItems 创建多张 order.
+ *
+ * 流程:
+ *   1. groupItemsBySupplier(cartItems) → N 个 supplier 组
+ *   2. 对每组调 _createSingleOrder (各自 wholesale + commission + history)
+ *   3. 全部成功后 clearCart (中途失败的部分订单不回滚, RLS 没事务支持; 失败的 group 跳过)
+ *   4. 返回 OrderRow[] 给 Checkout 跳 /orders/success?ids=A,B
+ */
+export async function createOrders(
+  userId: string,
+  input:  CreateOrderInput,
+): Promise<OrderRow[]> {
+  if (!userId) return [];
+  if (!input.cartItems || input.cartItems.length === 0) return [];
+  try {
+    const groups = groupItemsBySupplier(input.cartItems);
+    const orders: OrderRow[] = [];
+    for (const g of groups) {
+      const o = await _createSingleOrder(userId, input, g.items);
+      if (o) orders.push(o);
+    }
+    if (orders.length > 0) {
+      await clearCart(userId);
+    }
+    return orders;
+  } catch (e) {
+    console.warn('[orders] createOrders exception:', e);
+    return [];
   }
 }
 
