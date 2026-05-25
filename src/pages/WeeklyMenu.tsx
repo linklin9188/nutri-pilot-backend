@@ -31,6 +31,8 @@ import IntentInputBox from "../components/IntentInputBox";
 import ChatSwapModal from "../components/ChatSwapModal";
 import { loadIntentBias, clearIntentBias, type IntentBias } from "../lib/intentBias";
 import { useLanguage } from "../contexts/LanguageContext";
+import { loadDailySchedule, setDailyMealTime, type DailyMealSchedule } from "../lib/dailyMealSchedule";
+import { getUserId } from "../lib/userId";
 
 // ── Day tabs ──────────────────────────────────────────────────────────────────
 
@@ -545,6 +547,80 @@ export default function WeeklyMenu() {
     window.addEventListener('nutri-eaten-changed', sync);
     return () => window.removeEventListener('nutri-eaten-changed', sync);
   }, []);
+
+  // TICKET-082 §Phase 5b — 每天独立 meal schedule (日级 chip).
+  //   householdId 从 user → households 拉; 7 天每天一个 DailyMealSchedule.
+  //   editMeal=null 关弹窗, 否则 {dayIdx, meal} 开 time picker bottom sheet.
+  const [householdId, setHouseholdId] = useState<string>('');
+  const [schedulesByDay, setSchedulesByDay] = useState<Record<number, DailyMealSchedule>>({});
+  const [editMeal, setEditMeal] = useState<{ dayIdx: number; meal: 'lunch' | 'dinner' } | null>(null);
+  const [editTimeInput, setEditTimeInput] = useState('19:00');
+  const [editBusy, setEditBusy] = useState(false);
+
+  // 一次拉 employer 的 household id
+  useEffect(() => {
+    const uid = getUserId();
+    if (!uid) return;
+    supabase.from('households')
+      .select('id')
+      .eq('employer_id', uid)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .then(({ data }) => {
+        const hh = (data?.[0] as any)?.id;
+        if (hh) setHouseholdId(hh);
+      });
+  }, []);
+
+  // 当 weeklyMenu 或 householdId 就位, 给 7 天每天拉 daily schedule.
+  useEffect(() => {
+    if (!householdId || !weeklyMenu?.weekStart) return;
+    const uid = getUserId();
+    const [y, m, d] = weeklyMenu.weekStart.split('-').map(Number);
+    const daysCount = weeklyMenu.days?.length ?? 5;
+    (async () => {
+      const out: Record<number, DailyMealSchedule> = {};
+      for (let i = 0; i < daysCount; i++) {
+        const dt = new Date(y, m - 1, d + i);
+        const iso = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+        try {
+          out[i] = await loadDailySchedule(householdId, iso, uid);
+        } catch (err) {
+          console.warn('[WeeklyMenu] loadDailySchedule day', i, 'err:', err);
+        }
+      }
+      setSchedulesByDay(out);
+    })();
+  }, [householdId, weeklyMenu?.weekStart, weeklyMenu?.days?.length]);
+
+  function isoForDay(i: number): string {
+    if (!weeklyMenu?.weekStart) return '';
+    const [y, m, d] = weeklyMenu.weekStart.split('-').map(Number);
+    const dt = new Date(y, m - 1, d + i);
+    return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+  }
+  function openMealEditor(dayIdx: number, meal: 'lunch' | 'dinner') {
+    const sch = schedulesByDay[dayIdx];
+    const current = meal === 'lunch' ? (sch?.lunch_time ?? '12:00') : (sch?.dinner_time ?? '19:00');
+    setEditTimeInput(current);
+    setEditMeal({ dayIdx, meal });
+  }
+  async function saveMealEdit() {
+    if (!editMeal || !householdId) return;
+    setEditBusy(true);
+    try {
+      const iso = isoForDay(editMeal.dayIdx);
+      await setDailyMealTime(householdId, iso, editMeal.meal, editTimeInput, 'employer');
+      const uid = getUserId();
+      const fresh = await loadDailySchedule(householdId, iso, uid);
+      setSchedulesByDay(prev => ({ ...prev, [editMeal.dayIdx]: fresh }));
+      setEditMeal(null);
+    } catch (e) {
+      console.warn('[WeeklyMenu] save meal time error:', e);
+    } finally {
+      setEditBusy(false);
+    }
+  }
   async function handleMarkEaten(dish: SupabaseDish, mealIdx: number) {
     const dishId = dish.id;
     if (!dishId) return;
@@ -1225,6 +1301,32 @@ export default function WeeklyMenu() {
                                 })()}
                               </p>
                             </div>
+                            {/* TICKET-082 §Phase 5b — 当天开饭时间 chip (日级 schedule).
+                                householdId 缺失 (未建 household) 隐藏. */}
+                            {householdId && (() => {
+                              const sch = schedulesByDay[i];
+                              return (
+                                <div className="px-5 flex items-center gap-2 mb-3 flex-wrap">
+                                  <span className="font-serif italic shrink-0" style={{ fontSize: 11, color: "rgba(255,255,255,0.45)" }}>
+                                    {t('Eat at', '开饭')}
+                                  </span>
+                                  <button onClick={() => openMealEditor(i, 'lunch')}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full active:scale-90 transition-transform shrink-0"
+                                    style={{ background: "rgba(255,90,31,0.18)", border: "1px solid rgba(255,90,31,0.35)", fontSize: 11, color: "#FF8C54", fontWeight: 700 }}>
+                                    <span>🍱</span>
+                                    <span className="tabular-nums">{sch?.lunch_time ?? '--:--'}</span>
+                                    <span className="material-symbols-outlined" style={{ fontSize: 11, color: "rgba(255,140,84,0.7)" }}>edit</span>
+                                  </button>
+                                  <button onClick={() => openMealEditor(i, 'dinner')}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full active:scale-90 transition-transform shrink-0"
+                                    style={{ background: "rgba(255,90,31,0.18)", border: "1px solid rgba(255,90,31,0.35)", fontSize: 11, color: "#FF8C54", fontWeight: 700 }}>
+                                    <span>🍽</span>
+                                    <span className="tabular-nums">{sch?.dinner_time ?? '--:--'}</span>
+                                    <span className="material-symbols-outlined" style={{ fontSize: 11, color: "rgba(255,140,84,0.7)" }}>edit</span>
+                                  </button>
+                                </div>
+                              );
+                            })()}
                             {/* Per-day "谁在家吃" chip row — tap to toggle each
                                 member for this day. Drives both dish count
                                 (calcDishCount) and procurement quantity. */}
@@ -1358,6 +1460,51 @@ export default function WeeklyMenu() {
         onClose={() => setChefBookingOpen(false)}
         dish={chefBookingDish}
       />
+
+      {/* TICKET-082 §Phase 5b — 当天开饭时间 time picker bottom sheet (每日独立) */}
+      {editMeal && (
+        <>
+          <div className="fixed inset-0 z-[120]" onClick={() => !editBusy && setEditMeal(null)}
+            style={{ background: 'rgba(0,0,0,0.55)' }} />
+          <div className="fixed left-0 right-0 bottom-0 z-[121] max-w-md mx-auto rounded-t-3xl shadow-2xl"
+            style={{ background: '#1a1a1a', paddingBottom: 'env(safe-area-inset-bottom, 16px)', border: '1px solid rgba(255,255,255,0.08)' }}>
+            <div className="px-5 pt-4 pb-3 border-b border-white/[0.08] flex items-center justify-between">
+              <p className="font-bold text-white" style={{ fontSize: 15 }}>
+                {editMeal.meal === 'lunch'
+                  ? t('Set lunch time', '设午饭时间')
+                  : t('Set dinner time', '设晚饭时间')}
+                {' · '}
+                <span className="text-white/55" style={{ fontSize: 12 }}>
+                  {dayLabel(editMeal.dayIdx, language === 'zh' || language === 'zh-Hant')}
+                </span>
+              </p>
+              <button onClick={() => !editBusy && setEditMeal(null)}
+                className="w-8 h-8 rounded-full flex items-center justify-center active:scale-90"
+                style={{ background: 'rgba(255,255,255,0.08)' }}>
+                <span className="material-symbols-outlined text-white/70" style={{ fontSize: 17 }}>close</span>
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <input
+                type="time"
+                value={editTimeInput}
+                onChange={e => setEditTimeInput(e.target.value)}
+                disabled={editBusy}
+                className="w-full px-4 py-3 rounded-2xl text-center font-black tabular-nums bg-white/5 border-2 border-orange-500/40 text-[#FF8C54]"
+                style={{ fontSize: 28 }}
+              />
+              <button onClick={saveMealEdit} disabled={editBusy}
+                className="w-full py-3 rounded-2xl font-bold text-white active:scale-[0.98] transition-all disabled:opacity-40"
+                style={{ background: 'linear-gradient(135deg, #FF5A1F, #FF8C54)', fontSize: 14 }}>
+                {editBusy ? '…' : t('Save', '保存')}
+              </button>
+              <p className="text-center text-white/45" style={{ fontSize: 11 }}>
+                {t('Only changes this day. Default time is in Settings.', '只改这一天。默认时间在设置里。')}
+              </p>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

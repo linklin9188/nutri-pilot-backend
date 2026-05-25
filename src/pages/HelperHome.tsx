@@ -36,6 +36,8 @@ import { getDishTitle } from "../lib/dishTitleI18n";
 import HelperTabBar from "../components/HelperTabBar";
 // TICKET-076 §Phase 3-5 — 备菜时间反推 + Web Notification 提醒
 import { loadTodayCookSchedule, type DayCookSchedule } from "../lib/cookSchedule";
+import { setDailyMealTime, dateToISODay } from "../lib/dailyMealSchedule";
+import { loadHelperHouseholdId } from "../lib/helperEmployerMenu";
 
 interface DayDish {
   id?: string;
@@ -114,6 +116,45 @@ export default function HelperHome() {
   // §Phase 5 — Web Notification 权限. 'unsupported' = 浏览器不支持 Notification API (graceful degrade, 只显 UI 不挂)
   type NotifState = 'unsupported' | 'default' | 'granted' | 'denied';
   const [notifPerm, setNotifPerm] = useState<NotifState>('unsupported');
+
+  // TICKET-082 §Phase 6 — 菲佣视角改"开饭"时间 (开做/备菜反推, 不能直接改).
+  //   helper householdId 拉一次, time picker bottom sheet 写
+  //   household_meal_schedule (set_by='helper') 后 reload cookSchedule.
+  const [helperHouseholdId, setHelperHouseholdId] = useState<string | null>(null);
+  const [editMeal, setEditMeal] = useState<'lunch' | 'dinner' | null>(null);
+  const [editTimeInput, setEditTimeInput] = useState('19:00');
+  const [editBusy, setEditBusy] = useState(false);
+  useEffect(() => {
+    const uid = getUserId();
+    if (!uid) return;
+    loadHelperHouseholdId(uid).then(setHelperHouseholdId);
+  }, []);
+  function openMealEditor(meal: 'lunch' | 'dinner') {
+    const current = meal === 'lunch'
+      ? (schedule?.lunch?.eatTime ?? '12:00')
+      : (schedule?.dinner?.eatTime ?? '19:00');
+    setEditTimeInput(current);
+    setEditMeal(meal);
+  }
+  async function saveMealEdit() {
+    if (!editMeal || !helperHouseholdId) return;
+    setEditBusy(true);
+    try {
+      const today = dateToISODay(new Date());
+      await setDailyMealTime(helperHouseholdId, today, editMeal, editTimeInput, 'helper');
+      // reload 开做 / 备菜反推
+      const uid = getUserId();
+      if (uid) {
+        const fresh = await loadTodayCookSchedule(uid);
+        setSchedule(fresh);
+      }
+      setEditMeal(null);
+    } catch (e) {
+      console.warn('[HelperHome] save meal time error:', e);
+    } finally {
+      setEditBusy(false);
+    }
+  }
 
   const now = new Date();
   const hour = now.getHours();
@@ -554,7 +595,15 @@ export default function HelperHome() {
                   🍱 {t3('Lunch', '午饭', 'Tanghalian')}
                 </p>
                 <div className="space-y-0.5" style={{ fontSize: 11 }}>
-                  <div className="flex justify-between"><span style={{ color: "rgba(0,0,0,0.55)" }}>{t3('Eat at', '开饭', 'Kumain')}</span><span className="font-bold">{schedule.lunch.eatTime}</span></div>
+                  <div className="flex justify-between items-center">
+                    <span style={{ color: "rgba(0,0,0,0.55)" }}>{t3('Eat at', '开饭', 'Kumain')}</span>
+                    <button onClick={() => openMealEditor('lunch')}
+                      disabled={!helperHouseholdId}
+                      className="inline-flex items-center gap-1 active:scale-95 transition-transform disabled:opacity-40">
+                      <span className="font-bold">{schedule.lunch.eatTime}</span>
+                      <span className="material-symbols-outlined" style={{ fontSize: 12, color: "rgba(255,90,31,0.7)" }}>edit</span>
+                    </button>
+                  </div>
                   <div className="flex justify-between"><span style={{ color: "rgba(0,0,0,0.55)" }}>{t3('Start cooking', '开做', 'Magluto')}</span><span className="font-black" style={{ color: "#FF5A1F" }}>{schedule.lunch.startCookTime}</span></div>
                   <div className="flex justify-between"><span style={{ color: "rgba(0,0,0,0.55)" }}>{t3('Start prep', '备菜', 'Maghanda')}</span><span>{schedule.lunch.startPrepTime}</span></div>
                 </div>
@@ -567,7 +616,15 @@ export default function HelperHome() {
                   🍲 {t3('Dinner', '晚饭', 'Hapunan')}
                 </p>
                 <div className="space-y-0.5" style={{ fontSize: 11 }}>
-                  <div className="flex justify-between"><span style={{ color: "rgba(0,0,0,0.55)" }}>{t3('Eat at', '开饭', 'Kumain')}</span><span className="font-bold">{schedule.dinner.eatTime}</span></div>
+                  <div className="flex justify-between items-center">
+                    <span style={{ color: "rgba(0,0,0,0.55)" }}>{t3('Eat at', '开饭', 'Kumain')}</span>
+                    <button onClick={() => openMealEditor('dinner')}
+                      disabled={!helperHouseholdId}
+                      className="inline-flex items-center gap-1 active:scale-95 transition-transform disabled:opacity-40">
+                      <span className="font-bold">{schedule.dinner.eatTime}</span>
+                      <span className="material-symbols-outlined" style={{ fontSize: 12, color: "rgba(255,90,31,0.7)" }}>edit</span>
+                    </button>
+                  </div>
                   <div className="flex justify-between"><span style={{ color: "rgba(0,0,0,0.55)" }}>{t3('Start cooking', '开做', 'Magluto')}</span><span className="font-black" style={{ color: "#FF5A1F" }}>{schedule.dinner.startCookTime}</span></div>
                   <div className="flex justify-between"><span style={{ color: "rgba(0,0,0,0.55)" }}>{t3('Start prep', '备菜', 'Maghanda')}</span><span>{schedule.dinner.startPrepTime}</span></div>
                 </div>
@@ -963,6 +1020,52 @@ export default function HelperHome() {
       </div>
 
       <HelperTabBar active="home" />
+
+      {/* TICKET-082 §Phase 6 — 菲佣改"开饭"时间 bottom sheet (set_by='helper').
+          开做 / 备菜由 cookSchedule 反推, 不能直接改. */}
+      {editMeal && (
+        <>
+          <div className="fixed inset-0 z-[120]" onClick={() => !editBusy && setEditMeal(null)}
+            style={{ background: 'rgba(0,0,0,0.45)' }} />
+          <div className="fixed left-0 right-0 bottom-0 z-[121] max-w-md mx-auto rounded-t-3xl shadow-2xl"
+            style={{ background: 'white', paddingBottom: 'env(safe-area-inset-bottom, 16px)' }}>
+            <div className="px-5 pt-4 pb-3 border-b border-black/[0.06] flex items-center justify-between">
+              <p className="font-bold" style={{ fontSize: 15, color: '#1a1a1a' }}>
+                {editMeal === 'lunch'
+                  ? t3('Set lunch time today', '设今天午饭时间', 'Itakda ang tanghalian ngayon')
+                  : t3('Set dinner time today', '设今天晚饭时间', 'Itakda ang hapunan ngayon')}
+              </p>
+              <button onClick={() => !editBusy && setEditMeal(null)}
+                className="w-8 h-8 rounded-full flex items-center justify-center active:scale-90"
+                style={{ background: 'rgba(0,0,0,0.05)' }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 17 }}>close</span>
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <input
+                type="time"
+                value={editTimeInput}
+                onChange={e => setEditTimeInput(e.target.value)}
+                disabled={editBusy}
+                className="w-full px-4 py-3 rounded-2xl border-2 border-orange-200 text-center font-black tabular-nums"
+                style={{ fontSize: 28, color: '#FF5A1F' }}
+              />
+              <button onClick={saveMealEdit} disabled={editBusy}
+                className="w-full py-3 rounded-2xl font-bold text-white active:scale-[0.98] transition-all disabled:opacity-40"
+                style={{ background: 'linear-gradient(135deg, #FF5A1F, #FF8C54)', fontSize: 14 }}>
+                {editBusy ? '…' : t3('Save', '保存', 'I-save')}
+              </button>
+              <p className="text-[11px] text-center text-secondary">
+                {t3(
+                  'Start cooking / prep time updates automatically.',
+                  '开做 / 备菜时间会自动更新。',
+                  'Awtomatikong mag-uupdate ang oras ng pagluluto.',
+                )}
+              </p>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

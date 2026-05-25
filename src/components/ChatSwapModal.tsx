@@ -23,6 +23,77 @@ import type { WeeklyMenu } from '../hooks/useWeeklyMenu';
 import { getDishTitle } from '../lib/dishTitleI18n';
 import { parseIntent, saveIntentBias, applyIntentBias } from '../lib/intentBias';
 import { supabase } from '../lib/supabase';
+import { setDailyMealTime, dateToISODay } from '../lib/dailyMealSchedule';
+import { getUserId } from '../lib/userId';
+
+/**
+ * TICKET-082 §Phase 7 — chat 自然语言识别开饭时间.
+ *
+ * 支持:
+ *   - "今晚 9 点开饭" / "晚饭 21:00" / "8 点吃晚饭" / "tonight 9pm dinner"
+ *   - "中午 12 点半" / "午饭 12:30" / "lunch at noon" / "noon lunch"
+ *
+ * 规则:
+ *   - 关键词: 晚/晚饭/晚餐/dinner/tonight → dinner; 中午/午饭/午餐/lunch/noon → lunch
+ *   - 时间提取: "X 点 Y 分" / "X:Y" / "Xpm" / "Xam". 中文"半"→30, "noon"→12:00
+ *   - 默认 PM: dinner 时 1-11 点默认 PM (+12). lunch 不补 (12 点不变, 1 点视为 13)
+ *   - 识别失败返 null, 不打扰原 swap 流
+ */
+export function extractMealTime(text: string): { meal: 'lunch' | 'dinner'; time: string } | null {
+  if (!text) return null;
+  const lower = text.toLowerCase();
+
+  // 1. meal 识别
+  let meal: 'lunch' | 'dinner' | null = null;
+  if (/晚饭|晚餐|今晚|dinner|tonight|tonite/.test(lower)) meal = 'dinner';
+  else if (/午饭|午餐|中午|lunch|noon/.test(lower)) meal = 'lunch';
+  else if (/晚\s*\d/.test(text)) meal = 'dinner';
+  if (!meal) return null;
+
+  // 2. 特殊关键词: noon / 中午 默认 12:00
+  if (/noon/.test(lower) && !/\d/.test(lower)) {
+    return { meal, time: '12:00' };
+  }
+
+  // 3. 时间提取
+  let hour: number | null = null;
+  let minute = 0;
+  // 优先 HH:MM
+  const colon = text.match(/(\d{1,2})[:：](\d{2})/);
+  if (colon) {
+    hour = parseInt(colon[1], 10);
+    minute = parseInt(colon[2], 10);
+  } else {
+    // 中文 X 点 (Y 分 | 半)
+    const zh = text.match(/(\d{1,2})\s*点\s*(?:(\d{1,2})\s*分|(半))?/);
+    if (zh) {
+      hour = parseInt(zh[1], 10);
+      if (zh[2]) minute = parseInt(zh[2], 10);
+      else if (zh[3]) minute = 30;
+    } else {
+      // 英文 Xpm / Xam / X o'clock
+      const en = text.match(/(\d{1,2})\s*(pm|am)/i);
+      if (en) {
+        hour = parseInt(en[1], 10);
+        const isPm = en[2].toLowerCase() === 'pm';
+        if (isPm && hour < 12) hour += 12;
+        if (!isPm && hour === 12) hour = 0;
+      }
+    }
+  }
+  if (hour === null) return null;
+
+  // 4. dinner 默认补 PM (1-11 → 13-23). lunch 不补但 1-6 异常忽略.
+  if (meal === 'dinner' && hour >= 1 && hour <= 11) hour += 12;
+  if (meal === 'lunch' && hour >= 1 && hour <= 5) {
+    // 午饭不可能 1-5 点, 跳过 (识别失败)
+    return null;
+  }
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+
+  const time = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  return { meal, time };
+}
 
 interface Props {
   open: boolean;
@@ -52,8 +123,49 @@ export default function ChatSwapModal({
       setError(null);
       setToast(null);
       setSwapping(false);
+      setMealTimeApplied(false);
     }
   }, [open]);
+
+  // TICKET-082 §Phase 7 — 自然语言识别开饭时间 + householdId 拉取
+  const detectedTime = useMemo(() => extractMealTime(userIntent), [userIntent]);
+  const [householdId, setHouseholdId] = useState<string | null>(null);
+  const [mealTimeBusy, setMealTimeBusy] = useState(false);
+  const [mealTimeApplied, setMealTimeApplied] = useState(false);
+  useEffect(() => {
+    if (!open || !detectedTime) return;
+    const uid = getUserId();
+    if (!uid) return;
+    supabase.from('households')
+      .select('id')
+      .eq('employer_id', uid)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .then(({ data }) => {
+        const hh = (data?.[0] as any)?.id;
+        if (hh) setHouseholdId(hh);
+      });
+  }, [open, detectedTime]);
+  async function confirmDetectedTime() {
+    if (!detectedTime || !householdId || mealTimeBusy) return;
+    setMealTimeBusy(true);
+    try {
+      const today = dateToISODay(new Date());
+      await setDailyMealTime(householdId, today, detectedTime.meal, detectedTime.time, 'chat');
+      setMealTimeApplied(true);
+      setToast(t3(
+        `Saved: ${detectedTime.meal === 'lunch' ? 'Lunch' : 'Dinner'} ${detectedTime.time}`,
+        `已设今天${detectedTime.meal === 'lunch' ? '午饭' : '晚饭'} ${detectedTime.time}`,
+        `Naka-save: ${detectedTime.meal === 'lunch' ? 'Tanghalian' : 'Hapunan'} ${detectedTime.time}`,
+      ));
+      setTimeout(() => setToast(null), 2000);
+    } catch (e) {
+      console.warn('[ChatSwapModal] save meal time error:', e);
+      setError(t3('Failed to save meal time', '保存开饭时间失败', 'Nabigo i-save'));
+    } finally {
+      setMealTimeBusy(false);
+    }
+  }
 
   // 今天菜单 lunch + dinner. weeklyMenu.days[todayIdx].dishes 是 SupabaseDish[]
   // (slot allocation 已合到 day.dishes). Algorithm 现状 5-day, lunch 在前 dinner 在后.
@@ -213,6 +325,38 @@ export default function ChatSwapModal({
               </p>
             </div>
           </div>
+
+          {/* TICKET-082 §Phase 7 — 识别到开饭时间, 弹 confirm banner.
+              householdId 未拉到 (无 helper / 未建 household) 隐藏 (D 兜底). */}
+          {detectedTime && householdId && !mealTimeApplied && (
+            <div className="mb-3 rounded-2xl px-3.5 py-3"
+              style={{ background: 'rgba(255,90,31,0.10)', border: '1px solid rgba(255,90,31,0.35)' }}>
+              <p className="text-white/85 mb-2" style={{ fontSize: 12, lineHeight: 1.5 }}>
+                {t3(
+                  `Set today's ${detectedTime.meal === 'lunch' ? 'lunch' : 'dinner'} to ${detectedTime.time}?`,
+                  `要把今天${detectedTime.meal === 'lunch' ? '午饭' : '晚饭'}改成 ${detectedTime.time} 吗?`,
+                  `Itakda ang ${detectedTime.meal === 'lunch' ? 'tanghalian' : 'hapunan'} sa ${detectedTime.time}?`,
+                )}
+              </p>
+              <button onClick={confirmDetectedTime} disabled={mealTimeBusy}
+                className="w-full py-2 rounded-xl font-bold text-white active:scale-[0.98] transition-all disabled:opacity-40"
+                style={{ background: 'linear-gradient(135deg, #FF5A1F, #FF8C54)', fontSize: 12 }}>
+                {mealTimeBusy ? '…' : t3('Confirm', '确认', 'Kumpirmahin')}
+              </button>
+            </div>
+          )}
+          {detectedTime && mealTimeApplied && (
+            <div className="mb-3 rounded-2xl px-3.5 py-2"
+              style={{ background: 'rgba(22,163,74,0.12)', border: '1px solid rgba(22,163,74,0.30)' }}>
+              <p className="text-emerald-300" style={{ fontSize: 11.5, fontWeight: 600 }}>
+                {t3(
+                  `Saved: ${detectedTime.meal === 'lunch' ? 'Lunch' : 'Dinner'} ${detectedTime.time}`,
+                  `已设: ${detectedTime.meal === 'lunch' ? '午饭' : '晚饭'} ${detectedTime.time}`,
+                  `Naka-save: ${detectedTime.meal === 'lunch' ? 'Tanghalian' : 'Hapunan'} ${detectedTime.time}`,
+                )}
+              </p>
+            </div>
+          )}
 
           {/* AI reply */}
           <div className="flex items-start gap-2 mb-4">

@@ -30,6 +30,7 @@ import { loadIntentBias } from "../lib/intentBias";
 import { getUserId } from "../lib/userId";
 import { loadCuisineMode, type CuisineMode } from "../lib/cuisineFilter";
 import { loadFamilyMembers } from "../lib/familyPrefs";
+import { loadDailySchedule, setDailyMealTime, dateToISODay, type DailyMealSchedule } from "../lib/dailyMealSchedule";
 import { HeartButton } from "../components/HeartButton";
 import { addFavorite } from "../lib/favorites";
 import { TagBadgeRow, type TagBadge } from "../components/TagBadge";
@@ -753,6 +754,44 @@ export default function Home() {
   const [householdId, setHouseholdId] = useState("");
   const [inviteCode, setInviteCode] = useState("");
   const [inviteCopied, setInviteCopied] = useState(false);
+
+  // TICKET-082 §Phase 5a — 今日开饭时间 chip (日级 schedule).
+  //   householdId 从下面 useEffect 拉到后, 触发 loadDailySchedule.
+  //   editMeal=null 时关弹窗, 'lunch'/'dinner' 时弹 time picker bottom sheet.
+  const [todaySchedule, setTodaySchedule] = useState<DailyMealSchedule | null>(null);
+  const [editMeal, setEditMeal] = useState<'lunch' | 'dinner' | null>(null);
+  const [editTimeInput, setEditTimeInput] = useState('19:00');
+  const [editBusy, setEditBusy] = useState(false);
+  const todayISO = dateToISODay(new Date());
+  useEffect(() => {
+    if (!householdId) return;
+    const uid = getUserId();
+    loadDailySchedule(householdId, todayISO, uid).then(setTodaySchedule)
+      .catch(err => console.warn('[Home] loadDailySchedule error:', err));
+  }, [householdId, todayISO]);
+  function openMealTimeEditor(meal: 'lunch' | 'dinner') {
+    const current = meal === 'lunch'
+      ? todaySchedule?.lunch_time  ?? '12:00'
+      : todaySchedule?.dinner_time ?? '19:00';
+    setEditTimeInput(current);
+    setEditMeal(meal);
+  }
+  async function saveMealTimeEdit() {
+    if (!editMeal || !householdId) return;
+    setEditBusy(true);
+    try {
+      await setDailyMealTime(householdId, todayISO, editMeal, editTimeInput, 'employer');
+      const uid = getUserId();
+      const fresh = await loadDailySchedule(householdId, todayISO, uid);
+      setTodaySchedule(fresh);
+      setEditMeal(null);
+    } catch (e) {
+      console.warn('[Home] save meal time error:', e);
+      // 失败保留弹窗让用户重试
+    } finally {
+      setEditBusy(false);
+    }
+  }
 
   useEffect(() => {
     const userId = getUserId();
@@ -1575,6 +1614,31 @@ export default function Home() {
                 now hosts the favorites shortcut. */}
           </div>
 
+          {/* TICKET-082 §Phase 5a — 今日开饭时间 chip (日级 schedule).
+              点 ✏️ 弹底部 time picker → setDailyMealTime(..., 'employer').
+              householdId 缺失 (无 helper / 未建 household) 隐藏 (D 兜底). */}
+          {householdId && (
+            <div className="flex items-center gap-2 mb-3 px-1 flex-wrap">
+              <span className="text-[11px] font-bold text-secondary/60 uppercase tracking-wider">
+                {t3("Today's meal time", '今日开饭', 'Oras ng pagkain ngayon')}
+              </span>
+              <button onClick={() => openMealTimeEditor('lunch')}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl font-bold text-[#FF5A1F] active:scale-95 transition-transform"
+                style={{ background: '#FFF3E6', border: '1px solid rgba(255,90,31,0.25)', fontSize: 12 }}>
+                <span>🍱</span>
+                <span className="tabular-nums">{todaySchedule?.lunch_time ?? '--:--'}</span>
+                <span className="material-symbols-outlined" style={{ fontSize: 12, color: 'rgba(255,90,31,0.65)' }}>edit</span>
+              </button>
+              <button onClick={() => openMealTimeEditor('dinner')}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl font-bold text-[#FF5A1F] active:scale-95 transition-transform"
+                style={{ background: '#FFF3E6', border: '1px solid rgba(255,90,31,0.25)', fontSize: 12 }}>
+                <span>🍽</span>
+                <span className="tabular-nums">{todaySchedule?.dinner_time ?? '--:--'}</span>
+                <span className="material-symbols-outlined" style={{ fontSize: 12, color: 'rgba(255,90,31,0.65)' }}>edit</span>
+              </button>
+            </div>
+          )}
+
           {/* Cuisine filter + 今日用餐人数 chip — same row, two halves. */}
           <div className="relative flex items-center justify-between mb-3">
             <div className="inline-flex p-1 rounded-2xl gap-0.5"
@@ -2251,6 +2315,51 @@ export default function Home() {
             </div>
             <div className="p-4">
               <ShareCard />
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* TICKET-082 §Phase 5a — 今日开饭时间 time picker bottom sheet */}
+      {editMeal && (
+        <>
+          <div className="fixed inset-0 z-[120]" onClick={() => !editBusy && setEditMeal(null)}
+            style={{ background: 'rgba(0,0,0,0.45)' }} />
+          <div className="fixed left-0 right-0 bottom-0 z-[121] max-w-md mx-auto rounded-t-3xl shadow-2xl"
+            style={{ background: 'white', paddingBottom: 'env(safe-area-inset-bottom, 16px)' }}>
+            <div className="px-5 pt-4 pb-3 border-b border-black/[0.06] flex items-center justify-between">
+              <p className="font-bold" style={{ fontSize: 15, color: '#1a1a1a' }}>
+                {editMeal === 'lunch'
+                  ? t3('Set lunch time today', '设今天午饭时间', 'Itakda ang tanghalian ngayon')
+                  : t3('Set dinner time today', '设今天晚饭时间', 'Itakda ang hapunan ngayon')}
+              </p>
+              <button onClick={() => !editBusy && setEditMeal(null)}
+                className="w-8 h-8 rounded-full flex items-center justify-center active:scale-90"
+                style={{ background: 'rgba(0,0,0,0.05)' }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 17 }}>close</span>
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <input
+                type="time"
+                value={editTimeInput}
+                onChange={e => setEditTimeInput(e.target.value)}
+                disabled={editBusy}
+                className="w-full px-4 py-3 rounded-2xl border-2 border-orange-200 text-center font-black tabular-nums"
+                style={{ fontSize: 28, color: '#FF5A1F' }}
+              />
+              <button onClick={saveMealTimeEdit} disabled={editBusy}
+                className="w-full py-3 rounded-2xl font-bold text-white active:scale-[0.98] transition-all disabled:opacity-40"
+                style={{ background: 'linear-gradient(135deg, #FF5A1F, #FF8C54)', fontSize: 14 }}>
+                {editBusy ? '…' : t3('Save', '保存', 'I-save')}
+              </button>
+              <p className="text-[11px] text-center text-secondary">
+                {t3(
+                  'Only changes today. Default time is in Settings.',
+                  '只改今天。默认时间在设置里。',
+                  'Para lang ngayon. Default sa Settings.',
+                )}
+              </p>
             </div>
           </div>
         </>

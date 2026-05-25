@@ -16,8 +16,8 @@
  *   startCookTime = 19:00 - 30 = 18:30
  *   startPrepTime = 18:30 - 15 = 18:15
  */
+import { loadDailySchedule, dateToISODay } from './dailyMealSchedule';
 import { loadEmployerTodayMenu, type EmployerDishLite } from './helperEmployerMenu';
-import { supabase } from './supabase';
 
 export interface CookSchedule {
   meal:           'lunch' | 'dinner';
@@ -101,17 +101,12 @@ export async function loadTodayCookSchedule(
   const menu = await loadEmployerTodayMenu(helperUserId);
   if (!menu.employerId) return empty;
 
-  // 2. employer 用餐时间
-  const { data: profile, error } = await supabase
-    .from('user_profiles')
-    .select('lunch_time, dinner_time')
-    .eq('id', menu.employerId)
-    .maybeSingle();
-  if (error) {
-    console.warn('[cookSchedule] user_profiles fetch error:', error);
-  }
-  const lunchTime  = (profile as any)?.lunch_time?.slice(0, 5)  ?? '12:00';
-  const dinnerTime = (profile as any)?.dinner_time?.slice(0, 5) ?? '19:00';
+  // 2. employer 用餐时间 — TICKET-082: 日级 schedule (household_meal_schedule)
+  //    优先, 没设回退 user_profiles.lunch_time/dinner_time, 都没设硬编码默认.
+  const today = dateToISODay(new Date());
+  const sched = await loadDailySchedule(menu.householdId, today, menu.employerId);
+  const lunchTime  = sched.lunch_time  ?? '12:00';
+  const dinnerTime = sched.dinner_time ?? '19:00';
 
   // 3. 反推
   return {

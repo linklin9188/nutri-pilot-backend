@@ -1568,13 +1568,24 @@ export default function Settings() {
             添加家庭成员
           </button>
 
-          {/* TICKET-076 §Phase 2 — 用餐时间卡 (雇主设家里开饭时间, 算法反推菲佣开做时间)
-              仅雇主显示, helper 不直接编辑雇主用餐时间 (HelperSettings 是另一页). */}
+          {/* TICKET-082 §Phase 4 — 默认用餐时间卡 (TICKET-076 改语义).
+              用餐时间日级化后, 此卡仅作"默认时间 fallback" — 用户在今日菜单页
+              可临时改任一天 (写 household_meal_schedule), 这里设的是当天没设
+              时的兜底值, 写 user_profiles.lunch_time / dinner_time.
+              仅雇主显示, helper 不直接编辑雇主默认时间. */}
           {myRole === "employer" && (
             <div className="bg-white rounded-[22px] p-4 shadow-[0_4px_20px_rgba(0,0,0,0.04)]">
-              <h3 className="font-bold text-[14px] mb-3">
-                {t4('Meal Times', '用餐时间', 'Oras ng Pagkain', 'Waktu Makan')}
+              <h3 className="font-bold text-[14px] mb-1">
+                {t4('Default Meal Times', '默认用餐时间', 'Default na Oras ng Pagkain', 'Waktu Makan Default')}
               </h3>
+              <p className="text-[11px] text-secondary mb-3">
+                {t4(
+                  'Override per day on the menu page',
+                  '每天可在菜单页临时改',
+                  'Maaaring baguhin bawat araw sa menu page',
+                  'Bisa diubah per hari di halaman menu',
+                )}
+              </p>
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-[13px]">
