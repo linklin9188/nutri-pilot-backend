@@ -1,159 +1,247 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useLanguage, LANGUAGE_LABEL } from "../contexts/LanguageContext";
 import { supabase } from "../lib/supabase";
-import { type PrepStep } from "../hooks/useSupabaseMenu";
-import { useFeedbackEngine } from "../hooks/useFeedbackEngine";
-import { formatIngredientQty } from "../lib/quantity";
 import HelperTabBar from "../components/HelperTabBar";
+import {
+  dishToIngredients,
+  aggregateIngredients,
+  type AggregatedIngredient,
+} from "../lib/dishIngredients";
+import { getUserId } from "../lib/userId";
 
-// Tray labels per language. ABCD ordering is locked (kitchen physical
-// trays are labeled), so only the human-readable name shifts with locale.
-const TRAY_CONFIG: Record<string, { zh: string; en: string; tl: string; id: string; color: string; bg: string; icon: string }> = {
-  A: { zh: '主料',  en: 'Main',   tl: 'Pangunahin',  id: 'Utama',     color: 'text-red-600',   bg: 'bg-red-50 border-red-200',     icon: 'restaurant' },
-  B: { zh: '配菜',  en: 'Veg',    tl: 'Gulay',       id: 'Sayur',     color: 'text-green-700', bg: 'bg-green-50 border-green-200', icon: 'eco' },
-  C: { zh: '配料',  en: 'Extras', tl: 'Dagdag',      id: 'Tambahan',  color: 'text-blue-600',  bg: 'bg-blue-50 border-blue-200',   icon: 'scatter_plot' },
-  D: { zh: '调料',  en: 'Sauce',  tl: 'Sarsa',       id: 'Bumbu',     color: 'text-orange-600',bg: 'bg-orange-50 border-orange-200',icon: 'water_drop' },
-  E: { zh: '其他',  en: 'Other',  tl: 'Iba pa',      id: 'Lainnya',   color: 'text-gray-600',  bg: 'bg-gray-50 border-gray-200',   icon: 'more_horiz' },
-};
+/**
+ * HelperPrep — Shopping "我家有 / Already have" toggle screen for the helper.
+ *
+ * Rewritten by TICKET-20260525-061 (老板真测 #5). The previous version was a
+ * per-dish step-by-step prep checklist; the new spec is the inverse — the
+ * helper walks through today's aggregated ingredient list and ticks off what
+ * the kitchen already has so the employer's shopping run skips them.
+ *
+ * Pattern mirrors VerifyIngredients (the employer-side shopping screen) so
+ * the persistence key `home_inventory_<userId>_<YYYY-MM-DD>` is shared —
+ * the helper's "we already have flour" toggle is visible to the employer
+ * when they open the shopping list, and vice versa.
+ *
+ * What's kept from the previous file:
+ *   - Top-bar zh→en snap-on-mount useEffect (TICKET-060 — helper view never
+ *     uses Chinese even if a stale employer session leaked appLanguage)
+ *   - Language pill in the header (cycleLanguageForRole)
+ *   - HelperTabBar at the bottom
+ *   - i18n via t3(en, zh, tl) — every string passes through it.
+ */
 
-interface DishWithPrep {
+// Default headcount: helper has no profile of their own, so we read the
+// employer-side family stored under `nutri_family_members` + `nutri_eating_today`
+// (same source VerifyIngredients uses). Fall back to onboarding static count.
+function readHeadcount(): { adults: number; kids: number } {
+  try {
+    const allMembers = JSON.parse(
+      localStorage.getItem("nutri_family_members") || "[]",
+    ) as Array<{ id: string; lifeStage?: string }>;
+    if (allMembers.length > 0) {
+      const eatingIds = (() => {
+        try {
+          return JSON.parse(
+            localStorage.getItem("nutri_eating_today") || "null",
+          ) as string[] | null;
+        } catch {
+          return null;
+        }
+      })();
+      const today =
+        eatingIds && eatingIds.length > 0
+          ? allMembers.filter((m) => eatingIds.includes(m.id))
+          : allMembers;
+      const kids = today.filter((m) => m.lifeStage === "儿童").length;
+      const adults = today.length - kids;
+      return { adults, kids };
+    }
+  } catch {
+    /* fall through */
+  }
+  const adults = parseInt(localStorage.getItem("nutri_adults") ?? "2", 10);
+  const kids = parseInt(localStorage.getItem("nutri_kids") ?? "0", 10);
+  return { adults, kids };
+}
+
+// Minimum dish fields we need to run dishToIngredients + display titles.
+interface DishLite {
   id: string;
   title_zh: string;
   title_en?: string;
+  main_ingredient?: string;
+  course_type?: string;
+  prep_steps_json?: unknown;
   image_url?: string;
-  prep_steps_json?: PrepStep[] | null;
-  flavor_tags?: string[];
-  health_benefit_tags?: string[];
-  origin_cuisine?: string;
+}
+
+function todayKey(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
 }
 
 export default function HelperPrep() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const { t, t3, t4, cycleLanguageForRole, language, setLanguage, isChinese } = useLanguage();
-  // Treat 繁體 the same as 简体 for content selection; treat 'tl' (Tagalog,
-  // helper only) the same as English until Tagalog strings exist.
-  const useChineseContent = isChinese;
+  const {
+    t3,
+    cycleLanguageForRole,
+    language,
+    setLanguage,
+  } = useLanguage();
 
-  // TICKET-20260525-060 — Helper view never uses Chinese. If a stale appLanguage
-  // from a prior employer session leaked into this helper-only page, snap to EN
-  // on mount. Matches HelperHome.tsx:73-78 pattern.
+  // TICKET-20260525-060 — Helper view never uses Chinese. If a stale
+  // appLanguage from a prior employer session leaked into this helper-only
+  // page, snap to EN on mount. Matches HelperHome.tsx:73-78 pattern.
   useEffect(() => {
-    if (language === 'zh' || language === 'zh-Hant') {
-      setLanguage('en');
+    if (language === "zh" || language === "zh-Hant") {
+      setLanguage("en");
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const [dishes, setDishes]       = useState<DishWithPrep[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [completed, setCompleted] = useState<Set<string>>(new Set());
-  const [expandedDish, setExpandedDish] = useState<string | null>(null);
-  const { recordEngagement } = useFeedbackEngine();
+  const [dishes, setDishes] = useState<DishLite[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const singleDishId = searchParams.get('dish_id');
+  // Shared persistence with VerifyIngredients — same key shape so the
+  // employer's shopping screen sees the helper's checks immediately.
+  const inventoryKey = `home_inventory_${getUserId() ?? "anon"}_${todayKey()}`;
+  const loadInventory = (): Record<string, boolean> => {
+    try {
+      const raw = localStorage.getItem(inventoryKey);
+      return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+    } catch {
+      return {};
+    }
+  };
+  const persistInventory = (map: Record<string, boolean>) => {
+    const pruned: Record<string, boolean> = {};
+    for (const k of Object.keys(map)) if (map[k]) pruned[k] = true;
+    try {
+      localStorage.setItem(inventoryKey, JSON.stringify(pruned));
+    } catch {
+      /* quota — silently drop */
+    }
+  };
+  const [haveIt, setHaveIt] = useState<Record<string, boolean>>(() =>
+    loadInventory(),
+  );
 
+  // Load today's dishes from localStorage.generatedMenu (written by Home /
+  // WeeklyMenu when the employer commits today's plan), then hydrate from
+  // Supabase to pull prep_steps_json + main_ingredient — the two columns
+  // dishToIngredients needs to produce an accurate ingredient list.
   useEffect(() => {
+    let cancelled = false;
     async function loadDishes() {
       setLoading(true);
       try {
-        if (singleDishId) {
-          const { data } = await supabase
-            .from('dishes')
-            .select('id, title_zh, title_en, image_url, prep_steps_json, flavor_tags, health_benefit_tags, origin_cuisine')
-            .eq('id', singleDishId)
-            .single();
-          if (data) { setDishes([data]); recordEngagement(data); }
-        } else {
-          const raw = localStorage.getItem('generatedMenu');
-          if (raw) {
-            const todayDishes: DishWithPrep[] = JSON.parse(raw);
-            const ids = todayDishes.map(d => d.id);
-            const { data } = await supabase
-              .from('dishes')
-              .select('id, title_zh, title_en, image_url, prep_steps_json, flavor_tags, health_benefit_tags, origin_cuisine')
-              .in('id', ids);
-            if (data) {
-              const map = new Map(data.map(d => [d.id, d]));
-              const loaded = ids.map(id => map.get(id)).filter(Boolean) as DishWithPrep[];
-              setDishes(loaded);
-              loaded.forEach(dish => recordEngagement(dish));
-            } else {
-              setDishes(todayDishes);
-              todayDishes.forEach(dish => recordEngagement(dish));
-            }
+        const raw = localStorage.getItem("generatedMenu");
+        if (!raw) {
+          if (!cancelled) {
+            setDishes([]);
+            setLoading(false);
           }
+          return;
+        }
+        const todayDishes: DishLite[] = JSON.parse(raw);
+        const ids = todayDishes.map((d) => d.id).filter(Boolean);
+        if (ids.length === 0) {
+          if (!cancelled) {
+            setDishes([]);
+            setLoading(false);
+          }
+          return;
+        }
+        const { data } = await supabase
+          .from("dishes")
+          .select(
+            "id, title_zh, title_en, main_ingredient, course_type, prep_steps_json, image_url",
+          )
+          .in("id", ids);
+        if (cancelled) return;
+        if (data && data.length > 0) {
+          const map = new Map(data.map((d: any) => [d.id, d]));
+          const ordered = ids
+            .map((id) => map.get(id))
+            .filter(Boolean) as DishLite[];
+          setDishes(ordered);
+        } else {
+          // DB miss — fall back to localStorage cache so the screen still
+          // renders something (dishToIngredients heuristic path handles
+          // dishes without prep_steps_json by reading main_ingredient).
+          setDishes(todayDishes);
         }
       } catch (e) {
-        console.error('HelperPrep load error:', e);
+        console.error("HelperPrep load error:", e);
+        if (!cancelled) setDishes([]);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      setLoading(false);
     }
     loadDishes();
-  }, [singleDishId]);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  // Auto-expand first dish on load
-  useEffect(() => {
-    if (dishes.length > 0 && !expandedDish) {
-      setExpandedDish(dishes[0].id);
-    }
+  // Aggregate ingredients across all of today's dishes — identical pipeline
+  // to VerifyIngredients 'today' mode so the helper and employer see the
+  // same canonical list.
+  const ingredients = useMemo<AggregatedIngredient[]>(() => {
+    if (dishes.length === 0) return [];
+    const { adults, kids } = readHeadcount();
+    const raw = dishes.flatMap((dish) => dishToIngredients(dish, adults, kids));
+    return aggregateIngredients(raw);
   }, [dishes]);
 
-  const toggleStep = (key: string) => {
-    setCompleted(prev => {
-      const next = new Set(prev);
-      next.has(key) ? next.delete(key) : next.add(key);
+  const toggleHave = (nameZh: string) => {
+    setHaveIt((prev) => {
+      const next = { ...prev, [nameZh]: !prev[nameZh] };
+      persistInventory(next);
       return next;
     });
   };
 
-  const getDishStepKeys = (dish: DishWithPrep) =>
-    (dish.prep_steps_json ?? []).map((_, idx) => `${dish.id}-${idx}`);
-
-  const isDishDone = (dish: DishWithPrep) => {
-    const keys = getDishStepKeys(dish);
-    return keys.length > 0 && keys.every(k => completed.has(k));
-  };
-
-  const dishDoneCount = (dish: DishWithPrep) =>
-    getDishStepKeys(dish).filter(k => completed.has(k)).length;
-
-  const totalSteps = dishes.reduce((n, d) => n + (d.prep_steps_json?.length ?? 0), 0);
-  const doneSteps  = completed.size;
-  const allDone    = totalSteps > 0 && doneSteps >= totalSteps;
-
-  const goToCook = (dishId: string) => navigate(`/cook?dish_id=${dishId}`);
+  const toBuy = ingredients.filter((i) => !haveIt[i.nameZh]);
+  const haveList = ingredients.filter((i) => !!haveIt[i.nameZh]);
 
   return (
     <div className="bg-[#f4f4f6] font-sans text-on-surface min-h-screen pb-40 flex flex-col max-w-md mx-auto relative">
-
-      {/* Header */}
+      {/* Header — preserved from previous version */}
       <header className="bg-white sticky top-0 z-50 border-b border-black/5 flex justify-between items-center w-full px-5 py-4">
         <div className="flex items-center gap-3">
           <button
             className="active:scale-95 bg-black/5 hover:bg-black/10 p-2 text-on-surface rounded-full"
-            onClick={() => navigate(localStorage.getItem('nutri_role') === 'helper' ? '/helper' : '/')}
+            onClick={() =>
+              navigate(
+                localStorage.getItem("nutri_role") === "helper"
+                  ? "/helper"
+                  : "/",
+              )
+            }
           >
-            <span className="material-symbols-outlined text-[20px]">arrow_back</span>
+            <span className="material-symbols-outlined text-[20px]">
+              arrow_back
+            </span>
           </button>
           <div>
             <span className="text-[18px] font-bold tracking-tight">
-              {t4("Prep Guide", "备菜清单", "Gabay sa Paghahanda", "Panduan Persiapan")}
+              {t3("Shopping Check", "采购确认", "Tsek sa Pamimili")}
             </span>
-            {totalSteps > 0 && (
+            {ingredients.length > 0 && (
               <p className="text-[12px] text-gray-400 mt-0.5">
-                {doneSteps}/{totalSteps} {t4('done', '项完成', 'tapos', 'selesai')}
+                {toBuy.length} {t3("to buy", "待买", "bibilhin")} ·{" "}
+                {haveList.length} {t3("have", "已有", "meron")}
               </p>
             )}
           </div>
         </div>
-        {/* Language pill — role-aware cycle:
-              employer enters from /home  → zh → 繁 → en → tl → id
-              helper enters from /helper  → en → tl → id (no Chinese)
-            so the Filipino / Indonesian worker doesn't have to swipe past
-            zh / 繁 to get back to their language. */}
+        {/* Language pill — role-aware cycle (helper: en → tl → id) */}
         <button
           onClick={cycleLanguageForRole}
           className="px-3 py-1.5 rounded-full bg-black/5 text-[12px] font-bold text-gray-900 active:scale-95 transition-transform"
@@ -163,359 +251,238 @@ export default function HelperPrep() {
         </button>
       </header>
 
-      {/* Phase Timeline */}
-      <nav className="sticky top-[69px] z-40 bg-white/95 backdrop-blur-md px-6 py-3 flex justify-between items-center border-b border-black/5">
-        <div className="flex flex-col items-center gap-1">
-          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-            <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>restaurant_menu</span>
-          </div>
-          <span className="text-[10px] font-bold text-primary tracking-wider uppercase">Prep</span>
-        </div>
-        <div className="h-[1px] flex-1 bg-black/10 mx-3" />
-        <div className="flex flex-col items-center gap-1 opacity-40">
-          <div className="w-8 h-8 rounded-full bg-black/5 flex items-center justify-center">
-            <span className="material-symbols-outlined text-[18px]">skillet</span>
-          </div>
-          <span className="text-[10px] font-bold text-gray-400 tracking-wider uppercase">Cook</span>
-        </div>
-        <div className="h-[1px] flex-1 bg-black/10 mx-3" />
-        <div className="flex flex-col items-center gap-1 opacity-40">
-          <div className="w-8 h-8 rounded-full bg-black/5 flex items-center justify-center">
-            <span className="material-symbols-outlined text-[18px]">room_service</span>
-          </div>
-          <span className="text-[10px] font-bold text-gray-400 tracking-wider uppercase">Serve</span>
-        </div>
-      </nav>
+      {/* Hero — explain the screen in helper-friendly plain language */}
+      <section className="px-5 pt-5 pb-3">
+        <h1 className="text-[22px] font-black leading-tight tracking-tight text-gray-900">
+          {t3(
+            "Mark what your kitchen already has",
+            "确认家里有哪些不需要再买",
+            "Markahan ang mga nasa kusina na",
+          )}
+        </h1>
+        <p className="text-[13px] text-gray-500 mt-2 leading-snug">
+          {t3(
+            "Tap each item you already have at home. The rest is the employer's shopping list — they will only buy what's not checked.",
+            "已经有的食材点一下就好。剩下的就是雇主要买的清单，不会重复采购。",
+            "I-tap ang mga nasa bahay na. Ang natitira ang bibilhin ng employer — hindi na uulit.",
+          )}
+        </p>
+      </section>
 
-      {/* Global progress bar */}
-      {totalSteps > 0 && (
-        <div className="bg-white px-5 py-3 border-b border-black/5">
+      {/* Progress bar */}
+      {ingredients.length > 0 && (
+        <div className="px-5 pb-3">
           <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
             <motion.div
               className="h-full bg-emerald-500 rounded-full"
-              animate={{ width: `${doneSteps / totalSteps * 100}%` }}
-              transition={{ type: 'spring', stiffness: 200 }}
+              animate={{
+                width: `${(haveList.length / ingredients.length) * 100}%`,
+              }}
+              transition={{ type: "spring", stiffness: 200 }}
             />
           </div>
+          <p className="text-[11px] text-gray-400 mt-1.5">
+            {haveList.length}/{ingredients.length}{" "}
+            {t3("items checked", "项已确认", "naka-tsek")}
+          </p>
         </div>
       )}
 
-      <main className="px-4 pt-4 flex flex-col gap-3">
+      <main className="px-4 pt-2 flex flex-col gap-5">
         {loading && (
           <div className="text-center py-20 text-gray-400 text-[14px]">
-            {t4("Loading prep guide...", "加载备菜清单中...", "Naglo-load ng gabay...", "Memuat panduan persiapan...")}
+            {t3(
+              "Loading shopping list...",
+              "加载采购清单中...",
+              "Naglo-load ng listahan...",
+            )}
           </div>
         )}
 
-        {!loading && dishes.length === 0 && (() => {
-          // TICKET-010 §J — role-aware empty state. 雇主点 Home "烹饪" 按钮
-          // 时如 displayMenu 为空 (算法 fail / β 用户首次未生成) → generatedMenu
-          // 写 '[]' → 这里 ids=[] → 原文案 "请等雇主生成" 对雇主自己错位 +
-          // 一行灰字看着像空白页。分流：
-          //   employer (or anonymous) → "今日菜单为空" + 跳 /weekly 生成
-          //   helper → 原文案 (等雇主)
-          const role = localStorage.getItem('nutri_role');
-          const isEmployer = role !== 'helper';
-          return (
-            <div className="flex flex-col items-center gap-4 py-16 px-6 text-center">
-              <span style={{ fontSize: 48 }}>🍽️</span>
-              <p className="text-gray-500 font-semibold" style={{ fontSize: 15 }}>
-                {isEmployer
-                  ? t4("No menu for today yet",
-                       "今日还没有菜单",
-                       "Wala pang menu para ngayon",
-                       "Belum ada menu hari ini")
-                  : t4("No menu yet. Ask the employer to generate today's menu first.",
-                       "还没有菜单，请等雇主生成今日菜单。",
-                       "Wala pang menu. Hintayin ang employer na gumawa ng menu ngayon.",
-                       "Belum ada menu. Minta majikan membuat menu hari ini dulu.")}
-              </p>
-              {isEmployer && (
-                <button onClick={() => navigate('/weekly')}
-                  className="mt-2 px-6 py-2.5 rounded-full font-bold text-white active:scale-95"
-                  style={{ fontSize: 13, background: "#FF5A1F", boxShadow: "0 6px 18px rgba(255,90,31,0.30)" }}>
-                  {t4("Generate this week's menu", "生成本周菜单", "Gumawa ng menu sa linggo", "Buat menu minggu ini")}
-                </button>
-              )}
-            </div>
-          );
-        })()}
-
-        {dishes.map((dish, dishIndex) => {
-          const steps = dish.prep_steps_json ?? [];
-          const title = useChineseContent ? dish.title_zh : (dish.title_en ?? dish.title_zh);
-          // Subtitle was the OTHER language — removed per i18n cleanup; we
-          // now show a single language at a time based on the toggle.
-          const subtitle = '';
-          const done = isDishDone(dish);
-          const doneCount = dishDoneCount(dish);
-          const isOpen = expandedDish === dish.id;
-
-          // Group steps by tray
-          const byTray: Record<string, { step: PrepStep; idx: number }[]> = {};
-          for (let i = 0; i < steps.length; i++) {
-            const tkey = steps[i].tray ?? 'E';
-            if (!byTray[tkey]) byTray[tkey] = [];
-            byTray[tkey].push({ step: steps[i], idx: i });
-          }
-          const trayOrder = (['A', 'B', 'C', 'D', 'E'] as string[]).filter(t => byTray[t]?.length);
-
-          return (
-            <div
-              key={dish.id}
-              className={`rounded-3xl overflow-hidden shadow-sm transition-all duration-200 ${
-                done ? 'opacity-75' : ''
-              }`}
+        {!loading && ingredients.length === 0 && (
+          <div className="flex flex-col items-center gap-4 py-16 px-6 text-center">
+            <span style={{ fontSize: 48 }}>🛒</span>
+            <p
+              className="text-gray-500 font-semibold"
+              style={{ fontSize: 15 }}
             >
-              {/* Dish card header — always visible, tap to expand */}
-              <button
-                onClick={() => setExpandedDish(isOpen ? null : dish.id)}
-                className="w-full text-left"
-              >
-                <div className={`flex items-center gap-3 p-4 ${done ? 'bg-emerald-50' : 'bg-white'}`}>
-                  {/* Dish number badge */}
-                  <div className={`shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center font-black text-[16px] ${
-                    done ? 'bg-emerald-500 text-white' : 'bg-[#FF5A1F]/10 text-[#FF5A1F]'
-                  }`}>
-                    {done
-                      ? <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>check</span>
-                      : dishIndex + 1
-                    }
+              {t3(
+                "No menu yet. Ask the employer to pick today's dishes first.",
+                "还没有菜单，请等雇主选好今日的菜。",
+                "Wala pang menu. Hintayin ang employer na pumili ng menu ngayon.",
+              )}
+            </p>
+          </div>
+        )}
+
+        {/* ── Section 1: still need to buy ────────────────────────────── */}
+        {!loading && toBuy.length > 0 && (
+          <section>
+            <div className="flex items-center justify-between mb-2 px-1">
+              <p className="text-[13px] font-bold text-gray-700">
+                {t3("Need to buy", "待采购", "Kailangang bilhin")}
+              </p>
+              <span className="text-[11px] font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full">
+                {toBuy.length}{" "}
+                {t3("items", "项", "items")}
+              </span>
+            </div>
+            <div className="bg-white rounded-2xl overflow-hidden shadow-sm">
+              {toBuy.map((item, i) => (
+                <button
+                  key={item.nameZh}
+                  onClick={() => toggleHave(item.nameZh)}
+                  className={`w-full flex items-center gap-3 px-4 py-3.5 transition-all active:scale-[0.99] text-left ${
+                    i !== toBuy.length - 1
+                      ? "border-b border-black/[0.05]"
+                      : ""
+                  }`}
+                >
+                  {/* Empty checkbox */}
+                  <div className="w-7 h-7 rounded-full border-2 border-gray-200 flex-shrink-0 flex items-center justify-center">
+                    <span className="material-symbols-outlined text-gray-300 text-[16px]">
+                      home
+                    </span>
                   </div>
 
-                  {/* Dish photo */}
-                  {dish.image_url ? (
-                    <img src={dish.image_url} alt={title} className="w-14 h-14 rounded-2xl object-cover shrink-0" />
-                  ) : (
-                    <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center shrink-0">
-                      <span className="material-symbols-outlined text-gray-400 text-[24px]">skillet</span>
-                    </div>
-                  )}
-
-                  {/* Title */}
                   <div className="flex-1 min-w-0">
-                    <h2 className={`font-black text-[18px] tracking-tight leading-tight ${done ? 'text-emerald-700' : 'text-gray-900'}`}>
-                      {title}
-                    </h2>
-                    {subtitle && (
-                      <p className="text-[14px] text-gray-400 mt-0.5 truncate">{subtitle}</p>
+                    <p className="font-bold text-[16px] text-gray-900 leading-tight">
+                      {item.nameZh}
+                    </p>
+                    {item.variants && item.variants.length >= 2 && (
+                      <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">
+                        ({item.variants.join(" + ")})
+                      </p>
                     )}
-                    {/* Per-dish progress */}
-                    {steps.length > 0 && (
-                      <div className="flex items-center gap-2 mt-1.5">
-                        <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full rounded-full transition-all duration-300 ${done ? 'bg-emerald-500' : 'bg-[#FF5A1F]'}`}
-                            style={{ width: `${steps.length > 0 ? doneCount / steps.length * 100 : 0}%` }}
-                          />
-                        </div>
-                        <span className="text-[11px] font-bold text-gray-400 shrink-0">
-                          {doneCount}/{steps.length}
-                        </span>
-                      </div>
+                    {item.dishes.length > 0 && (
+                      <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-1">
+                        {t3("For: ", "用于：", "Para sa: ")}
+                        {item.dishes.slice(0, 2).join(" · ")}
+                        {item.dishes.length > 2
+                          ? ` +${item.dishes.length - 2}`
+                          : ""}
+                      </p>
                     )}
                   </div>
 
-                  {/* Expand chevron */}
-                  <span className={`material-symbols-outlined text-gray-300 text-[20px] transition-transform duration-200 shrink-0 ${isOpen ? 'rotate-180' : ''}`}>
-                    expand_more
+                  <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-black/5 text-gray-600 flex-shrink-0">
+                    {t3(
+                      "I have it?",
+                      "我家有？",
+                      "Meron tayo?",
+                    )}
                   </span>
-                </div>
-              </button>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
 
-              {/* Expandable ingredient list */}
-              <AnimatePresence initial={false}>
-                {isOpen && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={{ duration: 0.22, ease: 'easeInOut' }}
-                    style={{ overflow: 'hidden' }}
+        {/* ── Section 2: already have (greyed out, below) ─────────────── */}
+        <AnimatePresence>
+          {!loading && haveList.length > 0 && (
+            <motion.section
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+            >
+              <div className="flex items-center justify-between mb-2 px-1">
+                <p className="text-[13px] font-bold text-gray-500">
+                  {t3(
+                    "Already have at home",
+                    "我家已有",
+                    "Meron na sa bahay",
+                  )}
+                </p>
+                <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
+                  {haveList.length}{" "}
+                  {t3("items", "项", "items")}
+                </span>
+              </div>
+              <div className="bg-white rounded-2xl overflow-hidden shadow-sm opacity-80">
+                {haveList.map((item, i) => (
+                  <button
+                    key={item.nameZh}
+                    onClick={() => toggleHave(item.nameZh)}
+                    className={`w-full flex items-center gap-3 px-4 py-3 transition-all active:scale-[0.99] text-left bg-emerald-50/40 ${
+                      i !== haveList.length - 1
+                        ? "border-b border-black/[0.05]"
+                        : ""
+                    }`}
                   >
-                    <div className="bg-white border-t border-black/5">
-                      {steps.length === 0 ? (
-                        <div className="p-6 text-center text-gray-400 text-[13px]">
-                          {t4(
-                            'Prep guide generating, check back soon.',
-                            '备菜指南生成中，请稍后查看。',
-                            'Ginagawa pa ang gabay sa paghahanda, balikan mamaya.',
-                            'Panduan persiapan sedang dibuat, cek lagi nanti.',
-                          )}
-                        </div>
-                      ) : (
-                        <div className="p-4 flex flex-col gap-4">
-                          {trayOrder.map(tray => {
-                            const cfg = TRAY_CONFIG[tray] ?? TRAY_CONFIG['E'];
-                            const trayItems = byTray[tray];
+                    {/* Checked badge */}
+                    <div className="w-7 h-7 rounded-full bg-emerald-500 flex-shrink-0 flex items-center justify-center">
+                      <span
+                        className="material-symbols-outlined text-white text-[16px]"
+                        style={{ fontVariationSettings: "'FILL' 1" }}
+                      >
+                        check
+                      </span>
+                    </div>
 
-                            return (
-                              <div key={tray}>
-                                {/* Tray group label: "A 主料" / "B 配菜" — letter is the physical tray code */}
-                                <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border mb-2 ${cfg.bg}`}>
-                                  <span className={`material-symbols-outlined text-[13px] ${cfg.color}`} style={{ fontVariationSettings: "'FILL' 1" }}>
-                                    {cfg.icon}
-                                  </span>
-                                  <span className={`font-black text-[12px] tracking-wider ${cfg.color}`}>
-                                    {tray}
-                                  </span>
-                                  <span className={`font-bold text-[12px] ${cfg.color}`}>
-                                    {t4(cfg.en, cfg.zh, cfg.tl, cfg.id)}
-                                  </span>
-                                </div>
-
-                                <div className="flex flex-col gap-2">
-                                  {trayItems.map(({ step, idx }, slotI) => {
-                                    const key = `${dish.id}-${idx}`;
-                                    const isDone = completed.has(key);
-                                    const action = useChineseContent ? step.action_zh : (step.action_en ?? step.action_zh);
-                                    const ingName = !useChineseContent
-                                      ? (step.ingredient_en || step.ingredient_zh)
-                                      : step.ingredient_zh;
-                                    // Single-language per i18n cleanup — was
-                                    // showing the other-language name stacked
-                                    // underneath as a helper-shopping aid;
-                                    // user prefers one language at a time so
-                                    // they can toggle if they need the other.
-                                    // Slot label like "A1" / "A2" — the physical tray slot a helper
-                                    // can match against the labeled tray in the kitchen.
-                                    const slotLabel = `${tray}${slotI + 1}`;
-                                    // Friendly quantity — converts grams to pieces for eggs / garlic /
-                                    // scallion / ginger (see lib/quantity.ts).
-                                    const qtyLabel = formatIngredientQty(step.ingredient_zh, step.amount_g);
-
-                                    return (
-                                      <motion.button
-                                        key={key}
-                                        layout
-                                        onClick={() => toggleStep(key)}
-                                        className={`w-full text-left rounded-2xl p-4 flex items-center gap-3 transition-all duration-150 active:scale-[0.98] ${
-                                          isDone
-                                            ? 'bg-emerald-50 border border-emerald-100'
-                                            : 'bg-gray-50 border border-gray-100'
-                                        }`}
-                                      >
-                                        {/* Slot pill (A1 / A2 …) — flips to ✓ when the helper checks it off. */}
-                                        <div className={`shrink-0 min-w-[40px] h-9 px-2 rounded-2xl flex items-center justify-center font-black text-[13px] transition-all ${
-                                          isDone
-                                            ? 'bg-emerald-500 text-white shadow-sm'
-                                            : `${cfg.bg} ${cfg.color} border`
-                                        }`}>
-                                          {isDone
-                                            ? <span className="material-symbols-outlined text-white text-[16px]" style={{ fontVariationSettings: "'FILL' 1" }}>check</span>
-                                            : slotLabel
-                                          }
-                                        </div>
-
-                                        <div className="flex-1 min-w-0">
-                                          <div className="flex items-baseline gap-2 flex-wrap">
-                                            <span className={`font-black text-[17px] leading-tight ${isDone ? 'line-through text-gray-400' : 'text-gray-900'}`}>
-                                              {ingName}
-                                            </span>
-                                            {qtyLabel && (
-                                              <span className={`text-[14px] font-bold px-2 py-0.5 rounded-lg ${
-                                                isDone ? 'text-gray-300 bg-gray-100' : 'text-gray-700 bg-white border border-gray-200'
-                                              }`}>
-                                                {qtyLabel}
-                                              </span>
-                                            )}
-                                          </div>
-                                          {action && (
-                                            <p className={`text-[14px] mt-1 leading-snug ${isDone ? 'line-through text-gray-300' : 'text-gray-500'}`}>
-                                              {action}
-                                            </p>
-                                          )}
-                                          {/* Suzie's Twist substitutes (Simply Chinese Feasts 4D framework).
-                                              Shows pantry-friendly swaps so the helper doesn't have to skip
-                                              the dish when the primary ingredient is missing. */}
-                                          {(() => {
-                                            const subs = useChineseContent
-                                              ? (step.substitutes_zh ?? [])
-                                              : (step.substitutes_en ?? step.substitutes_zh ?? []);
-                                            if (!subs || subs.length === 0) return null;
-                                            return (
-                                              <div className={`mt-2 flex items-start gap-1.5 text-[12px] ${isDone ? 'opacity-40' : ''}`}>
-                                                <span className={`material-symbols-outlined text-[14px] mt-[1px] ${isDone ? 'text-gray-300' : 'text-amber-600'}`}>
-                                                  swap_horiz
-                                                </span>
-                                                <div className={`leading-snug ${isDone ? 'text-gray-300' : 'text-amber-700'}`}>
-                                                  <span className="font-bold">
-                                                    {t4('Can swap:', '可替换：', 'Pwedeng palit:', 'Bisa ganti:')}{' '}
-                                                  </span>
-                                                  {subs.slice(0, 3).join(' / ')}
-                                                </div>
-                                              </div>
-                                            );
-                                          })()}
-                                        </div>
-                                      </motion.button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            );
-                          })}
-
-                          {/* Per-dish cook button */}
-                          <button
-                            onClick={() => goToCook(dish.id)}
-                            className={`w-full h-12 rounded-2xl flex items-center justify-center gap-2 font-bold text-[14px] active:scale-95 transition-all mt-1 ${
-                              done
-                                ? 'bg-emerald-500 text-white'
-                                : 'bg-[#2D3748] text-white'
-                            }`}
-                          >
-                            <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>
-                              {done ? 'check_circle' : 'skillet'}
-                            </span>
-                            {done
-                              ? t4('Cook this dish', '开始烹饪', 'Lutuin ito', 'Mulai memasak')
-                              : t4('Start Cooking', '开始烹饪', 'Magsimulang magluto', 'Mulai memasak')}
-                            <span className="material-symbols-outlined text-[16px]">arrow_forward_ios</span>
-                          </button>
-                        </div>
+                    <div className="flex-1 min-w-0">
+                      <p
+                        className="font-bold text-[15px] text-gray-500 leading-tight"
+                        style={{ textDecoration: "line-through" }}
+                      >
+                        {item.nameZh}
+                      </p>
+                      {item.variants && item.variants.length >= 2 && (
+                        <p className="text-[10px] text-gray-300 mt-0.5 leading-tight">
+                          ({item.variants.join(" + ")})
+                        </p>
                       )}
                     </div>
-                  </motion.div>
+
+                    <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 flex-shrink-0">
+                      {t3(
+                        "✓ Have it",
+                        "✓ 我家有",
+                        "✓ Meron",
+                      )}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <p className="text-[11px] text-gray-400 mt-2 px-1 leading-snug">
+                {t3(
+                  "Tap again to move back to the buying list if you changed your mind.",
+                  "点一下可以重新放回采购清单。",
+                  "I-tap ulit para bumalik sa listahan ng bibilhin.",
                 )}
-              </AnimatePresence>
-            </div>
-          );
-        })}
+              </p>
+            </motion.section>
+          )}
+        </AnimatePresence>
+
+        {/* Footer note — explains the flow, replaces the old "Start Cooking" CTA */}
+        {!loading && ingredients.length > 0 && (
+          <div className="mt-2 px-2 pb-4 text-center">
+            <p className="text-[11px] text-gray-400 leading-relaxed">
+              {t3(
+                "When you're done checking, switch to the Cook tab to start preparing today's meal.",
+                "确认完后，切换到「烹饪」标签开始做今天的饭。",
+                "Pagkatapos mag-tsek, lipat sa Cook tab para magluto.",
+              )}
+            </p>
+          </div>
+        )}
       </main>
 
-      {/* AI Pilot FAB */}
+      {/* AI Pilot FAB — preserved */}
       <div className="fixed bottom-32 right-6 z-[55]">
-        <button onClick={() => navigate('/ai-pilot')} className="w-14 h-14 bg-gradient-to-tr from-[#FF5A1F] to-[#FF9054] rounded-full flex items-center justify-center text-white shadow-lg active:scale-90 transition-transform">
-          <span className="material-symbols-outlined text-[28px]" style={{ fontVariationSettings: "'FILL' 1" }}>mic</span>
+        <button
+          onClick={() => navigate("/ai-pilot")}
+          className="w-14 h-14 bg-gradient-to-tr from-[#FF5A1F] to-[#FF9054] rounded-full flex items-center justify-center text-white shadow-lg active:scale-90 transition-transform"
+        >
+          <span
+            className="material-symbols-outlined text-[28px]"
+            style={{ fontVariationSettings: "'FILL' 1" }}
+          >
+            mic
+          </span>
         </button>
       </div>
-
-      {/* Footer — global cook button. TICKET-041 §2: shift up so the new
-          5-tab HelperTabBar can sit on the 0 row. */}
-      <footer className="fixed bottom-[72px] w-full max-w-md mx-auto z-40 p-5 bg-gradient-to-t from-[#f4f4f6] via-[#f4f4f6]/95 to-transparent">
-        {dishes.length > 0 && (
-          <button
-            onClick={() => goToCook(singleDishId ?? dishes[0].id)}
-            className={`w-full h-14 rounded-2xl flex items-center justify-center gap-2 text-white font-bold shadow-lg active:scale-95 transition-all ${
-              allDone ? 'bg-emerald-500' : 'bg-[#FF5A1F]'
-            }`}
-          >
-            <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>
-              {allDone ? 'check_circle' : 'skillet'}
-            </span>
-            <span className="text-[15px]">
-              {allDone
-                ? t4("All Done — Start Cooking!",
-                     "备菜完成 — 开始烹饪！",
-                     "Tapos na — Simulan ang Pagluluto!",
-                     "Persiapan selesai — Mulai memasak!")
-                : t4("Start Cooking", "开始烹饪", "Simulan ang Pagluluto", "Mulai memasak")}
-            </span>
-            <span className="material-symbols-outlined text-[18px]">arrow_forward_ios</span>
-          </button>
-        )}
-      </footer>
 
       <HelperTabBar active="prep" />
     </div>
