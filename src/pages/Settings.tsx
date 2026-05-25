@@ -973,6 +973,30 @@ export default function Settings() {
             </div>
           </div>
 
+          {/* TICKET-070 — 兜底按钮: 自动 wx_refresh 链路 (057+064+067) 不灵时,
+              用户可手动一次性重新走 OAuth snsapi_userinfo 拿真昵称+头像.
+              只在 MicroMessenger UA + (无 displayName || 无 avatarUrl) 时显示. */}
+          {(!myDisplayName || !myAvatarUrl) && /MicroMessenger/i.test(navigator.userAgent) && (
+            <button
+              onClick={() => {
+                const appid = import.meta.env.VITE_WECHAT_APPID;
+                if (!appid) {
+                  alert(t4('WeChat AppID not configured', '微信 AppID 未配置', 'Hindi naka-configure ang WeChat AppID', 'WeChat AppID belum disetel'));
+                  return;
+                }
+                const redirect = encodeURIComponent(`${window.location.origin}/auth/wechat/in`);
+                const state = crypto.randomUUID();
+                sessionStorage.setItem('wechat_oauth_state', state);
+                const url = `https://open.weixin.qq.com/connect/oauth2/authorize?appid=${appid}&redirect_uri=${redirect}&response_type=code&scope=snsapi_userinfo&state=${state}#wechat_redirect`;
+                window.location.href = url;
+              }}
+              className="w-full bg-orange-50 border border-orange-200 rounded-[16px] p-3 text-orange-600 font-bold active:scale-95 transition-transform"
+              style={{ fontSize: 14 }}
+            >
+              🔄 {t4('Get my WeChat profile', '重新获取微信头像和昵称', 'Kunin WeChat profile', 'Ambil profil WeChat')}
+            </button>
+          )}
+
           {/* TICKET-057 §2 — "我的口味偏好" 整卡已删 (含 TICKET-039 §2 算法反推 chip +
               TICKET-053 忌口 chip + 手动调抽屉 + free text textarea).
               老板真测："可以删除放在我的家庭成员里即可" — 老板自己也是家庭成员之一,
