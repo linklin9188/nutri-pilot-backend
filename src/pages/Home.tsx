@@ -738,6 +738,7 @@ export default function Home() {
   const [scanToast, setScanToast] = useState<string | null>(null);
 
   const [displayName, setDisplayName] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [helperName, setHelperName] = useState("");
   const [householdId, setHouseholdId] = useState("");
   const [inviteCode, setInviteCode] = useState("");
@@ -748,11 +749,12 @@ export default function Home() {
     if (userId) {
       supabase
         .from("user_profiles")
-        .select("display_name")
+        .select("display_name, avatar_url")
         .eq("id", userId)
         .maybeSingle()
         .then(({ data }) => {
           if ((data as any)?.display_name) setDisplayName((data as any).display_name);
+          if ((data as any)?.avatar_url) setAvatarUrl((data as any).avatar_url);
         });
 
       // Load or create household for this employer. We use `order + limit(1)`
@@ -1203,8 +1205,58 @@ export default function Home() {
         </div>
       )}
 
+      {/* TICKET-063 §1 — 顶部欢迎 chip (微信昵称 + 头像). 老板真测 #9 拍板:
+          原 Home 只 fetch display_name 但 0 JSX 渲染，登录后唯一可见名字是
+          菲佣的 HELPER STATUS card → 误判微信授权抓菲佣身份。本 chip 消歧义:
+          显示老板自己的微信昵称 + 头像；点击跳 /settings 改名。
+          displayName 为空时仍渲染 "你好, 朋友" + 字母 U 兜底，保证未登录也有占位。 */}
+      <div
+        className="mx-3 mt-2 flex items-center gap-2 active:scale-[0.98] transition-transform cursor-pointer"
+        onClick={() => navigate('/settings')}
+        style={{
+          paddingTop: betaBannerShown ? 0 : "calc(env(safe-area-inset-top, 0px) + 10px)",
+        }}
+      >
+        <div
+          className="flex items-center gap-2 rounded-2xl px-3"
+          style={{
+            height: 44,
+            background: "rgba(255,255,255,0.72)",
+            border: "1px solid rgba(255,90,31,0.18)",
+            backdropFilter: "blur(8px)",
+          }}
+        >
+          {avatarUrl ? (
+            <img
+              src={avatarUrl}
+              alt=""
+              className="rounded-full object-cover"
+              style={{ width: 32, height: 32, border: "1.5px solid #FF5A1F" }}
+              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+            />
+          ) : (
+            <div
+              className="rounded-full flex items-center justify-center font-bold"
+              style={{
+                width: 32, height: 32,
+                background: "linear-gradient(135deg, #FF5A1F, #FFB347)",
+                color: "#fff", fontSize: 14,
+              }}
+            >
+              {(displayName.trim().charAt(0) || 'U').toUpperCase()}
+            </div>
+          )}
+          <span style={{ fontSize: 13, color: "rgba(0,0,0,0.78)", fontWeight: 600 }}>
+            {t('Hi, ', '你好, ')}
+            <span style={{ color: "#FF5A1F" }}>
+              {displayName.trim() || t('friend', '朋友')}
+            </span>
+          </span>
+        </div>
+      </div>
+
       {/* ── Editorial header — warm paper, serif greeting ─────────── */}
-      <header style={{ paddingTop: betaBannerShown ? 0 : "env(safe-area-inset-top, 44px)" }}>
+      <header style={{ paddingTop: 0 }}>
         <div className="flex items-start justify-between px-5 pt-3 pb-1">
           <div className="flex-1 min-w-0 pr-3">
             {/* Date in tiny caps over the greeting — editorial feel */}
