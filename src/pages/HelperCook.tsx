@@ -5,6 +5,7 @@ import { type CookStep } from "../hooks/useSupabaseMenu";
 import { useLanguage } from "../contexts/LanguageContext";
 import { getUserId } from "../lib/userId";
 import { getDishTitle } from "../lib/dishTitleI18n";
+import { loadEmployerTodayMenu } from "../lib/helperEmployerMenu";
 import HelperTabBar from "../components/HelperTabBar";
 
 interface DishWithCook {
@@ -731,10 +732,8 @@ export default function HelperCook() {
     async function load() {
       setLoading(true);
       try {
-        // β hotfix — 从 Home 直接点 dish 或 /prep 的"开始烹饪"按钮会带
-        // `?dish_id=X` 跳到这里。原代码只读 localStorage.generatedMenu，
-        // 单 dish 路径直接拿不到数据→空列表→白屏。补 singleDishId path
-        // 跟 HelperPrep 对齐。
+        // 单 dish 路径 (从 Home / HelperPrep 跳过来带 ?dish_id=X) — 直接 fetch
+        // 那一道, 不依赖菜单列表, 不依赖 household 绑定. 走 supabase 直查保最快.
         if (singleDishId) {
           const { data } = await supabase
             .from('dishes')
@@ -749,23 +748,15 @@ export default function HelperCook() {
           return;
         }
 
-        const raw = localStorage.getItem('generatedMenu');
-        if (!raw) { setLoading(false); return; }
-        const todayDishes: any[] = JSON.parse(raw);
-        const ids = todayDishes.map((d: any) => d.id).filter(Boolean);
-        if (ids.length === 0) { setDishes(todayDishes); setLoading(false); return; }
-
-        const { data } = await supabase
-          .from('dishes')
-          .select('id, title_zh, title_en, image_url, cook_steps_json, video_url, video_lang, video_platform')
-          .in('id', ids);
-
-        if (data && data.length > 0) {
-          const map = new Map(data.map(d => [d.id, d]));
-          const ordered = ids.map(id => map.get(id) ?? todayDishes.find((d: any) => d.id === id)).filter(Boolean);
-          setDishes(ordered as DishWithCook[]);
+        // TICKET-075 §6 — 改读 DB 经 household 三步绑定 (loadEmployerTodayMenu),
+        // 取代原 localStorage.generatedMenu 路径. 切账号 / 跨设备都 work.
+        // helper 没绑 household → dishes=[], UI 现有 fallback 显空态.
+        const helperUid = getUserId();
+        const result = await loadEmployerTodayMenu(helperUid);
+        if (result.dishes.length > 0) {
+          setDishes(result.dishes as DishWithCook[]);
         } else {
-          setDishes(todayDishes);
+          setDishes([]);
         }
       } catch (e) {
         console.error('HelperCook load error:', e);

@@ -1,0 +1,180 @@
+/**
+ * helperEmployerMenu.ts — TICKET-075 P0 §3 (老板真测 #18 全链路 6 断点)
+ *
+ * 抽 HelperHome.tsx:175-260 的三步绑定查询 + 当日菜单读取 + householdId 解析,
+ * 让 HelperPrep / HelperCook / 未来其它菲佣页面 不用各自复制粘贴.
+ *
+ * 流程:
+ *   1. helper_id (= helper userId) → household_members.household_id
+ *   2. household_id → households.employer_id
+ *   3. (employer_id, week_start, day_index) → user_weekly_menus → dish_ids[]
+ *   4. dish_ids → dishes.* (title / image / prep_steps_json / cook_steps_json …)
+ *
+ * 任一步骤断 → 返回 { householdId: null, employerId: null, dishes: [] },
+ * 不抛错让调用方做 fallback (e.g. "等雇主生成菜单").
+ *
+ * 失败 console.warn 留 diagnose (匹配 HelperHome 原 TICKET-009 风格),
+ * 不向用户弹窗.
+ */
+import { supabase } from './supabase';
+
+export interface EmployerDishLite {
+  id:               string;
+  title_zh:         string;
+  title_en?:        string | null;
+  image_url?:       string | null;
+  main_ingredient?: string | null;
+  course_type?:     string | null;
+  meal_type?:       string | null;
+  prep_steps_json?: unknown;
+  cook_steps_json?: unknown;
+  video_url?:       string | null;
+  video_lang?:      string | null;
+  video_platform?:  string | null;
+  cook_time_min?:   number | null;
+}
+
+export interface EmployerMenuResult {
+  householdId: string | null;
+  employerId:  string | null;
+  /** 今日全部 (breakfast + lunch + dinner) dish 按 meal 顺序排平后的数组 */
+  dishes:      EmployerDishLite[];
+  /** 按 meal 分桶, UI 想 3 卡 grid 时直接用 */
+  byMeal:      { breakfast: EmployerDishLite[]; lunch: EmployerDishLite[]; dinner: EmployerDishLite[] };
+}
+
+const EMPTY: EmployerMenuResult = {
+  householdId: null,
+  employerId:  null,
+  dishes:      [],
+  byMeal:      { breakfast: [], lunch: [], dinner: [] },
+};
+
+/**
+ * 计算 helper 视角 "今天" 的雇主菜单. 默认 selectFields 含 HelperCook 需要的
+ * cook_steps_json + video; HelperPrep 不读但多拉几列代价可忽略, 维护 DRY.
+ */
+export async function loadEmployerTodayMenu(
+  helperUserId: string | null | undefined,
+): Promise<EmployerMenuResult> {
+  if (!helperUserId) return EMPTY;
+
+  // 1. household membership
+  const { data: member, error: memberErr } = await supabase
+    .from('household_members')
+    .select('household_id')
+    .eq('helper_id', helperUserId)
+    .eq('status', 'active')
+    .order('joined_at', { ascending: false })
+    .limit(1);
+  if (memberErr) {
+    console.warn('[helperEmployerMenu] household_members fetch error:', memberErr);
+    return EMPTY;
+  }
+  const householdId = (member?.[0] as any)?.household_id as string | undefined;
+  if (!householdId) {
+    console.warn('[helperEmployerMenu] helper not bound to a household, helper_id=', helperUserId);
+    return EMPTY;
+  }
+
+  // 2. household → employer
+  const { data: hh, error: hhErr } = await supabase
+    .from('households')
+    .select('employer_id')
+    .eq('id', householdId)
+    .maybeSingle();
+  if (hhErr) {
+    console.warn('[helperEmployerMenu] households fetch error:', hhErr);
+    return { ...EMPTY, householdId };
+  }
+  const employerId = (hh as any)?.employer_id as string | undefined;
+  if (!employerId) {
+    console.warn('[helperEmployerMenu] household', householdId, 'has no employer_id');
+    return { ...EMPTY, householdId };
+  }
+
+  // 3. 当周 weekStart (Mon=0 周一对齐, 同 HelperHome.tsx:208-212)
+  const today  = new Date();
+  const dow    = (today.getDay() + 6) % 7;
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - dow);
+  const weekStart = monday.toISOString().slice(0, 10);
+
+  const { data: menuRows, error: menuErr } = await supabase
+    .from('user_weekly_menus')
+    .select('meal_type, dish_ids, swapped_dish_ids')
+    .eq('user_id', employerId)
+    .eq('week_start', weekStart)
+    .eq('day_index', dow);
+
+  if (menuErr) {
+    console.warn('[helperEmployerMenu] user_weekly_menus fetch error:', menuErr);
+    return { ...EMPTY, householdId, employerId };
+  }
+  if (!menuRows || menuRows.length === 0) {
+    console.warn('[helperEmployerMenu] employer', employerId, 'has no menu for', weekStart, 'dow=', dow);
+    return { ...EMPTY, householdId, employerId };
+  }
+
+  const idsByMeal: Record<'breakfast' | 'lunch' | 'dinner', string[]> = {
+    breakfast: [], lunch: [], dinner: [],
+  };
+  for (const m of menuRows as any[]) {
+    // swapped_dish_ids 优先 (用户换过菜); 没换则用 dish_ids
+    const ids: string[] = (m.swapped_dish_ids?.length ? m.swapped_dish_ids : m.dish_ids) ?? [];
+    if (m.meal_type === 'breakfast' || m.meal_type === 'lunch' || m.meal_type === 'dinner') {
+      idsByMeal[m.meal_type as 'breakfast' | 'lunch' | 'dinner'].push(...ids);
+    }
+  }
+  const allIds = [...idsByMeal.breakfast, ...idsByMeal.lunch, ...idsByMeal.dinner];
+  if (allIds.length === 0) return { ...EMPTY, householdId, employerId };
+
+  // 4. dishes 详情 — 一把全字段拉, HelperCook (cook_steps_json + video) 和
+  //    HelperPrep (prep_steps_json + main_ingredient) 都覆盖.
+  const { data: dishRows, error: dishErr } = await supabase
+    .from('dishes')
+    .select(
+      'id, title_zh, title_en, image_url, main_ingredient, course_type, meal_type, ' +
+      'prep_steps_json, cook_steps_json, video_url, video_lang, video_platform, cook_time_min',
+    )
+    .in('id', allIds);
+  if (dishErr) {
+    console.warn('[helperEmployerMenu] dishes fetch error:', dishErr);
+    return { ...EMPTY, householdId, employerId };
+  }
+
+  const idMap = new Map((dishRows ?? []).map((d: any) => [d.id, d as EmployerDishLite]));
+  const resolve = (ids: string[]): EmployerDishLite[] =>
+    ids.map(id => idMap.get(id)).filter(Boolean) as EmployerDishLite[];
+
+  const byMeal = {
+    breakfast: resolve(idsByMeal.breakfast).map(d => ({ ...d, meal_type: 'breakfast' as const })),
+    lunch:     resolve(idsByMeal.lunch).map(d => ({ ...d, meal_type: 'lunch' as const })),
+    dinner:    resolve(idsByMeal.dinner).map(d => ({ ...d, meal_type: 'dinner' as const })),
+  };
+  const dishes = [...byMeal.breakfast, ...byMeal.lunch, ...byMeal.dinner];
+
+  return { householdId, employerId, dishes, byMeal };
+}
+
+/**
+ * 仅拉 helper 当前绑定的 householdId, 不读菜单 — 给只关心 inventory 共享的
+ * HelperPrep 用 (Phase 5b setIngredientAvailable 第一个参数).
+ */
+export async function loadHelperHouseholdId(
+  helperUserId: string | null | undefined,
+): Promise<string | null> {
+  if (!helperUserId) return null;
+  const { data, error } = await supabase
+    .from('household_members')
+    .select('household_id')
+    .eq('helper_id', helperUserId)
+    .eq('status', 'active')
+    .order('joined_at', { ascending: false })
+    .limit(1);
+  if (error) {
+    console.warn('[helperEmployerMenu.loadHouseholdId] error:', error);
+    return null;
+  }
+  return ((data?.[0] as any)?.household_id as string | undefined) ?? null;
+}

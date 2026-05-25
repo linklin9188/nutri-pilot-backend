@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { useNavigate } from "react-router-dom";
 import { useLanguage, LANGUAGE_LABEL } from "../contexts/LanguageContext";
-import { supabase } from "../lib/supabase";
 import HelperTabBar from "../components/HelperTabBar";
 import {
   dishToIngredients,
@@ -10,6 +9,13 @@ import {
   type AggregatedIngredient,
 } from "../lib/dishIngredients";
 import { getUserId } from "../lib/userId";
+import { loadEmployerTodayMenu } from "../lib/helperEmployerMenu";
+import {
+  loadHomeInventory as loadHomeInventoryDb,
+  setIngredientAvailable as setIngredientAvailableDb,
+  commitInventoryFromLs,
+  inventoryToMap,
+} from "../lib/homeInventory";
 
 /**
  * HelperPrep — Shopping "我家有 / Already have" toggle screen for the helper.
@@ -106,11 +112,15 @@ export default function HelperPrep() {
 
   const [dishes, setDishes] = useState<DishLite[]>([]);
   const [loading, setLoading] = useState(true);
+  // TICKET-075 §5 — helper 当前绑定 household 的 id, 用于跨账号共享 inventory.
+  // null = 未绑 (helper 还没用邀请码进 household), 此时 UI 仍 work 但只走 LS.
+  const [householdId, setHouseholdId] = useState<string | null>(null);
 
-  // Shared persistence with VerifyIngredients — same key shape so the
-  // employer's shopping screen sees the helper's checks immediately.
+  // Shared persistence with VerifyIngredients — LS 用 雇主 userId 已经不准
+  // (helper 自己 userId 与雇主 userId 不同). DB 主存, LS 留作 helper 端的
+  // fast cache (key 用 helper 自己 userId 区分多账号).
   const inventoryKey = `home_inventory_${getUserId() ?? "anon"}_${todayKey()}`;
-  const loadInventory = (): Record<string, boolean> => {
+  const loadInventoryLs = (): Record<string, boolean> => {
     try {
       const raw = localStorage.getItem(inventoryKey);
       return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
@@ -118,7 +128,7 @@ export default function HelperPrep() {
       return {};
     }
   };
-  const persistInventory = (map: Record<string, boolean>) => {
+  const persistInventoryLs = (map: Record<string, boolean>) => {
     const pruned: Record<string, boolean> = {};
     for (const k of Object.keys(map)) if (map[k]) pruned[k] = true;
     try {
@@ -128,54 +138,44 @@ export default function HelperPrep() {
     }
   };
   const [haveIt, setHaveIt] = useState<Record<string, boolean>>(() =>
-    loadInventory(),
+    loadInventoryLs(),
   );
 
-  // Load today's dishes from localStorage.generatedMenu (written by Home /
-  // WeeklyMenu when the employer commits today's plan), then hydrate from
-  // Supabase to pull prep_steps_json + main_ingredient — the two columns
-  // dishToIngredients needs to produce an accurate ingredient list.
+  // TICKET-075 §5 — 读雇主菜单 + DB inventory 经 household 三步绑定.
+  // 取代原 localStorage.generatedMenu 路径 (单设备孤岛, 切账号必断).
   useEffect(() => {
     let cancelled = false;
-    async function loadDishes() {
+    async function loadAll() {
       setLoading(true);
       try {
-        const raw = localStorage.getItem("generatedMenu");
-        if (!raw) {
-          if (!cancelled) {
-            setDishes([]);
-            setLoading(false);
-          }
-          return;
-        }
-        const todayDishes: DishLite[] = JSON.parse(raw);
-        const ids = todayDishes.map((d) => d.id).filter(Boolean);
-        if (ids.length === 0) {
-          if (!cancelled) {
-            setDishes([]);
-            setLoading(false);
-          }
-          return;
-        }
-        const { data } = await supabase
-          .from("dishes")
-          .select(
-            "id, title_zh, title_en, main_ingredient, course_type, prep_steps_json, image_url",
-          )
-          .in("id", ids);
+        const helperUid = getUserId();
+        const result = await loadEmployerTodayMenu(helperUid);
         if (cancelled) return;
-        if (data && data.length > 0) {
-          const map = new Map(data.map((d: any) => [d.id, d]));
-          const ordered = ids
-            .map((id) => map.get(id))
-            .filter(Boolean) as DishLite[];
-          setDishes(ordered);
-        } else {
-          // DB miss — fall back to localStorage cache so the screen still
-          // renders something (dishToIngredients heuristic path handles
-          // dishes without prep_steps_json by reading main_ingredient).
-          setDishes(todayDishes);
+
+        // 菜单 — dishes 直接渲染聚合; 缺 prep_steps_json 时 dishToIngredients
+        // 的 main_ingredient 兜底路径仍能输出粗略清单.
+        setDishes(result.dishes as DishLite[]);
+        if (result.householdId) {
+          setHouseholdId(result.householdId);
+
+          // DB inventory — 拉到的 row 转 map 替换 LS, 同时刷 LS 副 cache.
+          const items = await loadHomeInventoryDb(result.householdId, todayKey());
+          if (cancelled) return;
+          const dbMap = inventoryToMap(items);
+
+          // 兼容老 helper: DB 空但 LS 有 → 一次性迁移 (markedBy='helper').
+          const sentinelKey = `nutri_inventory_migrated_${result.householdId}_${todayKey()}`;
+          const lsMap = loadInventoryLs();
+          if (items.length === 0 && Object.keys(lsMap).length > 0 && !localStorage.getItem(sentinelKey)) {
+            await commitInventoryFromLs(result.householdId, lsMap, 'helper', todayKey());
+            try { localStorage.setItem(sentinelKey, '1'); } catch {}
+            setHaveIt(lsMap);
+          } else {
+            setHaveIt(dbMap);
+            persistInventoryLs(dbMap);
+          }
         }
+        // 没 household → 留 LS map (老路径), 不动 haveIt
       } catch (e) {
         console.error("HelperPrep load error:", e);
         if (!cancelled) setDishes([]);
@@ -183,7 +183,7 @@ export default function HelperPrep() {
         if (!cancelled) setLoading(false);
       }
     }
-    loadDishes();
+    loadAll();
     return () => {
       cancelled = true;
     };
@@ -199,10 +199,16 @@ export default function HelperPrep() {
     return aggregateIngredients(raw);
   }, [dishes]);
 
+  // TICKET-075 §5b — 双写: LS 即时 + DB 异步. 失败不阻塞 UI.
   const toggleHave = (nameZh: string) => {
     setHaveIt((prev) => {
-      const next = { ...prev, [nameZh]: !prev[nameZh] };
-      persistInventory(next);
+      const nextVal = !prev[nameZh];
+      const next = { ...prev, [nameZh]: nextVal };
+      persistInventoryLs(next);
+      if (householdId) {
+        setIngredientAvailableDb(householdId, nameZh, nextVal, 'helper', todayKey())
+          .catch((e) => console.warn('[HelperPrep.toggle] DB write failed:', e));
+      }
       return next;
     });
   };

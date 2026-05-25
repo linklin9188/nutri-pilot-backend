@@ -3963,6 +3963,18 @@ export function useWeeklyMenu(weekOffset: number = 0) {
       algo_version:     ALGO_VERSION,
       cache_key:        lsKey,
     }, { onConflict: 'user_id,week_start,day_index,meal_type' });
+
+    // TICKET-075 §5 — 同步 LS.generatedMenu (下游 HelperPrep/HelperCook 旧路径
+    // + 雇主 /verify 读 hookWeeklyMenu 通过 dispatch event 触发 re-render).
+    // 只在 dayIndex === 今天 时写, 因为 generatedMenu 物理语义 = "今日菜单".
+    // 算法零变化, ALGO_VERSION 不 bump.
+    try {
+      const todayIdx = todayDayIndex();
+      if (dayIndex === todayIdx) {
+        localStorage.setItem('generatedMenu', JSON.stringify(updated.days[todayIdx].dishes));
+      }
+      window.dispatchEvent(new Event('nutri-weekly-menu-changed'));
+    } catch { /* quota / SSR */ }
   }
 
   // Regenerate (discard cache, re-run algorithm)

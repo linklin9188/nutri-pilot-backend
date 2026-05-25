@@ -10,6 +10,12 @@ import { ALGO_VERSION as WEEKLY_ALGO_VERSION, useWeeklyMenu } from "../hooks/use
 import { supabase } from "../lib/supabase";
 import { useSubscription } from "../lib/subscription";
 import { getUserId } from "../lib/userId";
+import {
+  loadHomeInventory as loadHomeInventoryDb,
+  setIngredientAvailable as setIngredientAvailableDb,
+  commitInventoryFromLs,
+  inventoryToMap,
+} from "../lib/homeInventory";
 
 // ── Supplier direct-shipping (TICKET-038 第 4 步 §3) ─────────────────────
 // Phase 2 骨架: 页面加载时拉一次 active SKU 列表 (supplier.status='active' +
@@ -565,24 +571,43 @@ export default function VerifyIngredients() {
   const [dishCount, setDishCount] = useState(0);
   const [banquetHeads, setBanquetHeads] = useState(0);
 
-  // 我家有 toggle is persisted per-user per-day so the user doesn't lose
-  // checks when they navigate away (e.g. open Home, come back). Key is
-  // home_inventory_<userId>_<YYYY-MM-DD>; map values are bool — true = 已有.
-  const homeInventoryKey = `home_inventory_${getUserId() ?? 'anon'}_${new Date().toISOString().slice(0, 10)}`;
-  const loadHomeInventory = (): Record<string, boolean> => {
+  // 我家有 toggle — TICKET-075 §2/§4a: DB 主存 + LS 副 cache.
+  // DB: home_inventory(household_id, ingredient_name, for_date) — 雇主菲佣共享.
+  // LS: home_inventory_<userId>_<YYYY-MM-DD> — fast read + 离线/未绑 household
+  //     时的兜底; mount 时如果 DB 空但 LS 有, 一次性迁移上去.
+  const todayLocalStr = (() => {
+    const d = new Date();
+    const y  = d.getFullYear();
+    const m  = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dd}`;
+  })();
+  const homeInventoryKey = `home_inventory_${getUserId() ?? 'anon'}_${todayLocalStr}`;
+  const loadHomeInventoryLs = (): Record<string, boolean> => {
     try {
       const raw = localStorage.getItem(homeInventoryKey);
       return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
     } catch { return {}; }
   };
-  const persistHomeInventory = (map: Record<string, boolean>) => {
+  const persistHomeInventoryLs = (map: Record<string, boolean>) => {
     // Only keep truthy entries — false / undefined are noise.
     const pruned: Record<string, boolean> = {};
     for (const k of Object.keys(map)) if (map[k]) pruned[k] = true;
     try { localStorage.setItem(homeInventoryKey, JSON.stringify(pruned)); } catch { /* quota */ }
   };
   // true = "已有"，false = "需要买"
-  const [haveIt, setHaveIt] = useState<Record<string, boolean>>(() => loadHomeInventory());
+  const [haveIt, setHaveIt] = useState<Record<string, boolean>>(() => loadHomeInventoryLs());
+
+  // TICKET-075 §4c — householdId state. mount 时拉雇主名下第一个 household;
+  // 没绑就保持 null → DB 写跳过, LS 仍 work (单设备老路径). 后续 helper 加入
+  // household 后, 雇主再开 /verify 自然拿到 id.
+  const [householdId, setHouseholdId] = useState<string | null>(null);
+  // 雇主版"已通知菲佣"按钮态: idle / committing / done. done 时按钮变 ✓ 状态
+  const [notifyState, setNotifyState] = useState<'idle' | 'committing' | 'done'>('idle');
+  // 防 LS→DB 迁移重跑: 同 household 同日只跑一次
+  const migrateSentinelKey = householdId
+    ? `nutri_inventory_migrated_${householdId}_${todayLocalStr}`
+    : null;
   const [copied, setCopied] = useState(false);
   const [weightUnit, setWeightUnit] = useState<WeightUnit>(() =>
     (localStorage.getItem('nutri_weight_unit') as WeightUnit) || 'metric'
@@ -617,6 +642,51 @@ export default function VerifyIngredients() {
       setActiveSkus(skus);
     });
     return () => { cancelled = true; };
+  }, []);
+
+  // TICKET-075 §4c — 拉雇主名下第一个 household, 拿到 id 后立刻 DB-load inventory.
+  // 没有 household (用户没绑菲佣) → 留 null, 整页 fallback LS-only 路径 (旧行为).
+  useEffect(() => {
+    let cancelled = false;
+    const uid = getUserId();
+    if (!uid) return;
+    (async () => {
+      const { data } = await supabase
+        .from('households')
+        .select('id')
+        .eq('employer_id', uid)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (cancelled) return;
+      const hid = (data as any)?.id as string | undefined;
+      if (!hid) return;
+      setHouseholdId(hid);
+
+      // DB load — 同时把 DB 真值 merge 到 LS map (DB 是 source of truth).
+      const items = await loadHomeInventoryDb(hid, todayLocalStr);
+      if (cancelled) return;
+      const dbMap = inventoryToMap(items);
+
+      // 兼容老用户: DB 空但 LS 有 → 一次性迁移 LS→DB + 写 sentinel 防重跑.
+      const sentinelKey = `nutri_inventory_migrated_${hid}_${todayLocalStr}`;
+      const lsMap = loadHomeInventoryLs();
+      if (items.length === 0 && Object.keys(lsMap).length > 0 && !localStorage.getItem(sentinelKey)) {
+        const pushed = await commitInventoryFromLs(hid, lsMap, 'employer', todayLocalStr);
+        if (pushed > 0) {
+          try { localStorage.setItem(sentinelKey, '1'); } catch {}
+        }
+        // 迁移完不再重读, 直接用 LS map (DB 行就是 LS 的镜像).
+        setHaveIt(lsMap);
+        return;
+      }
+
+      // DB 有数据 → 用 DB 覆盖 LS (跨设备同步真相), 同时刷新 LS 副 cache.
+      setHaveIt(dbMap);
+      persistHomeInventoryLs(dbMap);
+    })().catch(e => console.warn('[verify] household/inventory fetch:', e));
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 食材清单变化或 SKU 列表变化 → 对每个 (有命中 SKU 的) 食材拉一次库存.
@@ -670,7 +740,7 @@ export default function VerifyIngredients() {
           dishToIngredients(dish, banquetAdultEquivalent, 0)
         );
         setIngredients(aggregateIngredients(allRaw));
-        setHaveIt(loadHomeInventory());
+        setHaveIt(loadHomeInventoryLs());
         return;
       }
 
@@ -701,7 +771,7 @@ export default function VerifyIngredients() {
         }
         setDishCount(total);
         setIngredients(aggregateIngredients(allRaw));
-        setHaveIt(loadHomeInventory());
+        setHaveIt(loadHomeInventoryLs());
         return;
       }
 
@@ -721,7 +791,7 @@ export default function VerifyIngredients() {
       const allRaw = dishes.flatMap(dish => dishToIngredients(dish, adults, kids));
       const aggregated = aggregateIngredients(allRaw);
       setIngredients(aggregated);
-      setHaveIt(loadHomeInventory()); // rehydrate per-day persisted checks
+      setHaveIt(loadHomeInventoryLs()); // rehydrate per-day persisted checks
     }
 
     run();
@@ -730,12 +800,43 @@ export default function VerifyIngredients() {
     // so ingredients refresh once the hook resolves.
   }, [mode, hookWeeklyMenu]);
 
+  // TICKET-075 §4a — 双写: LS 即时刷 + DB 异步 upsert. DB 失败不阻塞 UI
+  // (LS 已写, 用户下次开仍能看到; commitInventoryFromLs 按钮可兜底重 push).
   const toggleHave = (nameZh: string) => {
     setHaveIt(prev => {
-      const next = { ...prev, [nameZh]: !prev[nameZh] };
-      persistHomeInventory(next);
+      const nextVal = !prev[nameZh];
+      const next = { ...prev, [nameZh]: nextVal };
+      persistHomeInventoryLs(next);
+      if (householdId) {
+        setIngredientAvailableDb(householdId, nameZh, nextVal, 'employer', todayLocalStr)
+          .catch(e => console.warn('[verify.toggleHave] DB write failed:', e));
+      }
+      // 用户改了任何 toggle → notify 状态回 idle, 提示需要重新确认
+      if (notifyState === 'done') setNotifyState('idle');
       return next;
     });
+  };
+
+  // TICKET-075 §1 + §4b — "确认采购通知菲佣"按钮: 把当前完整 haveIt map
+  // 批量 push DB (兜底单条 toggle 的零星失败), 然后切到 'done' 状态. helper
+  // 端进 HelperPrep 会拉到最新 inventory; 本期不接 push 通知, 菲佣下次开页
+  // 自然看到.
+  const handleNotifyHelper = async () => {
+    if (notifyState === 'committing') return;
+    if (!householdId) {
+      // 未绑 helper → 给雇主一个友好提示, 但仍允许 LS-only 流程继续工作
+      alert(t('Bind a helper first (Settings → Family)', '请先在「设置 → 家庭」绑定菲佣后再通知'));
+      return;
+    }
+    setNotifyState('committing');
+    const pushed = await commitInventoryFromLs(householdId, haveIt, 'employer', todayLocalStr);
+    if (pushed >= 0) {
+      setNotifyState('done');
+      // 8 秒后回 idle, 让按钮可以再次点 (用户可能 toggle 更多后再 commit)
+      setTimeout(() => setNotifyState(prev => prev === 'done' ? 'idle' : prev), 8000);
+    } else {
+      setNotifyState('idle');
+    }
   };
 
   // 一键下单: POST track 拿 redirect_url → 新窗口打开. 失败 silent (不弹 alert
@@ -1281,6 +1382,34 @@ export default function VerifyIngredients() {
             >
               <span style={{ fontSize: 18 }}>📲</span>
               发送至 WhatsApp
+            </button>
+          )}
+
+          {/* TICKET-075 §1 + §4b — 雇主版"确认采购通知菲佣"按钮.
+              点了 commit 全部 haveIt 到 DB; helper 端进 HelperPrep 拉到最新.
+              householdId 缺失 (未绑菲佣) 时按钮仍显但点了会弹提示 (handleNotifyHelper). */}
+          {!isHelper && (
+            <button
+              onClick={handleNotifyHelper}
+              disabled={notifyState === 'committing'}
+              className="w-full py-3 rounded-2xl font-bold text-[14px] flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-60"
+              style={{
+                background: notifyState === 'done'
+                  ? 'linear-gradient(135deg, #25D366, #16A34A)'
+                  : 'linear-gradient(135deg, #FF5A1F, #FF8C54)',
+                color: 'white',
+                boxShadow: '0 6px 16px rgba(255,90,31,0.20)',
+              }}
+            >
+              <span className="material-symbols-outlined text-[18px]"
+                style={{ fontVariationSettings: "'FILL' 1" }}>
+                {notifyState === 'done' ? 'check_circle' : 'send'}
+              </span>
+              {notifyState === 'committing'
+                ? '通知中…'
+                : notifyState === 'done'
+                  ? `已通知菲佣 · ${haveCount} 项已勾`
+                  : `确认采购清单 · 通知菲佣 (${haveCount}/${ingredients.length})`}
             </button>
           )}
         </div>

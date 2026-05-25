@@ -30,6 +30,7 @@ import { getUserId } from "../lib/userId";
 import { loadCuisineMode, type CuisineMode } from "../lib/cuisineFilter";
 import { loadFamilyMembers } from "../lib/familyPrefs";
 import { HeartButton } from "../components/HeartButton";
+import { addFavorite } from "../lib/favorites";
 import { TagBadgeRow, type TagBadge } from "../components/TagBadge";
 import { getDishTitle } from "../lib/dishTitleI18n";
 import ShareCard from "../components/ShareCard";
@@ -1134,6 +1135,56 @@ export default function Home() {
       }, 1000);
     } catch (e) {
       console.warn('[scan→menu bulk] error:', e);
+      setScanToast(t3('Failed, please retry', '加入失败请重试', 'Nabigo, subukan muli'));
+      setTimeout(() => setScanToast(null), 2500);
+    } finally {
+      setScanBulkAdding(false);
+    }
+  };
+
+  // TICKET-075 §7 — 拍冰箱"+ 加进收藏" 分流按钮 handler.
+  // 把所有勾选 dish 批量 addFavorite (source_tag='fridge_scan' 让收藏页可分组),
+  // 然后 toast + 关弹窗. 不跳 /favorites — 让用户继续逛 (跟"看菜单"明确分流:
+  // 看菜单=今天就要做, 加收藏=以后再说).
+  const handleBulkAddToFavorites = async () => {
+    if (scanBulkAdding) return;
+    if (scanSelectedIds.size === 0) return;
+
+    setScanBulkAdding(true);
+    try {
+      const selected = fridgeDishes.filter(d => scanSelectedIds.has(d.id));
+      for (const dish of selected) {
+        // addFavorite 内部 no-op-if-already; 重复 add 不会报错
+        addFavorite({
+          id:              dish.id,
+          title_zh:        (dish as any).title_zh ?? '',
+          title_en:        (dish as any).title_en,
+          image_url:       (dish as any).image_url,
+          course_type:     (dish as any).course_type,
+          main_ingredient: (dish as any).main_ingredient,
+          origin_cuisine:  (dish as any).origin_cuisine,
+          source_tag:      'fridge_scan',
+        });
+      }
+
+      const n = selected.length;
+      setScanToast(t3(
+        `Added ${n} to favorites`,
+        `已加入收藏 ${n} 道`,
+        `Idinagdag ${n} sa favorites`,
+      ));
+      setTimeout(() => {
+        setScanToast(null);
+        // 关弹窗 + reset scan state (同 handleBulkAddAndGo 收尾)
+        setIsFridgeScanOpen(false);
+        setFridgeDishes([]);
+        setFridgeIngredients([]);
+        setFridgePreview(null);
+        setFridgeError(null);
+        setScanSelectedIds(new Set());
+      }, 1200);
+    } catch (e) {
+      console.warn('[scan→fav bulk] error:', e);
       setScanToast(t3('Failed, please retry', '加入失败请重试', 'Nabigo, subukan muli'));
       setTimeout(() => setScanToast(null), 2500);
     } finally {
@@ -2593,29 +2644,50 @@ export default function Home() {
                     </div>
                   );
                 })}
-                {/* TICKET-068 §3 — 底部大主按钮"看菜单 (已选 N 道)".
-                    disabled if 0 选 or 加入中. 点 → handleBulkAddAndGo
-                    (批量 upsert 今日 lunch/dinner slot + 跳 /weekly). */}
-                <button
-                  type="button"
-                  disabled={scanSelectedIds.size === 0 || scanBulkAdding}
-                  onClick={handleBulkAddAndGo}
-                  className="w-full h-14 rounded-2xl font-bold text-white active:scale-95 transition-transform mb-2"
-                  style={{
-                    background: scanSelectedIds.size === 0 ? '#ccc' : '#FF5A1F',
-                    fontSize: 16,
-                    opacity: scanBulkAdding ? 0.7 : 1,
-                  }}>
-                  {scanBulkAdding
-                    ? t3('Adding…', '加入中...', 'Idinadagdag...')
-                    : scanSelectedIds.size === 0
-                      ? t3('Pick at least one dish', '请勾选至少 1 道菜', 'Pumili ng kahit 1 ulam')
-                      : t3(
-                          `View Menu (${scanSelectedIds.size} selected)`,
-                          `看菜单 (已选 ${scanSelectedIds.size} 道)`,
-                          `Tingnan Menu (${scanSelectedIds.size} napili)`,
-                        )}
-                </button>
+                {/* TICKET-068 §3 + TICKET-075 §7 — 双 CTA 并排:
+                      "+ 加进收藏" (副, 灰底橙边) ｜ "看菜单 (已选 N)" (主, 橙底白字)
+                    分流意图: 收藏 = 以后再说; 看菜单 = 今天就要做.
+                    两个按钮共用 scanSelectedIds 状态 + scanBulkAdding lock. */}
+                <div className="flex gap-2 mb-2">
+                  <button
+                    type="button"
+                    disabled={scanSelectedIds.size === 0 || scanBulkAdding}
+                    onClick={handleBulkAddToFavorites}
+                    className="flex-1 h-14 rounded-2xl font-bold active:scale-95 transition-transform"
+                    style={{
+                      background: scanSelectedIds.size === 0 ? '#eee' : 'rgba(255,90,31,0.10)',
+                      color:      scanSelectedIds.size === 0 ? '#999'  : '#FF5A1F',
+                      border:     scanSelectedIds.size === 0 ? '1.5px solid #ddd' : '1.5px solid rgba(255,90,31,0.30)',
+                      fontSize: 14,
+                      opacity:    scanBulkAdding ? 0.7 : 1,
+                    }}>
+                    {t3(
+                      `+ Favorite (${scanSelectedIds.size})`,
+                      `+ 加进收藏 (${scanSelectedIds.size})`,
+                      `+ Favorite (${scanSelectedIds.size})`,
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={scanSelectedIds.size === 0 || scanBulkAdding}
+                    onClick={handleBulkAddAndGo}
+                    className="flex-1 h-14 rounded-2xl font-bold text-white active:scale-95 transition-transform"
+                    style={{
+                      background: scanSelectedIds.size === 0 ? '#ccc' : '#FF5A1F',
+                      fontSize: 14,
+                      opacity: scanBulkAdding ? 0.7 : 1,
+                    }}>
+                    {scanBulkAdding
+                      ? t3('Adding…', '加入中...', 'Idinadagdag...')
+                      : scanSelectedIds.size === 0
+                        ? t3('Pick 1+', '选 1 道菜', 'Pumili 1+')
+                        : t3(
+                            `View Menu (${scanSelectedIds.size})`,
+                            `看菜单 (${scanSelectedIds.size})`,
+                            `Tingnan (${scanSelectedIds.size})`,
+                          )}
+                  </button>
+                </div>
                 <button className="w-full h-12 rounded-2xl font-semibold active:scale-95"
                   style={{ fontSize: 13, background: "rgba(0,0,0,0.05)", color: "rgba(0,0,0,0.45)" }}
                   onClick={() => fridgeInputRef.current?.click()}>
