@@ -1,17 +1,21 @@
 /**
- * HelperTabBar — TICKET-041 P1 §2 5-tab fixed bottom nav (helper end).
+ * HelperTabBar — TICKET-041 P1 §2 helper 底部 nav (TICKET-058 §2: 5→4 tab).
  *
  * 与老 HelperBottomTabBar (4 tab: 任务/做菜/采购/社区) 并存的"工单 041 新版"
- * 5-tab bar: 主页 / 采购 / 做菜 / 社区 / 设置. HelperHome dashboard 化后
- * 全部 helper 页 footer 统一这一条. 老 HelperBottomTabBar 暂不删 (其他角色
- * 入口可能仍引用), 但 5 helper page 都改用本组件.
+ * 4-tab bar: 主页 / 采购 / 做菜 / 社区. HelperHome dashboard 化后全部 helper
+ * 页 footer 统一这一条. 老 HelperBottomTabBar 暂不删 (其他角色入口可能仍引用),
+ * 但 5 helper page 都改用本组件.
+ *
+ * TICKET-058 §2 (2026-05-25, 老板真测): 删 ⚙️ settings tab.
+ * 原因: HelperHome 右上角已有 ⚙️ settings 入口 (TICKET-041 P1 加的),
+ * 底部 TAB 又有 settings → 重复. 老板拍板: "菲佣主页右上角有了设置,
+ * 就不需要在下面再增加设置导航." 保留 home 右上 ⚙️ 作为唯一入口.
  *
  * Route 映射 (与 App.tsx 真实路由对齐):
  *   home     → /helper
  *   prep     → /prep
  *   cook     → /cook
  *   community→ /helper-community
- *   settings → /helper-settings
  *
  * 设计:
  *   - fixed bottom-0 z-50 + safe-area-inset-bottom padding
@@ -23,10 +27,14 @@
 import { useNavigate } from "react-router-dom";
 import { useLanguage } from "../contexts/LanguageContext";
 
-export type HelperTabKey = "home" | "prep" | "cook" | "community" | "settings";
+// TICKET-058 §2 — "settings" 从联合类型移除. 调用方如还在传 active="settings"
+// TS 会编译错暴露遗留点 (实际不应有, helper-settings 页不放底部 tab bar).
+export type HelperTabKey = "home" | "prep" | "cook" | "community";
 
 interface HelperTabBarProps {
-  active: HelperTabKey;
+  // TICKET-058 §2 — active 改可选. HelperSettings 页通过 home 右上 ⚙️ 进入,
+  // 不再属于 4 tab 中任何一个, 传 undefined 即可 (无 tab 高亮).
+  active?: HelperTabKey;
 }
 
 export default function HelperTabBar({ active }: HelperTabBarProps) {
@@ -38,7 +46,6 @@ export default function HelperTabBar({ active }: HelperTabBarProps) {
     { key: "prep",      icon: "shopping_cart", label: t3("Shopping", "采购", "Pamimili"),    route: "/prep"             },
     { key: "cook",      icon: "soup_kitchen",  label: t3("Cook",     "做菜", "Magluto"),     route: "/cook"             },
     { key: "community", icon: "groups",        label: t3("Community","社区", "Komunidad"),   route: "/helper-community" },
-    { key: "settings",  icon: "settings",      label: t3("Settings", "设置", "Mga Setting"), route: "/helper-settings"  },
   ];
 
   return (

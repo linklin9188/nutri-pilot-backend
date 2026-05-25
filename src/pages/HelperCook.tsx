@@ -82,7 +82,11 @@ function DishListScreen({ dishes, loading, onSelect }: {
       {/* Header */}
       <header className="sticky top-0 z-50 px-5 pt-12 pb-4" style={{ background: '#FEF7E5' }}>
         <div className="flex items-center gap-3 mb-1">
-          <button onClick={() => navigate(localStorage.getItem('nutri_role') === 'helper' ? '/helper' : '/')}
+          {/* TICKET-058 §1 — cooking 退出统一回 /helper. 原 navigate(localStorage role==='helper'?'/helper':'/')
+              在 helper context 下走对，但老板真测确认从 helper /cook 退出回到了 / (employer Home).
+              根因: nutri_role 未必被设置/同步, 老板测试设备上 localStorage.getItem('nutri_role') !== 'helper' 走了 '/' fallback.
+              这是 helper-only 页, 统一 navigate('/helper') 最稳, 避免任何 fallback 漏洞. */}
+          <button onClick={() => navigate('/helper')}
             className="w-9 h-9 rounded-full flex items-center justify-center active:scale-90 transition-transform"
             style={{ background: 'rgba(0,0,0,0.06)' }}>
             <span className="material-symbols-outlined" style={{ fontSize: 20, color: '#1a1a1a' }}>arrow_back</span>

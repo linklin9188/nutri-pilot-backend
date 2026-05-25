@@ -461,7 +461,9 @@ export default function HelperSettings() {
         </div>
       </div>
 
-      <HelperTabBar active="settings" />
+      {/* TICKET-058 §2 — settings 不再是底部 tab 之一 (从 helper 主页右上 ⚙️ 进入).
+          不传 active prop → 4 tab 都不高亮. 仍渲染 tab bar 以便从 settings 回到其他页. */}
+      <HelperTabBar />
     </div>
   );
 }
