@@ -7,7 +7,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchSwapOptions, type SupabaseDish } from "../hooks/useSupabaseMenu";
-import { useWeeklyMenu, isWeekend, todayDayIndex, getCurrentFestival } from "../hooks/useWeeklyMenu";
+import { useWeeklyMenu, isWeekend, todayDayIndex, getCurrentFestival, getWeekStartISO, getCacheKey, ALGO_VERSION } from "../hooks/useWeeklyMenu";
 import { isWithinTrial } from "../lib/userLifecycle";
 import WeekendDiningReport from "../components/WeekendDiningReport";
 import {
@@ -732,6 +732,10 @@ export default function Home() {
   const [scanScene, setScanScene]   = useState<ScanScene>('fridge');     // 冰箱 vs 超市货架
   const [scanLocale, setScanLocale] = useState<ScanLocale>('zh');         // 简体 / 繁體 输出
   const [fridgePreview, setFridgePreview] = useState<string | null>(null);
+  // TICKET-062 §B — 拍冰箱"+加今日菜单"落地。track 已加 dish 让按钮 disable + 显示"已加入".
+  const [scanAddedDishIds, setScanAddedDishIds] = useState<Set<string>>(new Set());
+  const [scanAddingDishId, setScanAddingDishId] = useState<string | null>(null);
+  const [scanToast, setScanToast] = useState<string | null>(null);
 
   const [displayName, setDisplayName] = useState("");
   const [helperName, setHelperName] = useState("");
@@ -1006,6 +1010,95 @@ export default function Home() {
       setFridgeError("识别失败，请重试");
     } finally {
       setFridgeScanLoading(false);
+    }
+  };
+
+  // TICKET-062 §B — 拍冰箱"+加今日菜单"落地。
+  // 把扫描出来的 dish upsert 到 user_weekly_menus 当前 week + 今天 + 对应 slot。
+  // Slot 推断: dish.course_type === 'lunch' → 'lunch'，其他默认 'dinner' (CEO 拍板减少点击).
+  // 防重复: 当天 slot 已有此 dish_id → toast"已在今日菜单"不重复加。
+  // 成功后: dispatch 'nutri-weekly-menu-changed' 让 useWeeklyMenu 失效缓存重读。
+  const addScanDishToTodayMenu = async (dish: MatchedDish) => {
+    if (scanAddingDishId) return;  // 防双击
+    if (scanAddedDishIds.has(dish.id)) return;
+
+    const userId = getUserId();
+    if (!userId) {
+      setScanToast("请先登录再加菜");
+      setTimeout(() => setScanToast(null), 2500);
+      return;
+    }
+
+    // weeklyMenu 缺失 (loading / DB 异常) → 仍允许操作, 用 getWeekStartISO 算 weekStart.
+    // useWeeklyMenu 当前 weekOffset = isWeekend() ? 1 : 0, 这里跟随同口径保持一致.
+    const weekStart = weeklyMenu?.weekStart ?? getWeekStartISO(isWeekend() ? 1 : 0);
+    const slotMeal: 'lunch' | 'dinner' = dish.course_type === 'lunch' ? 'lunch' : 'dinner';
+    const slotLabel = slotMeal === 'lunch' ? '午餐' : '晚餐';
+
+    setScanAddingDishId(dish.id);
+    try {
+      // Read existing row for (week, day, slot)
+      const { data: existing } = await supabase
+        .from('user_weekly_menus')
+        .select('dish_ids, swapped_dish_ids')
+        .eq('user_id', userId)
+        .eq('week_start', weekStart)
+        .eq('day_index', todayIdx)
+        .eq('meal_type', slotMeal)
+        .maybeSingle();
+
+      const baseIds: string[] = ((existing as any)?.swapped_dish_ids ?? (existing as any)?.dish_ids ?? []) as string[];
+      if (baseIds.includes(dish.id)) {
+        setScanAddedDishIds(prev => new Set(prev).add(dish.id));
+        setScanToast(`已在今日${slotLabel}`);
+        setTimeout(() => setScanToast(null), 2200);
+        return;
+      }
+
+      const nextIds = [...baseIds, dish.id];
+
+      // 写表口径与 useWeeklyMenu swapDish 完全一致 (algo_version + cache_key 必填,
+      // 否则下次 loadFromDB 把这行判 stale 抹掉). cache_key 走 getCacheKey 同源算法.
+      const cacheKey = getCacheKey(weekStart);
+
+      const upsertPayload: any = {
+        user_id:      userId,
+        week_start:   weekStart,
+        day_index:    todayIdx,
+        meal_type:    slotMeal,
+        dish_ids:     slotMeal === 'dinner' ? ((existing as any)?.dish_ids ?? nextIds) : nextIds,
+        algo_version: ALGO_VERSION,
+        cache_key:    cacheKey,
+      };
+      // dinner 行额外维护 swapped_dish_ids (UI 实际显示用 swapped 优先)
+      if (slotMeal === 'dinner') upsertPayload.swapped_dish_ids = nextIds;
+
+      const { error: upErr } = await supabase
+        .from('user_weekly_menus')
+        .upsert(upsertPayload, { onConflict: 'user_id,week_start,day_index,meal_type' });
+
+      if (upErr) {
+        console.warn('[scan→menu] upsert failed:', upErr);
+        setScanToast("加入失败, 请重试");
+        setTimeout(() => setScanToast(null), 2500);
+        return;
+      }
+
+      // 抹本 week 的 localStorage cache, 让 useWeeklyMenu 重读 DB 新行
+      try { localStorage.removeItem(cacheKey); } catch {}
+
+      setScanAddedDishIds(prev => new Set(prev).add(dish.id));
+      setScanToast(`已加入今天${slotLabel}, 在菜单页查看`);
+      setTimeout(() => setScanToast(null), 2800);
+
+      // 通知 useWeeklyMenu (跨页面 / 其它 hook 实例) 重新拉
+      try { window.dispatchEvent(new Event('nutri-weekly-menu-changed')); } catch {}
+    } catch (e) {
+      console.warn('[scan→menu] error:', e);
+      setScanToast("加入失败, 请重试");
+      setTimeout(() => setScanToast(null), 2500);
+    } finally {
+      setScanAddingDishId(null);
     }
   };
 
@@ -2238,6 +2331,13 @@ export default function Home() {
       {isFridgeScanOpen && (
         <div className="fixed inset-0 z-[110] flex flex-col justify-end">
           <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setIsFridgeScanOpen(false)} />
+          {/* TICKET-062 §B — "+加今日菜单" toast (floats above bottom sheet) */}
+          {scanToast && (
+            <div className="absolute top-12 left-1/2 -translate-x-1/2 z-[120] px-4 py-2 rounded-full shadow-lg pointer-events-none"
+              style={{ background: 'rgba(0,0,0,0.85)', color: '#fff', fontSize: 13, fontWeight: 600 }}>
+              {scanToast}
+            </div>
+          )}
           <div className="relative bg-white w-full max-w-md mx-auto rounded-t-[32px] pt-4 pb-10 px-6 shadow-2xl">
             <div className="w-12 h-1.5 rounded-full mx-auto mb-4" style={{ background: "rgba(0,0,0,0.1)" }} />
             <div className="flex justify-between items-center mb-3">
@@ -2344,56 +2444,82 @@ export default function Home() {
                         {group.emoji} {group.label}（{items.length} 道）
                       </p>
                       <div className="space-y-3">
-                        {items.map((dish) => (
-                          <button key={dish.id}
-                            onClick={() => {
-                              localStorage.setItem("generatedMenu", JSON.stringify([{ id: dish.id, title_zh: dish.title_zh, image_url: dish.image_url }]));
-                              navigate(`/prep?dish_id=${dish.id}`);
-                            }}
-                            className="w-full p-3 rounded-2xl border shadow-sm bg-white text-left active:scale-[0.99] transition-transform"
-                            style={{ borderColor: "rgba(0,0,0,0.06)" }}>
-                            <div className="flex items-start gap-3">
-                              {dish.image_url && (
-                                <img src={dish.image_url} alt={dish.title_zh}
-                                  className="w-16 h-16 rounded-xl object-cover shrink-0"
-                                  onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                              )}
-                              <div className="flex-1 min-w-0">
-                                <p className="font-bold truncate" style={{ fontSize: 15 }}>
-                                  {getDishTitle(dish, language)}
-                                </p>
-                                <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                                  {dish.cook_method && (
-                                    <span className="px-1.5 py-0.5 rounded-md font-semibold"
-                                      style={{ fontSize: 10, background: "rgba(0,0,0,0.06)", color: "rgba(0,0,0,0.45)" }}>
-                                      {dish.cook_method}
-                                    </span>
+                        {items.map((dish) => {
+                          const isAdded = scanAddedDishIds.has(dish.id);
+                          const isAdding = scanAddingDishId === dish.id;
+                          const slotLabel = dish.course_type === 'lunch' ? '午餐' : '晚餐';
+                          return (
+                            <div key={dish.id}
+                              className="w-full p-3 rounded-2xl border shadow-sm bg-white relative"
+                              style={{ borderColor: "rgba(0,0,0,0.06)" }}>
+                              {/* 主区: 点 → 跳 /prep 看做法 (TICKET-062 §B 保留原行为) */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  localStorage.setItem("generatedMenu", JSON.stringify([{ id: dish.id, title_zh: dish.title_zh, image_url: dish.image_url }]));
+                                  navigate(`/prep?dish_id=${dish.id}`);
+                                }}
+                                className="w-full text-left active:scale-[0.99] transition-transform">
+                                <div className="flex items-start gap-3">
+                                  {dish.image_url && (
+                                    <img src={dish.image_url} alt={dish.title_zh}
+                                      className="w-16 h-16 rounded-xl object-cover shrink-0"
+                                      onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                                   )}
-                                  {dish.nutrition_kcal_per_serving && (
-                                    <span className="px-1.5 py-0.5 rounded-md font-semibold"
-                                      style={{ fontSize: 10, background: "rgba(255,90,31,0.08)", color: "#FF5A1F" }}>
-                                      {dish.nutrition_kcal_per_serving} kcal
-                                    </span>
-                                  )}
-                                  {dish.xiaomei_compatible && localStorage.getItem('has_xiaomei_robot') === 'true' && (
-                                    <span className="px-1.5 py-0.5 rounded-md font-semibold"
-                                      style={{ fontSize: 10, background: "rgba(255,90,31,0.10)", color: "#FF5A1F" }}>
-                                      🤖
-                                    </span>
-                                  )}
+                                  <div className="flex-1 min-w-0">
+                                    <p className="font-bold truncate" style={{ fontSize: 15 }}>
+                                      {getDishTitle(dish, language)}
+                                    </p>
+                                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                      {dish.cook_method && (
+                                        <span className="px-1.5 py-0.5 rounded-md font-semibold"
+                                          style={{ fontSize: 10, background: "rgba(0,0,0,0.06)", color: "rgba(0,0,0,0.45)" }}>
+                                          {dish.cook_method}
+                                        </span>
+                                      )}
+                                      {dish.nutrition_kcal_per_serving && (
+                                        <span className="px-1.5 py-0.5 rounded-md font-semibold"
+                                          style={{ fontSize: 10, background: "rgba(255,90,31,0.08)", color: "#FF5A1F" }}>
+                                          {dish.nutrition_kcal_per_serving} kcal
+                                        </span>
+                                      )}
+                                      {dish.xiaomei_compatible && localStorage.getItem('has_xiaomei_robot') === 'true' && (
+                                        <span className="px-1.5 py-0.5 rounded-md font-semibold"
+                                          style={{ fontSize: 10, background: "rgba(255,90,31,0.10)", color: "#FF5A1F" }}>
+                                          🤖
+                                        </span>
+                                      )}
+                                    </div>
+                                    {dish.matched_count > 0 && (
+                                      <p className="mt-1.5 truncate" style={{ fontSize: 11, color: "rgba(0,0,0,0.55)" }}>
+                                        用到您的：{dish.matched_ingredients.join(' · ')}
+                                      </p>
+                                    )}
+                                  </div>
+                                  <span className="material-symbols-outlined shrink-0" style={{ fontSize: 20, color: "rgba(0,0,0,0.30)" }}>
+                                    chevron_right
+                                  </span>
                                 </div>
-                                {dish.matched_count > 0 && (
-                                  <p className="mt-1.5 truncate" style={{ fontSize: 11, color: "rgba(0,0,0,0.55)" }}>
-                                    用到您的：{dish.matched_ingredients.join(' · ')}
-                                  </p>
-                                )}
+                              </button>
+                              {/* TICKET-062 §B — "+加今日菜单" pill (右下角, 橙色) */}
+                              <div className="flex justify-end mt-2">
+                                <button
+                                  type="button"
+                                  disabled={isAdded || isAdding}
+                                  onClick={(e) => { e.stopPropagation(); addScanDishToTodayMenu(dish); }}
+                                  className="px-3 py-1.5 rounded-full font-semibold active:scale-95 transition-transform"
+                                  style={{
+                                    fontSize: 11,
+                                    background: isAdded ? 'rgba(0,0,0,0.06)' : '#FF5A1F',
+                                    color: isAdded ? 'rgba(0,0,0,0.45)' : '#fff',
+                                    opacity: isAdding ? 0.6 : 1,
+                                  }}>
+                                  {isAdded ? `✓ 已加入今日${slotLabel}` : (isAdding ? '加入中…' : `+ 加今日${slotLabel}`)}
+                                </button>
                               </div>
-                              <span className="material-symbols-outlined shrink-0" style={{ fontSize: 20, color: "rgba(0,0,0,0.30)" }}>
-                                chevron_right
-                              </span>
                             </div>
-                          </button>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   );
