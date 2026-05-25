@@ -1,15 +1,21 @@
 // Supabase Edge Function — POST /functions/v1/stripe-webhook
 //
 // Stripe calls this endpoint after every payment/subscription event. We
-// translate those into is_pro flips on user_profiles.
+// translate those into is_pro flips on user_profiles, or for one-time
+// purchase orders (TICKET-080-B), flip order status to 'paid'.
 //
 // Events we handle:
-//   checkout.session.completed       → initial subscription, set is_pro=true
+//   checkout.session.completed       → 2 paths (区分逻辑见 onCheckoutCompleted):
+//                                       (a) 订阅: subscription → set is_pro=true
+//                                       (b) 订单 (080-B): metadata.order_ids 存在
+//                                           → UPDATE orders status='paid'
 //   customer.subscription.updated    → renewal / plan change → refresh fields
 //   customer.subscription.deleted    → cancellation took effect → is_pro=false
 //   invoice.payment_failed           → log; no state change yet (Stripe handles
 //                                      the dunning flow; subscription will be
 //                                      deleted later if it stays unpaid)
+//   checkout.session.expired         → 订单付款会话过期 → orders status='cancelled' (080-B)
+//   payment_intent.payment_failed    → 订单付款失败 → orders status='cancelled' (080-B)
 //
 // Required environment variables (Supabase Dashboard → Edge Functions → Secrets):
 //   STRIPE_SECRET_KEY        sk_test_... or sk_live_...
@@ -27,7 +33,9 @@
 //   3. Events: checkout.session.completed,
 //              customer.subscription.updated,
 //              customer.subscription.deleted,
-//              invoice.payment_failed
+//              invoice.payment_failed,
+//              checkout.session.expired,            (080-B 订单付款过期)
+//              payment_intent.payment_failed       (080-B 订单付款失败)
 //   4. Copy the signing secret → set STRIPE_WEBHOOK_SECRET.
 
 import Stripe from "https://esm.sh/stripe@14.21.0?target=deno";
@@ -97,6 +105,14 @@ Deno.serve(async (req: Request) => {
       case "invoice.payment_failed":
         console.warn("Invoice payment failed:", (event.data.object as any).id);
         break;
+      case "checkout.session.expired":
+        // TICKET-080-B: 订单付款会话超时, 反推订单 cancelled
+        await onCheckoutSessionExpired(event.data.object as Stripe.Checkout.Session);
+        break;
+      case "payment_intent.payment_failed":
+        // TICKET-080-B: 卡被拒等支付失败, 反推订单 cancelled
+        await onPaymentIntentFailed(event.data.object as Stripe.PaymentIntent);
+        break;
       default:
         // Unhandled event types are still logged so we have an audit trail.
         break;
@@ -119,12 +135,20 @@ Deno.serve(async (req: Request) => {
 });
 
 async function onCheckoutCompleted(session: Stripe.Checkout.Session) {
+  // TICKET-080-B: 分流 — metadata.order_ids 存在 → 订单付款; 否则走旧订阅路径.
+  // session.mode 也能区分 ("payment" vs "subscription") 但 metadata 是显式契约, 更稳.
+  const orderIdsRaw = session.metadata?.order_ids ?? "";
+  if (orderIdsRaw) {
+    await onOrderCheckoutCompleted(session, orderIdsRaw);
+    return;
+  }
+
+  // 订阅路径 (原逻辑)
   const userId = session.client_reference_id;
   if (!userId) {
     console.warn("Checkout session has no client_reference_id:", session.id);
     return;
   }
-
   // The subscription is created at the same time as the session; fetch it
   // to read the price + period_end fields.
   const subscriptionId = session.subscription as string | null;
@@ -132,6 +156,91 @@ async function onCheckoutCompleted(session: Stripe.Checkout.Session) {
 
   const subscription = await stripe.subscriptions.retrieve(subscriptionId);
   await syncSubscriptionRow(userId, subscription, session.customer as string);
+}
+
+// ── TICKET-080-B 订单付款分支 ─────────────────────────────────────────────────
+async function onOrderCheckoutCompleted(
+  session: Stripe.Checkout.Session,
+  orderIdsRaw: string,
+) {
+  const orderIds = orderIdsRaw.split(",").map(s => s.trim()).filter(Boolean);
+  if (orderIds.length === 0) {
+    console.warn("[order-checkout.completed] empty order_ids:", session.id);
+    return;
+  }
+  const paymentIntentId = typeof session.payment_intent === "string"
+    ? session.payment_intent
+    : null;
+
+  const nowIso = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("orders")
+    .update({
+      status:                   "paid",
+      stripe_payment_intent_id: paymentIntentId,
+      paid_at:                  nowIso,
+    })
+    .in("id", orderIds)
+    .select("id");
+  if (error) {
+    console.error("[order-checkout.completed] orders UPDATE failed:", error);
+    throw new Error(`orders UPDATE failed: ${error.message}`);
+  }
+  const updatedIds = ((data ?? []) as { id: string }[]).map(r => r.id);
+  console.log(
+    "[order-checkout.completed] OK:",
+    `session=${session.id} requested=${orderIds.length} updated=${updatedIds.length}`,
+  );
+
+  // 写历史 (每订单一行). 失败不阻塞主流程.
+  if (updatedIds.length > 0) {
+    const historyRows = updatedIds.map(orderId => ({
+      order_id: orderId,
+      status:   "paid",
+      note:     `Stripe checkout session completed (${session.id})`,
+    }));
+    const { error: histErr } = await supabase
+      .from("order_status_history")
+      .insert(historyRows);
+    if (histErr) {
+      console.warn("[order-checkout.completed] history INSERT failed:", histErr);
+    }
+  }
+}
+
+async function onCheckoutSessionExpired(session: Stripe.Checkout.Session) {
+  const orderIdsRaw = session.metadata?.order_ids ?? "";
+  if (!orderIdsRaw) return;  // 订阅 session 过期 → 不动 (Stripe 自己有 dunning)
+  await cancelOrders(orderIdsRaw, `Stripe checkout session expired (${session.id})`);
+}
+
+async function onPaymentIntentFailed(pi: Stripe.PaymentIntent) {
+  const orderIdsRaw = pi.metadata?.order_ids ?? "";
+  if (!orderIdsRaw) return;  // 非订单付款的 PI 跳过
+  await cancelOrders(orderIdsRaw, `Stripe payment_intent failed (${pi.id})`);
+}
+
+async function cancelOrders(orderIdsRaw: string, note: string) {
+  const orderIds = orderIdsRaw.split(",").map(s => s.trim()).filter(Boolean);
+  if (orderIds.length === 0) return;
+  // 只 cancel 仍在 pending_payment 的, 已 paid 的别覆盖 (race condition 保护)
+  const { data, error } = await supabase
+    .from("orders")
+    .update({ status: "cancelled" })
+    .in("id", orderIds)
+    .eq("status", "pending_payment")
+    .select("id");
+  if (error) {
+    console.error("[order-cancel] orders UPDATE failed:", error);
+    return;
+  }
+  const ids = ((data ?? []) as { id: string }[]).map(r => r.id);
+  console.log("[order-cancel] cancelled:", ids.length, "of", orderIds.length);
+  if (ids.length > 0) {
+    await supabase.from("order_status_history").insert(
+      ids.map(orderId => ({ order_id: orderId, status: "cancelled", note })),
+    );
+  }
 }
 
 async function onSubscriptionUpdated(subscription: Stripe.Subscription) {

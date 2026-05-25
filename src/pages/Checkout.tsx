@@ -1,13 +1,15 @@
 /**
- * Checkout — /checkout 结账页 (TICKET-080-A).
+ * Checkout — /checkout 结账页 (TICKET-080-A → 080-B).
  *
- * 流程: /cart "去结账" → /checkout 填地址 + 选送货时间 → 点"确认下单" →
- *   createOrder() → 跳 /order/success?order_id=X.
+ * 流程 (080-B): /cart "去结账" → /checkout 填地址 + 选送货时间 → 点"确认下单" →
+ *   1. createOrders() (按 supplier 拆 N 张订单, status='pending_payment')
+ *   2. 调 create-order-checkout edge fn → 拿 Stripe Checkout url
+ *   3. window.location.href = url 跳 Stripe
+ *   4. 用户付款完跳回 /orders/success?ids=A,B&session=cs_xxx
+ *   5. webhook 异步把 orders.status 改 'paid'
  *
- * 080-A: 不接 Stripe, status='pending_payment' 直接生成订单 + 清空购物车.
- *        OrderSuccess 显示"等待支付 (测试版)" disclaimer.
- *
- * 080-B 接 Stripe 时 createOrder() 后立刻 create-checkout-session, redirect Stripe.
+ * 兜底: Stripe 跳转失败 → alert + navigate /orders/success?ids=... (订单已创建,
+ * 用户可以在 success 页点"去付款"重试).
  */
 
 import { useEffect, useState } from 'react';
@@ -113,9 +115,34 @@ export default function Checkout() {
         setSubmitting(false);
         return;
       }
-      // TICKET-083 §7c — 跳新 success 页 (ids=A,B 多订单)
-      const ids = orders.map(o => o.id).join(',');
-      navigate(`/orders/success?ids=${encodeURIComponent(ids)}`, { replace: true });
+      // TICKET-080-B — 调 create-order-checkout 拿 Stripe url, 跳付款
+      const orderIds = orders.map(o => o.id);
+      const supaUrl = (import.meta as any)?.env?.VITE_SUPABASE_URL ?? '';
+      try {
+        const resp = await fetch(
+          `${supaUrl}/functions/v1/create-order-checkout`,
+          {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              orderIds,
+              userId:       uid,
+              returnOrigin: window.location.origin,
+            }),
+          },
+        );
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const j = await resp.json();
+        if (!j?.url) throw new Error('missing stripe url');
+        window.location.href = j.url as string;
+        // 不 setSubmitting(false) — 页面已离开
+        return;
+      } catch (e) {
+        // Stripe 跳转失败兜底: 订单已建, 跳 success 让用户从那里点"去付款"重试
+        console.warn('[Checkout] Stripe redirect failed, fallback to /orders/success:', e);
+        const ids = orderIds.join(',');
+        navigate(`/orders/success?ids=${encodeURIComponent(ids)}`, { replace: true });
+      }
     } catch {
       setError(t3('Network error, please retry', '网络错误, 请重试', 'Network error, subukan ulit'));
       setSubmitting(false);
@@ -272,12 +299,12 @@ export default function Checkout() {
               </div>
             </section>
 
-            {/* Disclaimer */}
+            {/* Disclaimer (080-B: 付款已接 Stripe; 配送仍待 Inalca API 接通) */}
             <p className="text-center text-[10px] text-gray-400 px-4 leading-relaxed">
               {t3(
-                'Test version: order will be recorded but payment & delivery are not yet live. Coming soon.',
-                '当前为测试版: 订单会被记录, 但实际付款 + 配送功能即将上线。',
-                'Test version: ire-record ang order pero hindi pa live ang bayad at delivery.',
+                'Secure payment by Stripe. Delivery integration with supplier coming soon.',
+                '付款由 Stripe 提供安全保障; 供应商配送对接即将上线。',
+                'Ligtas na bayad sa pamamagitan ng Stripe. Delivery integration darating na.',
               )}
             </p>
 
@@ -312,8 +339,8 @@ export default function Checkout() {
             }}
           >
             {submitting
-              ? t3('Submitting…', '提交中…', 'Sini-submit…')
-              : t3(`Confirm Order (HKD ${total.toFixed(2)})`, `确认下单 (HKD ${total.toFixed(2)})`, `Kumpirmahin (HKD ${total.toFixed(2)})`)}
+              ? t3('Redirecting to payment…', '跳转付款…', 'Pumupunta sa bayad…')
+              : t3(`Pay HKD ${total.toFixed(2)}`, `去付款 HKD ${total.toFixed(2)}`, `Magbayad HKD ${total.toFixed(2)}`)}
           </button>
         </div>
       )}
