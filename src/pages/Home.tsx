@@ -20,6 +20,7 @@ import {
 } from "../lib/scanMatch";
 import { supabase } from "../lib/supabase";
 import BottomTabBar from "../components/BottomTabBar";
+import TrialBanner from "../components/TrialBanner";
 import { useSubscription } from "../lib/subscription";
 import { recordBatchSwap, recordSwap } from "../lib/swapFeedback";
 import { useLanguage, LANGUAGE_LABEL, type Language } from "../contexts/LanguageContext";
@@ -1342,6 +1343,10 @@ export default function Home() {
           </span>
         </div>
       </div>
+
+      {/* TICKET-078 — 30 天免费体验 banner. 仅在 trial 剩 ≤7 天或已过期时
+          自显示, paid 永不渲染. 点 [升级 →] 跳 /pricing. */}
+      <TrialBanner />
 
       {/* TICKET-066 P0 — chat 主入口统一. 替换原悬浮 FAB + IntentRegenModal 弹窗,
           唯一 use case "说话换菜单". 老板真测 #12 拍板 1: chat 不是泛用对话,
