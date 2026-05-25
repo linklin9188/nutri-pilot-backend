@@ -32,10 +32,20 @@ interface DishWithPrep {
 export default function HelperPrep() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { t, t3, t4, cycleLanguageForRole, language, isChinese } = useLanguage();
+  const { t, t3, t4, cycleLanguageForRole, language, setLanguage, isChinese } = useLanguage();
   // Treat 繁體 the same as 简体 for content selection; treat 'tl' (Tagalog,
   // helper only) the same as English until Tagalog strings exist.
   const useChineseContent = isChinese;
+
+  // TICKET-20260525-060 — Helper view never uses Chinese. If a stale appLanguage
+  // from a prior employer session leaked into this helper-only page, snap to EN
+  // on mount. Matches HelperHome.tsx:73-78 pattern.
+  useEffect(() => {
+    if (language === 'zh' || language === 'zh-Hant') {
+      setLanguage('en');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [dishes, setDishes]       = useState<DishWithPrep[]>([]);
   const [loading, setLoading]     = useState(true);

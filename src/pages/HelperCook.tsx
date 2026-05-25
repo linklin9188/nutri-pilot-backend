@@ -73,10 +73,12 @@ function DishListScreen({ dishes, loading, onSelect }: {
   onSelect: (dish: DishWithCook) => void;
 }) {
   const navigate = useNavigate();
-  const { t3, t4, language } = useLanguage();
+  const { t3, t4, language, cycleLanguageForRole } = useLanguage();
   // TICKET-029 — upgraded to getDishTitle (zh / zh-Hant / en / tl / id picker).
   // Backend 022 §C ship 给 924 dishes 灌 title_zh_hant + title_en.
   const dishTitle = (d: DishWithCook) => getDishTitle(d, language);
+  // TICKET-20260525-060 — lang chip short code (EN / TL / ID), matches HelperHome
+  const langChip = language === 'tl' ? 'TL' : language === 'id' ? 'ID' : 'EN';
   return (
     <div className="min-h-screen flex flex-col max-w-md mx-auto" style={{ background: '#FEF7E5', paddingBottom: 80 }}>
       {/* Header */}
@@ -91,7 +93,7 @@ function DishListScreen({ dishes, loading, onSelect }: {
             style={{ background: 'rgba(0,0,0,0.06)' }}>
             <span className="material-symbols-outlined" style={{ fontSize: 20, color: '#1a1a1a' }}>arrow_back</span>
           </button>
-          <div>
+          <div className="flex-1 min-w-0">
             <h1 className="font-black" style={{ fontSize: 22, color: '#1a1a1a' }}>
               {t4("Today's Cooking", "今日烹饪", "Pagluluto Ngayon", "Masakan Hari Ini")}
             </h1>
@@ -99,6 +101,15 @@ function DishListScreen({ dishes, loading, onSelect }: {
               {t4("Choose a dish to start", "选一道菜开始", "Pumili ng ulam", "Pilih hidangan untuk mulai")}
             </p>
           </div>
+          {/* TICKET-20260525-060 — lang chip (EN / TL / ID), matches HelperHome */}
+          <button
+            onClick={cycleLanguageForRole}
+            className="px-3 h-8 rounded-full font-bold active:scale-95 transition-transform flex-shrink-0"
+            style={{ background: 'rgba(0,0,0,0.06)', color: '#1a1a1a', fontSize: 12 }}
+            title="Switch language"
+          >
+            {langChip}
+          </button>
         </div>
       </header>
 
@@ -210,9 +221,11 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
   onBack: () => void;
   onNextDish: (dish: DishWithCook) => void;
 }) {
-  const { t4, isChinese, language } = useLanguage();
+  const { t4, isChinese, language, cycleLanguageForRole } = useLanguage();
   // TICKET-029 — upgraded to getDishTitle (zh / zh-Hant / en / tl / id picker).
   const dishTitle = (d: DishWithCook) => getDishTitle(d, language);
+  // TICKET-20260525-060 — lang chip short code (EN / TL / ID), matches HelperHome
+  const langChip = language === 'tl' ? 'TL' : language === 'id' ? 'ID' : 'EN';
   const steps = dish.cook_steps_json ?? [];
   const [currentIdx, setCurrentIdx] = useState(0);
   const [completed, setCompleted] = useState<Set<number>>(new Set());
@@ -347,7 +360,16 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
               style={{ background: 'rgba(255,255,255,0.08)' }}>
               <span className="material-symbols-outlined text-white" style={{ fontSize: 20 }}>arrow_back</span>
             </button>
-            <h1 className="font-black" style={{ fontSize: 17, color: '#1a1a1a' }}>{dishTitle(dish)}</h1>
+            <h1 className="font-black flex-1 min-w-0 truncate" style={{ fontSize: 17, color: '#1a1a1a' }}>{dishTitle(dish)}</h1>
+            {/* TICKET-20260525-060 — lang chip (EN / TL / ID) */}
+            <button
+              onClick={cycleLanguageForRole}
+              className="px-3 h-8 rounded-full font-bold active:scale-95 transition-transform flex-shrink-0"
+              style={{ background: 'rgba(0,0,0,0.06)', color: '#1a1a1a', fontSize: 12 }}
+              title="Switch language"
+            >
+              {langChip}
+            </button>
           </div>
         </header>
         <main className="flex-1 flex flex-col items-center justify-center px-8 text-center gap-3">
@@ -393,6 +415,15 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
               )}
             </p>
           </div>
+          {/* TICKET-20260525-060 — lang chip (EN / TL / ID), helper-only, not affecting cooking progress */}
+          <button
+            onClick={cycleLanguageForRole}
+            className="px-3 h-8 rounded-full font-bold active:scale-95 transition-transform flex-shrink-0"
+            style={{ background: 'rgba(0,0,0,0.06)', color: '#1a1a1a', fontSize: 12 }}
+            title="Switch language"
+          >
+            {langChip}
+          </button>
         </div>
 
         {/* Progress bar */}
@@ -683,6 +714,18 @@ export default function HelperCook() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const singleDishId = searchParams.get('dish_id');
+  const { language, setLanguage } = useLanguage();
+
+  // TICKET-20260525-060 — Helper view never uses Chinese. If a stale appLanguage
+  // from a prior employer session leaked in, snap to EN on mount. Matches
+  // HelperHome.tsx:73-78 pattern. Lives on top-level so it runs once for both
+  // DishListScreen + CookingScreen sub-routes.
+  useEffect(() => {
+    if (language === 'zh' || language === 'zh-Hant') {
+      setLanguage('en');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     async function load() {

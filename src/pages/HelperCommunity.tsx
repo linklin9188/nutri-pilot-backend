@@ -180,8 +180,22 @@ function previewText(body: string, n: number): string {
 
 export default function HelperCommunity() {
   const navigate = useNavigate();
-  const { t3 } = useLanguage();
+  const { t3, language, setLanguage, cycleLanguageForRole } = useLanguage();
   const myUserId = getUserId() ?? '';
+
+  // TICKET-20260525-060 — Helper view never uses Chinese. If a stale appLanguage
+  // from a prior employer session leaked in, snap to EN on mount. Matches
+  // HelperHome.tsx:73-78 pattern.
+  useEffect(() => {
+    if (language === 'zh' || language === 'zh-Hant') {
+      setLanguage('en');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const langChip = language === 'tl' ? 'TL'
+                 : language === 'id' ? 'ID'
+                 : 'EN';
 
   const [posts, setPosts]               = useState<PostRow[]>([]);
   const [loading, setLoading]           = useState(true);
@@ -620,6 +634,15 @@ export default function HelperCommunity() {
             {t3('Helpers share their dishes & tips', '菲佣分享菜品与做菜心得', 'Mga helper na nagbabahagi')}
           </p>
         </div>
+        {/* TICKET-20260525-060 — lang chip (EN / TL / ID), matches HelperHome */}
+        <button
+          onClick={cycleLanguageForRole}
+          className="px-3 h-8 rounded-full font-bold active:scale-95 transition-transform flex-shrink-0"
+          style={{ background: 'rgba(0,0,0,0.06)', color: '#1a1a1a', fontSize: 12 }}
+          title="Switch language"
+        >
+          {langChip}
+        </button>
       </div>
 
       {/* §C E — 今日话题 banner (静态 30 题轮播, 不调 Gemini) */}
