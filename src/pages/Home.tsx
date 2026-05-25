@@ -1486,7 +1486,7 @@ export default function Home() {
             富妈妈 + 2 孩子的场景下推荐立刻能翻倍准确度——只要她肯花
             2 分钟分别建档 (一个不吃鱼 + 一个长高需求等)。 */}
         <FamilyMemberNudge />
-        <InviteFamilySheet />
+        <InviteFamilySheet inviteCode={inviteCode} />
 
         {/* ① TODAY'S MENU — Editorial hero ────────────────────────
             Inspired by food magazine layouts: large dish photography on
@@ -2665,25 +2665,20 @@ export default function Home() {
 // "+ 邀请家人加入" pill; expanded shows the invite_code, a copyable link,
 // native Web Share (Android / iOS Safari → WhatsApp / Messages / etc), and
 // a manual-copy fallback for WeChat 公众号 webview (no native share).
-// Invite code is sourced from localStorage 'nutri_invite_code' if present,
-// otherwise minted client-side (6-char Crockford-ish alphabet) and persisted.
-// Real households.invite_code DB sync is Database 部门 backlog.
-function InviteFamilySheet() {
+// TICKET-073 (2026-05-25) — inviteCode now comes from the DB
+// (households.invite_code, fetched by parent Home) as a prop. The previous
+// localStorage-mint path produced 6-char alphanumeric codes that never made
+// it into the DB, so helpers entering them at Login hit "Wrong invite code"
+// (DB trigger generates 6-digit numeric codes). No more client-side mint.
+function InviteFamilySheet({ inviteCode }: { inviteCode: string }) {
   const [open, setOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const [inviteCode] = useState<string>(() => {
-    try {
-      const existing = localStorage.getItem('nutri_invite_code');
-      if (existing && existing.length >= 4) return existing;
-      const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I/O/0/1
-      const code = Array.from({ length: 6 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
-      localStorage.setItem('nutri_invite_code', code);
-      return code;
-    } catch { return 'XXXXXX'; }
-  });
-  const inviteUrl = typeof window !== 'undefined'
-    ? `${window.location.origin}/join?code=${inviteCode}`
-    : `/join?code=${inviteCode}`;
+  const hasCode = !!inviteCode && inviteCode.length >= 4;
+  const inviteUrl = hasCode
+    ? (typeof window !== 'undefined'
+        ? `${window.location.origin}/join?code=${inviteCode}`
+        : `/join?code=${inviteCode}`)
+    : '';
   const isWxMp = typeof window !== 'undefined' && localStorage.getItem('nutri_source') === 'wx_mp';
   const canShare = typeof navigator !== 'undefined' && typeof (navigator as any).share === 'function';
 
@@ -2734,26 +2729,38 @@ function InviteFamilySheet() {
         {/* Code card — big readable code (kerned) + small URL preview */}
         <div className="rounded-2xl px-4 py-3 text-center" style={{ background: 'rgba(255,90,31,0.06)', border: '1px dashed rgba(255,90,31,0.20)' }}>
           <p style={{ fontSize: 10, color: 'rgba(0,0,0,0.42)', letterSpacing: '0.16em' }}>邀请码</p>
-          <p style={{ fontSize: 28, fontWeight: 800, letterSpacing: 6, color: '#FF5A1F', lineHeight: 1.2, marginTop: 2 }}>
-            {inviteCode}
-          </p>
-          <p className="truncate" style={{ fontSize: 10.5, color: 'rgba(0,0,0,0.45)', marginTop: 4 }}>{inviteUrl}</p>
+          {hasCode ? (
+            <>
+              <p style={{ fontSize: 28, fontWeight: 800, letterSpacing: 6, color: '#FF5A1F', lineHeight: 1.2, marginTop: 2 }}>
+                {inviteCode}
+              </p>
+              <p className="truncate" style={{ fontSize: 10.5, color: 'rgba(0,0,0,0.45)', marginTop: 4 }}>{inviteUrl}</p>
+            </>
+          ) : (
+            <p style={{ fontSize: 13, color: 'rgba(0,0,0,0.55)', marginTop: 6, lineHeight: 1.5 }}>
+              正在生成邀请码…<br />
+              <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.40)' }}>Loading invite code… / 正在生成…</span>
+            </p>
+          )}
         </div>
         {/* Action buttons */}
         <div className="grid grid-cols-2 gap-2">
           <button onClick={() => copyTo(inviteCode, '邀请码')}
-            className="rounded-xl py-2 font-bold active:scale-95"
+            disabled={!hasCode}
+            className="rounded-xl py-2 font-bold active:scale-95 disabled:opacity-40 disabled:active:scale-100"
             style={{ background: 'rgba(255,90,31,0.10)', color: '#FF5A1F', fontSize: 12 }}>
             复制邀请码
           </button>
           <button onClick={() => copyTo(inviteUrl, '邀请链接')}
-            className="rounded-xl py-2 font-bold active:scale-95"
+            disabled={!hasCode}
+            className="rounded-xl py-2 font-bold active:scale-95 disabled:opacity-40 disabled:active:scale-100"
             style={{ background: 'rgba(255,90,31,0.10)', color: '#FF5A1F', fontSize: 12 }}>
             复制邀请链接
           </button>
           {canShare && (
             <button onClick={nativeShare}
-              className="rounded-xl py-2 font-bold text-white active:scale-95 col-span-2"
+              disabled={!hasCode}
+              className="rounded-xl py-2 font-bold text-white active:scale-95 col-span-2 disabled:opacity-40 disabled:active:scale-100"
               style={{ background: '#25D366', fontSize: 12 }}>
               <span className="material-symbols-outlined align-middle mr-1" style={{ fontSize: 14 }}>share</span>
               分享 (WhatsApp / Messages / …)
@@ -2761,7 +2768,8 @@ function InviteFamilySheet() {
           )}
           {isWxMp && (
             <button onClick={() => copyTo(inviteUrl, '微信邀请链接')}
-              className="rounded-xl py-2 font-bold text-white active:scale-95 col-span-2"
+              disabled={!hasCode}
+              className="rounded-xl py-2 font-bold text-white active:scale-95 col-span-2 disabled:opacity-40 disabled:active:scale-100"
               style={{ background: '#07C160', fontSize: 12 }}>
               <span className="align-middle mr-1">💬</span>
               微信邀请（复制后粘贴给家人）
