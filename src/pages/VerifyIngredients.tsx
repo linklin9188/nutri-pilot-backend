@@ -10,6 +10,8 @@ import { ALGO_VERSION as WEEKLY_ALGO_VERSION, useWeeklyMenu } from "../hooks/use
 import { supabase } from "../lib/supabase";
 import { useSubscription } from "../lib/subscription";
 import { getUserId } from "../lib/userId";
+import { loadActiveOrPreviewSuppliers, type SupplierWithBrand } from "../lib/suppliers";
+import SupplierBrandModal from "../components/SupplierBrandModal";
 import {
   loadHomeInventory as loadHomeInventoryDb,
   setIngredientAvailable as setIngredientAvailableDb,
@@ -33,6 +35,7 @@ interface ActiveSupplierSku {
   order_url:           string;
   ingredient_keywords: string[];
   supplier_name:       string;
+  supplier_status:     'active' | 'preview';   // TICKET-077: preview → Coming Soon 按钮
 }
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
@@ -57,8 +60,10 @@ async function fetchActiveSupplierSkus(): Promise<ActiveSupplierSku[]> {
       `)
       .eq('active', true);
     if (error || !data) return [];
+    // TICKET-077: 接受 status='active' 或 'preview' — preview 状态用于谈中阶段
+    // 显示品牌介绍 + Coming Soon (不真下单), active 才走真下单流程.
     return (data as any[])
-      .filter(r => r.suppliers?.status === 'active')
+      .filter(r => ['active', 'preview'].includes(r.suppliers?.status ?? ''))
       .map(r => ({
         sku_id:              r.id,
         supplier_id:         r.supplier_id,
@@ -66,6 +71,7 @@ async function fetchActiveSupplierSkus(): Promise<ActiveSupplierSku[]> {
         order_url:           r.order_url,
         ingredient_keywords: Array.isArray(r.ingredient_keywords) ? r.ingredient_keywords : [],
         supplier_name:       r.suppliers?.name ?? '',
+        supplier_status:     (r.suppliers?.status ?? 'active') as 'active' | 'preview',
       }));
   } catch {
     return [];
@@ -174,39 +180,9 @@ const CATEGORY_GROUPS: { label: string; emoji: string; categories: string[] }[] 
   { label: '主食调味', emoji: '🌾', categories: ['carb', 'condiment'] },
 ];
 
-// Per-group store recommendations. Three picks each, ordered street → super → premium
-// so the user has a value-vs-quality choice. IDs reference src/lib/suppliers.ts;
-// keep them in sync if a supplier is renamed there.
-interface ShopPick {
-  name:   string;    // brand name shown on the chip
-  emoji:  string;
-  tier:   '街市' | '超市' | '高端' | '线上';
-  blurb:  string;    // one-line value prop
-  color:  string;    // tier accent color
-}
-
-const SHOPS_BY_GROUP: Record<string, ShopPick[]> = {
-  '肉禽蛋': [
-    { name: '街市肉档',         emoji: '🥩', tier: '街市', blurb: '当日宰杀，砍切到位',     color: '#FF8C54' },
-    { name: '百佳',             emoji: '🛒', tier: '超市', blurb: '门店密集，价格稳定',     color: '#3B82F6' },
-    { name: "City'super 肉品",  emoji: '✨', tier: '高端', blurb: '和牛 / 安格斯精选',       color: '#FFB347' },
-  ],
-  '海鲜水产': [
-    { name: '街市鱼档',         emoji: '🐟', tier: '街市', blurb: '活鲜捞起，老板代杀',     color: '#FF8C54' },
-    { name: 'HKTVmall Premium', emoji: '🌊', tier: '线上', blurb: '冷链直送，到家不化',     color: '#16a34a' },
-    { name: 'SOLE 海鲜',        emoji: '🦞', tier: '高端', blurb: '挪威三文鱼 / 法国生蚝',   color: '#FFB347' },
-  ],
-  '蔬菜豆腐': [
-    { name: '街市菜档',         emoji: '🥬', tier: '街市', blurb: '本地农场当日采',         color: '#FF8C54' },
-    { name: '惠康有机',         emoji: '🛒', tier: '超市', blurb: '有机认证，价格友好',     color: '#3B82F6' },
-    { name: 'Pacific Organic',  emoji: '🌱', tier: '高端', blurb: '欧盟标准 / 日本时蔬',     color: '#FFB347' },
-  ],
-  '主食调味': [
-    { name: '百佳粮油',         emoji: '🛒', tier: '超市', blurb: '米面油醋一站补齐',       color: '#3B82F6' },
-    { name: '华润万家',         emoji: '🏬', tier: '超市', blurb: '内地粮油副食专区',       color: '#3B82F6' },
-    { name: 'HKTVmall 粮油',    emoji: '📦', tier: '线上', blurb: '大件下单送到家',         color: '#16a34a' },
-  ],
-};
+// TICKET-077 P0: 删除 SHOPS_BY_GROUP / ShopPick / SupplierRow — 它们是 3 家
+// mock 采购点 (街市/超市/高端) 硬编码假数据, 给用户造成"我们已经接好这些
+// 渠道"的错觉. 真合作供应商通过 DB suppliers 表读 + SupplierBrandModal 介绍.
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 // Use local-time date strings so they match the values stored in weekly_menu
@@ -508,46 +484,16 @@ function buildShoppingSchedule(
     }));
 }
 
-function SupplierRow({ groupLabel }: { groupLabel: string }) {
-  const shops = SHOPS_BY_GROUP[groupLabel];
-  if (!shops || shops.length === 0) return null;
-
-  return (
-    <div className="mt-2.5 mx-1">
-      <p className="text-[10px] font-bold text-gray-400 mb-1.5 uppercase tracking-wider">
-        推荐采购点 · 3 家
-      </p>
-      <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
-        {shops.map((s, i) => (
-          <div
-            key={i}
-            className="flex-shrink-0 bg-white rounded-2xl p-3 shadow-sm"
-            style={{ width: 150, borderLeft: `3px solid ${s.color}` }}
-          >
-            <div className="flex items-center gap-1.5 mb-1">
-              <span className="text-[18px]">{s.emoji}</span>
-              <span
-                className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
-                style={{ background: `${s.color}1A`, color: s.color }}
-              >
-                {s.tier}
-              </span>
-            </div>
-            <p className="font-bold text-[12px] leading-tight">{s.name}</p>
-            <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">{s.blurb}</p>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
+// TICKET-077 P0: SupplierRow 已删除. 真合作供应商在页面顶部统一显示一条
+// "合作供应商 · N 家" strip + Modal, 不再按食材分类硬塞推荐 — 那样会再次
+// 造成"全品类都有合作"的错觉.
 
 type ShopMode = 'today' | 'week' | 'banquet';
 
 // ── Main component ─────────────────────────────────────────────────────────────
 export default function VerifyIngredients() {
   const navigate = useNavigate();
-  const { t } = useLanguage();
+  const { t, t3 } = useLanguage();
 
   // TICKET-074 §C — 删除强制跳转。非 Pro 用户能进页面看清单，
   // 但「导出 Excel」等一键动作改用按钮级 paywall（onClick 触发 ProGate modal）。
@@ -623,6 +569,12 @@ export default function VerifyIngredients() {
   const [activeSkus, setActiveSkus] = useState<ActiveSupplierSku[]>([]);
   const [stockBySkuId, setStockBySkuId] = useState<Record<string, number | null>>({});
   const [orderingSkuId, setOrderingSkuId] = useState<string | null>(null);
+
+  // TICKET-077 P0 — DB 真合作供应商列表 (status='active' 或 'preview') +
+  // 公司介绍 modal 状态 + Coming Soon 弹卡 (preview 状态下点"下单"显示).
+  const [previewSuppliers, setPreviewSuppliers] = useState<SupplierWithBrand[]>([]);
+  const [brandModalSupplier, setBrandModalSupplier] = useState<SupplierWithBrand | null>(null);
+  const [comingSoonOpen, setComingSoonOpen] = useState(false);
   // Cache the schedule per current ingredients/mode so we don't recompute on
   // every render (computing requires reading the weekly menu off localStorage).
   // TICKET-048 P0: hookWeeklyMenu 优先, fallback 到 LS (deep-link / 老缓存).
@@ -640,6 +592,17 @@ export default function VerifyIngredients() {
     fetchActiveSupplierSkus().then(skus => {
       if (cancelled) return;
       setActiveSkus(skus);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  // TICKET-077 P0 — 拉真合作供应商列表 (status in active/preview).
+  // 失败 → [], 顶部 strip 隐藏, 不影响清单功能.
+  useEffect(() => {
+    let cancelled = false;
+    loadActiveOrPreviewSuppliers().then(list => {
+      if (cancelled) return;
+      setPreviewSuppliers(list);
     });
     return () => { cancelled = true; };
   }, []);
@@ -841,11 +804,19 @@ export default function VerifyIngredients() {
 
   // 一键下单: POST track 拿 redirect_url → 新窗口打开. 失败 silent (不弹 alert
   // 干扰清单流). orderingSkuId 用来 disable 按钮防双击.
-  const handleSupplierOrder = async (skuId: string) => {
+  //
+  // TICKET-077 P0 红线: status='preview' 的 supplier 走 Coming Soon 弹卡, 不走
+  // mailto / tel — 销售联系方式是商业机密, 绝不能露给用户. preview 阶段也不要
+  // 调真 supplier-order-track edge fn (那是 active supplier 的真下单流程).
+  const handleSupplierOrder = async (sku: ActiveSupplierSku) => {
+    if (sku.supplier_status === 'preview') {
+      setComingSoonOpen(true);
+      return;
+    }
     if (orderingSkuId) return;
-    setOrderingSkuId(skuId);
+    setOrderingSkuId(sku.sku_id);
     try {
-      const redirectUrl = await trackOrderAndGetRedirect(skuId, null);
+      const redirectUrl = await trackOrderAndGetRedirect(sku.sku_id, null);
       if (redirectUrl) {
         window.open(redirectUrl, '_blank');
       }
@@ -954,6 +925,56 @@ export default function VerifyIngredients() {
       </header>
 
       <main className={`flex-1 px-4 py-4 space-y-4 ${isHelper ? 'pb-36' : 'pb-52'}`}>
+        {/* TICKET-077 P0: 真合作供应商 strip — DB suppliers (status active/preview).
+            previewSuppliers 为空 (DB 没真供应商) → 不渲染, 整页清单功能不受影响.
+            点卡片 → 弹 SupplierBrandModal (公司介绍 + 信任认证, 不露销售). */}
+        {previewSuppliers.length > 0 && (
+          <div>
+            <p className="text-[10px] font-bold text-gray-400 mb-1.5 uppercase tracking-wider">
+              {t3(
+                `Trusted Suppliers · ${previewSuppliers.length}`,
+                `合作供应商 · ${previewSuppliers.length} 家`,
+                `Mga Suppliers · ${previewSuppliers.length}`,
+              )}
+            </p>
+            <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+              {previewSuppliers.map(s => (
+                <button
+                  key={s.id}
+                  onClick={() => setBrandModalSupplier(s)}
+                  className="flex-shrink-0 bg-white rounded-2xl p-3 shadow-sm text-left active:scale-[0.98] transition-all"
+                  style={{
+                    minWidth: 220,
+                    border: '1px solid rgba(255,90,31,0.18)',
+                    borderLeft: '3px solid #FF5A1F',
+                  }}
+                >
+                  <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                    {s.country_origin === 'IT' && <span style={{ fontSize: 16 }}>🇮🇹</span>}
+                    <span className="font-bold text-[13px]" style={{ color: '#1a1a1a' }}>
+                      {s.name}
+                    </span>
+                    {s.status === 'preview' && (
+                      <span
+                        className="px-1.5 py-0.5 rounded-full text-[9px] font-bold"
+                        style={{ background: 'rgba(255,90,31,0.12)', color: '#FF5A1F' }}
+                      >
+                        {t3('PREVIEW', '即将上线', 'PREVIEW')}
+                      </span>
+                    )}
+                  </div>
+                  {s.parent_brand && (
+                    <p className="text-[10px] text-gray-500 truncate">{s.parent_brand}</p>
+                  )}
+                  <p className="text-[10px] font-bold mt-1" style={{ color: '#FF5A1F' }}>
+                    ⓘ {t3('View details', '查看品牌介绍', 'Tingnan')}
+                  </p>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Mode toggle — banquet appears only when a banquet payload exists */}
         <div className="bg-white rounded-2xl p-1.5 flex gap-1 shadow-sm">
           {(['today', 'week', ...(loadBanquet() ? ['banquet'] : [])] as ShopMode[]).map(m => (
@@ -1295,12 +1316,17 @@ export default function VerifyIngredients() {
                           </span>
                         )}
                         <button
-                          onClick={() => handleSupplierOrder(matchedSku.sku_id)}
+                          onClick={() => handleSupplierOrder(matchedSku)}
                           disabled={isOrdering}
                           className="ml-auto px-3 py-1 rounded-full text-[11px] font-bold text-white transition-all active:scale-95 disabled:opacity-60"
                           style={{ background: 'linear-gradient(135deg, #FF5A1F, #FF8C54)' }}
                         >
-                          {isOrdering ? '跳转中…' : '一键下单 →'}
+                          {/* TICKET-077: preview 状态 → "即将开放" 不露销售; active → 真下单 */}
+                          {isOrdering
+                            ? t3('Loading…', '跳转中…', 'Loading…')
+                            : matchedSku.supplier_status === 'preview'
+                              ? t3('Coming Soon', '即将开放', 'Paparating')
+                              : t3('Order →', '一键下单 →', 'Mag-order →')}
                         </button>
                       </div>
                     )}
@@ -1309,8 +1335,8 @@ export default function VerifyIngredients() {
               })}
             </div>
 
-            {/* Supplier recommendations for this group — 3 picks (街市/超市/高端) */}
-            <SupplierRow groupLabel={items.length > 0 ? extractGroupLabel(group) : ''} />
+            {/* TICKET-077: 3 家硬编码 mock 推荐采购点已删除. 真合作供应商在
+                页面顶部 "合作供应商" strip 统一显示 (loadActiveOrPreviewSuppliers). */}
           </section>
         ))}
       </main>
@@ -1418,6 +1444,55 @@ export default function VerifyIngredients() {
       <BottomTabBar />
       <HelperBottomTabBar />
 
+      {/* TICKET-077 P0 — 公司介绍 modal (合作供应商点卡片触发). 不渲染销售联系方式. */}
+      <SupplierBrandModal
+        open={!!brandModalSupplier}
+        supplier={brandModalSupplier}
+        onClose={() => setBrandModalSupplier(null)}
+      />
+
+      {/* TICKET-077 P0 — Coming Soon 弹卡 (preview 状态 supplier 点"即将开放"按钮触发).
+          不能露 mailto / tel — 销售联系方式是商业机密. */}
+      {comingSoonOpen && (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center px-6"
+          style={{ background: 'rgba(0,0,0,0.55)' }}
+          onClick={() => setComingSoonOpen(false)}
+        >
+          <div
+            className="rounded-3xl p-6 max-w-sm w-full text-center"
+            style={{
+              background: 'linear-gradient(135deg, #fff 0%, #fff5ef 100%)',
+              border: '1px solid rgba(255,90,31,0.18)',
+              boxShadow: '0 24px 64px rgba(0,0,0,0.30)',
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="text-[40px] mb-2">🔗</div>
+            <h3 className="font-bold text-[18px] mb-2" style={{ color: '#1a1a1a' }}>
+              {t3('Online ordering coming soon', '即将开放在线下单', 'Online ordering coming soon')}
+            </h3>
+            <p className="text-[13px] text-gray-500 mb-5 leading-relaxed">
+              {t3(
+                "Thanks for your interest! We're integrating with the supplier's system. Once live, you'll be the first to know.",
+                '感谢关注！我们正在为您接入供应商直采系统, 上线后第一时间通知您。',
+                'Salamat sa interes! Inaayos namin ang sistema ng supplier. Ikaw ang unang malalaman pag live na.',
+              )}
+            </p>
+            <button
+              onClick={() => setComingSoonOpen(false)}
+              className="w-full px-6 py-3 rounded-full font-bold text-white text-[14px] transition-all active:scale-95"
+              style={{
+                background: 'linear-gradient(135deg, #FF5A1F, #FF8C54)',
+                boxShadow: '0 8px 24px rgba(255,90,31,0.30)',
+              }}
+            >
+              {t3('Got it', '知道了', 'Sige')}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* TICKET-074 §C — ProGate modal（复用 ProGate.tsx 设计语言：
           橙色渐变 emoji + 标题 + 副标题 + 升级 CTA）。点遮罩或「稍后再说」关闭。 */}
       {proGateOpen && (
@@ -1439,8 +1514,10 @@ export default function VerifyIngredients() {
             <h3 className="font-serif font-black text-[20px] mb-1" style={{ color: '#1a1a1a' }}>
               一键导出采购清单
             </h3>
+            {/* TICKET-077 P0: 删 "Excel 导出" 字眼 (Excel 已是免费版功能, 不再当
+                Pro 卖点); 保留"高端食材采购源 · 一键直送供应商"作为 Pro 差异化. */}
             <p className="text-[13px] text-gray-500 mb-5">
-              升级 Pro 解锁 Excel 导出 · 高端食材采购源 · 一键直送供应商
+              升级 Pro 解锁 高端食材采购源 · 一键直送合作供应商
             </p>
             <button
               onClick={() => { setProGateOpen(false); navigate('/pricing'); }}

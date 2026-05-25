@@ -46,7 +46,7 @@ export const BENEFITS: MembershipBenefit[] = [
   {
     emoji: '🛒',
     title: '一键采购清单',
-    desc:  '整周菜品自动汇总采购清单 · 分类 / 分日 · 一键导出 Excel · 标记已有',
+    desc:  '整周菜品自动汇总采购清单 · 分类 / 分日 · 标记已有',
     status: 'live',
     href:  '/verify',
   },
@@ -94,7 +94,10 @@ export const BENEFITS: MembershipBenefit[] = [
   {
     emoji: '💎',
     title: '高端食材采购源',
-    desc: "City'super、SOLE、HKTVmall Premium 直送 · 品质可追溯",
+    // TICKET-077 P0: 删 City'super / SOLE / HKTVmall Premium 这些没真合作的名字
+    // (避免被当成合作背书). 改成真合作的描述 — 意大利 Inalca (60 年 Cremonini
+    // 集团) 已在 app 内显示为 PREVIEW 供应商, 正在对接直采系统.
+    desc: "意大利 Inalca · Cremonini 集团 (60 年) 等顶级品牌, 直采源头, 价格优于本地高端零售",
     status: 'coming_soon',
   },
   {

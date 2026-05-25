@@ -5,7 +5,58 @@
  *   anonymous  → major chain supermarkets (publicly accessible)
  *   user       → curated specialty & premium fresh suppliers
  *   premium    → luxury / Michelin-level direct suppliers
+ *
+ * NOTE: 上面三档 tier 链是 v1 静态硬编码列表 (HKTV / 百佳 / Citysuper 等 SEO/品牌
+ * 联想用), 没有真合作. TICKET-077 P0 起, 真合作供应商通过 DB suppliers 表读 +
+ * SupplierBrandModal 介绍卡显示. status='active' = 已签约, status='preview' =
+ * 谈中 (UI 显示介绍 + Coming Soon 按钮, 不露销售联系方式).
  */
+
+import { supabase } from './supabase';
+
+// ── Real-supplier DB interface (TICKET-077) ────────────────────────────────────
+
+export type SupplierStatus = 'pending' | 'preview' | 'active';
+
+/**
+ * SupplierWithBrand — DB row from `suppliers` table, only the fields the UI
+ * actually renders. 销售联系方式 (sales_contact_*) + website_url 不在此 interface,
+ * 它们是老板核心机密 (DB 字段保留但前端绝不读); 公司地址 (address_*) 也不显
+ * (那是仓库地址, 用户不需知)。
+ */
+export interface SupplierWithBrand {
+  id:                      string;
+  name:                    string;
+  status:                  SupplierStatus;
+  category:                string | null;
+  description_zh:          string | null;
+  description_en:          string | null;
+  description_tl:          string | null;
+  country_origin:          string | null;
+  parent_brand:            string | null;
+  founded_year:            number | null;
+  certifications:          string[] | null;
+  api_integration_status:  string | null;   // 'planned' / 'in_progress' / 'integrated'
+  api_features:            string[] | null;
+}
+
+/**
+ * Load all DB suppliers visible to the user (status='active' OR 'preview').
+ * Used by VerifyIngredients to render the trusted-supplier strip + brand modal.
+ * Returns [] on any DB failure — supplier UI must never block the page.
+ */
+export async function loadActiveOrPreviewSuppliers(): Promise<SupplierWithBrand[]> {
+  try {
+    const { data, error } = await supabase
+      .from('suppliers')
+      .select('id, name, status, category, description_zh, description_en, description_tl, country_origin, parent_brand, founded_year, certifications, api_integration_status, api_features')
+      .in('status', ['active', 'preview']);
+    if (error || !data) return [];
+    return data as SupplierWithBrand[];
+  } catch {
+    return [];
+  }
+}
 
 // ── Tier definition ────────────────────────────────────────────────────────────
 
