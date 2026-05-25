@@ -50,7 +50,7 @@ function buildPrompt(dish: {
   title_zh: string;
   title_en: string | null;
   origin_cuisine: string;
-  flavor_tags: string[];
+  flavor_tags: string[] | null;
   main_ingredient: string;
   is_vegan: boolean;
 }): string {
@@ -69,11 +69,13 @@ function buildPrompt(dish: {
   };
   const cuisineHint = styleMap[dish.origin_cuisine] ?? 'Chinese home-style cuisine';
 
-  const tagsHint = dish.flavor_tags.includes('light')
+  // TICKET-086: 209 道 backfill 里 195 道 flavor_tags 是 NULL → null-safe
+  const flavorTags = Array.isArray(dish.flavor_tags) ? dish.flavor_tags : [];
+  const tagsHint = flavorTags.includes('light')
     ? 'light, clean, fresh presentation'
-    : dish.flavor_tags.includes('spicy')
+    : flavorTags.includes('spicy')
     ? 'rich chili-red coloring, steaming hot'
-    : dish.flavor_tags.includes('sweet')
+    : flavorTags.includes('sweet')
     ? 'golden caramelized, glossy sauce'
     : 'appetizing golden-brown appearance';
 
@@ -144,7 +146,7 @@ async function main() {
     title_zh: string;
     title_en: string | null;
     origin_cuisine: string;
-    flavor_tags: string[];
+    flavor_tags: string[] | null;
     main_ingredient: string;
     is_vegan: boolean;
   }>(`
