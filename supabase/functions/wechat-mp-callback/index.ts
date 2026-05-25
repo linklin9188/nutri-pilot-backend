@@ -132,21 +132,29 @@ Deno.serve(async (req: Request) => {
     let userId: string | null = null;
     let isNew = false;
 
+    // TICKET-057 §1 — 同时 select avatar_url, 用于 silent path 检测 legacy 缺头像 row
+    let existingAvatarUrl: string | null = null;
     if (unionid) {
       const { data } = await supabase
         .from("user_profiles")
-        .select("id")
+        .select("id, avatar_url")
         .eq("wechat_unionid", unionid)
         .maybeSingle();
-      if (data) userId = (data as any).id;
+      if (data) {
+        userId = (data as any).id;
+        existingAvatarUrl = (data as any).avatar_url ?? null;
+      }
     }
     if (!userId) {
       const { data } = await supabase
         .from("user_profiles")
-        .select("id")
+        .select("id, avatar_url")
         .eq("wechat_openid", openid)
         .maybeSingle();
-      if (data) userId = (data as any).id;
+      if (data) {
+        userId = (data as any).id;
+        existingAvatarUrl = (data as any).avatar_url ?? null;
+      }
     }
 
     // 4. Create new user_profiles row if first-time AND we have a nickname
@@ -155,6 +163,19 @@ Deno.serve(async (req: Request) => {
     //    and many UIs assume non-null. So on silent-with-no-match we bounce
     //    the user to /login where they go through the regular consent flow.
     const isSilent = scope === "snsapi_base" || !scope.includes("snsapi_userinfo");
+
+    // TICKET-057 §1 — Legacy row 缺 avatar_url 修复：老板早期登录时 callback 还没写
+    // avatar_url 逻辑，行已建好但 avatar_url=null。之后每次进微信只走 silent
+    // (scope=snsapi_base) 永远不调 sns/userinfo → 头像永远刷不上。这里 detect
+    // silent path matched 但 row 缺 avatar_url → 一次性踢去 /login 走完整
+    // snsapi_userinfo 授权，让 update path 把头像写进去。
+    if (userId && isSilent && !existingAvatarUrl) {
+      return new Response(null, {
+        status: 302,
+        headers: { Location: `${APP_ORIGIN}/login?wx_refresh=avatar` },
+      });
+    }
+
     if (!userId) {
       if (isSilent) {
         // First-time user came in via silent re-auth — we have no nickname,
