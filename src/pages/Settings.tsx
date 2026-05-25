@@ -317,6 +317,11 @@ function persistMembers(members: FamilyMember[]) {
   // Earlier this code wrote chinese goal ("增肌") and aliased avoid ids ("no_seafood")
   // back into quickPrefs, which broke GOAL_MAP/AVOID_OPTION_MAP lookup.
   window.dispatchEvent(new Event("nutri-prefs-changed"));
+  // TICKET-059 P0 hot-fix (老板真测 #3) — 加/删/改家人时显式 dispatch
+  // nutri-home-changed event。useWeeklyMenu 监听此事件 → clear cache +
+  // setRefreshKey 重生菜单。短期 hack: 与 nutri-prefs-changed 同 handler,
+  // 但语义独立, 方便未来接长期 family_members DB 表方案单独触发。
+  window.dispatchEvent(new Event("nutri-home-changed"));
 }
 
 // ─── main page ────────────────────────────────────────────────────────────────
@@ -965,32 +970,13 @@ export default function Settings() {
             </div>
           </div>
 
-          {/* ── 我的口味（单入口） ── TICKET-052 §F
-              原 3 个独立下拉折叠为单卡 "🎯 我的口味偏好"，展开后同屏显示
-              goal/spice/hometown chip + 200 字自由描述 textarea。
-              chip 选中即写 quickPrefs / localStorage / debounce 同步 DB；
-              textarea 单独走 saveTasteFreeText 写 user_profiles.
-              taste_pref_free_text. */}
-          <div className="pt-1">
-            <p className="text-[11px] font-bold text-secondary/50 uppercase tracking-wider px-1 mb-2">我的口味</p>
-            <div className="bg-white rounded-[22px] shadow-[0_4px_20px_rgba(0,0,0,0.05)] overflow-hidden">
-              <button
-                onClick={() => setTasteOpen(o => !o)}
-                className="w-full flex items-center gap-3 px-5 py-4 active:bg-black/[0.02] transition-colors text-left">
-                <div className="w-9 h-9 rounded-full bg-[#FFF3E0] flex items-center justify-center text-[18px]">🎯</div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[14px] font-bold text-on-surface">我的口味偏好</p>
-                  <p className="text-[12px] text-secondary mt-0.5 truncate">{(() => {
-                    const dims = (["goal", "spice", "hometown"] as const).filter(k => quickPrefs[k]);
-                    if (dims.length === 0) return "未设置 · 点开调整 3 项口味 + 自由描述";
-                    return `已设置 ${dims.length}/3${tasteFreeText ? " · 有自由描述" : ""}`;
-                  })()}</p>
-                </div>
-                <span className="material-symbols-outlined text-secondary/60 text-[20px] transition-transform duration-200 flex-shrink-0"
-                  style={{ transform: tasteOpen ? "rotate(180deg)" : "rotate(0deg)" }}>
-                  expand_more
-                </span>
-              </button>
+          {/* TICKET-057 §2 — 删 "我的口味偏好" 整卡 (含 TICKET-039 §2 算法反推 chip +
+              TICKET-053 忌口 chip + 手动调抽屉 + free text textarea).
+              老板真测："可以删除放在我的家庭成员里即可" — 老板自己也是家庭成员之一,
+              口味/忌口在 family member 卡里改即可，避免与家庭成员卡重合。
+              整段原 JSX 移除。saveAdvancedPrefs / TASTE_OPTIONS / pickTaste /
+              saveTasteFreeText 等函数仍保留供未来 family-member-edit 使用. */}
+          {false && (<div><div>
               {tasteOpen && (
                 <div className="border-t border-black/5 bg-black/[0.015] px-4 pt-4 pb-4 space-y-4">
                   {/* TICKET-039 §2 — 算法反推 chip group (read-only 可视化).

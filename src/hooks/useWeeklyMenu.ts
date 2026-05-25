@@ -121,7 +121,8 @@ const WORKDAYS_PER_WEEK = 5;
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v66'; // v66: TICKET-040 早餐 spec 校准 (老板 25/05 凌晨) — 早餐 4 类合并为 3 类: 碳水 + 蛋白 + 维生素 (veg OR fruit 任一即够, 不强制两者都要). breakfastCombos.ts BREAKFAST_VEG/FRUIT_KEYWORDS 保留 (数据仍用), 改 generateWeekPlan supplement check 从 AND 改 OR. bump 让全 v65 缓存失效。
+export const ALGO_VERSION = 'v67'; // v67: TICKET-059 P0 hot-fix (老板真测 #3) — 加家人后菜单实时重生成。短期 hack 3 件套: (1) cache_key 显式加 _h{homeMembersCount} suffix (getCacheKey 末尾), 即使 calcDishCount 桶化没让 dishesPerDay 变也强制 invalidate; (2) calcDishesForToday 出口 floor 兜底: dishesPerDay = max(dishesPerDay, min(9, homeMembers.length)), 保证菜数至少跟家里人数一致; (3) Settings persistMembers 加 nutri-home-changed event dispatch, useWeeklyMenu 加监听 → 加/删家人立即 clear cache + setRefreshKey 重生菜单. 长期方案 (family_members DB 表 + 算法 cascade vector 读家人) 走 PENDING_BOSS_DECISION schema 升级 ticket. bump 让全 v66 缓存失效。
+// v66: TICKET-040 早餐 spec 校准 (老板 25/05 凌晨) — 早餐 4 类合并为 3 类: 碳水 + 蛋白 + 维生素 (veg OR fruit 任一即够, 不强制两者都要). breakfastCombos.ts BREAKFAST_VEG/FRUIT_KEYWORDS 保留 (数据仍用), 改 generateWeekPlan supplement check 从 AND 改 OR. bump 让全 v65 缓存失效。
 // v65: TICKET-034 Settings §2 嵌入向量推荐 — recommendVector.ts (manual 20 维: cuisine 5+spice 1+ingredient family 8+cooking 6); user 选 onboarding 图片 → userVectorFromSelectedDishes 写 user_profiles.preference_vector; 推荐 cascade: 有 vector → recommendDishesByVector (cosineSimilarity top 100 → nutritionRerank by dietary_goal → 过敏硬过滤) 截 pool top 150 喂 generateWeekPlan; 无 vector (旧用户) → fallback 现有 scoreDish/scoreForWeek 兼容. dishes.feature_vector 100% 填充 (924/924, by scripts/compute-dish-feature-vector.ts). bump 让全 v64 缓存失效, 新算法立即生效。
 // v64: TICKET-031b P1 swap 同类匹配修 — fetchSwapOptions (useSupabaseMenu.ts:704+) 加 proteinFamilyOf() + family 硬过滤 3 层 (strict same family → same family OR unknown → cross-family 殿后)。修前老板真测 /home 红烧鲫鱼 (fish, main_protein) 点换菜出大盘鸡 / 意式柠檬鸡 / 葱烧海参 (chicken+other) 因原算法只硬过滤 course_type='main_protein', main_ingredient 退化成软排序。修后 fish 候选硬过滤 family='seafood', 鸡 (white)/牛 (red) 绝不进入. main_ingredient='other'/'carb' 等非主蛋白 dish 走原 course_type only 兼容. bump 让全 v63 缓存失效。
 // v63: TICKET-031 §A 早餐蛋类 5 工作日轮换 — breakfastCombos.ts 加 EGG_PLACEHOLDER + BREAKFAST_PROTEIN_EGG_POOL (5 蛋); 13 处 side[0]='茶叶蛋' 硬编码 → placeholder; hk-tea-restaurant 港式 3 蛋后追加 placeholder; resolveSlot 加 dayIndex 参数解析 placeholder 为 dayIndex%5 轮换 → 周一-五 protein 5 蛋不重. bump 让全 v62 缓存失效。
@@ -783,7 +784,19 @@ function calcDishesForToday(): { dishesPerDay: number; kidSlots: number; adults:
   // all bucket consistently. Previously this function and calcDishCount
   // disagreed for 3a+2k: this returned 5 dinner, calcDishCount returned 4.
   // cuisineMode 影响 count（西餐晚餐 = n vs 中餐晚餐 = n+1）— 读 localStorage。
-  const total = calcDishCount('晚餐', adults, kids, loadCuisineMode());
+  let total = calcDishCount('晚餐', adults, kids, loadCuisineMode());
+  // TICKET-059 P0 hot-fix (老板真测 #3) — home-size floor。calcDishCount 按
+  // eating members 桶化 (eff = adults + kids*0.5)，1→2 人时菜数变化不够直观，
+  // 老板加完家人后期望"菜单立即变化"。短期 hack: 若 nutri_family_members 里
+  // 总人数 > eating members, 用 home size 作为底线 (cap 9 同 calcDishCount)。
+  // 这让"刚加的家人即使没在 nutri_eating_today 勾选"也立刻把当天菜数撑起来。
+  // 长期方案: family_members DB 表 + 算法 cascade vector 读家人 (PENDING_BOSS_DECISION).
+  try {
+    const homeMembersCount = loadAllMembers().length;
+    if (homeMembersCount > 0) {
+      total = Math.max(total, Math.min(9, homeMembersCount));
+    }
+  } catch { /* offline-tolerant */ }
   const kidSlots = kids > 0 ? Math.min(kids, 2) : 0;
   return { dishesPerDay: total, kidSlots, adults, kids };
 }
@@ -837,7 +850,17 @@ export function getCacheKey(weekStart: string): string {
   const cr = localStorage.getItem('cook_role');
   const ccKey = cc ? cc.charAt(0) : '-';
   const crKey = cr ? cr.charAt(0) : '-';
-  return `weekly_menu_${ALGO_VERSION}_${weekStart}_p${dishesPerDay}_c${cuisineKey}_e${eatingKey}_i${intentKey}_x${ccKey}${crKey}${byDayKey}`;
+  // TICKET-059 P0 hot-fix — home members count suffix。即使 dishesPerDay 没变
+  // (calcDishCount 桶化 1→2 人可能 stay 2 道), 加家人后 _h{N} 段会变, 强制
+  // invalidate localStorage cache + DB cache (loadFromDB 对比 cache_key). 这是
+  // 双保险: calcDishesForToday 已加 home-size floor, 但 floor 可能恰好与 eating
+  // 计算结果重合, 显式 suffix 兜底确保用户感知"加家人 → 菜单立即重算"。
+  let homeKey = '';
+  try {
+    const homeMembersCount = JSON.parse(localStorage.getItem('nutri_family_members') ?? '[]').length;
+    homeKey = `_h${homeMembersCount}`;
+  } catch { homeKey = '_h0'; }
+  return `weekly_menu_${ALGO_VERSION}_${weekStart}_p${dishesPerDay}_c${cuisineKey}_e${eatingKey}_i${intentKey}_x${ccKey}${crKey}${byDayKey}${homeKey}`;
 }
 
 // §A (TICKET-030) localStorage quota 防爆 — 老板 15:35 F12 真测发现旧版本 cache
@@ -3513,9 +3536,16 @@ export function useWeeklyMenu(weekOffset: number = 0) {
     };
     window.addEventListener('nutri-prefs-changed', handler);
     window.addEventListener('nutri-intent-bias-changed', handler);
+    // TICKET-059 P0 hot-fix — 显式 home-changed event 通道。Settings
+    // addMember/saveMember/removeMember 走 persistMembers 已 dispatch
+    // nutri-prefs-changed (覆盖大部分场景), 但加 alias event 让"只动家人"
+    // 的 UI/组件不必 piggyback 在 prefs 通道上, 语义更清晰, 也方便未来
+    // 接长期方案 family_members DB 表后单独触发。
+    window.addEventListener('nutri-home-changed', handler);
     return () => {
       window.removeEventListener('nutri-prefs-changed', handler);
       window.removeEventListener('nutri-intent-bias-changed', handler);
+      window.removeEventListener('nutri-home-changed', handler);
     };
   }, [weekOffset]);
 
