@@ -23,7 +23,7 @@ import BottomTabBar from "../components/BottomTabBar";
 import { useSubscription } from "../lib/subscription";
 import { recordBatchSwap, recordSwap } from "../lib/swapFeedback";
 import { useLanguage, LANGUAGE_LABEL, type Language } from "../contexts/LanguageContext";
-import IntentRegenModal from "../components/IntentRegenModal";
+import IntentInputBox from "../components/IntentInputBox";
 import { loadIntentBias } from "../lib/intentBias";
 import { getUserId } from "../lib/userId";
 import { loadCuisineMode, type CuisineMode } from "../lib/cuisineFilter";
@@ -387,7 +387,8 @@ export default function Home() {
   const [todayAdults, setTodayAdults] = useState(3);
   const [todayKids, setTodayKids] = useState(2);
   const [veganOnly, setVeganOnly] = useState(false);
-  const [intentModalOpen, setIntentModalOpen] = useState(false);
+  // TICKET-066 P0 — intentModalOpen state 已删除, Home 顶部 IntentInputBox
+  // 内部管 loading; 不再用弹窗.
   // Inline headcount popover — lets the user change "今天几位用餐" right
   // from Home without diving into Settings. Writes nutri_adults/kids and
   // triggers menu refresh via the existing useRecommendDishes hook.
@@ -1255,6 +1256,14 @@ export default function Home() {
         </div>
       </div>
 
+      {/* TICKET-066 P0 — chat 主入口统一. 替换原悬浮 FAB + IntentRegenModal 弹窗,
+          唯一 use case "说话换菜单". 老板真测 #12 拍板 1: chat 不是泛用对话,
+          就是给老板一句话调菜单的快速入口. parseIntent → saveIntentBias →
+          clear weekly_menu_* cache → 派 nutri-prefs-changed 让 useWeeklyMenu 重算. */}
+      <div className="px-5 mt-3 mb-2">
+        <IntentInputBox variant="home" onSuccess={regenerateWeekly} />
+      </div>
+
       {/* ── Editorial header — warm paper, serif greeting ─────────── */}
       <header style={{ paddingTop: 0 }}>
         <div className="flex items-start justify-between px-5 pt-3 pb-1">
@@ -1936,45 +1945,8 @@ export default function Home() {
           <span className="material-symbols-outlined shrink-0" style={{ fontSize: 18, color: '#FF5A1F' }}>chevron_right</span>
         </button>
 
-        {/* Intent input — taps into IntentRegenModal. Shows the current
-            saved intent (if any) so the user knows the algo is biased. */}
-        {(() => {
-          const bias = loadIntentBias();
-          const hasBias = bias && (bias.userText?.trim() || (bias.chips?.length ?? 0) > 0);
-          return (
-            <button
-              onClick={() => setIntentModalOpen(true)}
-              className="w-full bg-white rounded-2xl px-4 py-3 flex items-center gap-3 active:scale-[0.99] transition-transform text-left"
-              style={{ boxShadow: "0 6px 20px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.04)" }}
-            >
-              <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
-                style={{ background: "rgba(255,90,31,0.10)" }}>
-                <span className="material-symbols-outlined" style={{ fontSize: 18, color: "#FF5A1F" }}>
-                  auto_awesome
-                </span>
-              </div>
-              <div className="flex-1 min-w-0">
-                {hasBias ? (
-                  <>
-                    <p className="font-serif font-black truncate" style={{ fontSize: 14, color: "#1a1a1a" }}>
-                      {bias!.userText || bias!.chips.join(' · ')}
-                    </p>
-                    <p className="truncate mt-0.5" style={{ fontSize: 11, color: "rgba(0,0,0,0.42)" }}>
-                      点击修改 · 算法已根据此偏好调整
-                    </p>
-                  </>
-                ) : (
-                  <p className="font-serif italic" style={{ fontSize: 14, color: "rgba(0,0,0,0.45)" }}>
-                    今天还想吃……
-                  </p>
-                )}
-              </div>
-              <span className="material-symbols-outlined shrink-0" style={{ fontSize: 18, color: "rgba(0,0,0,0.30)" }}>
-                chevron_right
-              </span>
-            </button>
-          );
-        })()}
+        {/* TICKET-066 P0 — 原 "今天还想吃……" intent 按钮 + IntentRegenModal 弹窗
+            已删除, 顶部 IntentInputBox 取代 (老板真测 #12 拍板 1, 统一 chat 入口). */}
 
         {/* 扫冰箱 / 烹饪 — primary actions of the day. Per-dish 换菜 is
             still on each menu row (sync_alt icon), so this bulk action
@@ -2099,14 +2071,7 @@ export default function Home() {
         </>)}  {/* end of trial-expired ternary wrap */}
       </main>
 
-      <IntentRegenModal
-        open={intentModalOpen}
-        onClose={() => {
-          setIntentModalOpen(false);
-          // Refresh today's recommendations so newly saved intent takes effect
-          regenerateWeekly();
-        }}
-      />
+      {/* TICKET-066 P0 — IntentRegenModal 弹窗已删除, Home 顶部 IntentInputBox 取代. */}
 
       {/* TICKET-063 §B — 节庆 in-app toast (mock; Day 17 接真 push API).
           ±3 日节庆窗口内 mount 1s 后弹；点击跳 /weekly；✕ 永久 dismiss 当年此节庆。 */}
@@ -2152,28 +2117,8 @@ export default function Home() {
         );
       })()}
 
-      {/* Floating chat entry — sits above the bottom tab bar (z above the
-          tab bar's z-50). Single tap opens /chat?mode=today (SPEC §5
-          default). Hidden for helper role (the BottomTabBar already hides
-          itself for helpers; mirror that here so the FAB doesn't dangle). */}
-      {localStorage.getItem('nutri_role') !== 'helper' && (
-        <button
-          onClick={() => navigate('/chat?mode=today')}
-          className="fixed z-[60] w-14 h-14 rounded-full flex items-center justify-center active:scale-90 transition-transform"
-          style={{
-            right: 16,
-            bottom: 'calc(env(safe-area-inset-bottom, 16px) + 72px)',
-            background: '#FF5A1F',
-            boxShadow: '0 8px 24px rgba(255,90,31,0.35)',
-          }}
-          title={t4('Chat with AI about menu', '跟 AI 聊菜单', 'Mag-chat sa AI tungkol sa menu', 'Ngobrol AI tentang menu')}
-        >
-          <span className="material-symbols-outlined text-white"
-            style={{ fontSize: 26, fontVariationSettings: "'FILL' 1" }}>
-            chat
-          </span>
-        </button>
-      )}
+      {/* TICKET-066 P0 — 悬浮 chat FAB 已删除. Chat 主入口统一到 Home 顶部
+          IntentInputBox; 多轮对话 /chat 路由保留但不主推 (老板真测 #12 拍板 1). */}
 
       <BottomTabBar />
 

@@ -19,7 +19,9 @@ import Community from './pages/Community';
 import HelperCommunity from './pages/HelperCommunity';
 import VerifyIngredients from './pages/VerifyIngredients';
 import DeliveryTracking from './pages/DeliveryTracking';
-import AIPilot from './pages/AIPilot';
+// TICKET-066 P0 — AIPilot import 保留无意义 (route 改 Navigate redirect),
+// 删除以避免无用 bundle. 文件本身 src/pages/AIPilot.tsx 不删 (历史 mock 参考).
+// import AIPilot from './pages/AIPilot';
 import ChatAgent from './pages/ChatAgent';
 import Settings from './pages/Settings';
 import WeeklyMenu from './pages/WeeklyMenu';
@@ -273,7 +275,10 @@ function AppShell() {
       <Route path="/delivery" element={<RequireAuth><DeliveryTracking /></RequireAuth>} />
       <Route path="/prep"     element={<RequireAuth helperRole><HelperPrep /></RequireAuth>} />
       <Route path="/cook"     element={<RequireAuth helperRole><HelperCook /></RequireAuth>} />
-      <Route path="/ai-pilot" element={<RequireAuth><AIPilot /></RequireAuth>} />
+      {/* TICKET-066 P0 — /ai-pilot 原是 mock demo (AIPilot.tsx 33-79 行硬编码假对话),
+          老板拍板废弃: chat 主入口统一到 Home/Weekly 顶部 IntentInputBox.
+          route 保留 backward compat (老用户 bookmark 不 404), redirect 到首页. */}
+      <Route path="/ai-pilot" element={<Navigate to="/" replace />} />
       <Route path="/chat"     element={<RequireAuth><ChatAgent /></RequireAuth>} />
       <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
       <Route path="/weekly"   element={<RequireAuth><WeeklyMenu /></RequireAuth>} />

@@ -27,7 +27,7 @@ import { getDishTitle } from "../lib/dishTitleI18n";
 import { elevateDayToMichelin, type MichelinDish } from "../lib/michelinFromDb";
 import ChefBookingModal from "../components/ChefBookingModal";
 import { NutritionRadarCard } from "../components/NutritionRadar";
-import IntentRegenModal from "../components/IntentRegenModal";
+import IntentInputBox from "../components/IntentInputBox";
 import { loadIntentBias, clearIntentBias, type IntentBias } from "../lib/intentBias";
 import { useLanguage } from "../contexts/LanguageContext";
 
@@ -610,8 +610,8 @@ export default function WeeklyMenu() {
   const [chefBookingOpen, setChefBookingOpen] = useState(false);
   const [chefBookingDish, setChefBookingDish] = useState<MichelinDish | null>(null);
 
-  // Intent re-generation modal + active bias chips
-  const [intentOpen, setIntentOpen] = useState(false);
+  // TICKET-066 P0 — intentOpen state 已删, 顶部 IntentInputBox 内部管 loading.
+  // 保留 intentBias 用于显示 "本周偏好" chips 行.
   const [intentBias, setIntentBias] = useState<IntentBias | null>(() => loadIntentBias());
   useEffect(() => {
     const sync = () => setIntentBias(loadIntentBias());
@@ -826,17 +826,9 @@ export default function WeeklyMenu() {
               : "AI 智能规划 · 每周更新"}
         </p>
 
-        {/* Action buttons row */}
+        {/* Action buttons row — TICKET-066 P0: 原 "📝 重新生成" 按钮删除,
+            下面 IntentInputBox 取代 (老板真测 #12 拍板 1 chat 入口统一). */}
         <div className="flex gap-2 mt-3">
-          <button
-            onClick={() => setIntentOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all active:scale-95"
-            style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.10)" }}
-            title={t('Tell me what you want; I will re-plan', '说说您想吃什么，我重新安排')}
-          >
-            <span style={{ fontSize: 13 }}>📝</span>
-            <span className="font-semibold" style={{ fontSize: 11, color: "rgba(255,255,255,0.80)" }}>{t('Regenerate', '重新生成')}</span>
-          </button>
           <button
             onClick={() => {
               if (!isPro) { navigate("/pricing"); return; }
@@ -885,6 +877,12 @@ export default function WeeklyMenu() {
             </button>
           )}
         </div>
+      </div>
+
+      {/* TICKET-066 P0 — chat 主入口统一. IntentInputBox 取代原 IntentRegenModal 弹窗.
+          老板真测 #12 拍板 1: "说话换菜单" 是 chat 唯一 use case, 不藏起来. */}
+      <div className="relative z-10 px-5 mb-3">
+        <IntentInputBox variant="weekly" />
       </div>
 
       {/* ── Day Tabs ────────────────────────────────────────────── */}
@@ -1332,8 +1330,7 @@ export default function WeeklyMenu() {
 
       <BottomTabBar />
 
-      {/* Intent re-generation modal — natural-language menu re-roll */}
-      <IntentRegenModal open={intentOpen} onClose={() => setIntentOpen(false)} />
+      {/* TICKET-066 P0 — IntentRegenModal 弹窗已删除, 顶部 IntentInputBox 取代. */}
 
       {/* Chef-at-home interest form (placeholder, no real booking yet) */}
       <ChefBookingModal
