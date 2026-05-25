@@ -50,6 +50,29 @@ export type IntentTag =
   | 'lose_weight'       // 减脂
   | 'muscle_gain';      // 增肌
 
+// ── TICKET-065 P0 (老板真测 #11 西北菜出粤菜真因修) ─────────────────────────────
+// IntentBias 原 schema 漏 cuisine 维度: "我想吃西北菜" 被 Gemini 转 categoryBoosts /
+// tagBoosts 都失效 (没对应 axis), 算法回退按 hometown + prefScores 排 → 命中粤菜.
+//
+// 这里枚举的是 dishes.origin_cuisine **真实存在**的全集 (实查 scripts/ + migrations/
+// 2026-05-25), 不是 hometownBuckets 那种用户偏好归并桶. 12 个值都可能命中:
+//   核心 7 桶: cantonese / sichuan / jiangnan / northern / western /
+//              japanese_korean / southeast_asian
+//   扩展 5 桶: hunan / northwest / fujian / hakka / northeast
+export type CuisineCode =
+  | 'cantonese'        // 粤菜（含港澳）
+  | 'sichuan'          // 川菜
+  | 'jiangnan'         // 江南（沪/苏/浙/皖）
+  | 'northern'         // 北方（京/鲁/晋/蒙/冀）
+  | 'western'          // 西餐
+  | 'japanese_korean'  // 日韩
+  | 'southeast_asian'  // 东南亚（泰/越/印尼/马）
+  | 'hunan'            // 湘菜
+  | 'northwest'        // 西北（陕/甘/宁/青/新）
+  | 'fujian'           // 闽菜
+  | 'hakka'            // 客家
+  | 'northeast';       // 东北
+
 export interface IntentBias {
   /** The original user request, kept verbatim for display. */
   userText: string;
@@ -57,6 +80,14 @@ export interface IntentBias {
   categoryBoosts: Partial<Record<IntentCategory, number>>;
   /** Score adjustments per flavor/health tag. Range roughly [-2, +2]. */
   tagBoosts:      Partial<Record<IntentTag, number>>;
+  /**
+   * Score adjustments per origin_cuisine. Range roughly [-2, +2].
+   *
+   * TICKET-065: 直接命中 dishes.origin_cuisine, 不走 hometownBuckets 归并 — "西北菜"
+   * → cuisineBoosts.northwest=+1.5 让 origin='northwest' 的菜 (莜面 / 羊肉泡馍 /
+   * 大盘鸡) 真上浮; 不会被错算到 northern bucket.
+   */
+  cuisineBoosts: Partial<Record<CuisineCode, number>>;
   /** Short Chinese summary chips shown on /weekly. */
   chips: string[];
   /** UTC ms — used for staleness checks and the cache hash. */
@@ -89,6 +120,22 @@ Convert it into a structured bias object. Use ONLY these axes — don't invent n
     • 减肥 / 减脂 / 瘦身 / 控制体重 → lose_weight
     • 增肌 / 健身 / 长肌肉 / 长身体 → muscle_gain
     • 三高 (高血压) → low_sodium ; 糖尿病 → low_sugar ; 痛风 → low_purine
+- cuisineBoosts: { cantonese?, sichuan?, jiangnan?, northern?, western?, japanese_korean?, southeast_asian?, hunan?, northwest?, fujian?, hakka?, northeast? }
+  Each value in [-2, +2]. Matches dishes.origin_cuisine directly.
+  Cuisine mapping reference (用户提到菜系/地域时优先用这个轴, 不要错塞 tagBoosts):
+    • 粤菜 / 广东菜 / 港式 / 茶餐厅 / 广式 → cantonese
+    • 川菜 / 四川菜 / 麻辣 / 重庆菜 → sichuan
+    • 江南菜 / 上海菜 / 苏菜 / 浙菜 / 杭帮菜 / 本帮 / 淮扬 → jiangnan
+    • 北方菜 / 京菜 / 鲁菜 / 山东菜 / 北京菜 / 山西菜 → northern
+    • 西餐 / 意大利菜 / 法餐 / 美式 / 牛排 / 披萨 / 意面 → western
+    • 日料 / 日本菜 / 寿司 / 拉面 / 韩餐 / 韩国菜 / 韩式 → japanese_korean
+    • 东南亚 / 泰餐 / 越南菜 / 印尼 / 马来 / 冬阴功 → southeast_asian
+    • 湘菜 / 湖南菜 / 剁椒 → hunan
+    • 西北菜 / 陕西菜 / 甘肃 / 兰州 / 新疆菜 / 大盘鸡 / 羊肉泡馍 / 莜面 → northwest
+    • 闽菜 / 福建菜 / 佛跳墙 → fujian
+    • 客家菜 / 梅菜 → hakka
+    • 东北菜 / 锅包肉 / 杀猪菜 → northeast
+  反向: "不想吃X菜" → 对应 cuisine 用负值 (e.g. "不想吃辣" 已经走 tagBoosts.spicy=-1, 但 "今天不想吃川菜" 走 cuisineBoosts.sichuan=-1).
 - chips: array of 1-5 short Chinese chips (4-6 chars each) describing the bias
   in user-friendly terms, e.g. ["多海鲜 ↑", "少辣 ↓", "孩子友好"].
 
@@ -96,6 +143,7 @@ Output ONLY valid JSON:
 {
   "categoryBoosts": { "seafood": 0.8, "pork": -0.5 },
   "tagBoosts":      { "spicy": -1.0, "light": 0.4 },
+  "cuisineBoosts":  { "northwest": 1.5 },
   "chips":          ["多海鲜 ↑", "少辣 ↓"]
 }`;
 
@@ -124,6 +172,7 @@ export async function parseIntent(userText: string): Promise<IntentBias> {
     userText:       userText.trim(),
     categoryBoosts: clampObj(parsed.categoryBoosts ?? {}, -2, 2),
     tagBoosts:      clampObj(parsed.tagBoosts ?? {}, -2, 2),
+    cuisineBoosts:  clampObj(parsed.cuisineBoosts ?? {}, -2, 2),
     chips:          Array.isArray(parsed.chips) ? parsed.chips.slice(0, 5) : [],
     createdAt:      Date.now(),
   };
@@ -142,7 +191,10 @@ export function loadIntentBias(): IntentBias | null {
   try {
     const raw = localStorage.getItem(LS_KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as IntentBias;
+    const parsed = JSON.parse(raw) as Partial<IntentBias>;
+    // TICKET-065: 旧 IntentBias 没 cuisineBoosts 字段 → 兜底 {} 防 applyIntentBias / hash 访问报错.
+    if (!parsed.cuisineBoosts) parsed.cuisineBoosts = {};
+    return parsed as IntentBias;
   } catch { return null; }
 }
 
@@ -161,7 +213,8 @@ export function getIntentHash(): string {
   const b = loadIntentBias();
   if (!b) return 'none';
   // 8-char djb2 hash of the JSON — collisions are fine, this is just a cache buster.
-  const s = JSON.stringify({ c: b.categoryBoosts, t: b.tagBoosts });
+  // TICKET-065: cuisineBoosts 进 hash, cuisine 变动 → cache_key 变 → 旧菜单失效.
+  const s = JSON.stringify({ c: b.categoryBoosts, t: b.tagBoosts, u: b.cuisineBoosts ?? {} });
   let h = 5381;
   for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
   return h.toString(36).slice(0, 8);
@@ -170,7 +223,12 @@ export function getIntentHash(): string {
 /** Apply bias to an already-computed dish score. Called from useWeeklyMenu. */
 export function applyIntentBias(
   baseScore: number,
-  dish: { main_ingredient?: string; flavor_tags?: string[]; health_benefit_tags?: string[] },
+  dish: {
+    main_ingredient?: string;
+    flavor_tags?: string[];
+    health_benefit_tags?: string[];
+    origin_cuisine?: string;   // TICKET-065: 新增 cuisine 命中
+  },
   bias: IntentBias | null,
 ): number {
   if (!bias) return baseScore;
@@ -190,6 +248,16 @@ export function applyIntentBias(
     const boost = bias.tagBoosts?.[tag as IntentTag];
     if (boost) s += boost;
   }
+
+  // ── TICKET-065 Cuisine match — origin_cuisine 直命中 ─────────────────────────
+  // "我想吃西北菜" → cuisineBoosts.northwest=+1.5 让 origin='northwest' 的菜真上浮.
+  // 不归并 hometownBuckets, 不影响现有 hometown bucket 逻辑.
+  const origin = (dish.origin_cuisine ?? '').toLowerCase();
+  if (origin) {
+    const cuisineBoost = bias.cuisineBoosts?.[origin as CuisineCode];
+    if (cuisineBoost) s += cuisineBoost;
+  }
+
   return s;
 }
 

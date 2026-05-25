@@ -77,13 +77,24 @@ Convert it into a structured bias object. Use ONLY these axes:
 
 - categoryBoosts: { seafood?, pork?, beef?, poultry?, plant?, carb? }   in [-2, +2]
 - tagBoosts: { spicy?, light?, sweet?, savory?, low_sodium?, low_sugar?, low_purine?, detox?, energy?, immunity?, blood_tonic?, sleep_aid?, yin_nourish?, qi_tonic?, mood_boost?, anti_aging?, beauty?, damp_clear?, anti_inflammation?, eye_care?, lose_weight?, muscle_gain? }   in [-2, +2]
+- cuisineBoosts: { cantonese?, sichuan?, jiangnan?, northern?, western?, japanese_korean?, southeast_asian?, hunan?, northwest?, fujian?, hakka?, northeast? }   in [-2, +2]
 - chips: 1-5 short Chinese chips
 
-Mapping cheat sheet:
+Mapping cheat sheet (tag axes):
   补气血→blood_tonic, 失眠→sleep_aid, 滋阴→yin_nourish, 益气→qi_tonic,
   心情压力→mood_boost, 抗衰→anti_aging, 美容→beauty, 湿气→damp_clear,
   关节痛炎症→anti_inflammation, 护眼→eye_care, 减肥→lose_weight,
   增肌→muscle_gain, 高血压→low_sodium, 糖尿病→low_sugar, 痛风→low_purine.
+
+Cuisine axes (用户提到菜系/地域时一律用 cuisineBoosts, 不要错塞 tagBoosts):
+  粤菜/广东/港式/茶餐厅→cantonese, 川菜/麻辣/重庆→sichuan,
+  江南/上海/苏菜/浙菜/杭帮/淮扬→jiangnan, 北方/京菜/鲁菜/山东→northern,
+  西餐/意大利/法餐/牛排/披萨→western, 日料/寿司/拉面/韩餐/韩式→japanese_korean,
+  东南亚/泰餐/越南/冬阴功→southeast_asian, 湘菜/湖南/剁椒→hunan,
+  西北/陕西/兰州/新疆/大盘鸡/羊肉泡馍/莜面→northwest, 闽菜/福建/佛跳墙→fujian,
+  客家/梅菜→hakka, 东北/锅包肉→northeast.
+  "不想吃X菜"→ cuisineBoosts 用负值 (e.g. 今天不想吃川菜 → sichuan=-1).
+  典型 positive 值 +1.0~+1.5, 强烈想吃 +1.8~+2.0.
 
 Output ONLY valid JSON.`;
 
