@@ -312,6 +312,44 @@ export function injectChatPrefsIntoPrefScores(
 }
 
 /**
+ * TICKET-094 — mealStyle 'light' / 'high_protein' / 'low_staple' 注入 prefScores.
+ *
+ * 老板拍板 (5/26): 用餐风格 4 选项 B 版本 — 标准家常 / 少主食 / 高蛋白增肌 / 清淡养胃.
+ * 算法落地通过 prefScores keyword 注入 (跟 chat 偏好同路径), 不动 scoreForWeek 接口.
+ *
+ * - standard:      不注入, 走 default
+ * - low_staple:    slot template 改动 (在 generateWeekPlan 里 dayIndex 限制), 此函数无操作
+ * - high_protein:  等同 lowCarb=1 (已在 useWeeklyMenu hook 处理), 此函数无操作
+ * - light:         注入清蒸/白灼/炖煮 prefer + 杂粮 prefer + 油炸/爆炒 negative
+ */
+export function applyMealStyleToPrefScores(
+  mealStyle: string,
+  prefScores: Record<string, number>,
+): Record<string, number> {
+  const out = { ...prefScores };
+  if (mealStyle === 'light') {
+    // 清淡养胃: 偏好清蒸 / 白灼 / 炖煮 + 杂粮 + 粥; 软扣油炸 / 爆炒
+    out['蒸']     = (out['蒸']     ?? 0) + 2.0;
+    out['清蒸']   = (out['清蒸']   ?? 0) + 2.0;
+    out['白灼']   = (out['白灼']   ?? 0) + 1.5;
+    out['炖']     = (out['炖']     ?? 0) + 1.5;
+    out['焖']     = (out['焖']     ?? 0) + 1.2;
+    out['杂粮']   = (out['杂粮']   ?? 0) + 1.5;
+    out['燕麦']   = (out['燕麦']   ?? 0) + 1.0;
+    out['小米']   = (out['小米']   ?? 0) + 1.0;
+    out['粥']     = (out['粥']     ?? 0) + 1.0;
+    out['山药']   = (out['山药']   ?? 0) + 1.0;
+    out['百合']   = (out['百合']   ?? 0) + 0.8;
+    out['炸']     = (out['炸']     ?? 0) - 1.5;
+    out['油炸']   = (out['油炸']   ?? 0) - 2.0;
+    out['爆炒']   = (out['爆炒']   ?? 0) - 1.0;
+    out['麻辣']   = (out['麻辣']   ?? 0) - 0.8;
+    out['红烧']   = (out['红烧']   ?? 0) - 0.5;
+  }
+  return out;
+}
+
+/**
  * 读取用户的 chat 偏好 (按 user_id + household_id 合并).
  * 算法侧 useWeeklyMenu / scoreForWeek 调用拿到 prefs 做加权.
  */

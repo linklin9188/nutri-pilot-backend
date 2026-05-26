@@ -23,6 +23,7 @@ import { useEffect, useState } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { supabase } from '../lib/supabase';
 import { fromChipSelection, saveChatPreferences, type ChatPreferenceType } from '../lib/chatPreferenceExtractor';
+import { getUserId } from '../lib/userId';
 
 // localStorage 状态 key
 const KEY_VISIT_COUNT = 'nutri_home_visit_count';
@@ -70,9 +71,31 @@ const ROUNDS: Round[] = [
     ],
     buildValue: (sel) => ({ subtypes: sel, sentiment: 'love' }),
   },
-  // Round 2 — 部位偏好 (进 Home 第 3 次)
+  // Round 2 — 用餐风格 (进 Home 第 2 次, 老板拍板 B 营养目的版)
+  // 写 nutri_meal_style 触发算法 mealStyle 分支 (light → 清淡养胃 prefScores 注入 v71)
   {
     num: 2,
+    triggerVisitCount: 2,
+    type: 'love_keyword',  // 用 love_keyword 类型存; 同时 LS 写 nutri_meal_style
+    question_zh: '你家用餐风格是？',
+    question_en: 'Your meal style?',
+    question_tl: 'Estilo ng pagkain?',
+    multiSelect: false,
+    options: [
+      { key: 'standard',     label_zh: '标准家常（含主食+汤+菜）', label_en: 'Standard (rice+soup+dishes)', label_tl: 'Standard', emoji: '🍚' },
+      { key: 'low_staple',   label_zh: '少主食（一周 2 天有饭）',   label_en: 'Less staple (2/5 days)',       label_tl: 'Konting kanin', emoji: '🥬' },
+      { key: 'high_protein', label_zh: '高蛋白增肌（无主食+主菜翻倍）', label_en: 'High protein',         label_tl: 'Maraming protina', emoji: '🥩' },
+      { key: 'light',        label_zh: '清淡养胃（杂粮+蒸为主）',   label_en: 'Light (steamed)',              label_tl: 'Magaan',        emoji: '🌿' },
+    ],
+    buildValue: (sel) => {
+      // 同时写 LS 让 useWeeklyMenu 立刻 pick up
+      try { localStorage.setItem('nutri_meal_style', sel[0] ?? 'standard'); } catch {}
+      return { meal_style: sel[0], synced_to_ls: true };
+    },
+  },
+  // Round 3 — 部位偏好 (进 Home 第 3 次)
+  {
+    num: 3,
     triggerVisitCount: 3,
     type: 'meat_part',
     question_zh: '你家爱吃肉的什么部位？（多选）',
@@ -90,9 +113,9 @@ const ROUNDS: Round[] = [
     ],
     buildValue: (sel) => ({ parts: sel }),
   },
-  // Round 3 — 工作日 vs 周末复杂度 (进 Home 第 5 次)
+  // Round 4 — 工作日 vs 周末复杂度 (进 Home 第 5 次)
   {
-    num: 3,
+    num: 4,
     triggerVisitCount: 5,
     type: 'work_complexity',
     question_zh: '工作日想吃快手菜还是不在乎？',

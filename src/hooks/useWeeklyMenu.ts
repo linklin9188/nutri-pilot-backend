@@ -31,7 +31,7 @@ import { DISH_FIELDS } from '../lib/dishFields';
 import { hometownMatches, hometownToDbBucket } from '../lib/hometownBuckets';
 import { isNewUserSession } from '../lib/userLifecycle';
 import { pickBreakfastCombo, classifyBreakfastSlot, classifyStapleSubtype, type BreakfastStapleSubtype, WET_DRINK_KEYWORDS } from '../lib/breakfastCombos';
-import { loadChatPreferences, injectChatPrefsIntoPrefScores } from '../lib/chatPreferenceExtractor';
+import { loadChatPreferences, injectChatPrefsIntoPrefScores, applyMealStyleToPrefScores } from '../lib/chatPreferenceExtractor';
 import { syncProfileFromDB } from '../lib/profileSync';
 import { loadPantryItems } from './usePantry';
 import { recommendDishesByVector, computeHouseholdVector, VECTOR_DIM } from '../lib/recommendVector';
@@ -3845,6 +3845,13 @@ export function useWeeklyMenu(weekOffset: number = 0) {
             prefScores = injectChatPrefsIntoPrefScores(chatPrefs, prefScores);
           }
         } catch { /* chat prefs load 失败 → 静默退现有 prefScores, 不阻塞菜单生成 */ }
+
+        // TICKET-094 — mealStyle 'light' (清淡养胃) 注入 prefScores
+        // 偏好清蒸/白灼/炖煮/杂粮/粥, 软扣油炸/爆炒/麻辣. 'high_protein' 已在
+        // generateWeekPlan 内通过 lowCarb 处理. 'low_staple' 下个 ticket 做
+        // slot template 改动.
+        const mealStyleSetting = localStorage.getItem('nutri_meal_style') ?? 'standard';
+        prefScores = applyMealStyleToPrefScores(mealStyleSetting, prefScores);
 
         const spiceBoost = localPrefs.spiceBoost ?? 0;
         const healthPrefs = {
