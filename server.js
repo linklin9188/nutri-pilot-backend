@@ -382,6 +382,236 @@ app.get('/api/admin/stats', requireAdmin, async (_req, res) => {
   }
 });
 
+// ── TICKET TELEPOT-20260525-090 P0 — 订单 / commission / 用户增长 ─────────
+// 老板内部后台用. 全部 requireAdmin + service_role 拉数, 直接返回 JSON.
+// 注意: orders.commission_total_hkd + order_items.commission_hkd 是老板私密,
+// 前端用户层屏蔽, 但 admin 后台可见 (这就是要看的).
+
+// 订单列表 — query: status, range (today/week/month/all), limit
+app.get('/api/admin/orders', requireAdmin, async (req, res) => {
+  if (!sbConfigured(res)) return;
+  try {
+    const status = String(req.query.status || 'all');
+    const range  = String(req.query.range  || 'week');
+    const limit  = Math.min(parseInt(String(req.query.limit || '200'), 10) || 200, 500);
+
+    let q = `/rest/v1/orders?select=id,order_number,user_id,status,subtotal_hkd,delivery_fee_hkd,total_hkd,commission_total_hkd,delivery_address,delivery_contact_name,delivery_contact_phone,created_at,paid_at,stripe_session_id&order=created_at.desc&limit=${limit}`;
+    if (status && status !== 'all') {
+      q += `&status=eq.${encodeURIComponent(status)}`;
+    }
+    if (range && range !== 'all') {
+      const now = Date.now();
+      let since = 0;
+      if (range === 'today') since = now - 86_400_000;
+      else if (range === 'week')  since = now - 7  * 86_400_000;
+      else if (range === 'month') since = now - 30 * 86_400_000;
+      if (since > 0) {
+        q += `&created_at=gte.${encodeURIComponent(new Date(since).toISOString())}`;
+      }
+    }
+    const r = await sbFetch('GET', q);
+    if (!r.ok) {
+      return res.status(502).json({ error: `supabase ${r.status}: ${(r.text || '').slice(0, 200)}` });
+    }
+    const orders = r.json ?? [];
+
+    // items_count: 单独再拉一次 order_items count by order_id (避免 PostgREST 嵌入坑)
+    let itemsCountMap = new Map();
+    if (orders.length > 0) {
+      const ids = orders.map(o => `"${o.id}"`).join(',');
+      const ir = await sbFetch(
+        'GET',
+        `/rest/v1/order_items?select=order_id,qty&order_id=in.(${ids})`,
+      );
+      if (ir.ok && Array.isArray(ir.json)) {
+        for (const row of ir.json) {
+          itemsCountMap.set(row.order_id, (itemsCountMap.get(row.order_id) ?? 0) + 1);
+        }
+      }
+    }
+    const withCounts = orders.map(o => ({ ...o, items_count: itemsCountMap.get(o.id) ?? 0 }));
+    res.json({ orders: withCounts });
+  } catch (e) {
+    console.error('[/api/admin/orders]', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// commission 月汇总 — 按 supplier × 月份 聚合 status=paid 订单
+// query: month (YYYY-MM, default 当月)
+app.get('/api/admin/commission', requireAdmin, async (req, res) => {
+  if (!sbConfigured(res)) return;
+  try {
+    const now = new Date();
+    const monthStr = String(req.query.month || `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`);
+    if (!/^\d{4}-\d{2}$/.test(monthStr)) {
+      return res.status(400).json({ error: 'month must be YYYY-MM' });
+    }
+    const [y, m] = monthStr.split('-').map(Number);
+    const monthStart = new Date(Date.UTC(y, m - 1, 1, 0, 0, 0, 0));
+    const monthEnd   = new Date(Date.UTC(y, m,     1, 0, 0, 0, 0));
+    const sinceIso = monthStart.toISOString();
+    const untilIso = monthEnd.toISOString();
+
+    // 1) 拉 paid 订单 (paid_at 在月内)
+    const ordersR = await sbFetch(
+      'GET',
+      `/rest/v1/orders?select=id&status=eq.paid&paid_at=gte.${encodeURIComponent(sinceIso)}&paid_at=lt.${encodeURIComponent(untilIso)}`,
+    );
+    if (!ordersR.ok) {
+      return res.status(502).json({ error: `supabase orders ${ordersR.status}: ${(ordersR.text || '').slice(0, 200)}` });
+    }
+    const orderIds = (ordersR.json ?? []).map(o => o.id);
+
+    // 2) 拉对应 order_items
+    let items = [];
+    if (orderIds.length > 0) {
+      const inList = orderIds.map(id => `"${id}"`).join(',');
+      const itemsR = await sbFetch(
+        'GET',
+        `/rest/v1/order_items?select=order_id,sku_id,qty,unit_retail_price_hkd,unit_wholesale_price_hkd,subtotal_hkd,commission_hkd&order_id=in.(${inList})`,
+      );
+      if (!itemsR.ok) {
+        return res.status(502).json({ error: `supabase order_items ${itemsR.status}: ${(itemsR.text || '').slice(0, 200)}` });
+      }
+      items = itemsR.json ?? [];
+    }
+
+    // 3) 拉所有 SKU + supplier 字典
+    const [skusR, suppliersR] = await Promise.all([
+      sbFetch('GET', '/rest/v1/supplier_skus?select=id,supplier_id,sku_name'),
+      sbFetch('GET', '/rest/v1/suppliers?select=id,name'),
+    ]);
+    if (!skusR.ok || !suppliersR.ok) {
+      return res.status(502).json({ error: `supabase dict fetch failed: skus=${skusR.status} suppliers=${suppliersR.status}` });
+    }
+    const skuById = new Map((skusR.json ?? []).map(s => [s.id, s]));
+    const supplierById = new Map((suppliersR.json ?? []).map(s => [s.id, s]));
+
+    // 4) 按 supplier 聚合
+    const bySupplier = new Map();
+    for (const it of items) {
+      const sku = skuById.get(it.sku_id);
+      const supplierId = sku?.supplier_id ?? '__unknown__';
+      const supplierName = supplierById.get(supplierId)?.name ?? '(未知供应商)';
+      const cur = bySupplier.get(supplierId) ?? {
+        supplier_id:      supplierId,
+        supplier_name:    supplierName,
+        order_ids:        new Set(),
+        total_wholesale:  0,
+        total_retail:     0,
+        total_commission: 0,
+      };
+      cur.order_ids.add(it.order_id);
+      cur.total_wholesale  += Number(it.unit_wholesale_price_hkd ?? 0) * Number(it.qty ?? 0);
+      cur.total_retail     += Number(it.subtotal_hkd ?? 0);
+      cur.total_commission += Number(it.commission_hkd ?? 0);
+      bySupplier.set(supplierId, cur);
+    }
+    const rows = Array.from(bySupplier.values())
+      .map(r => ({
+        month:            monthStr,
+        supplier_id:      r.supplier_id,
+        supplier_name:    r.supplier_name,
+        order_count:      r.order_ids.size,
+        total_wholesale:  Math.round(r.total_wholesale  * 100) / 100,
+        total_retail:     Math.round(r.total_retail     * 100) / 100,
+        total_commission: Math.round(r.total_commission * 100) / 100,
+      }))
+      .sort((a, b) => b.total_commission - a.total_commission);
+
+    res.json({
+      month:           monthStr,
+      total_orders:    orderIds.length,
+      suppliers:       rows,
+    });
+  } catch (e) {
+    console.error('[/api/admin/commission]', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 用户增长 — 汇总指标 + 最近 50 注册
+app.get('/api/admin/users-growth', requireAdmin, async (_req, res) => {
+  if (!sbConfigured(res)) return;
+  try {
+    // 复用 admin_users_view (078 已建) 拉 list, 然后 JS 聚合
+    const r = await sbFetch(
+      'GET',
+      '/rest/v1/admin_users_view?select=id,display_name,created_at,is_premium,is_trial_active,trial_end_at,hometown_cuisine,dietary_goal',
+    );
+    if (!r.ok) {
+      return res.status(502).json({ error: `supabase ${r.status}: ${(r.text || '').slice(0, 200)}` });
+    }
+    const rows = r.json ?? [];
+    const now = Date.now();
+    const oneDayAgo   = now - 86_400_000;
+    const sevenDaysAgo = now - 7  * 86_400_000;
+    const thirtyDaysAgo = now - 30 * 86_400_000;
+
+    let total = 0;
+    let new_today = 0;
+    let new_week  = 0;
+    let new_month = 0;
+    let trial_active = 0;
+    let paid_count = 0;
+    let trial_expired = 0;
+    for (const row of rows) {
+      total += 1;
+      const created = row.created_at ? new Date(row.created_at).getTime() : NaN;
+      if (Number.isFinite(created)) {
+        if (created > oneDayAgo)    new_today += 1;
+        if (created > sevenDaysAgo) new_week  += 1;
+        if (created > thirtyDaysAgo) new_month += 1;
+      }
+      if (row.is_premium) paid_count += 1;
+      else if (row.is_trial_active) trial_active += 1;
+      else trial_expired += 1;
+    }
+    // 转化率 = paid / (paid + expired)，过滤 trial 中（还没结果）
+    const denom = paid_count + trial_expired;
+    const conv_rate = denom > 0 ? paid_count / denom : 0;
+
+    // 最近 50 注册 (按 created_at desc, anonymize: 只 id 前 8 位 + display_name + created + tier)
+    const recent = rows
+      .slice() // copy
+      .sort((a, b) => {
+        const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return tb - ta;
+      })
+      .slice(0, 50)
+      .map(row => ({
+        id_short:      String(row.id ?? '').slice(0, 8),
+        display_name:  row.display_name ?? null,
+        created_at:    row.created_at,
+        trial_end_at:  row.trial_end_at,
+        tier:          row.is_premium ? 'paid'
+                       : row.is_trial_active ? 'trial'
+                       : 'expired',
+        hometown:      row.hometown_cuisine ?? null,
+        dietary_goal:  row.dietary_goal ?? null,
+      }));
+
+    res.json({
+      summary: {
+        total,
+        new_today,
+        new_week,
+        new_month,
+        trial_active,
+        paid_count,
+        trial_expired,
+        conv_rate: Math.round(conv_rate * 1000) / 1000,
+      },
+      recent,
+    });
+  } catch (e) {
+    console.error('[/api/admin/users-growth]', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── WeChat JSSDK signature (Railway-hosted, fixed-IP) ──────────────────────
 // Supabase Edge Function egress rotates IPs (54.x/18.x AWS pool), which is
 // incompatible with WeChat MP's single-IP allowlist. Railway has a stable

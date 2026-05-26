@@ -167,3 +167,93 @@ export async function supplierReport(): Promise<{
     '/api/admin/supplier-report',
   );
 }
+
+// ── TICKET TELEPOT-20260525-090 — 订单 / commission / 用户增长 ──────────────
+
+export interface AdminOrderRow {
+  id:                      string;
+  order_number:            string;
+  user_id:                 string;
+  status:                  string;
+  subtotal_hkd:            number | null;
+  delivery_fee_hkd:        number | null;
+  total_hkd:               number | null;
+  commission_total_hkd:    number | null;
+  delivery_address:        string | null;
+  delivery_contact_name:   string | null;
+  delivery_contact_phone:  string | null;
+  created_at:              string;
+  paid_at:                 string | null;
+  stripe_session_id:       string | null;
+  items_count:             number;
+}
+
+export type AdminOrderRange  = 'today' | 'week' | 'month' | 'all';
+export type AdminOrderStatus = 'all' | 'pending_payment' | 'paid' | 'preparing' | 'shipped' | 'delivered' | 'cancelled' | 'refunded';
+
+export async function adminOrders(opts: {
+  status?: AdminOrderStatus;
+  range?:  AdminOrderRange;
+  limit?:  number;
+} = {}): Promise<{ orders: AdminOrderRow[] }> {
+  const qs = new URLSearchParams();
+  if (opts.status) qs.set('status', opts.status);
+  if (opts.range)  qs.set('range',  opts.range);
+  if (opts.limit)  qs.set('limit',  String(opts.limit));
+  const tail = qs.toString();
+  return call<{ orders: AdminOrderRow[] }>(`/api/admin/orders${tail ? `?${tail}` : ''}`);
+}
+
+export interface AdminCommissionRow {
+  month:            string;
+  supplier_id:      string;
+  supplier_name:    string;
+  order_count:      number;
+  total_wholesale:  number;
+  total_retail:     number;
+  total_commission: number;
+}
+
+export async function adminCommission(month?: string): Promise<{
+  month:        string;
+  total_orders: number;
+  suppliers:    AdminCommissionRow[];
+}> {
+  const qs = month ? `?month=${encodeURIComponent(month)}` : '';
+  return call<{
+    month:        string;
+    total_orders: number;
+    suppliers:    AdminCommissionRow[];
+  }>(`/api/admin/commission${qs}`);
+}
+
+export interface AdminUserGrowthSummary {
+  total:         number;
+  new_today:     number;
+  new_week:      number;
+  new_month:     number;
+  trial_active:  number;
+  paid_count:    number;
+  trial_expired: number;
+  conv_rate:     number;
+}
+
+export interface AdminRecentUserRow {
+  id_short:     string;
+  display_name: string | null;
+  created_at:   string | null;
+  trial_end_at: string | null;
+  tier:         'paid' | 'trial' | 'expired';
+  hometown:     string | null;
+  dietary_goal: string | null;
+}
+
+export async function adminUsersGrowth(): Promise<{
+  summary: AdminUserGrowthSummary;
+  recent:  AdminRecentUserRow[];
+}> {
+  return call<{
+    summary: AdminUserGrowthSummary;
+    recent:  AdminRecentUserRow[];
+  }>('/api/admin/users-growth');
+}
