@@ -67,6 +67,15 @@ export default function AdminShell({
         <NavLink to="/" end className={({ isActive }) => (isActive ? 'active' : '')}>
           概览
         </NavLink>
+        <NavLink to="/orders" className={({ isActive }) => (isActive ? 'active' : '')}>
+          订单
+        </NavLink>
+        <NavLink to="/commission" className={({ isActive }) => (isActive ? 'active' : '')}>
+          佣金
+        </NavLink>
+        <NavLink to="/users" className={({ isActive }) => (isActive ? 'active' : '')}>
+          用户
+        </NavLink>
         <NavLink to="/suppliers" className={({ isActive }) => (isActive ? 'active' : '')}>
           供货商
         </NavLink>

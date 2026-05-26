@@ -4,6 +4,9 @@ import Login from './pages/Login';
 import Suppliers from './pages/Suppliers';
 import SupplierSkus from './pages/SupplierSkus';
 import SupplierReport from './pages/SupplierReport';
+import Orders from './pages/Orders';
+import Commission from './pages/Commission';
+import Users from './pages/Users';
 import { isAdminLoggedIn } from './lib/auth';
 
 function RequireAdmin({ children }: { children: JSX.Element }) {
@@ -44,6 +47,30 @@ export default function App() {
         element={
           <RequireAdmin>
             <SupplierReport />
+          </RequireAdmin>
+        }
+      />
+      <Route
+        path="/orders"
+        element={
+          <RequireAdmin>
+            <Orders />
+          </RequireAdmin>
+        }
+      />
+      <Route
+        path="/commission"
+        element={
+          <RequireAdmin>
+            <Commission />
+          </RequireAdmin>
+        }
+      />
+      <Route
+        path="/users"
+        element={
+          <RequireAdmin>
+            <Users />
           </RequireAdmin>
         }
       />
