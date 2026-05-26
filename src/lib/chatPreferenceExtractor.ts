@@ -242,6 +242,76 @@ export async function saveChatPreferences(
 }
 
 /**
+ * TICKET-094 — chat 偏好 → prefScores keyword 注入.
+ *
+ * 把 user_chat_preferences 表的 structured prefs 翻译成 prefScores 词典格式,
+ * 让 scoreForWeek axis 4 (prefScores 学习曲线) 自动用上, 不动 scoreForWeek 接口.
+ *
+ * 权重: chat 主动告诉的 confidence × 1.5 (老板拍板"chat 1.5× > swap 隐式 1.0×").
+ * sentiment='love' → 正; 'dislike' → 负.
+ *
+ * 注意: chat 词典 keyword 必须跟现有算法 keyword 池 (主要在 dishIngredients /
+ * breakfastCombos / scoreForWeek 内置词典) 对齐, 否则注入了也不命中任何菜.
+ */
+const CHAT_PREF_KEYWORD_MAP: Record<string, Record<string, string[]>> = {
+  // staple subtype → 早餐 staple 命中 keyword (跟 BREAKFAST_*_KEYWORDS 对齐)
+  breakfast_staple_subtype: {
+    rice:       ['粥', '米饭', '稀饭', '米线', '米粉'],
+    wheat:      ['面', '馒头', '包子', '饺子', '面包', '吐司'],
+    grain_misc: ['杂粮', '燕麦', '小米', '玉米', '糙米', '黑米', '荞麦', '藜麦'],
+    tuber:      ['红薯', '紫薯', '土豆', '山药', '芋头'],
+    bean:       ['红豆', '绿豆', '八宝', '鹰嘴豆', '扁豆'],
+    processed:  ['汤圆', '粽子', '年糕', '凉皮', '糍粑'],
+  },
+  // 烹饪法 → 命中 dish title / cook_method 关键词
+  cook_method: {
+    steam:   ['蒸', '清蒸'],
+    braise:  ['红烧', '炖', '焖', '烩', '卤'],
+    stirfry: ['炒'],
+    bake:    ['烤', '焗'],
+    cold:    ['凉拌', '拌'],
+    boil:    ['煮', '汆', '白灼'],
+  },
+  // 部位 → 命中 title 关键词
+  meat_part: {
+    beef_steak:   ['牛排'],
+    beef_brisket: ['牛腩'],
+    chicken_leg:  ['鸡腿'],
+    chicken_wing: ['鸡翅'],
+    pork_rib:     ['排骨'],
+    fish_whole:   ['鱼'],
+  },
+};
+
+export function injectChatPrefsIntoPrefScores(
+  chatPrefs: Record<string, ChatPreference[]>,
+  prefScores: Record<string, number>,
+): Record<string, number> {
+  const out = { ...prefScores };
+  for (const [type, prefs] of Object.entries(chatPrefs)) {
+    const map = CHAT_PREF_KEYWORD_MAP[type as ChatPreferenceType];
+    if (!map) continue;
+    for (const p of prefs) {
+      const val = p.preference_value as any;
+      const sentiment = (val?.sentiment as string) ?? 'love';
+      const sign = sentiment === 'dislike' ? -1 : 1;
+      const weight = sign * p.confidence * 1.5;
+      // 提取选中的 keys (subtypes / methods / parts)
+      const keys: string[] =
+        val?.subtypes ?? val?.methods ?? val?.parts ?? [];
+      for (const k of keys) {
+        const kws = map[k] ?? [];
+        for (const kw of kws) {
+          // 累加 (不 overwrite, 避免多 chat 轮 + swap 学到的混合)
+          out[kw] = (out[kw] ?? 0) + weight;
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/**
  * 读取用户的 chat 偏好 (按 user_id + household_id 合并).
  * 算法侧 useWeeklyMenu / scoreForWeek 调用拿到 prefs 做加权.
  */
