@@ -45,7 +45,29 @@ import RequireAuth from './components/RequireAuth';
 import NetworkBanner from './components/NetworkBanner';
 import { syncFavoritesFromCloud } from './lib/favorites';
 import { syncProfileFromDB } from './lib/profileSync';
-import { getUserId } from './lib/userId';
+import { getUserId, SESSION_VERSION, SESSION_KEY } from './lib/userId';
+
+/**
+ * TICKET-093 P0 — 内测阶段强制重登 + 永久免登 sentinel.
+ *
+ * 老板真测发现历史用户带着旧 localStorage 直接进新版（跳过 /login）。内测阶段
+ * 要求所有人从 /login 重登一次，登陆后永久免登。
+ *
+ * 实现：模块级 IIFE 在 React 渲染前跑一次。sentinel 不命中 → 清认证 keys →
+ * RequireAuth 检测 userId=null → 弹到 /login。setUserId() 在登陆成功时回写
+ * sentinel → 下次启动命中 → 不清 LS → 直接进 Home。
+ *
+ * 不清算法偏好（quickPrefs / familyPrefs / 各种 onboarding v3 keys）— 用户
+ * 重登后不用重做 onboarding。算法偏好跟 userId 解耦，跟 LS 设备绑定 OK。
+ */
+(() => {
+  try {
+    if (localStorage.getItem(SESSION_KEY) === SESSION_VERSION) return;
+    ['userId', 'nutri_user_id', 'isLoggedIn', 'nutri_role'].forEach(k => {
+      localStorage.removeItem(k);
+    });
+  } catch { /* private mode — no-op */ }
+})();
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
 import { supabase } from './lib/supabase';
 import { maybeAttemptSilent } from './lib/wechatSilentLogin';

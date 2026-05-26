@@ -230,12 +230,12 @@ export default function Cart() {
               </div>
             ))}
 
-            {/* Disclaimer — 080-A 提醒测试版 */}
+            {/* TICKET-093 — 删除"测试版"对外提示（内测阶段不暴露 test 字样） */}
             <p className="text-center text-[10px] text-gray-400 mt-4 px-4 leading-relaxed">
               {t3(
-                'Pricing in HKD. Final payment & delivery coming soon (test version).',
-                '价格 HKD。结账 + 配送功能即将上线 (当前为测试版)。',
-                'Presyo sa HKD. Babayaran at paghahatid darating (test version).',
+                'Pricing in HKD. Checkout & delivery coming soon.',
+                '价格 HKD。结账 + 配送功能即将上线。',
+                'Presyo sa HKD. Babayaran at paghahatid darating na.',
               )}
             </p>
           </div>

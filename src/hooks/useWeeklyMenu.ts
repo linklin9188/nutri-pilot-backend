@@ -30,7 +30,7 @@ import { applyCuisineFilter, loadCuisineMode } from '../lib/cuisineFilter';
 import { DISH_FIELDS } from '../lib/dishFields';
 import { hometownMatches, hometownToDbBucket } from '../lib/hometownBuckets';
 import { isNewUserSession } from '../lib/userLifecycle';
-import { pickBreakfastCombo, classifyBreakfastSlot, WET_DRINK_KEYWORDS } from '../lib/breakfastCombos';
+import { pickBreakfastCombo, classifyBreakfastSlot, classifyStapleSubtype, type BreakfastStapleSubtype, WET_DRINK_KEYWORDS } from '../lib/breakfastCombos';
 import { syncProfileFromDB } from '../lib/profileSync';
 import { loadPantryItems } from './usePantry';
 import { recommendDishesByVector, computeHouseholdVector, VECTOR_DIM } from '../lib/recommendVector';
@@ -121,7 +121,7 @@ const WORKDAYS_PER_WEEK = 5;
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v68'; // v68: TICKET-065 P0 (老板真测 #11 "我想吃西北菜结果出腊味合蒸") — IntentBias schema 加 cuisineBoosts 维度. 真因: 原 schema 只有 categoryBoosts + tagBoosts, "西北菜"被 Gemini 转都失效, 算法回退按 hometown + prefScores 排 → 粤菜命中. 改动 4 处: (1) src/lib/intentBias.ts 加 CuisineCode type (实查 dishes.origin_cuisine 12 真值: cantonese/sichuan/jiangnan/northern/western/japanese_korean/southeast_asian/hunan/northwest/fujian/hakka/northeast) + IntentBias.cuisineBoosts field + applyIntentBias cuisine 命中加分 + getIntentHash 把 cuisineBoosts 纳入 hash 做 cache buster + loadIntentBias 兜底旧 LS 没 cuisineBoosts; (2) supabase/functions/parse-intent/index.ts PROMPT 加 cuisineBoosts schema + mapping cheat sheet; (3) parseIntent return 加 cuisineBoosts clampObj; (4) bump ALGO 让全 v67 缓存失效, 新 intent + cuisineBoosts hash 立即生效. dish.origin_cuisine 已在 DISH_FIELDS SELECT (v59 起), 无需改 caller. 不动 hometownBuckets 归并桶 — cuisineBoosts 直命中 DB 真值, 跟 hometown 维度物理分离。
+export const ALGO_VERSION = 'v70'; // v70: TICKET-093 早餐 staple subtype 一周 dedup — 加 BreakfastStapleSubtype 7 类 (rice/wheat/grain_misc/tuber/bean/processed/other_staple), classifyStapleSubtype() 按 title 关键词分类, generateWeekPlan 早餐循环跟踪 weekStapleSubtypeCounts (cap 2/5 天), 超 cap 时从 breakfastPool 找未达 cap 的 subtype dish swap 进去保多样性. 配合补菜 20 道 (薯芋/杂豆/杂粮/加工各 5). 老板真测 "早餐都是粥和面食". bump 让 v69 缓存失效. // v69: TICKET-093 用餐风格收口 — (a) 午餐 staplePool dayIndex 过滤"快餐型" staple, Mon+Thu (dayIndex 0/3) 允许盖饭/便当/炒饭/烩饭/焗饭/泡饭, Tue/Wed/Fri 硬过滤; (b) 晚餐 small template 默认塞 staple slot (老板真测 "晚餐为什么没主食" — 中餐家庭吃饭没主食反直觉, 小模板 staple slot = 最后 1 槽, lowCarb 用户仍砍); (c) 读 localStorage.nutri_meal_style ('standard' / 'low_staple' / 'high_protein' / 'light'), 'high_protein' 等价于 lowCarb=1 让算法 staple slot 砍 + 主菜增. 配合 onboarding-v2 加 "用餐风格" 题 + Settings 同名 chip. bump 让全 v68 缓存失效. // v68: TICKET-065 P0 (老板真测 #11 "我想吃西北菜结果出腊味合蒸") — IntentBias schema 加 cuisineBoosts 维度. 真因: 原 schema 只有 categoryBoosts + tagBoosts, "西北菜"被 Gemini 转都失效, 算法回退按 hometown + prefScores 排 → 粤菜命中. 改动 4 处: (1) src/lib/intentBias.ts 加 CuisineCode type (实查 dishes.origin_cuisine 12 真值: cantonese/sichuan/jiangnan/northern/western/japanese_korean/southeast_asian/hunan/northwest/fujian/hakka/northeast) + IntentBias.cuisineBoosts field + applyIntentBias cuisine 命中加分 + getIntentHash 把 cuisineBoosts 纳入 hash 做 cache buster + loadIntentBias 兜底旧 LS 没 cuisineBoosts; (2) supabase/functions/parse-intent/index.ts PROMPT 加 cuisineBoosts schema + mapping cheat sheet; (3) parseIntent return 加 cuisineBoosts clampObj; (4) bump ALGO 让全 v67 缓存失效, 新 intent + cuisineBoosts hash 立即生效. dish.origin_cuisine 已在 DISH_FIELDS SELECT (v59 起), 无需改 caller. 不动 hometownBuckets 归并桶 — cuisineBoosts 直命中 DB 真值, 跟 hometown 维度物理分离。
 // v67: TICKET-059 P0 hot-fix (老板真测 #3) — 加家人后菜单实时重生成。短期 hack 3 件套: (1) cache_key 显式加 _h{homeMembersCount} suffix (getCacheKey 末尾), 即使 calcDishCount 桶化没让 dishesPerDay 变也强制 invalidate; (2) calcDishesForToday 出口 floor 兜底: dishesPerDay = max(dishesPerDay, min(9, homeMembers.length)), 保证菜数至少跟家里人数一致; (3) Settings persistMembers 加 nutri-home-changed event dispatch, useWeeklyMenu 加监听 → 加/删家人立即 clear cache + setRefreshKey 重生菜单. 长期方案 (family_members DB 表 + 算法 cascade vector 读家人) 走 PENDING_BOSS_DECISION schema 升级 ticket. bump 让全 v66 缓存失效。
 // v66: TICKET-040 早餐 spec 校准 (老板 25/05 凌晨) — 早餐 4 类合并为 3 类: 碳水 + 蛋白 + 维生素 (veg OR fruit 任一即够, 不强制两者都要). breakfastCombos.ts BREAKFAST_VEG/FRUIT_KEYWORDS 保留 (数据仍用), 改 generateWeekPlan supplement check 从 AND 改 OR. bump 让全 v65 缓存失效。
 // v65: TICKET-034 Settings §2 嵌入向量推荐 — recommendVector.ts (manual 20 维: cuisine 5+spice 1+ingredient family 8+cooking 6); user 选 onboarding 图片 → userVectorFromSelectedDishes 写 user_profiles.preference_vector; 推荐 cascade: 有 vector → recommendDishesByVector (cosineSimilarity top 100 → nutritionRerank by dietary_goal → 过敏硬过滤) 截 pool top 150 喂 generateWeekPlan; 无 vector (旧用户) → fallback 现有 scoreDish/scoreForWeek 兼容. dishes.feature_vector 100% 填充 (924/924, by scripts/compute-dish-feature-vector.ts). bump 让全 v64 缓存失效, 新算法立即生效。
@@ -2515,7 +2515,24 @@ function generateWeekPlan(
   // 窗外仍走 axis 9 -0.65 软扣（兜底，避免 hard-block 让 slot 空）。
   const weekKwLastDay = new Map<string, number>();
   // Low-carb / keto: drops the staple slot in dinner AND lunch.
-  const lowCarb = localStorage.getItem('nutri_low_carb') === '1';
+  // TICKET-093 — mealStyle = 'high_protein' 等价于 lowCarb (无主食 + 增主菜),
+  // 用户在 onboarding-v2 / Settings 选 "🥩 高蛋白增肌" 落到这里.
+  const mealStyle = localStorage.getItem('nutri_meal_style') ?? 'standard';
+  const lowCarb = localStorage.getItem('nutri_low_carb') === '1' || mealStyle === 'high_protein';
+  // TICKET-093 — 早餐 staple subtype 一周 dedup tracker.
+  // 老板真测: "早餐都是粥和面食" — DB 80 道 staple 里 ~68% rice+wheat.
+  // 一周 5 天 staple slot 单 subtype 上限 = 2 次, 超出从 pool swap 一个未达上限
+  // 的 subtype dish 进去保多样性. 配合补 20 道 (薯芋/杂豆/杂粮/加工) 让 pool
+  // 有真候选可 swap, 否则降级保留原 dish.
+  const BREAKFAST_STAPLE_SUBTYPE_CAP = 2;
+  const weekStapleSubtypeCounts: Record<BreakfastStapleSubtype, number> = {
+    rice: 0, wheat: 0, grain_misc: 0, tuber: 0, bean: 0, processed: 0, other_staple: 0,
+  };
+  // TICKET-093 — "保留 2 天盖饭, 其他 5 天正餐风格"老板拍板.
+  // 5 工作日 (Mon-Fri = dayIndex 0-4), 允许盖饭/便当/炒饭/烩饭的 day = Mon (0) + Thu (3).
+  // 其他 3 天 staple slot 硬过滤这些"快餐型"主食.
+  const LUNCH_FAST_FOOD_ALLOWED_DAYS = new Set([0, 3]);
+  const LUNCH_FAST_FOOD_KEYWORDS = ['盖饭', '盖浇饭', '便当', '炒饭', '烩饭', '焗饭', '泡饭'];
 
   // Small-family template is only for the smallest tables (≤3 dishes total),
   // where physical slot count can't fit the 4 macros (肉/海鲜/蔬菜/汤).
@@ -2655,13 +2672,27 @@ function generateWeekPlan(
           // EXCEPT when lowCarb is on: ban staples entirely, and let slot 4
           // accept main_protein / veggie instead (relax the "slot 4 must
           // be staple" rule). User on keto would otherwise lose 1 dish.
+          //
+          // TICKET-093 — small template (≤3 道) 也默认塞 staple slot (老板真测
+          // "晚餐为什么没主食" — 中餐家庭吃饭没主食反直觉). 小模板 staple slot
+          // 复用大模板的 slot 4 规则: 最后 1 槽 reserve 给 staple. lowCarb 用户
+          // 仍砍.
           if (!dayUseSmallTemplate) {
             if (lowCarb && isStaple) return false;
             if (!lowCarb && isStaple && CARB_BLOCKED_SLOTS.has(slot)) return false;
             if (!lowCarb && slot === 4 && !isStaple) return false;
           } else {
-            // Small template: no staple slot — block staple entirely
-            if (isStaple) return false;
+            // Small template:
+            //   - lowCarb → 全砍 staple (keto path)
+            //   - 标准 → 最后一槽 (slot dayDishesPerDay - 1) 强制 staple,
+            //            其他槽不允许 staple (防 staple 占主菜位)
+            if (lowCarb) {
+              if (isStaple) return false;
+            } else {
+              const stapleSlotIdx = dayDishesPerDay - 1;
+              if (isStaple && slot !== stapleSlotIdx) return false;
+              if (!isStaple && slot === stapleSlotIdx) return false;
+            }
           }
 
           // Soup slot: only allow soups (or light dishes if no soup available)
@@ -2981,12 +3012,21 @@ function generateWeekPlan(
     };
 
     // 1. staple pool — rice bowls / pasta / noodles / 炒饭 / 盖饭
+    // TICKET-093 — 5 工作日里 dayIndex ∉ {0, 3} (即 Tue/Wed/Fri) 硬过滤盖饭/便当/
+    // 炒饭等"快餐型"staple, 让其他 3 天 staple slot 出米饭 / 面条 / 简单主食配
+    // 正餐风格主菜+配菜+汤. Mon + Thu 仍允许盖饭.
+    const allowFastFoodToday = LUNCH_FAST_FOOD_ALLOWED_DAYS.has(dayIndex);
     const staplePool = pool
       .filter(d => !usedIds.has(d.id) && !lunchUsedIds.has(d.id))
       .filter(d => {
         const ct = d.course_type ?? '';
         const cat = ingCategory(d.main_ingredient ?? 'other');
         return ct === 'staple' || cat === 'carb';
+      })
+      .filter(d => {
+        if (allowFastFoodToday) return true;
+        const title = (d.title_zh ?? d.title ?? '').toString();
+        return !LUNCH_FAST_FOOD_KEYWORDS.some(k => title.includes(k));
       })
       .map(scoreLunch)
       .sort((a, b) => b.score - a.score)
@@ -3233,6 +3273,53 @@ function generateWeekPlan(
         return [];
       }
     })();
+
+    // TICKET-093 — 早餐 staple subtype 一周 dedup swap.
+    // breakfastDishes 选完后, 找到 carb slot 那一道 (即 staple), 看 subtype
+    // 是否超 BREAKFAST_STAPLE_SUBTYPE_CAP. 超了从 breakfastPool 找一道未超上限
+    // 的 subtype staple swap (按 scoreForWeek 排第一). pool 不够时降级保留原 dish.
+    if (breakfastDishes.length > 0) {
+      const stapleIdx = breakfastDishes.findIndex(d => classifyBreakfastSlot(d as any) === 'carb');
+      if (stapleIdx >= 0) {
+        const cur = breakfastDishes[stapleIdx];
+        const curSubtype = classifyStapleSubtype(cur as any);
+        if (weekStapleSubtypeCounts[curSubtype] >= BREAKFAST_STAPLE_SUBTYPE_CAP) {
+          // 找 swap candidate: 未达 cap 的 subtype + 同 carb slot + 没在今日用过
+          const usedTodayIds = new Set(breakfastDishes.map(d => d.id));
+          const swapCandidates = breakfastPool
+            .filter((d: any) => !usedTodayIds.has(d.id))
+            .filter((d: any) => classifyBreakfastSlot(d) === 'carb')
+            .filter((d: any) => {
+              const sub = classifyStapleSubtype(d);
+              return weekStapleSubtypeCounts[sub] < BREAKFAST_STAPLE_SUBTYPE_CAP;
+            })
+            .map((d: any) => ({
+              dish: d,
+              score: scoreForWeek({
+                dish: d, profile, prefScores, recentIds,
+                pickedIngredients: [...pickedIngredients, ...dayIngredients],
+                pickedCuisines: [...pickedCuisines, ...dayCuisines],
+                pickedTitleKeywords,
+                dayIndex,
+                spiceBoost, ageGroup, healthPrefs,
+                hasPregnant: familyPrefs?.hasPregnant ?? false,
+                humidity, solarTerm, hasXiaomei, mealTime: '早餐',
+                homeInventoryItems, imagePrefs, festivalTags,
+              }),
+            }))
+            .sort((a: any, b: any) => b.score - a.score);
+          if (swapCandidates.length > 0) {
+            breakfastDishes[stapleIdx] = swapCandidates[0].dish;
+            weekStapleSubtypeCounts[classifyStapleSubtype(swapCandidates[0].dish as any)]++;
+          } else {
+            // 候选池不足, 保留原 dish 继续 count (避免无限增长 → cap+1 上限)
+            weekStapleSubtypeCounts[curSubtype]++;
+          }
+        } else {
+          weekStapleSubtypeCounts[curSubtype]++;
+        }
+      }
+    }
 
     // ═══════════════════════════════════════════════════════════════════
     // Smell 1 阶段 2: fruit — 餐后水果 slot（与晚餐挂钩）。按节气优先 +

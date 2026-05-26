@@ -27,6 +27,7 @@ import { useSubscription } from "../lib/subscription";
 import { recordBatchSwap, recordSwap } from "../lib/swapFeedback";
 import { useLanguage, LANGUAGE_LABEL, type Language } from "../contexts/LanguageContext";
 import IntentInputBox from "../components/IntentInputBox";
+import ChatGuidePrompt, { bumpHomeVisitCount } from "../components/ChatGuidePrompt";
 import ChatSwapModal from "../components/ChatSwapModal";
 import { loadIntentBias } from "../lib/intentBias";
 import { getUserId } from "../lib/userId";
@@ -276,6 +277,12 @@ const GOAL_TIP_MAP: Record<string, string> = {
 function useDailyTip() {
   const [weather, setWeather] = useState<WeatherInfo | null>(null);
   const [tipIdx, setTipIdx] = useState(0);
+
+  // TICKET-094 — Home mount 时 ++ visit count, ChatGuidePrompt 用来决定弹哪轮.
+  useEffect(() => {
+    bumpHomeVisitCount();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     // Default: Hong Kong coordinates; future: use geolocation
@@ -670,14 +677,8 @@ export default function Home() {
   // displayMenu.slice(0,5)) currently expanded; click same idx toggles closed.
   // Tolerant of missing dish.explanation — falls back to "暂无解释数据".
   const [expandedExplainIdx, setExpandedExplainIdx] = useState<number | null>(null);
-  // TICKET-061 §B — β 反馈 banner (dismissable, localStorage 持久化)
-  const [betaBannerShown, setBetaBannerShown] = useState<boolean>(
-    () => localStorage.getItem('beta_banner_dismissed') !== 'true'
-  );
-  function dismissBetaBanner() {
-    localStorage.setItem('beta_banner_dismissed', 'true');
-    setBetaBannerShown(false);
-  }
+  // TICKET-093 — β banner state 已删除（老板真测：内测阶段不再对外展示
+  // "β / 测试版" 等内测说明）.
 
   // TICKET-063 §B — 节庆 in-app toast (mock, Day 17 接真 push API)
   // 检测 ±3 日节庆 → localStorage check 当年该节庆是否已 dismiss → 1s 后弹 toast。
@@ -1300,40 +1301,8 @@ export default function Home() {
           weekendSection 从 header 上方移到 main 内部、WeekendDiningReport 之前
           (见下方 isWeekend 分支)。此处保留注释占位防回归。 */}
 
-      {/* TICKET-061 §B — β 反馈提示 banner (dismissable + localStorage 持久化)
-          仅 β 阶段显示；关闭后 localStorage.beta_banner_dismissed=true 永久不再显示。 */}
-      {betaBannerShown && (
-        <div
-          className="mx-3 mt-2 rounded-2xl px-3 py-2.5 flex items-start gap-2"
-          style={{
-            paddingTop: "calc(env(safe-area-inset-top, 0px) + 10px)",
-            background: "linear-gradient(135deg, rgba(255,90,31,0.10), rgba(255,179,71,0.18))",
-            border: "1px solid rgba(255,90,31,0.20)",
-          }}
-        >
-          <span style={{ fontSize: 16, lineHeight: 1.2 }}>🧪</span>
-          <p className="flex-1 leading-snug" style={{ fontSize: 12, color: "rgba(0,0,0,0.75)" }}>
-            欢迎试用 <span className="font-bold" style={{ color: "#FF5A1F" }}>β 版</span>！碰到问题去
-            <button
-              onClick={() => navigate('/settings')}
-              className="font-bold mx-0.5 underline underline-offset-2"
-              style={{ color: "#FF5A1F" }}
-            >
-              设置 &gt; 联系客服
-            </button>
-            给我反馈。
-          </p>
-          <button
-            onClick={dismissBetaBanner}
-            className="active:scale-90 transition-transform"
-            aria-label="关闭 β 反馈提示"
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: 18, color: "rgba(0,0,0,0.45)" }}>
-              close
-            </span>
-          </button>
-        </div>
-      )}
+      {/* TICKET-093 — β 反馈 banner 已删除（老板真测：内测阶段对外不暴露
+          "β / 测试版" 说明）. 客服入口仍在 Settings > 联系客服. */}
 
       {/* TICKET-063 §1 — 顶部欢迎 chip (微信昵称 + 头像). 老板真测 #9 拍板:
           原 Home 只 fetch display_name 但 0 JSX 渲染，登录后唯一可见名字是
@@ -1344,7 +1313,7 @@ export default function Home() {
         className="mx-3 mt-2 flex items-center gap-2 active:scale-[0.98] transition-transform cursor-pointer"
         onClick={() => navigate('/settings')}
         style={{
-          paddingTop: betaBannerShown ? 0 : "calc(env(safe-area-inset-top, 0px) + 10px)",
+          paddingTop: "calc(env(safe-area-inset-top, 0px) + 10px)",
         }}
       >
         <div
@@ -1397,7 +1366,11 @@ export default function Home() {
           唯一 use case "说话换菜单". 老板真测 #12 拍板 1: chat 不是泛用对话,
           就是给老板一句话调菜单的快速入口. parseIntent → saveIntentBias →
           clear weekly_menu_* cache → 派 nutri-prefs-changed 让 useWeeklyMenu 重算. */}
-      <div className="px-5 mt-3 mb-2">
+      <div className="px-5 mt-3 mb-2 space-y-2">
+        {/* TICKET-094 — chat 主动弹引导卡 (5 轮分阶段). 命中触发条件 (visit
+            count + 该 round 未完成) 才显示 dish; 否则 null. 不抢 IntentInputBox
+            焦点 (放上面让用户先看到 AI 在主动学偏好, 再有手动输入). */}
+        <ChatGuidePrompt householdId={householdId ?? null} />
         <IntentInputBox
           variant="home"
           onTriggerSwap={(intent) => {
@@ -1441,11 +1414,7 @@ export default function Home() {
                 </>
               )}
             </p>
-            {tip && (
-              <p className="mt-1" style={{ fontSize: 11.5, color: "rgba(0,0,0,0.42)", lineHeight: 1.55, fontStyle: "italic" }}>
-                {tip}
-              </p>
-            )}
+            {/* TICKET-092 — tip 鸡汤式提示已删除（雇主真测反馈：首页信息过多没重点）. */}
             {/* §B (TICKET-027) Festival banner — only renders when getCurrentFestival
                 returns a slug (±3 days from one of the 7 festivals). Tap → /weekly
                 so the user lands on this week's menu (where Algorithm 025 axis 27
@@ -1481,65 +1450,11 @@ export default function Home() {
             )}
           </div>
 
-          {/* Header action stack: language picker on top, QR scan below */}
-          <div className="flex flex-col items-end gap-2 shrink-0 relative">
-            {/* §C (TICKET-037) Language picker — tap opens 4-language grid
-                popover instead of single-cycle. cycleLanguage kept available
-                as ALT+click for power users / a11y. */}
-            <button
-              onClick={() => setLangPickerOpen(o => !o)}
-              onAuxClick={cycleLanguage}
-              className="px-3 h-8 rounded-full flex items-center justify-center gap-1 font-bold active:scale-95 transition-transform"
-              style={{ background: "white", boxShadow: "0 4px 14px rgba(0,0,0,0.06)", fontSize: 11, color: "#1a1a1a", minWidth: 56 }}
-              title="切换语言 / Switch language"
-            >
-              {LANGUAGE_LABEL[language]}
-              <span className="material-symbols-outlined" style={{
-                fontSize: 14, color: "rgba(0,0,0,0.4)",
-                transition: "transform 0.2s",
-                transform: langPickerOpen ? "rotate(180deg)" : "rotate(0deg)",
-              }}>expand_more</span>
-            </button>
-            {langPickerOpen && (
-              <>
-                {/* tap-outside backdrop */}
-                <div className="fixed inset-0 z-30" onClick={() => setLangPickerOpen(false)} />
-                <div className="absolute right-0 top-full mt-2 z-40 rounded-2xl p-2 grid grid-cols-3 gap-1.5"
-                  style={{ background: 'white', boxShadow: '0 14px 38px rgba(0,0,0,0.14), 0 2px 6px rgba(0,0,0,0.06)', minWidth: 220 }}>
-                  {/* TICKET-070 §A — 按 role 限制 3 种（雇主 简/繁/EN，菲佣 EN/tl/id） */}
-                  {((): { key: 'zh' | 'zh-Hant' | 'en' | 'tl' | 'id'; label: string }[] => {
-                    const r = localStorage.getItem('nutri_role');
-                    if (r === 'helper') {
-                      return [
-                        { key: 'en', label: 'EN'      },
-                        { key: 'tl', label: 'Tagalog' },
-                        { key: 'id', label: 'Bahasa'  },
-                      ];
-                    }
-                    return [
-                      { key: 'zh',      label: '简体' },
-                      { key: 'zh-Hant', label: '繁體' },
-                      { key: 'en',      label: 'EN'   },
-                    ];
-                  })().map(({ key, label }) => {
-                    const active = key === language;
-                    return (
-                      <button key={key} onClick={() => pickLanguage(key)}
-                        className="px-3 py-2 rounded-xl font-bold active:scale-95 transition-all"
-                        style={{
-                          background: active ? '#FF5A1F' : 'rgba(0,0,0,0.04)',
-                          color:      active ? 'white' : '#1a1a1a',
-                          fontSize:   12,
-                        }}>
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-            {/* TICKET-031 §B — 推广 share button (老板拓客起点).
-                点击 toggle 底部 sheet (Sheet 内嵌 ShareCard). */}
+          {/* Header action — share button only.
+              TICKET-092 — language picker 已移到 Settings 顶部 (LanguageSwitcher
+              fixed top-right)，雇主切语言频率极低，Home 不再独占一个 chip 位.
+              保留 share button (老板拓客起点) 单独占右上. */}
+          <div className="flex flex-col items-end shrink-0 relative">
             <button
               onClick={() => setShareSheetOpen(true)}
               className="w-9 h-9 rounded-full flex items-center justify-center active:scale-90 transition-transform"
@@ -1614,36 +1529,24 @@ export default function Home() {
                 </button>
               ))}
             </div>
-            {/* 本周菜单 + 收藏 quick links moved to the 菜单 tab so Home
-                stays focused on today's recommendation. Bottom nav still
-                covers both — 菜单 tab is /weekly, and the WeeklyMenu page
-                now hosts the favorites shortcut. */}
+            {/* TICKET-092 — 今日开饭时间 chip 合并到 meal tab 同行右侧（跟当前
+                meal tab 联动），不再独占一行。早餐不显示（无时间设置）. */}
+            {householdId && mealTime !== '早餐' && (
+              <button
+                onClick={() => openMealTimeEditor(mealTime === '午餐' ? 'lunch' : 'dinner')}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl font-bold text-[#FF5A1F] active:scale-95 transition-transform"
+                style={{ background: '#FFF3E6', border: '1px solid rgba(255,90,31,0.25)', fontSize: 12 }}
+                title={t3('Edit meal time', '改开饭时间', 'I-edit ang oras')}>
+                <span>{mealTime === '午餐' ? '🍱' : '🍽'}</span>
+                <span className="tabular-nums">
+                  {mealTime === '午餐'
+                    ? (todaySchedule?.lunch_time ?? '--:--')
+                    : (todaySchedule?.dinner_time ?? '--:--')}
+                </span>
+                <span className="material-symbols-outlined" style={{ fontSize: 12, color: 'rgba(255,90,31,0.65)' }}>edit</span>
+              </button>
+            )}
           </div>
-
-          {/* TICKET-082 §Phase 5a — 今日开饭时间 chip (日级 schedule).
-              点 ✏️ 弹底部 time picker → setDailyMealTime(..., 'employer').
-              householdId 缺失 (无 helper / 未建 household) 隐藏 (D 兜底). */}
-          {householdId && (
-            <div className="flex items-center gap-2 mb-3 px-1 flex-wrap">
-              <span className="text-[11px] font-bold text-secondary/60 uppercase tracking-wider">
-                {t3("Today's meal time", '今日开饭', 'Oras ng pagkain ngayon')}
-              </span>
-              <button onClick={() => openMealTimeEditor('lunch')}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl font-bold text-[#FF5A1F] active:scale-95 transition-transform"
-                style={{ background: '#FFF3E6', border: '1px solid rgba(255,90,31,0.25)', fontSize: 12 }}>
-                <span>🍱</span>
-                <span className="tabular-nums">{todaySchedule?.lunch_time ?? '--:--'}</span>
-                <span className="material-symbols-outlined" style={{ fontSize: 12, color: 'rgba(255,90,31,0.65)' }}>edit</span>
-              </button>
-              <button onClick={() => openMealTimeEditor('dinner')}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl font-bold text-[#FF5A1F] active:scale-95 transition-transform"
-                style={{ background: '#FFF3E6', border: '1px solid rgba(255,90,31,0.25)', fontSize: 12 }}>
-                <span>🍽</span>
-                <span className="tabular-nums">{todaySchedule?.dinner_time ?? '--:--'}</span>
-                <span className="material-symbols-outlined" style={{ fontSize: 12, color: 'rgba(255,90,31,0.65)' }}>edit</span>
-              </button>
-            </div>
-          )}
 
           {/* Cuisine filter + 今日用餐人数 chip — same row, two halves. */}
           <div className="relative flex items-center justify-between mb-3">
@@ -2060,6 +1963,34 @@ export default function Home() {
               )}
             </div>
 
+            {/* TICKET-092 — 菜单卡底部 footer：扫冰箱 + 烹饪 内嵌进菜单卡，
+                替代原独立 grid 2 板块，节省一个独立 section + 降低视觉密度. */}
+            <div className="px-5 pb-4 pt-3 flex items-center gap-2"
+              style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
+              <button
+                onClick={() => {
+                  if (!isLoggedIn) { navigate('/login', { state: { from: '/' } }); return; }
+                  fridgeInputRef.current?.click();
+                }}
+                className="flex-1 rounded-xl py-2.5 flex items-center justify-center gap-1.5 font-bold active:scale-[0.98] transition-transform"
+                style={{ background: 'rgba(0,180,216,0.10)', fontSize: 13, color: '#0099BC' }}
+                title={isLoggedIn ? '扫冰箱' : '请先登录后使用'}>
+                <span className="material-symbols-outlined" style={{ fontSize: 16, fontVariationSettings: "'FILL' 1" }}>kitchen</span>
+                {isLoggedIn ? t3('Scan fridge', '扫冰箱', 'I-scan ang ref') : t3('Scan fridge 🔒', '扫冰箱 🔒', 'Scan 🔒')}
+              </button>
+              {/* TICKET-092 P0 hot-fix — 雇主"做菜"按钮:
+                  雇主和菲佣共用同一套烹饪界面 (HelperCook = /cook = "今日烹饪")，
+                  原代码错跳 /prep (= HelperPrep "Shopping Check 采购确认"，购物界面)。
+                  改跳 /cook 才对. */}
+              <button
+                onClick={() => navigate('/cook')}
+                className="flex-[1.4] rounded-xl py-2.5 flex items-center justify-center gap-1.5 font-bold text-white active:scale-[0.98] transition-transform"
+                style={{ background: 'linear-gradient(135deg, #FF5A1F 0%, #FF8C54 100%)', fontSize: 13, boxShadow: '0 4px 14px rgba(255,90,31,0.25)' }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 16, fontVariationSettings: "'FILL' 1" }}>skillet</span>
+                {t3('Start cooking', '开始做菜', 'Simulan magluto')}
+              </button>
+            </div>
+
           </div>
         </section>
 
@@ -2091,80 +2022,35 @@ export default function Home() {
             (避免 Home 重复 UI noise)。详情入口仍可点 "工作日导航 → 本周菜单"
             或 BottomTabBar 进 /weekly. */}
 
-        {/* 工作日导航入口 — "本周末出门吃"。让 Mon-Fri 用户提前看 / 预订
-            周末的香港餐厅推荐。周六周日则不显示这个 nav (Home 上面已经
-            inline 展示了 WeekendDiningReport)。 */}
-        <button
-          onClick={() => navigate('/weekend')}
-          className="w-full rounded-2xl px-4 py-3 flex items-center gap-3 active:scale-[0.99] transition-transform text-left"
-          style={{
-            background: 'linear-gradient(135deg, #FFFAF5 0%, #FFE9D2 100%)',
-            border: '1px solid rgba(255,140,80,0.20)',
-            boxShadow: '0 4px 14px rgba(255,140,80,0.10)',
-          }}>
-          <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
-            style={{ background: 'white', boxShadow: '0 2px 6px rgba(0,0,0,0.06)' }}>
-            <span style={{ fontSize: 18 }}>🍽</span>
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-bold text-[13.5px]" style={{ color: '#1a1a1a' }}>本周末出门吃</p>
-            <p className="text-[11px]" style={{ color: 'rgba(0,0,0,0.50)' }}>提前看 5 家香港好馆子 · 预订留位</p>
-          </div>
-          <span className="material-symbols-outlined shrink-0" style={{ fontSize: 18, color: '#FF5A1F' }}>chevron_right</span>
-        </button>
+        {/* TICKET-092 — "本周末出门吃" CTA 改 Thu/Fri 才显示。周一二三距离周末
+            太远, 雇主点击率低；周四五才是真正的"提前订位"窗口；周六日已经走
+            isWeekend() 分支顶部 weekendSection inline 展示, 不会到这里. */}
+        {(() => { const d = new Date().getDay(); return d === 4 || d === 5; })() && (
+          <button
+            onClick={() => navigate('/weekend')}
+            className="w-full rounded-2xl px-4 py-3 flex items-center gap-3 active:scale-[0.99] transition-transform text-left"
+            style={{
+              background: 'linear-gradient(135deg, #FFFAF5 0%, #FFE9D2 100%)',
+              border: '1px solid rgba(255,140,80,0.20)',
+              boxShadow: '0 4px 14px rgba(255,140,80,0.10)',
+            }}>
+            <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+              style={{ background: 'white', boxShadow: '0 2px 6px rgba(0,0,0,0.06)' }}>
+              <span style={{ fontSize: 18 }}>🍽</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-bold text-[13.5px]" style={{ color: '#1a1a1a' }}>本周末出门吃</p>
+              <p className="text-[11px]" style={{ color: 'rgba(0,0,0,0.50)' }}>提前看 5 家香港好馆子 · 预订留位</p>
+            </div>
+            <span className="material-symbols-outlined shrink-0" style={{ fontSize: 18, color: '#FF5A1F' }}>chevron_right</span>
+          </button>
+        )}
 
         {/* TICKET-066 P0 — 原 "今天还想吃……" intent 按钮 + IntentRegenModal 弹窗
             已删除, 顶部 IntentInputBox 取代 (老板真测 #12 拍板 1, 统一 chat 入口). */}
 
-        {/* 扫冰箱 / 烹饪 — primary actions of the day. Per-dish 换菜 is
-            still on each menu row (sync_alt icon), so this bulk action
-            became redundant; 扫冰箱 is the more useful first-click. */}
-        <div className="grid grid-cols-2 gap-3">
-          {/* 扫冰箱 — opens the camera picker, then geminiVision analyzes
-              ingredients and suggests recipes from what's visible.
-              GATED: anonymous users get bounced to /login first because
-              this is a Gemini Vision call (real token cost — needs a
-              real account to attribute usage and rate-limit). */}
-          <button
-            onClick={() => {
-              if (!isLoggedIn) { navigate('/login', { state: { from: '/' } }); return; }
-              fridgeInputRef.current?.click();
-            }}
-            className="rounded-2xl bg-white px-4 py-3.5 flex items-center justify-center gap-3 active:scale-[0.98] transition-transform"
-            style={{ boxShadow: "0 6px 20px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.04)" }}
-            title={isLoggedIn ? '扫冰箱' : '请先登录后使用'}
-          >
-            <div className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0"
-              style={{ background: "rgba(0,180,216,0.12)" }}>
-              <span className="material-symbols-outlined" style={{ fontSize: 22, color: "#00B4D8", fontVariationSettings: "'FILL' 1" }}>
-                kitchen
-              </span>
-            </div>
-            <p className="font-serif font-black" style={{ fontSize: 17, color: "#1a1a1a", letterSpacing: "-0.005em" }}>
-              {isLoggedIn ? '扫冰箱' : '扫冰箱 🔒'}
-            </p>
-          </button>
-
-          {/* 烹饪 — goes to /prep (which flows to /cook) */}
-          <button
-            onClick={() => { localStorage.setItem("generatedMenu", JSON.stringify(displayMenu)); navigate("/prep"); }}
-            className="rounded-2xl px-4 py-3.5 flex items-center justify-center gap-3 active:scale-[0.98] transition-transform"
-            style={{
-              background: "linear-gradient(135deg, #FF5A1F 0%, #FF8C54 100%)",
-              boxShadow: "0 8px 22px rgba(255,90,31,0.28)",
-            }}
-          >
-            <div className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0"
-              style={{ background: "rgba(255,255,255,0.22)" }}>
-              <span className="material-symbols-outlined text-white" style={{ fontSize: 22, fontVariationSettings: "'FILL' 1" }}>
-                skillet
-              </span>
-            </div>
-            <p className="font-serif font-black text-white" style={{ fontSize: 17, letterSpacing: "-0.005em" }}>
-              烹饪
-            </p>
-          </button>
-        </div>
+        {/* TICKET-092 — 扫冰箱 / 烹饪 grid 2 板块已删除, 内嵌到菜单卡底部 footer
+            (上方 rounded-3xl 菜单卡 borderTop footer)。雇主真测反馈 Home 信息过多. */}
 
         {/* Pro entry cards (家宴 / 祛湿 / 学校营养) moved out of Home into
             Settings → 会员 Pro · 工具箱 — keeps the homepage focused on the
@@ -2194,26 +2080,10 @@ export default function Home() {
           </div>
         )}
 
-        {/* TELEPOT-052 §A — context-aware primary CTA:
-            - 无菜单 → "生成本周菜单" 跳 /weekly
-            - 有菜单 → "查看采购清单" 跳 /verify (fabAction 复活)
-            老板真测发现工作日 home hasMenu 时根本没采购入口；fabLabel/fabAction
-            (line ~933) 是 TICKET-048 还原老 layout 时留下的 dead code，现在在
-            这里渲染出来. */}
-        <div className="rounded-2xl p-5" style={{ background: "linear-gradient(135deg, #FF5A1F, #FF8C54)" }}>
-          <h2 className="font-black text-white mb-1" style={{ fontSize: 20 }}>
-            {hasMenu ? "本周菜单已就绪" : '每天不再烦恼"吃什么"'}
-          </h2>
-          <p style={{ fontSize: 13, color: "rgba(255,255,255,0.8)", lineHeight: 1.5, marginBottom: 14 }}>
-            {hasMenu ? "一键生成本周食材采购清单，按家人份量自动计算" : "AI 根据家人健康状况，智能规划一周菜单"}
-          </p>
-          <button onClick={fabAction}
-            className="w-full py-3 rounded-2xl font-bold active:scale-[0.98] transition-all flex items-center justify-center gap-2"
-            style={{ fontSize: 14, background: "white", color: "#FF5A1F" }}>
-            <span className="material-symbols-outlined" style={{ fontSize: 18 }}>{fabIcon}</span>
-            {fabLabel} →
-          </button>
-        </div>
+        {/* TICKET-093 — 删除"查看采购清单 / 生成本周菜单"大 CTA 卡.
+            BottomTabBar 已覆盖采购入口 (📋 采购 tab) + 菜单入口 (📅 菜单 tab),
+            这个橙色 gradient CTA 是 TELEPOT-052 加 BottomTabBar 前的兜底 dead code.
+            空菜单"生成"入口由菜单卡内空状态按钮 (line ~1984) 兜. */}
 
         {/* Login CTA */}
         {!isLoggedIn && (

@@ -194,9 +194,9 @@ export default function OrderDetail() {
                 style={{ background: 'rgba(255,90,31,0.06)', color: '#B45309', border: '1px dashed rgba(255,90,31,0.30)' }}
               >
                 {t3(
-                  'Payment integration coming soon (test version).',
-                  '在线支付即将上线 (当前为测试版)。',
-                  'Bayad sa online darating na (test version).',
+                  'Payment integration coming soon.',
+                  '在线支付即将上线。',
+                  'Bayad sa online darating na.',
                 )}
               </div>
             )}

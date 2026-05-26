@@ -103,6 +103,29 @@ const ING_CAT: Record<string, string> = {
   carb: 'carb',
 };
 
+/**
+ * TICKET-092 P0 hot-fix — title_zh 关键词推断 main_ingredient.
+ *
+ * 真因：DB 里 218/929 道菜 main_ingredient='other'（seed pipeline 系统性
+ * 漏标），含战斧牛排/葱烧海参/夫妻肺片/烤火鸡/凤爪/醉鸡等明显有蛋白质类
+ * 别的菜。原 ING_CAT['other'] = undefined → fallback 'other' → 购物清单
+ * 落到"蔬菜豆腐"组（CATEGORY_GROUPS 里 'other' 归蔬菜豆腐）。
+ *
+ * 在前端按菜名兜底，不依赖 DB 修复。规则保守：只识别"明确含字"的肉禽
+ * 海鲜豆蛋，其他真歧义保持 'other'.
+ */
+function inferIngCatFromTitle(title: string): string {
+  const t = (title ?? '').toLowerCase();
+  if (!t) return 'other';
+  if (/鸡|鸭|鹅|火鸡|凤爪|鸡丁|鸡腿|鸡翅|鸡肉/.test(t)) return 'poultry';
+  if (/牛排|牛肉|牛腩|牛筋|牛丸|肺片|和牛|羊/.test(t)) return 'beef';
+  if (/猪|排骨|蹄膀|五花|肉丝|肉片|回锅|东坡|叉烧|肘子|肉末|腊肉/.test(t)) return 'pork';
+  if (/鱼|虾|蟹|贝|蛤|蚌|海参|海螺|鱿鱼|墨鱼|带鱼|三文|鳕|鲈|生蚝|扇贝|鳝/.test(t)) return 'seafood';
+  if (/鸡蛋|鸭蛋|蛋花|煎蛋|蒸蛋/.test(t)) return 'egg';
+  if (/豆腐|豆干|腐竹/.test(t)) return 'tofu';
+  return 'other';
+}
+
 // ── Secondary ingredient heuristics ───────────────────────────────────────────
 // Many dishes need minor supporting ingredients (garlic, ginger, sauce).
 // We add small fixed quantities so the shopping list is complete.
@@ -222,7 +245,10 @@ function prepStepsToIngredients(dish: any, effPeople: number): ShoppingIngredien
 
   const dishId = dish.id ?? dish.title_zh ?? Math.random().toString();
   const dishTitle = dish.title_zh || dish.title || '';
-  const mainIngCat = ING_CAT[(dish.main_ingredient ?? 'other').toLowerCase()] ?? 'other';
+  // TICKET-092 P0 hot-fix — DB 218 道菜 main_ingredient='other'，必须 title 兜底
+  // 否则主料 (tray A) 全部落到"蔬菜豆腐"组（战斧牛排误归蔬菜的真因）.
+  const dbCat = ING_CAT[(dish.main_ingredient ?? '').toLowerCase()];
+  const mainIngCat = (dbCat && dbCat !== 'other') ? dbCat : inferIngCatFromTitle(dishTitle);
 
   const rawScale = effPeople / PREP_STEPS_BASELINE_PEOPLE;
   const scale = Math.max(SCALE_MIN, Math.min(SCALE_MAX, rawScale));

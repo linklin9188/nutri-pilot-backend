@@ -297,6 +297,54 @@ export function classifyBreakfastSlot(dish: { title_zh?: string | null }): Break
   return 'unknown';
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// TICKET-093 — 早餐 carb (staple) 4 大类 subtype 细分
+//
+// 老板真测: "早餐都是粥和面食" — DB 80 道早餐 staple 里 ~68% 是大米粥 +
+// 小麦面食. 4 大主食类 (谷物-米/谷物-小麦/谷物-杂粮/薯芋/杂豆/加工) 严重失衡.
+//
+// 算法侧通过 subtype dedup 保多样性: 一周 5 天 staple slot 至少出 3 种不同
+// subtype, 不再 5 天都馒头 + 粥. 配合数据补菜 (薯芋+杂豆+杂粮+加工各 5 道).
+//
+// subtype 优先级判定 (先具体后通用):
+//   1. processed: 汤圆/粽子/年糕/凉皮 → 加工主食
+//   2. bean: 红豆/绿豆/八宝/扁豆/鹰嘴豆 → 杂豆
+//   3. tuber: 红薯/紫薯/土豆/山药/芋头/木薯 → 薯芋
+//   4. grain_misc: 燕麦/小米/玉米/糙米/黑米/荞麦/高粱/藜麦 (非粥形态) → 杂粮独立
+//   5. rice: 大米/米饭/粥/米线/米粉 → 谷物-米
+//   6. wheat: 面/馒头/包子/饺子/烧饼/面包/吐司/华夫/煎饼... → 谷物-小麦
+//   7. other_staple: fallback
+// ──────────────────────────────────────────────────────────────────────────
+export type BreakfastStapleSubtype =
+  | 'processed' | 'bean' | 'tuber' | 'grain_misc' | 'rice' | 'wheat' | 'other_staple';
+
+export const BREAKFAST_PROCESSED_KEYWORDS = ['汤圆', '元宵', '粽子', '凉皮', '凉粉', '年糕', '糍粑', '粢饭', '糯米藕'];
+export const BREAKFAST_BEAN_KEYWORDS = ['红豆', '绿豆', '八宝', '鹰嘴豆', '扁豆', '芸豆', '豆沙', '豆糊'];
+export const BREAKFAST_TUBER_KEYWORDS = ['红薯', '紫薯', '土豆', '山药', '芋头', '木薯', '番薯', '甘薯'];
+export const BREAKFAST_GRAIN_MISC_KEYWORDS = ['燕麦', '小米', '玉米', '糙米', '黑米', '荞麦', '高粱', '藜麦', '杂粮', '坚果', '格兰诺拉'];
+export const BREAKFAST_RICE_KEYWORDS = ['大米', '米饭', '粥', '稀饭', '米线', '米粉', '饭团'];
+export const BREAKFAST_WHEAT_KEYWORDS = [
+  '面条', '面', '馒头', '花卷', '包子', '饺子', '馄饨', '烧饼', '锅盔', '油条',
+  '面包', '吐司', '贝果', '可颂', '牛角包', '司康', '糕点', '糕', '蛋糕',
+  '华夫', '煎饼', '春饼', '葱油饼', '锅贴', '烧麦', '虾饺', '抄手', '生煎',
+];
+
+export function classifyStapleSubtype(dish: { title_zh?: string | null }): BreakfastStapleSubtype {
+  const t = dish.title_zh || '';
+  if (BREAKFAST_PROCESSED_KEYWORDS.some(kw => t.includes(kw))) return 'processed';
+  if (BREAKFAST_BEAN_KEYWORDS.some(kw => t.includes(kw))) return 'bean';
+  if (BREAKFAST_TUBER_KEYWORDS.some(kw => t.includes(kw))) return 'tuber';
+  // 杂粮 subtype: 只有 title 含 '燕麦/小米/玉米/...' 且不在 '粥' 形态时归 grain_misc.
+  // 燕麦粥/小米粥/玉米粥 是 rice (粥) 形态, 归 rice — 用户视角 "今天早餐是粥".
+  // 燕麦水果碗/格兰诺拉/玉米渣 才是 grain_misc 独立形态.
+  const hasGrainMiscKw = BREAKFAST_GRAIN_MISC_KEYWORDS.some(kw => t.includes(kw));
+  const isPorridgeForm = t.includes('粥') || t.includes('稀饭');
+  if (hasGrainMiscKw && !isPorridgeForm) return 'grain_misc';
+  if (BREAKFAST_RICE_KEYWORDS.some(kw => t.includes(kw))) return 'rice';
+  if (BREAKFAST_WHEAT_KEYWORDS.some(kw => t.includes(kw))) return 'wheat';
+  return 'other_staple';
+}
+
 // §G (TICKET-006) wet drink mutex — 老板反馈早餐"粥+玉米汁同框" bug.
 // root cause: combo staple/side keywords 误命中 wet drink 类菜 (如 '红薯粥'
 // 串在 staple slot). 修复 A 已删 staple 里的 '红薯粥', B 这层在 resolveCombo
