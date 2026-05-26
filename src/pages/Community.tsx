@@ -12,6 +12,7 @@ import { getUserId } from "../lib/userId";
 import exifr from "exifr";
 import BottomTabBar from "../components/BottomTabBar";
 import HelperBottomTabBar from "../components/HelperBottomTabBar";
+import DishImage from "../components/DishImage";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -183,11 +184,8 @@ function PostCard({
 
       {/* Photo — full width, 4:5, watermarked to deter stolen images */}
       <div style={{ aspectRatio: "4/5", background: "#f0f0f0", position: "relative", userSelect: "none" }}>
-        <img src={post.photo_url} alt={post.dish_name}
-          className="w-full h-full object-cover"
-          draggable={false}
-          onContextMenu={e => e.preventDefault()}
-          onError={e => { (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?q=80&w=600"; }} />
+        <DishImage src={post.photo_url} alt={post.dish_name} title={post.dish_name}
+          className="w-full h-full object-cover" />
         {/* Watermark — visible enough to deter misuse, subtle enough not to ruin the photo */}
         <div className="absolute inset-0 pointer-events-none flex items-end justify-end pb-3 pr-3">
           <span style={{
@@ -386,8 +384,8 @@ function Leaderboard({ posts }: { posts: Post[] }) {
               {medal}
             </span>
             <div className="w-10 h-10 rounded-xl overflow-hidden flex-shrink-0">
-              <img src={p.photo_url} alt="" className="w-full h-full object-cover"
-                onError={e => { (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?q=80&w=80"; }} />
+              <DishImage src={p.photo_url} alt={p.dish_name} title={p.dish_name}
+                className="w-full h-full object-cover" />
             </div>
             <div className="flex-1 min-w-0">
               <p className="font-semibold truncate" style={{ fontSize: 13, color: "#262626" }}>{p.author_name}</p>

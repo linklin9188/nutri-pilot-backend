@@ -2,7 +2,10 @@
 // 只保留 SupabaseDish / SolarTerm / enrichDish / hardFilter / fetchSwapOptions /
 // calcDishCount / isWholegrain / DINNER_HEAVY_TAGS 作可复用工具。
 import { supabase } from '../lib/supabase';
-import { getFallbackImage } from '../lib/dishImageFallback';
+// TICKET-095 (5/27): dishImageFallback dead path. DB 928 道菜 100% 有 image_url
+// 后 getFallbackImage() 永远不触发. img 字段直接传 dish.image_url, UI 层
+// (DishImage component) 用 onError + 纯色 placeholder 兜底, 不再 unsplash 错配.
+// import { getFallbackImage } from '../lib/dishImageFallback';
 import { getUserPrefs } from '../lib/userPrefs';
 import { type CuisineMode } from '../lib/cuisineFilter';
 import { DISH_FIELDS } from '../lib/dishFields';
@@ -530,12 +533,10 @@ function enrichDish(dish: any, highlight: boolean): SupabaseDish {
       ? (dish.description_zh || dish.description_en || derivedDesc)
       : (dish.description_en || dish.description_zh || derivedDesc);
 
-  // Use stored URL if present, otherwise pick from curated fallback pool.
-  // When AI-generated images are uploaded to storage and written to
-  // dishes.image_url, this fallback is automatically bypassed.
-  const img = (dish.image_url && dish.image_url.trim())
-    ? dish.image_url
-    : getFallbackImage(dish);
+  // TICKET-095 (5/27): DB 100% 有图后 getFallbackImage() unsplash 池 dead path
+  // 已删. img 传原始 dish.image_url, UI 层 DishImage 用 onError + 菜名首字
+  // 纯色 placeholder 兜底, 不再撞图.
+  const img = (dish.image_url && dish.image_url.trim()) ? dish.image_url : null;
 
   return {
     ...dish,

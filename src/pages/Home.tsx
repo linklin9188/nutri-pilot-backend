@@ -28,6 +28,7 @@ import { recordBatchSwap, recordSwap } from "../lib/swapFeedback";
 import { useLanguage, LANGUAGE_LABEL, type Language } from "../contexts/LanguageContext";
 import IntentInputBox from "../components/IntentInputBox";
 import ChatGuidePrompt, { bumpHomeVisitCount } from "../components/ChatGuidePrompt";
+import DishImage from "../components/DishImage";
 import ChatSwapModal from "../components/ChatSwapModal";
 import { loadIntentBias } from "../lib/intentBias";
 import { getUserId } from "../lib/userId";
@@ -1764,11 +1765,11 @@ export default function Home() {
                             {fruitEmoji(dish)}
                           </span>
                         ) : (
-                          <img
-                            src={dish.img || dish.image_url || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=240&h=240&fit=crop"}
+                          <DishImage
+                            src={dish.img || dish.image_url}
                             alt={dishTitle(dish)}
+                            title={dishTitle(dish)}
                             className="w-full h-full object-cover"
-                            onError={e => { (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=240&h=240&fit=crop"; }}
                           />
                         )}
                       </div>
