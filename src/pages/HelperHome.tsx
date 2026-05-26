@@ -34,6 +34,7 @@ import { getUserId } from "../lib/userId";
 import { useLanguage } from "../contexts/LanguageContext";
 import { getDishTitle } from "../lib/dishTitleI18n";
 import HelperTabBar from "../components/HelperTabBar";
+import HelperFamilyPrefsCard from "../components/HelperFamilyPrefsCard";
 // TICKET-076 §Phase 3-5 — 备菜时间反推 + Web Notification 提醒
 import { loadTodayCookSchedule, type DayCookSchedule } from "../lib/cookSchedule";
 import { setDailyMealTime, dateToISODay } from "../lib/dailyMealSchedule";
@@ -573,6 +574,16 @@ export default function HelperHome() {
           <span style={{ fontSize: 12, color: "rgba(0,0,0,0.6)" }}>{dateLabel}</span>
         </div>
       </div>
+
+      {/* TICKET-094 — 雇主家偏好卡 (chat-driven, household 维度共享).
+          雇主在 Home chat 答的偏好通过 user_chat_preferences.household_id
+          自动同步给菲佣这边显示. 没绑 household / 没偏好 → 卡自动 null. */}
+      {isLinked && helperHouseholdId && (
+        <HelperFamilyPrefsCard
+          householdId={helperHouseholdId}
+          helperUserId={getUserId() ?? ''}
+        />
+      )}
 
       {/* ─────── TICKET-076 §Phase 4 — 做菜时间计划卡 ───────
           雇主在 Settings 设了 lunch_time / dinner_time, 这里反推开做时间 + 备菜时间.
