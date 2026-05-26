@@ -331,6 +331,44 @@ app.get('/api/admin/supplier-report', requireAdmin, async (_req, res) => {
   }
 });
 
+// ── TICKET TELEPOT-20260526-091 — 用户分类 helper ─────────────────────────
+// 老板真测 #27 发现 94 总用户里:
+//   - 31 hash 假名 (display_name = id 前 8 位, 2026-05-24 03:27 同一秒批量插的 seed)
+//   - 8 明显测试号 (Link/Link🥇/ika×2/测试雇主/Maria×2/link)
+//   - 11 匿名用户 (display_name='匿名用户')
+//   - 0 真实姓名
+// 真业务数据 = wechat_real + anon + other_real (排除 seed/test 后 ~55 个).
+// 这个函数集中分类逻辑, /api/admin/stats + users-growth + users-real 都复用.
+function classifyUser(u) {
+  const name = String(u.display_name ?? '');
+  const id   = String(u.id ?? '');
+
+  // seed 假数据: 2026-05-24 03:27 同一秒批量 + name = id 前 8 位
+  // 用 startsWith('2026-05-24T03:27') 匹配 ISO timestamp
+  const createdAt = String(u.created_at ?? '');
+  if (
+    name.length === 8 &&
+    name === id.slice(0, 8) &&
+    createdAt.startsWith('2026-05-24T03:27')
+  ) {
+    return 'seed';
+  }
+
+  // 明显测试号 (老板亲手注册的或开发塞的)
+  const TEST_NAMES = new Set(['Link', 'Link🥇', 'ika', 'Ika', 'link', '测试雇主']);
+  if (TEST_NAMES.has(name) || name.startsWith('Maria') || name.startsWith('测试')) {
+    return 'test';
+  }
+
+  // 微信真实用户 (有 wechat_openid)
+  if (u.wechat_openid) return 'wechat_real';
+
+  // 匿名用户 (没 wechat_openid + 没 name 或 name='匿名用户')
+  if (!name || name === '匿名用户') return 'anon';
+
+  return 'other_real'; // 有 name 但不是 wechat, 也不是 seed/test
+}
+
 app.get('/api/admin/stats', requireAdmin, async (_req, res) => {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     return res.status(503).json({
@@ -338,43 +376,105 @@ app.get('/api/admin/stats', requireAdmin, async (_req, res) => {
     });
   }
   try {
-    const u = `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/admin_users_view?select=is_premium,is_trial_active,created_at,last_active_at,menu_count`;
-    const r = await fetch(u, {
-      headers: {
-        apikey:        SUPABASE_SERVICE_ROLE_KEY,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-      },
-    });
-    if (!r.ok) {
-      const t = await r.text().catch(() => r.statusText);
-      return res.status(502).json({ error: `supabase ${r.status}: ${t.slice(0, 200)}` });
+    // TICKET-091: 需要 wechat_openid 来分类, admin_users_view 没这列
+    // → 直接查 user_profiles + 单独查 menu_count / last_active_at
+    const baseUrl = SUPABASE_URL.replace(/\/$/, '');
+    const headers = {
+      apikey:        SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+    };
+
+    // 1) user_profiles 全量 (用于分类 + 计数)
+    //    分页拉所有行 (Supabase REST 默认 1000 行上限, 当前 ~94 行单页够)
+    const profilesR = await fetch(
+      `${baseUrl}/rest/v1/user_profiles?select=id,display_name,wechat_openid,is_pro,created_at`,
+      { headers: { ...headers, Prefer: 'count=exact' } },
+    );
+    if (!profilesR.ok) {
+      const t = await profilesR.text().catch(() => profilesR.statusText);
+      return res.status(502).json({ error: `supabase user_profiles ${profilesR.status}: ${t.slice(0, 200)}` });
     }
-    const rows = await r.json();
+    const profiles = await profilesR.json();
+
+    // 2) admin_users_view 拉 last_active_at + menu_count (复用已 ship 视图)
+    const viewR = await fetch(
+      `${baseUrl}/rest/v1/admin_users_view?select=id,last_active_at,menu_count,is_trial_active`,
+      { headers },
+    );
+    if (!viewR.ok) {
+      const t = await viewR.text().catch(() => viewR.statusText);
+      return res.status(502).json({ error: `supabase admin_users_view ${viewR.status}: ${t.slice(0, 200)}` });
+    }
+    const viewRows = await viewR.json();
+    const viewById = new Map(viewRows.map(v => [v.id, v]));
+
     const now = Date.now();
     const sevenDaysAgo = now - 7 * 86_400_000;
-    let total_users        = 0;
-    let trial_active_users = 0;
-    let premium_users      = 0;
-    let new_users_7d       = 0;
-    let active_users_7d    = 0;
-    let total_menus        = 0;
-    for (const row of rows) {
+
+    let total_users         = 0;
+    let trial_active_users  = 0;
+    let premium_users       = 0;
+    let new_users_7d        = 0;
+    let active_users_7d     = 0;
+    let total_menus         = 0;
+
+    // TICKET-091 新增分类计数
+    let real_users          = 0;  // 排除 seed + test (= wechat + anon + other_real)
+    let wechat_real_users   = 0;
+    let anon_users          = 0;
+    let other_real_users    = 0;
+    let seed_users          = 0;
+    let test_users          = 0;
+    let real_new_7d         = 0;
+    let real_active_7d      = 0;
+
+    for (const row of profiles) {
       total_users += 1;
-      if (row.is_premium)      premium_users      += 1;
-      if (row.is_trial_active) trial_active_users += 1;
-      total_menus += typeof row.menu_count === 'number' ? row.menu_count : 0;
+      const cat = classifyUser(row);
+      const v = viewById.get(row.id) ?? {};
+
+      if (row.is_pro)          premium_users      += 1;
+      if (v.is_trial_active)   trial_active_users += 1;
+      total_menus += typeof v.menu_count === 'number' ? v.menu_count : 0;
+
       const created = row.created_at ? new Date(row.created_at).getTime() : NaN;
-      if (Number.isFinite(created) && created > sevenDaysAgo) new_users_7d += 1;
-      const lastActive = row.last_active_at ? new Date(row.last_active_at).getTime() : NaN;
-      if (Number.isFinite(lastActive) && lastActive > sevenDaysAgo) active_users_7d += 1;
+      const isNew7d = Number.isFinite(created) && created > sevenDaysAgo;
+      if (isNew7d) new_users_7d += 1;
+
+      const lastActive = v.last_active_at ? new Date(v.last_active_at).getTime() : NaN;
+      const isActive7d = Number.isFinite(lastActive) && lastActive > sevenDaysAgo;
+      if (isActive7d) active_users_7d += 1;
+
+      if (cat === 'seed') seed_users += 1;
+      else if (cat === 'test') test_users += 1;
+      else {
+        // 真用户
+        real_users += 1;
+        if (cat === 'wechat_real') wechat_real_users += 1;
+        else if (cat === 'anon')   anon_users        += 1;
+        else if (cat === 'other_real') other_real_users += 1;
+        if (isNew7d)    real_new_7d    += 1;
+        if (isActive7d) real_active_7d += 1;
+      }
     }
+
     res.json({
+      // 旧字段 (admin UI 老代码兼容)
       total_users,
       trial_active_users,
       premium_users,
       new_users_7d,
       active_users_7d,
       total_menus,
+      // TICKET-091 新字段
+      real_users,
+      wechat_real_users,
+      anon_users,
+      other_real_users,
+      seed_users,
+      test_users,
+      real_new_7d,
+      real_active_7d,
     });
   } catch (e) {
     console.error('[/api/admin/stats]', e);
@@ -532,10 +632,15 @@ app.get('/api/admin/commission', requireAdmin, async (req, res) => {
 });
 
 // 用户增长 — 汇总指标 + 最近 50 注册
+// TICKET-091: 复用 admin_users_view + 单独再拉 user_profiles.wechat_openid 来分类.
+// recent[] 每条多带一个 category 字段 (seed/test/wechat_real/anon/other_real).
+// summary 也多带分类 break-down (real_total / wechat_real / anon / other_real /
+// seed / test / real_new_today / real_new_week / real_new_month / real_paid /
+// real_trial_active / real_trial_expired / real_conv_rate).
 app.get('/api/admin/users-growth', requireAdmin, async (_req, res) => {
   if (!sbConfigured(res)) return;
   try {
-    // 复用 admin_users_view (078 已建) 拉 list, 然后 JS 聚合
+    // 1) admin_users_view 拉 list (有 is_trial_active / trial_end_at / menu_count)
     const r = await sbFetch(
       'GET',
       '/rest/v1/admin_users_view?select=id,display_name,created_at,is_premium,is_trial_active,trial_end_at,hometown_cuisine,dietary_goal',
@@ -544,6 +649,14 @@ app.get('/api/admin/users-growth', requireAdmin, async (_req, res) => {
       return res.status(502).json({ error: `supabase ${r.status}: ${(r.text || '').slice(0, 200)}` });
     }
     const rows = r.json ?? [];
+
+    // 2) 单独拉 wechat_openid (admin_users_view 没这列, 091 决定不动 view schema)
+    const wxR = await sbFetch('GET', '/rest/v1/user_profiles?select=id,wechat_openid');
+    const wxById = new Map();
+    if (wxR.ok && Array.isArray(wxR.json)) {
+      for (const row of wxR.json) wxById.set(row.id, row.wechat_openid);
+    }
+
     const now = Date.now();
     const oneDayAgo   = now - 86_400_000;
     const sevenDaysAgo = now - 7  * 86_400_000;
@@ -556,24 +669,68 @@ app.get('/api/admin/users-growth', requireAdmin, async (_req, res) => {
     let trial_active = 0;
     let paid_count = 0;
     let trial_expired = 0;
-    for (const row of rows) {
+
+    // TICKET-091 分类计数
+    let real_total = 0;
+    let wechat_real = 0;
+    let anon_count = 0;
+    let other_real = 0;
+    let seed_count = 0;
+    let test_count = 0;
+    let real_new_today = 0;
+    let real_new_week  = 0;
+    let real_new_month = 0;
+    let real_paid_count = 0;
+    let real_trial_active = 0;
+    let real_trial_expired = 0;
+
+    const rowsWithCat = rows.map(row => {
+      const cat = classifyUser({
+        id:            row.id,
+        display_name:  row.display_name,
+        wechat_openid: wxById.get(row.id),
+        created_at:    row.created_at,
+      });
+      return { ...row, _category: cat };
+    });
+
+    for (const row of rowsWithCat) {
       total += 1;
       const created = row.created_at ? new Date(row.created_at).getTime() : NaN;
-      if (Number.isFinite(created)) {
-        if (created > oneDayAgo)    new_today += 1;
-        if (created > sevenDaysAgo) new_week  += 1;
-        if (created > thirtyDaysAgo) new_month += 1;
-      }
+      const isNewToday = Number.isFinite(created) && created > oneDayAgo;
+      const isNewWeek  = Number.isFinite(created) && created > sevenDaysAgo;
+      const isNewMonth = Number.isFinite(created) && created > thirtyDaysAgo;
+      if (isNewToday) new_today += 1;
+      if (isNewWeek)  new_week  += 1;
+      if (isNewMonth) new_month += 1;
       if (row.is_premium) paid_count += 1;
       else if (row.is_trial_active) trial_active += 1;
       else trial_expired += 1;
+
+      const cat = row._category;
+      if (cat === 'seed') seed_count += 1;
+      else if (cat === 'test') test_count += 1;
+      else {
+        real_total += 1;
+        if (cat === 'wechat_real') wechat_real += 1;
+        else if (cat === 'anon')   anon_count  += 1;
+        else if (cat === 'other_real') other_real += 1;
+        if (isNewToday) real_new_today += 1;
+        if (isNewWeek)  real_new_week  += 1;
+        if (isNewMonth) real_new_month += 1;
+        if (row.is_premium) real_paid_count += 1;
+        else if (row.is_trial_active) real_trial_active += 1;
+        else real_trial_expired += 1;
+      }
     }
     // 转化率 = paid / (paid + expired)，过滤 trial 中（还没结果）
     const denom = paid_count + trial_expired;
     const conv_rate = denom > 0 ? paid_count / denom : 0;
+    const realDenom = real_paid_count + real_trial_expired;
+    const real_conv_rate = realDenom > 0 ? real_paid_count / realDenom : 0;
 
-    // 最近 50 注册 (按 created_at desc, anonymize: 只 id 前 8 位 + display_name + created + tier)
-    const recent = rows
+    // 最近 50 注册 (按 created_at desc, anonymize: 只 id 前 8 位 + display_name + created + tier + category)
+    const recent = rowsWithCat
       .slice() // copy
       .sort((a, b) => {
         const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
@@ -591,6 +748,7 @@ app.get('/api/admin/users-growth', requireAdmin, async (_req, res) => {
                        : 'expired',
         hometown:      row.hometown_cuisine ?? null,
         dietary_goal:  row.dietary_goal ?? null,
+        category:      row._category,
       }));
 
     res.json({
@@ -603,11 +761,100 @@ app.get('/api/admin/users-growth', requireAdmin, async (_req, res) => {
         paid_count,
         trial_expired,
         conv_rate: Math.round(conv_rate * 1000) / 1000,
+        // TICKET-091 真用户 break-down
+        real_total,
+        wechat_real,
+        anon_count,
+        other_real,
+        seed_count,
+        test_count,
+        real_new_today,
+        real_new_week,
+        real_new_month,
+        real_paid_count,
+        real_trial_active,
+        real_trial_expired,
+        real_conv_rate: Math.round(real_conv_rate * 1000) / 1000,
       },
       recent,
     });
   } catch (e) {
     console.error('[/api/admin/users-growth]', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// TICKET-091 — 只返真用户 (排除 seed + test) 的列表 endpoint
+// 老板真测路径: admin "真用户" tab → call 这个 endpoint, 返回完整列表 (不限 50).
+// query: category=wechat_real|anon|other_real|all (default 'all_real')
+app.get('/api/admin/users-real', requireAdmin, async (req, res) => {
+  if (!sbConfigured(res)) return;
+  try {
+    const filter = String(req.query.category || 'all_real');
+    // 1) admin_users_view 全量
+    const r = await sbFetch(
+      'GET',
+      '/rest/v1/admin_users_view?select=id,display_name,created_at,is_premium,is_trial_active,trial_end_at,hometown_cuisine,dietary_goal,last_active_at,menu_count',
+    );
+    if (!r.ok) {
+      return res.status(502).json({ error: `supabase ${r.status}: ${(r.text || '').slice(0, 200)}` });
+    }
+    const rows = r.json ?? [];
+    // 2) wechat_openid 字典
+    const wxR = await sbFetch('GET', '/rest/v1/user_profiles?select=id,wechat_openid');
+    const wxById = new Map();
+    if (wxR.ok && Array.isArray(wxR.json)) {
+      for (const row of wxR.json) wxById.set(row.id, row.wechat_openid);
+    }
+
+    const enriched = rows.map(row => {
+      const cat = classifyUser({
+        id:            row.id,
+        display_name:  row.display_name,
+        wechat_openid: wxById.get(row.id),
+        created_at:    row.created_at,
+      });
+      return { ...row, _category: cat };
+    });
+
+    // 3) filter
+    let filtered;
+    if (filter === 'all') {
+      filtered = enriched; // 含 seed + test
+    } else if (filter === 'all_real') {
+      filtered = enriched.filter(r => r._category !== 'seed' && r._category !== 'test');
+    } else {
+      filtered = enriched.filter(r => r._category === filter);
+    }
+
+    filtered.sort((a, b) => {
+      const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return tb - ta;
+    });
+
+    const users = filtered.slice(0, 200).map(row => ({
+      id_short:       String(row.id ?? '').slice(0, 8),
+      display_name:   row.display_name ?? null,
+      created_at:     row.created_at,
+      trial_end_at:   row.trial_end_at,
+      last_active_at: row.last_active_at ?? null,
+      menu_count:     row.menu_count ?? 0,
+      tier:           row.is_premium ? 'paid'
+                      : row.is_trial_active ? 'trial'
+                      : 'expired',
+      hometown:       row.hometown_cuisine ?? null,
+      dietary_goal:   row.dietary_goal ?? null,
+      category:       row._category,
+    }));
+
+    res.json({
+      filter,
+      total_matched: filtered.length,
+      users,
+    });
+  } catch (e) {
+    console.error('[/api/admin/users-real]', e);
     res.status(500).json({ error: e.message });
   }
 });
