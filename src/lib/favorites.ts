@@ -67,6 +67,10 @@ export function addFavorite(dish: Omit<FavoriteDish, 'saved_at'>): FavoriteDish[
   persist(next);
   // Fire-and-forget cloud sync; failures are non-fatal (we still have local).
   syncAddToCloud(full).catch(() => {/* offline / RLS / etc. */});
+  // TICKET-095 reactive 2 — 收藏触发 love_keyword 写 user_chat_preferences.
+  // 用户收藏 = 强 love 信号 (confidence 0.8), 算法 v71 chat prefs 注入 +1.2 加权.
+  const householdId = typeof window !== 'undefined' ? localStorage.getItem('nutri_household_id') : null;
+  import('./chatPreferenceExtractor').then(m => m.trackFavoriteLove(dish, householdId)).catch(() => { /* tolerant */ });
   return next;
 }
 

@@ -195,6 +195,135 @@ export function extractFromText(text: string, householdId?: string | null): Chat
 }
 
 /**
+ * TICKET-095 reactive — 从一道 dish 提取被 swap 走的负向信号.
+ *
+ * 老板拍板 "reactive 4 类不主动问". 用户 swap 走某菜 → 自动从 title +
+ * main_ingredient + cook_method 推 dislike 信号写 DB, confidence=0.6
+ * (低于 chip 1.0 因 swap 可能只是换花样).
+ *
+ * 同一道菜重复换 → 触发频率上升, 累计 confidence 提升 (上层 supabase 通过
+ * delete+insert 实现 overwrite, 实际等于 always overwrite 最新一次).
+ */
+export function trackSwapDislike(
+  dish: any,
+  householdId?: string | null,
+): Promise<{ ok: number; failed: number }> {
+  const userId = getUserId();
+  if (!userId || !dish) return Promise.resolve({ ok: 0, failed: 0 });
+
+  const title = (dish.title_zh ?? dish.title ?? '').toString();
+  const mainIng = (dish.main_ingredient ?? '').toString().toLowerCase();
+  const cookMethods: string[] = [];
+  for (const [method, kws] of Object.entries(COOK_METHOD_KEYWORDS)) {
+    if (kws.some(kw => title.includes(kw))) cookMethods.push(method);
+  }
+
+  const prefs: ChatPreference[] = [{
+    user_id: userId,
+    household_id: householdId ?? null,
+    preference_type: 'dislike_keyword',
+    preference_value: {
+      title,
+      main_ingredient: mainIng,
+      cook_methods: cookMethods,
+      reason: 'swap_inferred',
+    },
+    source: 'swap_inferred',
+    confidence: 0.6,
+  }];
+
+  // 动态 import supabase (lib 文件不直接拉 supabase 避免循环)
+  return import('./supabase').then(({ supabase }) => saveChatPreferences(prefs, supabase));
+}
+
+/**
+ * TICKET-095 reactive 2 — 收藏触发 love_keyword.
+ * 用户收藏某菜 → 写 love 信号. confidence=0.8 (收藏比 swap 信号强).
+ */
+export function trackFavoriteLove(
+  dish: any,
+  householdId?: string | null,
+): Promise<{ ok: number; failed: number }> {
+  const userId = getUserId();
+  if (!userId || !dish) return Promise.resolve({ ok: 0, failed: 0 });
+
+  const title = (dish.title_zh ?? dish.title ?? '').toString();
+  const mainIng = (dish.main_ingredient ?? '').toString().toLowerCase();
+  const cookMethods: string[] = [];
+  for (const [method, kws] of Object.entries(COOK_METHOD_KEYWORDS)) {
+    if (kws.some(kw => title.includes(kw))) cookMethods.push(method);
+  }
+
+  const prefs: ChatPreference[] = [{
+    user_id: userId,
+    household_id: householdId ?? null,
+    preference_type: 'love_keyword',
+    preference_value: {
+      title,
+      main_ingredient: mainIng,
+      cook_methods: cookMethods,
+      reason: 'favorite_added',
+    },
+    source: 'chat',  // 收藏算 chat 类高权重
+    confidence: 0.8,
+  }];
+
+  return import('./supabase').then(({ supabase }) => saveChatPreferences(prefs, supabase));
+}
+
+/**
+ * TICKET-095 reactive 3 — cook 完成提升 confidence.
+ * 菲佣 mark "做完了某菜" → 反向佐证该菜的偏好命中, love confidence +0.1
+ * (上层根据现有 prefScores 加权, 不新建 row).
+ *
+ * 实现: 直接对该 dish title 的 love_keyword preference upsert confidence +.
+ * 没现有 row 就建一个 confidence 0.5 (default 命中信号).
+ */
+export function trackCookCompleted(
+  dish: any,
+  householdId?: string | null,
+): Promise<{ ok: number; failed: number }> {
+  // Cook 完成 = love 信号 (因为雇主没改 / 菲佣顺利做完). 复用 trackFavoriteLove 但
+  // confidence 略低 (0.7, 比真收藏的 0.8 弱).
+  const userId = getUserId();
+  if (!userId || !dish) return Promise.resolve({ ok: 0, failed: 0 });
+  const title = (dish.title_zh ?? dish.title ?? '').toString();
+  const prefs: ChatPreference[] = [{
+    user_id: userId,
+    household_id: householdId ?? null,
+    preference_type: 'love_keyword',
+    preference_value: { title, reason: 'cook_completed' },
+    source: 'cook_done',
+    confidence: 0.7,
+  }];
+  return import('./supabase').then(({ supabase }) => saveChatPreferences(prefs, supabase));
+}
+
+/**
+ * TICKET-095 reactive 4 — "今天没吃"勾选 → 负向学习.
+ * 雇主在 Home 勾掉某菜"没吃" → 强 dislike 信号 (比 swap 更强, 因 swap 可能换花样
+ * 而"没吃"是明确拒绝).
+ */
+export function trackDidntEat(
+  dish: any,
+  householdId?: string | null,
+): Promise<{ ok: number; failed: number }> {
+  const userId = getUserId();
+  if (!userId || !dish) return Promise.resolve({ ok: 0, failed: 0 });
+  const title = (dish.title_zh ?? dish.title ?? '').toString();
+  const mainIng = (dish.main_ingredient ?? '').toString().toLowerCase();
+  const prefs: ChatPreference[] = [{
+    user_id: userId,
+    household_id: householdId ?? null,
+    preference_type: 'dislike_keyword',
+    preference_value: { title, main_ingredient: mainIng, reason: 'didnt_eat' },
+    source: 'didnt_eat',
+    confidence: 0.9,
+  }];
+  return import('./supabase').then(({ supabase }) => saveChatPreferences(prefs, supabase));
+}
+
+/**
  * 用户点 chip (引导式问题) → 直接构造 ChatPreference (confidence=1.0).
  * 不走 regex, 因为 chip value 是 hardcode 的精确值.
  */

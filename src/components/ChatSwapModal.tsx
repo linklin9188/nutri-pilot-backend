@@ -25,6 +25,7 @@ import { parseIntent, saveIntentBias, applyIntentBias } from '../lib/intentBias'
 import { supabase } from '../lib/supabase';
 import { setDailyMealTime, dateToISODay } from '../lib/dailyMealSchedule';
 import { getUserId } from '../lib/userId';
+import { trackSwapDislike } from '../lib/chatPreferenceExtractor';
 
 /**
  * TICKET-082 §Phase 7 — chat 自然语言识别开饭时间.
@@ -233,6 +234,13 @@ export default function ChatSwapModal({
         // 同时把被换走的 current.id 加入 exclude, 避免后续 slot 又把它换回来.
         excludeIds.add(current.id);
         swapped += 1;
+
+        // TICKET-095 reactive 1 — swap 反馈 → 写 dislike_keyword.
+        // 老板拍板 "看你换走 X 是不喜欢什么?" → 这里直接从被换走的 dish title
+        // + main_ingredient + cook_method 推断 dislike 信号, confidence=0.6
+        // (低于 chip 直接选的 1.0, 因为换菜可能只是想换换花样不一定真不喜欢).
+        // 不再额外问 chip — 老板原话 "reactive 4 类不主动问".
+        trackSwapDislike(current, householdId).catch(() => { /* tolerant */ });
       }
 
       if (swapped === 0) {

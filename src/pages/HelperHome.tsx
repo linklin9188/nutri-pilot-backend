@@ -736,7 +736,21 @@ export default function HelperHome() {
                 >
                   {/* Checkbox-like status pill */}
                   <button
-                    onClick={() => dish.id && toggleTaskDone(dish.id)}
+                    onClick={() => {
+                      if (!dish.id) return;
+                      const wasDone = taskDone.has(dish.id);
+                      toggleTaskDone(dish.id);
+                      // TICKET-095 reactive 3 — cook 完成 → 写 love_keyword.
+                      // 老板拍板 "cook 完成 X 做得怎样? confidence 调整". 这里直接
+                      // 当 love 信号写 (confidence 0.7), 不弹问框. 重复 toggle 仅首次
+                      // 触发 (wasDone=false → true 时); 取消勾 (true → false) 不撤销
+                      // 信号 (因为菜实际可能已做了).
+                      if (!wasDone) {
+                        import('../lib/chatPreferenceExtractor').then(m =>
+                          m.trackCookCompleted(dish, helperHouseholdId)
+                        ).catch(() => {});
+                      }
+                    }}
                     className="w-9 h-9 rounded-xl flex items-center justify-center active:scale-90 transition-transform flex-shrink-0"
                     style={{
                       background: done ? "#25D366" : "rgba(255,90,31,0.10)",
