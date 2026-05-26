@@ -14,6 +14,25 @@
 
 ---
 
+## 项目协作边界（硬规则，所有部门遵守）
+
+> 立项：2026-05-22 HKT（老板拍板「CEO 不动 code」原则后立此规则）
+
+### ceo-no-code-touching — CEO 永不在 Cowork 端动 code / git / supabase
+- **detail**：Cowork 端 CEO 的硬边界 — **永不 Write/Edit/bash 接触**：`src/**`（前端）/ `supabase/migrations/**`（SQL）/ `supabase/functions/**`（edge functions）/ `scripts/**`（Backend 用脚本）/ `package.json`/`tsconfig.json`/`vite.config.*` 等构建配置 / `git add`/`commit`/`push` / `supabase db push`/`functions deploy`。CEO 只动：`_bridge/telepot_<dept>.md` 工单 / `docs/*.md` 决策与协议文档 / `MEMORY.md` / `_bridge/auto_poll_log.md` 巡检日志。
+- **原因**（老板 2026-05-22 11:50 明示"会出问题"）：(a) CEO 不熟单一部门代码细节，写出来风格/边界容易踩坑 (b) CEO 多部门 context 易混乱（一个 session 装 4 部门活）(c) 沙箱 git lock 物理也禁 CEO 跑 `git commit`（实测 `.git/index.lock` Operation not permitted）(d) 责任错位 — Lead 写的代码 Lead 负责，CEO 越界写的代码追责模糊。
+- **复用场景**：任何"CEO 觉得 5 分钟小活自己跑更快"的瞬间 — 停。改用派单 + Lead 全包模式。即便 sandbox 物理允许写文件，也不要写。
+- **配套机制**：派单触发用 Claude Code 官方 `FileChanged` hook（监听 `_bridge/telepot_<dept>.md` 自动跑 process telepot 等价 prompt），消除"老板手敲触发词"痛点。setup 工单单独立项。
+- **越界案例参考**：2026-05-22 11:40 CEO 实验"接管 Database 019"写了 migration 071/072.sql staged + 提议 4 行命令让 Lead 跑剩余 — 老板立即驳回，CEO 全量回滚（虽然沙箱限制连 rm 都跑不了，留下 staged 文件等 Database Lead 接手清理）。
+- **来源**：老板 2026-05-22 HKT 11:50 拍板 + memory `feedback_no_ceo_code_touching.md`
+
+### lead-no-ceo-integration — Lead 也不替 CEO 整合 / 不替 CEO 列待办
+- **detail**：双向边界 — Lead 在 `telepot_response_<dept>.md` 只写"我完工了什么 + verify + token/cost + blocker"4 段，**不写"CEO 下一步该做什么"清单**。整合权 / 派单权 / 决策权全归 CEO。Lead 提 blocker 给 CEO 决断，不替 CEO 列 Option ABC 给老板。
+- **原因**：与 ceo-no-code-touching 对称 — CEO 不越界 down 到 code，Lead 不越界 up 到决策。两边各守边界 = 责任清晰、追责明确。
+- **来源**：memory `feedback_no_role_inversion.md` + PROCESS.md §15
+
+---
+
 ## UI
 
 > 前端 / React / Tailwind / Vite / Tailwind / lucide-react / motion / react-router-dom 范围
@@ -381,3 +400,86 @@ _（首次填充等 TICKET-011 完工后由 Cowork 汇总；目前已知一条�
 - **detail**：场景：Backend rollup script 写好时 Database 027 表还没上线（或者表名待定）。坑：硬 SELECT 会 42P01 (relation does not exist) 直接 crash。解决：脚本入口先跑 `SELECT 1 FROM information_schema.columns WHERE table_name=$1 AND column_name=$2 LIMIT 1` 检查关键列，缺列就输出友好 "SCHEMA NOT READY: <table>(<col>) — 请确认 Database TICKET-XXX 已落地" 并 graceful exit。这样 Backend 部门可以**先于 Database 完工**，互不阻塞；表上线后 re-run 自动走真路径。
 - **复用场景**：所有跨部门、跨 service 的 DB 表 / API endpoint 依赖。先 schema/health-check 容错，再业务逻辑。
 - **来源**：TELEPOT-20260520-014 + TELEPOT-20260520-018（Backend rollup dry-run）
+
+### canvas-design-og-card-pillow-1200x630 — Pillow 生成 OG 分享卡（cream + hero + Chinese 标题）
+- **detail**：场景：需要生成社交链接预览卡（朋友圈/WhatsApp/微信群）。1200×630 OG 标准尺寸。实施：Pillow + Lato-Bold（拉丁）+ DroidSansFallback（中文）双字体。色板：暖橙 #FF5A1F + cream #FCF4E8 + 主标题黑 + accent 橙。Hero 元素：白圆盘 disc + 大手绘风格绿叶 + 24-term ring 装饰。文字布局：左侧顶部 wordmark + 主标题 + 副标题 + bottom URL + bottom-right 节气 chip。导出 `optimize=True` 压到 ~80KB。verify：Read PNG 看是否所有中文/Latin 字符都正确渲染（无 box）。
+- **复用场景**：所有 social card / 邀请卡 / β 文案配图。
+- **来源**：CEO 自跑 2026-05-20 dusk
+
+### railway-env-vars-no-auto-redeploy — Railway 灌新 env vars 不自动触发 redeploy
+- **detail**：场景：在 Railway dashboard → Variables 加新环境变量后，跑 endpoint 仍读到旧值 (errcode 41002 missing 等)。原因：Railway 灌 env vars 不会自动重启 service，必须等下次 git push 或手动 Redeploy。修复：Deployments → 最新一条右边 ⋮ → 选 Redeploy，强制重启 process 让新 env 生效。
+- **复用场景**：所有 Railway env vars 灌完后 → 必须手动 redeploy 或 git push 触发。
+- **来源**：TELEPOT-20260520-068 (老板灌 WECHAT_APPID/SECRET 后 41002 排查)
+
+### wechat-jssdk-signature-flow — 微信 wx.config 服务端签名生成完整流程
+- **detail**：场景：让微信群 / 朋友圈分享链接显示 hero 卡片（标题 + 描述 + 缩略图），必须前端 wx-jssdk + 后端签名。流程：(1) 后端拿 access_token：`GET https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=&secret=` (2) 用 access_token 拿 jsapi_ticket：`GET https://api.weixin.qq.com/cgi-bin/ticket/getticket?type=jsapi&access_token=` (3) 生成 signature：`SHA1("jsapi_ticket=...&noncestr=...&timestamp=...&url=...")` hex (4) 返回 `{appId, timestamp, nonceStr, signature, url}` 给前端。Cache access_token + jsapi_ticket 7200s (减 300s safety margin)。前置：(a) AppID 必须 wx 开头格式 (b) 公众号 IP 白名单含调用方 server 出口 IP (c) 业务域名 + JS 接口安全域名 + 网页授权域名 都已配 + 验证。
+- **复用场景**：所有微信小程序 / 公众号 wx-jssdk 调用场景。
+- **来源**：TELEPOT-20260520-066/067/068
+
+### cloudflare-email-routing-anti-spam — 公司邮箱防灌爆双层方案
+- **detail**：场景：support@公司域名 邮箱不希望被爬虫扫到 + 暴力刷垃圾邮件。方案：(1) Cloudflare Dashboard → Email → Email Routing → 启用（自动配 MX/TXT/SPF）→ Custom Address 加 `support@`→ destination 设为目标邮箱 (2) **Catch-all** 设为 `Drop`（不是 forward）→ 任何 `random@domain.com` 直接被 Cloudflare 在第一关丢弃 (3) 配合 Gmail filter rule：subject 含 `[Aieats β 反馈]` → 进客服 label；不含 → 进垃圾箱（前端 mailto subject 自动加 prefix 配合此 filter）。可选第 4 层：前端 mailto 链接前 JS 拼接邮箱字符串（防爬虫 grep source code）+ localStorage 滑动窗口限流 5min/3 次防同用户连点。
+- **复用场景**：所有公司邮箱 / 客服邮箱配置防灌爆。
+- **来源**：CEO 自跑 + UI 066 (2026-05-20 21:30)
+
+### supabase-edge-function-egress-ip-pool-random — Supabase edge function 出口 IP 池每次随机
+- **detail**：场景：Supabase edge function 调外部 API（如微信）跑出 errcode 40164 "IP not in whitelist"，把当时 IP 加白名单后过几分钟又跑出同样 errcode 但**IP 不一样**。原因：Supabase edge function 是 stateless serverless（基于 Deno Deploy），出口 IP 池**每次调用都可能不同**，不是漂移而是真随机抽。错误诊断方法：连续跑 3 次同一 endpoint，如果 errmsg 里的 IP 每次不同 → 立刻判定不是传播延迟，**escalate 给架构层**（搬到 long-lived process 如 Railway server.js + Reserved IP）。**等待无意义**，节省 9 分钟无意义重试。
+- **复用场景**：所有 serverless 调外部 API 遇到 IP whitelist 错误。
+- **来源**：TELEPOT-20260520-067 Backend dump
+
+### vite-spa-express-static-route-order — Vite SPA + Express SPA fallback 路由顺序坑
+- **detail**：场景：Vite build 后 dist/og-image.png 存在但 curl 返回 text/html 而不是 image/png。原因：Express `app.get('*', ...)` SPA fallback 如果在 `express.static(dist)` 之前注册 → 所有路径包括静态资源 .png 都被 fallback 到 index.html。修复：必须**先**注册 static middleware，**后**注册 SPA fallback。代码顺序：`app.use('/assets', express.static('dist/assets', {immutable}))` → `app.use(express.static('dist', {etag:false}))` → `app.get('*', (_, res) => res.sendFile('dist/index.html'))`。
+- **复用场景**：所有 Express + SPA 部署（Vite/CRA/Next static export）。
+- **来源**：TELEPOT-20260520-069 §B GAP 诊断
+
+### ceo-time-always-bash-hkt-first — CEO 每次涉及时间表述前**必须先 bash 拿 HKT 真时间**，不靠 system 假设
+- **detail**：场景：CEO 端 system info 里的 "Today's date" 是默认 snapshot 不实时，CEO 凭印象推算时间（"凌晨 4 点 / 凌晨 5 点"）会跟真实 HKT 偏差几小时。多次发生：2026-05-21 老板从昨晚 19:00 工作到 08:14 HKT，CEO 一直误说"凌晨 4 点"，让老板没意识到自己干了 13+ 小时。
+- **修复**：CEO 每次回复涉及时间（汇报"现在几点"/ 工单时间戳 / 老板工作时长 / deadline 倒推 / "今晚 11 点 deadline" 等）**必须先跑** `TZ='Asia/Hong_Kong' date '+%Y-%m-%d %A %H:%M:%S %Z'` 拿真实 HKT，再写汇报。
+- **复用场景**：所有涉及时间陈述 — 日报 / 战报 / 工单 issued_at / deadline 倒推 / 老板工作时长 / 休息建议。
+- **来源**：2026-05-21 08:14 HKT 老板拍铁律"你的时间永远是香港时间"
+
+---
+
+## CrossCutting (2026-05-21 夜 + 2026-05-22 早 补)
+
+### ceo-git-fetch-before-status-claim — CEO 任何 tab 状态汇报前强制 bash git fetch + head -8 telepot_*.md
+- **detail**：场景：CEO 跨 turn 回老板时把"上一次见到的状态"当成"当前状态"。telepot head 是异步更新的真相源（Lead 完工归档时改 head），CEO 不主动读就不知道。2026-05-21 一夜 CEO 4 次误报 tab 状态（2 次报 pending 实则 ship + 1 次让老板 compact in-flight tab + 1 次口误 "CEO 醒来"）。
+- **修复（PROCESS.md §17）**：CEO 每个 turn 涉及 4 tab 状态的回复**第一动作**跑：
+  ```bash
+  git fetch origin main 2>&1 | tail -1
+  for d in ui backend algorithm database; do echo "--- $d ---"; head -8 _bridge/telepot_$d.md; done
+  ```
+  bash 输出当面贴老板看，禁止编造或近似。
+- **复用场景**：所有 file-based 异步协作系统的状态判断。
+- **来源**：2026-05-21 HKT 一夜 4 沟通 bug + PROCESS.md §17 立项
+
+### telepot-in-progress-protocol — Lead 开工立即 update head 为 STATUS: in_progress 让 CEO 识别
+- **detail**：场景：telepot 协议原只有 pending/idle 两态，tab 干活中的中间态无文件信号。2026-05-21 CEO 让老板 compact 一个正在跑 924 dishes Gemini fill 的 Backend tab。
+- **修复（PROCESS.md §16）**：CLI 收 `process telepot` 后**第一动作**改 head 为 `STATUS: in_progress + CURRENT_TICKET + STARTED_AT`。完工写回 idle + LAST_ARCHIVED。
+- **Compact 补救**：误让 in-flight tab compact 后，敲 `继续 TICKET-XXX 从断点 resume`（不是 process telepot 那会起新单）。批量任务 SELECT WHERE col IS NULL 自动跳过已完成。
+- **复用场景**：所有异步协作 tab 系统需要"开工中"中间态信号。
+- **来源**：2026-05-21 21:50 Backend 010 compact 打断事件
+
+### onboarding-q-design-visual-not-stepper — Onboarding 题选项绝不用 +/- 计数器，用视觉化大图 + 自定义兜底
+- **detail**：CEO 提议 Q0 加 `[- 0 +]` 加孩子数被老板批"傻"。修复：视觉化大图（Q0 6 张家庭组合）+ 短描述 + "自定义"兜底。**元规则（老板拍板）**：所有 onboarding 题底部加 "✏️ 其他/自定义" chip — 看用户填不填即可。
+- **复用场景**：所有 onboarding 题设计 — 视觉化选项 + 自定义兜底是 default，禁用 stepper / number input 作主交互。
+- **来源**：2026-05-21 23:20 Q0 设计被批"傻" + UI 015 §A/§B
+
+### algorithm-multi-axis-magnitude-audit — 多 axis scoring 必须 audit 各 axis 量级在同数量级
+- **detail**：场景：5/5 profile FAIL，红肉用户命中率 20% = DB baseline。根因：axis 30 cold-start diversity 量级 -13~-14，axis 32-40 用户偏好 +1~+3。**负向 axis 量级 10 倍于正向 → 单方面主导排序**。
+- **修复（3 轮）**：(1) axis 30 已填用户 early-return (2) 偏好 axis ×2 (3) Option δ 单 pmc 偏好硬过滤。ALGO_VERSION v50→v52→v54。
+- **复用预防**：加 axis 时必跑 `scripts/algo-axis-audit.ts` 看 min/max/mean，单方向累计量级不超过其他 axis 5 倍。cold-start 机制必须有已知偏好用户 early-return。
+- **复用场景**：所有 multi-axis scoring（推荐 / 搜索 / 匹配）。
+- **来源**：2026-05-21 ALGO_AUDIT_20260521.md + Algorithm 015/016/017 三轮调优
+
+### product-pitch-multi-round-confirm-before-lock — 老板产品定位指令第一轮不立刻 lock memory
+- **detail**：场景：老板 21:25-21:32 对"视频教学范围"3 次澄清（午晚+肉海鲜 → 复杂汤 → 港粤式汤）。CEO 第一轮立 memory，经历 2 次 Edit 才完整。
+- **SOP**：(1) 第一轮听完不 commit memory (2) CEO 复述确认让老板有第二轮 (3) 30 秒不补充 → 落 memory (4) 后续澄清用 Edit 不 append。
+- **复用场景**：所有产品定位 / 业务规则类指令处理。
+- **来源**：2026-05-21 视频教学范围 3 轮澄清
+
+### ceo-night-shift-budget-docs-before-tickets — CEO 夜班 docs 优先于派工单
+- **detail**：场景：2026-05-21 CEO 承诺 5 件夜班（PROCESS §17 / LESSONS / SKILLS / DAY_REPORT / MEMORY consolidate），又被老板加码"4 部门今晚不停"，CEO 把 context 用在写部门长链工单上，自己 3 件 docs 没做完，对话被自动 compact 截断。
+- **错**：CEO 端 context 是稀缺资源，写工单（每单 200-300 行 markdown）压垮自己 docs budget。
+- **修复**：CEO 夜班顺序：(1) 先 30 min 完成 PROCESS / LESSONS / SKILLS 简洁补丁 (2) 再 30 min 写 DAY_REPORT + MORNING_BRIEFING (3) 才写部门工单（每单不超 150 行，长链单可拆 §A-§N）。如果两件都要做，优先 docs（不可恢复）+ 工单 paste-ready 短版（部门可自展开）。
+- **复用场景**：所有 CEO 多任务夜班 context budget 分配。
+- **来源**：2026-05-22 早老板问"承诺做到了没"诚实复盘
