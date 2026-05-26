@@ -22,7 +22,19 @@ export interface AdminStats {
   new_users_7d:       number;
   active_users_7d:    number;
   total_menus:        number;
+  // TICKET-091 新增 — 排除 seed + test 后的真用户指标
+  real_users?:        number;
+  wechat_real_users?: number;
+  anon_users?:        number;
+  other_real_users?:  number;
+  seed_users?:        number;
+  test_users?:        number;
+  real_new_7d?:       number;
+  real_active_7d?:    number;
 }
+
+// TICKET-091 — 用户分类标签 (server.js classifyUser 返回值)
+export type UserCategory = 'seed' | 'test' | 'wechat_real' | 'anon' | 'other_real';
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getAdminToken();
@@ -236,6 +248,20 @@ export interface AdminUserGrowthSummary {
   paid_count:    number;
   trial_expired: number;
   conv_rate:     number;
+  // TICKET-091 真用户 break-down (server 0526 ship 后才有, 老版本 admin 可能拿不到)
+  real_total?:         number;
+  wechat_real?:        number;
+  anon_count?:         number;
+  other_real?:         number;
+  seed_count?:         number;
+  test_count?:         number;
+  real_new_today?:     number;
+  real_new_week?:      number;
+  real_new_month?:     number;
+  real_paid_count?:    number;
+  real_trial_active?:  number;
+  real_trial_expired?: number;
+  real_conv_rate?:     number;
 }
 
 export interface AdminRecentUserRow {
@@ -246,6 +272,7 @@ export interface AdminRecentUserRow {
   tier:         'paid' | 'trial' | 'expired';
   hometown:     string | null;
   dietary_goal: string | null;
+  category?:    UserCategory;  // TICKET-091
 }
 
 export async function adminUsersGrowth(): Promise<{
@@ -256,4 +283,35 @@ export async function adminUsersGrowth(): Promise<{
     summary: AdminUserGrowthSummary;
     recent:  AdminRecentUserRow[];
   }>('/api/admin/users-growth');
+}
+
+// TICKET-091 — 真用户列表 (默认 all_real, 可按 category 过滤)
+export interface AdminRealUserRow {
+  id_short:       string;
+  display_name:   string | null;
+  created_at:     string | null;
+  trial_end_at:   string | null;
+  last_active_at: string | null;
+  menu_count:     number;
+  tier:           'paid' | 'trial' | 'expired';
+  hometown:       string | null;
+  dietary_goal:   string | null;
+  category:       UserCategory;
+}
+
+export type AdminRealUsersFilter = 'all_real' | 'all' | UserCategory;
+
+export async function adminUsersReal(
+  category: AdminRealUsersFilter = 'all_real',
+): Promise<{
+  filter:         AdminRealUsersFilter;
+  total_matched:  number;
+  users:          AdminRealUserRow[];
+}> {
+  const qs = `?category=${encodeURIComponent(category)}`;
+  return call<{
+    filter:        AdminRealUsersFilter;
+    total_matched: number;
+    users:         AdminRealUserRow[];
+  }>(`/api/admin/users-real${qs}`);
 }
