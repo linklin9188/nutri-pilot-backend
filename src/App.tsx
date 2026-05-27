@@ -252,11 +252,13 @@ function AppShell() {
     // (currently none; Facebook/Google/Apple all run through Login's dev
     // fallback path). We do not clear localStorage on SIGNED_OUT because
     // for custom-auth users that key is the only handle on identity.
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
         localStorage.setItem('isLoggedIn', 'true');
-        localStorage.setItem('userId', session.user.id);
-        localStorage.setItem('nutri_user_id', session.user.id);
+        // TICKET-095 P0 hot-fix — 必须走 setUserId() 写 SESSION_VERSION sentinel,
+        // 否则启动 IIFE 检测 sentinel 不命中 → 清 userId → 登录死循环.
+        const { setUserId } = await import('./lib/userId');
+        setUserId(session.user.id);
         if (event === 'SIGNED_IN') {
           window.dispatchEvent(new Event('nutri-prefs-changed'));
         }

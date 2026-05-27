@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
-import { getUserId } from "../lib/userId";
+import { getUserId, setUserId } from "../lib/userId";
 import { syncProfileToDB } from "../lib/profileSync";
 import ImageGrid, { ImageGridOption } from "../components/ImageGrid";
 import NumberStepper from "../components/NumberStepper";
@@ -742,14 +742,13 @@ export default function QuickSetup() {
     }
     localStorage.setItem('userAvoid', strictAvoidArr.length ? strictAvoidArr.join(',') : 'none');
 
-    // 匿名 userId
+    // 匿名 userId — TICKET-095 P0 走 setUserId() 写 SESSION_VERSION sentinel
     if (!localStorage.getItem('isLoggedIn')) {
       localStorage.setItem('isLoggedIn', 'true');
-      localStorage.setItem('userId', crypto.randomUUID());
-    }
-    if (!localStorage.getItem('nutri_user_id')) {
+      setUserId(crypto.randomUUID());
+    } else if (!localStorage.getItem('nutri_user_id')) {
       const uid = localStorage.getItem('userId');
-      if (uid) localStorage.setItem('nutri_user_id', uid);
+      if (uid) setUserId(uid);
     }
 
     // upsert user_profiles + 全局同步（fire-and-forget）
@@ -1077,7 +1076,8 @@ export default function QuickSetup() {
               localStorage.setItem('family_composition', JSON.stringify({ adults: 2, elders: { count: 0, conditions: [] }, kids: [{ age: '7-12' }, { age: '7-12' }] }));
               if (!localStorage.getItem('isLoggedIn')) {
                 localStorage.setItem('isLoggedIn', 'true');
-                localStorage.setItem('userId', crypto.randomUUID());
+                // TICKET-095 P0 走 setUserId 写 sentinel
+                setUserId(crypto.randomUUID());
               }
               navigate('/');
             }}

@@ -47,8 +47,11 @@ function devTestLogin(role: Role, providerLabel: string) {
     localStorage.setItem(key, userId);
   }
   localStorage.setItem("isLoggedIn", "true");
-  localStorage.setItem("userId", userId);
-  localStorage.setItem("nutri_user_id", userId);
+  // TICKET-095 P0 hot-fix — 必须走 setUserId() 不能直接写 LS, 否则不写
+  // SESSION_VERSION sentinel → App.tsx 启动 IIFE 检测 sentinel 不命中 → 清
+  // userId → RequireAuth 又踢回 /login. 老板真测 (5/27): "点微信登录弹到
+  // 还是这个登陆界面"的真因.
+  setUserId(userId);
   localStorage.setItem("nutri_role", role);
   // Idempotent: writes first-login epoch + flags this browser session as
   // the new-user session iff this is the very first login on this device.

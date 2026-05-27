@@ -157,8 +157,12 @@ export default function OnboardingV2() {
   const navigate = useNavigate();
   const { t3 } = useLanguage();
 
-  /** step 0=组1选菜, 1=组2选菜, 2=组3选菜, 3=2 问页, 4=完成中 */
+  /** step 0=用餐风格 (TICKET-095 新增), 1=组1选菜, 2=组2选菜, 3=组3选菜, 4=2 问页 */
   const [step, setStep] = useState<number>(0);
+
+  /** TICKET-095 — 用餐风格 (4 选 1, 写 nutri_meal_style + DB pref). 老板拍板
+   *  onboarding 第一题必须是 "用餐风格" 而不是红肉白肉 — 用户真测 5/27. */
+  const [mealStyle, setMealStyle] = useState<string>('');
 
   /** 已选 dish.id（跨 3 组累加，最终去重）*/
   const [selectedDishIds, setSelectedDishIds] = useState<string[]>([]);
@@ -199,8 +203,8 @@ export default function OnboardingV2() {
       });
   }, []);
 
-  // ── 当前组（仅 step 0/1/2 用）────────────────────────────────────────
-  const currentGroup = (step + 1) as 1 | 2 | 3;
+  // ── 当前组（仅 step 1/2/3 用，step 0 是用餐风格题）─────────────────
+  const currentGroup = (step) as 1 | 2 | 3;
   const currentGroupDishes = useMemo(
     () => REP_DISHES.filter(d => d.group === currentGroup).sort((a, b) => a.order - b.order),
     [currentGroup],
@@ -233,10 +237,25 @@ export default function OnboardingV2() {
     });
   };
 
-  // ── 下一步（组 1/2/3 流转 + 进入 2 问页）─────────────────────────────
+  // ── 下一步（step 0=用餐风格, step 1/2/3=组1/2/3 选菜, step 4=2 问页）────
   const goNext = () => {
     setErrorMsg('');
-    if (step < 3) {
+    if (step === 0) {
+      // TICKET-095 — 用餐风格必选
+      if (!mealStyle) {
+        setErrorMsg(t3(
+          'Pick a meal style',
+          '请先选一个用餐风格',
+          'Pumili ng estilo ng pagkain',
+        ));
+        return;
+      }
+      // 立刻写 LS 让 useWeeklyMenu 后续 reload 时能 pick up
+      try { localStorage.setItem('nutri_meal_style', mealStyle); } catch {}
+      setStep(step + 1);
+      return;
+    }
+    if (step < 4) {
       // 校验当前组至少 1 张
       if (currentGroupSelectedCount < 1) {
         setErrorMsg(t3(
@@ -334,6 +353,20 @@ export default function OnboardingV2() {
 
       // 7. legacy compat keys（下游 reader 复用 QuickSetup pattern）
       localStorage.setItem('userDiet', goal === 'general' ? 'comfort' : goal);
+      // TICKET-095 — 用餐风格 LS 已在 step 0 goNext 写入, 这里写 user_chat_preferences DB
+      // 让 chat 偏好链路 + 雇主菲佣 household 共享立即可用
+      if (mealStyle) {
+        try {
+          await supabase.from('user_chat_preferences').insert({
+            user_id: uid,
+            household_id: null,
+            preference_type: 'love_keyword',
+            preference_value: { meal_style: mealStyle, source: 'onboarding_v2_q1' },
+            source: 'chat',
+            confidence: 1.0,
+          });
+        } catch { /* tolerant, LS 已足够触发算法 */ }
+      }
       if (avoidTags.length || excludedMeats.length) {
         localStorage.setItem('userAvoid', [...avoidTags, ...excludedMeats].join(','));
       } else {
@@ -356,7 +389,16 @@ export default function OnboardingV2() {
   };
 
   // ── render ─────────────────────────────────────────────────────────────
-  const totalSteps = 4; // 组1 / 组2 / 组3 / 2问
+  // TICKET-095 — 5 步 (原 4 步 + step 0 用餐风格首问)
+  const totalSteps = 5; // 用餐风格 / 组1 / 组2 / 组3 / 2问
+
+  // 用餐风格 4 选项 (B 营养目的版, 老板 5/26 拍板)
+  const MEAL_STYLE_OPTIONS = [
+    { key: 'standard',     emoji: '🍚', label_zh: '标准家常',     label_en: 'Standard',      label_tl: 'Standard',         sub_zh: '主食+汤+按人数菜' },
+    { key: 'low_staple',   emoji: '🥬', label_zh: '少主食',       label_en: 'Less staple',   label_tl: 'Konting kanin',    sub_zh: '一周 2 天有饭，其他多吃菜' },
+    { key: 'high_protein', emoji: '🥩', label_zh: '高蛋白增肌',   label_en: 'High protein',  label_tl: 'Maraming protina', sub_zh: '无主食，主菜翻倍' },
+    { key: 'light',        emoji: '🌿', label_zh: '清淡养胃',     label_en: 'Light',         label_tl: 'Magaan',           sub_zh: '杂粮 + 蒸煮为主' },
+  ];
 
   return (
     <div
@@ -399,8 +441,77 @@ export default function OnboardingV2() {
           transition={{ duration: 0.28, ease: 'easeOut' }}
           className="flex-1 flex flex-col px-6 pt-6 pb-10 relative z-10">
 
-          {step <= 2 ? (
-            // ── Step 1/2/3：选菜组 ────────────────────────────────────
+          {step === 0 ? (
+            // ── TICKET-095 Step 0: 用餐风格 (第 1 题) ────────────────
+            <>
+              <div className="mb-6">
+                <span className="text-[40px] leading-none">🍽</span>
+                <h2 className="mt-3 font-serif font-black text-white leading-tight"
+                  style={{ fontSize: 26, letterSpacing: '0.01em' }}>
+                  {t3('Your meal style?', '你家用餐风格?', 'Estilo ng pagkain?')}
+                </h2>
+                <p className="mt-2 text-white/40 font-light" style={{ fontSize: 13, letterSpacing: '0.04em' }}>
+                  {t3('Choose one — sets the menu structure', '4 选 1，决定菜单结构', 'Pumili — sa pagkain estilo')}
+                </p>
+              </div>
+              <div className="flex flex-col gap-3 flex-1">
+                {MEAL_STYLE_OPTIONS.map((opt, idx) => {
+                  const sel = mealStyle === opt.key;
+                  return (
+                    <motion.button
+                      key={opt.key}
+                      onClick={() => setMealStyle(opt.key)}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.28, delay: idx * 0.05, ease: 'easeOut' }}
+                      whileTap={{ scale: 0.98 }}
+                      className={`flex items-center gap-3 text-left p-4 rounded-2xl transition-all ${sel ? 'ring-2 ring-[#FF5A1F]' : ''}`}
+                      style={sel
+                        ? { background: 'rgba(255,90,31,0.18)', border: '1.5px solid #FF5A1F', boxShadow: '0 0 24px rgba(255,90,31,0.20)' }
+                        : { background: 'rgba(255,255,255,0.06)', border: '1.5px solid rgba(255,255,255,0.09)' }
+                      }>
+                      <span style={{ fontSize: 30, lineHeight: 1 }}>{opt.emoji}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-white" style={{ fontSize: 15 }}>
+                          {t3(opt.label_en, opt.label_zh, opt.label_tl)}
+                        </p>
+                        <p className="text-white/55 mt-1" style={{ fontSize: 12, lineHeight: 1.4 }}>
+                          {opt.sub_zh}
+                        </p>
+                      </div>
+                      {sel && (
+                        <span className="material-symbols-outlined shrink-0" style={{ fontSize: 24, color: '#FF5A1F', fontVariationSettings: "'FILL' 1" }}>
+                          check_circle
+                        </span>
+                      )}
+                    </motion.button>
+                  );
+                })}
+              </div>
+
+              {errorMsg && (
+                <p className="mt-3 text-center" style={{ color: '#FF9054', fontSize: 13 }}>
+                  {errorMsg}
+                </p>
+              )}
+
+              <button
+                onClick={goNext}
+                disabled={!mealStyle}
+                className="mt-5 w-full py-3.5 rounded-2xl font-bold text-white active:scale-95 transition-transform"
+                style={{
+                  background: mealStyle ? '#FF5A1F' : 'rgba(255,255,255,0.10)',
+                  color: mealStyle ? '#fff' : 'rgba(255,255,255,0.30)',
+                  fontSize: 15,
+                  letterSpacing: '0.04em',
+                }}>
+                {mealStyle
+                  ? t3('Next →', '下一步 →', 'Sunod →')
+                  : t3('Pick one', '请选一个', 'Pumili')}
+              </button>
+            </>
+          ) : step <= 3 ? (
+            // ── Step 1/2/3：选菜组 (currentGroup 1/2/3) ──────────────
             <>
               <div className="mb-6">
                 <span className="text-[40px] leading-none">{currentGroupTitle.emoji}</span>
