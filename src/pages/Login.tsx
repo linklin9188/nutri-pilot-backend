@@ -299,46 +299,6 @@ export default function Login() {
     }
   };
 
-  // TICKET-096 (5/27 老板拍板) — Apple 一键登录 (HK 用户无微信兜底).
-  // 走 Supabase Auth oauth flow (内置 Apple provider, 0 后端代码).
-  // 配置见 docs/APPLE_SIGN_IN_SETUP.md (老板需 Apple Dev 账号 + Supabase Dashboard
-  // 加 Apple provider client_id + secret).
-  // 回调走 supabase.auth.onAuthStateChange (App.tsx) → setUserId(session.user.id).
-  const handleApple = async () => {
-    setError("");
-    if (agencyCode.trim()) {
-      try { localStorage.setItem('nutri_pending_ref_code', agencyCode.trim().toUpperCase()); } catch {}
-    }
-    try {
-      const { data, error: oauthErr } = await supabase.auth.signInWithOAuth({
-        provider: 'apple',
-        options: {
-          redirectTo: `${window.location.origin}/?fresh_auth=1`,
-        },
-      });
-      if (oauthErr) {
-        // 没配 Apple provider → fallback dev login (开发期 Apple 还没接的兜底)
-        if (oauthErr.message?.includes('not enabled') || oauthErr.message?.includes('provider')) {
-          devTestLogin(role, "apple");
-          if (agencyCode.trim()) {
-            const uid = getUserId();
-            if (uid) attributeReferralCode(uid, agencyCode).catch(() => {});
-          }
-          goAfterLogin(role);
-          return;
-        }
-        setError(t("Apple sign-in failed", "Apple 登录失败") + ': ' + oauthErr.message);
-        return;
-      }
-      // signInWithOAuth 成功会跳走, 不会执行到这
-      if (!data?.url) {
-        setError(t("Apple sign-in unavailable", "Apple 登录暂不可用"));
-      }
-    } catch (e: any) {
-      setError(t("Apple sign-in failed", "Apple 登录失败") + ': ' + (e?.message ?? 'unknown'));
-    }
-  };
-
   // TICKET-096 (5/27 老板拍板) — 匿名"先看看"入口 (HK 无微信无 Apple 用户的
   // 0 摩擦入口). 创建匿名 userId 进 app 体验菜单, 算法走 default 偏好
   // (用户后续可在 Settings 升级到真实登录绑数据).
@@ -749,26 +709,8 @@ export default function Login() {
               </p>
             )}
 
-            {/* TICKET-096 (5/27 老板拍板) — Apple 一键登录 (HK 无微信用户兜底).
-                Apple 黑底白字, 系统标准 button 样式. iOS Safari / Mac Safari
-                体验最佳. Android/Windows 也能用 (Apple ID web flow). */}
-            <button
-              onClick={handleApple}
-              className="w-full h-[54px] rounded-2xl flex items-center justify-center gap-3 font-semibold transition-all active:scale-[0.98]"
-              style={{
-                background: "#000",
-                boxShadow: "0 8px 24px rgba(0,0,0,0.40)",
-                fontSize: 15, color: "white",
-                border: "1px solid rgba(255,255,255,0.15)",
-              }}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="white">
-                <path d="M17.05 12.04c-.02-1.99 1.62-2.95 1.7-3-.93-1.36-2.37-1.55-2.88-1.57-1.22-.12-2.39.72-3.01.72-.62 0-1.59-.71-2.62-.69-1.34.02-2.59.78-3.28 1.98-1.4 2.43-.36 6.02 1 8 .67.97 1.46 2.05 2.49 2.02 1-.04 1.38-.65 2.59-.65 1.21 0 1.55.65 2.61.63 1.08-.02 1.76-.99 2.42-1.97.77-1.13 1.08-2.22 1.1-2.28-.02-.01-2.11-.81-2.13-3.21zM15.05 5.36c.55-.67.92-1.6.82-2.53-.79.03-1.76.53-2.32 1.2-.51.59-.95 1.53-.83 2.45.88.07 1.79-.45 2.33-1.12z"/>
-              </svg>
-              {t("Continue with Apple", "Apple 登录")}
-            </button>
-
-            {/* TICKET-096 — 匿名 "先看看" 入口 (无微信无 Apple 的兜底, 0 摩擦体验).
+            {/* TICKET-096 — 匿名 "先看看" 入口. 老板真测 5/27 拍板:
+                "主要考虑菲佣, 有些没微信" → 砍 Apple, 留微信 + 先看看 2 个.
                 次级按钮样式 (描边 + 浅背景), 暗示是 "先体验" 不是主路径. */}
             <button
               onClick={handleAnonymousPreview}
