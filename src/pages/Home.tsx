@@ -27,8 +27,9 @@ import { useSubscription } from "../lib/subscription";
 import { recordBatchSwap, recordSwap } from "../lib/swapFeedback";
 import { useLanguage, LANGUAGE_LABEL, type Language } from "../contexts/LanguageContext";
 import IntentInputBox from "../components/IntentInputBox";
-import ChatGuidePrompt, { bumpHomeVisitCount } from "../components/ChatGuidePrompt";
+import { bumpHomeVisitCount } from "../components/ChatGuidePrompt";
 import DishImage from "../components/DishImage";
+import ChatFloatingBubble from "../components/ChatFloatingBubble";
 import ChatSwapModal from "../components/ChatSwapModal";
 import { loadIntentBias } from "../lib/intentBias";
 import { getUserId } from "../lib/userId";
@@ -1305,55 +1306,8 @@ export default function Home() {
       {/* TICKET-093 — β 反馈 banner 已删除（老板真测：内测阶段对外不暴露
           "β / 测试版" 说明）. 客服入口仍在 Settings > 联系客服. */}
 
-      {/* TICKET-063 §1 — 顶部欢迎 chip (微信昵称 + 头像). 老板真测 #9 拍板:
-          原 Home 只 fetch display_name 但 0 JSX 渲染，登录后唯一可见名字是
-          菲佣的 HELPER STATUS card → 误判微信授权抓菲佣身份。本 chip 消歧义:
-          显示老板自己的微信昵称 + 头像；点击跳 /settings 改名。
-          displayName 为空时仍渲染 "你好, 朋友" + 字母 U 兜底，保证未登录也有占位。 */}
-      <div
-        className="mx-3 mt-2 flex items-center gap-2 active:scale-[0.98] transition-transform cursor-pointer"
-        onClick={() => navigate('/settings')}
-        style={{
-          paddingTop: "calc(env(safe-area-inset-top, 0px) + 10px)",
-        }}
-      >
-        <div
-          className="flex items-center gap-2 rounded-2xl px-3"
-          style={{
-            height: 44,
-            background: "rgba(255,255,255,0.72)",
-            border: "1px solid rgba(255,90,31,0.18)",
-            backdropFilter: "blur(8px)",
-          }}
-        >
-          {avatarUrl ? (
-            <img
-              src={avatarUrl}
-              alt=""
-              className="rounded-full object-cover"
-              style={{ width: 32, height: 32, border: "1.5px solid #FF5A1F" }}
-              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-            />
-          ) : (
-            <div
-              className="rounded-full flex items-center justify-center font-bold"
-              style={{
-                width: 32, height: 32,
-                background: "linear-gradient(135deg, #FF5A1F, #FFB347)",
-                color: "#fff", fontSize: 14,
-              }}
-            >
-              {(displayName.trim().charAt(0) || 'U').toUpperCase()}
-            </div>
-          )}
-          <span style={{ fontSize: 13, color: "rgba(0,0,0,0.78)", fontWeight: 600 }}>
-            {t('Hi, ', '你好, ')}
-            <span style={{ color: "#FF5A1F" }}>
-              {displayName.trim() || t('friend', '朋友')}
-            </span>
-          </span>
-        </div>
-      </div>
+      {/* TICKET-095 (5/27 老板真测): greeting chip 已挪到 ChatFloatingBubble
+          sheet 内 (主页留干净给今日菜单), 不在 inline 渲染. */}
 
       {/* TICKET-078 — 30 天免费体验 banner. 仅在 trial 剩 ≤7 天或已过期时
           自显示, paid 永不渲染. 点 [升级 →] 跳 /pricing. */}
@@ -1363,23 +1317,8 @@ export default function Home() {
           没绑 household / 没未读 helper_confirmed → 组件自隐藏 (return null). */}
       <PurchaseNotificationBanner />
 
-      {/* TICKET-066 P0 — chat 主入口统一. 替换原悬浮 FAB + IntentRegenModal 弹窗,
-          唯一 use case "说话换菜单". 老板真测 #12 拍板 1: chat 不是泛用对话,
-          就是给老板一句话调菜单的快速入口. parseIntent → saveIntentBias →
-          clear weekly_menu_* cache → 派 nutri-prefs-changed 让 useWeeklyMenu 重算. */}
-      <div className="px-5 mt-3 mb-2 space-y-2">
-        {/* TICKET-094 — chat 主动弹引导卡 (5 轮分阶段). 命中触发条件 (visit
-            count + 该 round 未完成) 才显示 dish; 否则 null. 不抢 IntentInputBox
-            焦点 (放上面让用户先看到 AI 在主动学偏好, 再有手动输入). */}
-        <ChatGuidePrompt householdId={householdId ?? null} />
-        <IntentInputBox
-          variant="home"
-          onTriggerSwap={(intent) => {
-            setSwapIntent(intent);
-            setSwapModalOpen(true);
-          }}
-        />
-      </div>
+      {/* TICKET-095 (5/27): ChatGuidePrompt + IntentInputBox 已挪到
+          ChatFloatingBubble sheet 内. 主页只渲染 header + 菜单卡, 浮窗在右下角. */}
 
       {/* ── Editorial header — warm paper, serif greeting ─────────── */}
       <header style={{ paddingTop: 0 }}>
@@ -2170,6 +2109,17 @@ export default function Home() {
       {/* TICKET-066 P0 — 悬浮 chat FAB 已删除. Chat 主入口统一到 Home 顶部
           IntentInputBox; 多轮对话 /chat 路由保留但不主推 (老板真测 #12 拍板 1). */}
 
+      {/* TICKET-095 — Chat 浮窗 FAB (右下角, BottomTabBar 上方). 收纳 greeting +
+          ChatGuide + IntentInputBox 3 块, 让主页留干净给今日菜单. 老板真测 5/27. */}
+      <ChatFloatingBubble
+        householdId={householdId ?? null}
+        displayName={displayName}
+        avatarUrl={avatarUrl}
+        onTriggerSwap={(intent) => {
+          setSwapIntent(intent);
+          setSwapModalOpen(true);
+        }}
+      />
       <BottomTabBar />
 
       {/* TICKET-031 §B — 推广 ShareCard bottom sheet (拓客起点). 点击 share icon
