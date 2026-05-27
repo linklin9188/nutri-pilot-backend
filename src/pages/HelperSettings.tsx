@@ -27,6 +27,7 @@ import { supabase } from "../lib/supabase";
 import { getUserId, clearUserId } from "../lib/userId";
 import { useLanguage } from "../contexts/LanguageContext";
 import HelperTabBar from "../components/HelperTabBar";
+import InviteCodeBindCard from "../components/InviteCodeBindCard";
 
 interface HelperProfile {
   display_name?: string | null;
@@ -55,8 +56,24 @@ export default function HelperSettings() {
   const [profile, setProfile] = useState<HelperProfile>({});
   const [loading, setLoading] = useState(true);
   const [savingOrigin, setSavingOrigin] = useState(false);
+  // TICKET-097 — 菲佣是否已绑 household (决定 InviteCodeBindCard 显示状态)
+  const [isLinked, setIsLinked] = useState(false);
 
   const userId = getUserId();
+
+  // TICKET-097 — 拉一次菲佣绑定状态 (loadEmployerTodayMenu 同款 query 简化)
+  useEffect(() => {
+    if (!userId) return;
+    supabase
+      .from('household_members')
+      .select('household_id')
+      .eq('helper_id', userId)
+      .eq('status', 'active')
+      .limit(1)
+      .then(({ data }) => {
+        if (data && data.length > 0) setIsLinked(true);
+      });
+  }, [userId]);
 
   useEffect(() => {
     if (!userId) {
@@ -278,6 +295,19 @@ export default function HelperSettings() {
             </button>
           </div>
         </div>
+      </div>
+
+      {/* TICKET-097 — 雇主绑定卡 (从 HelperHome 主页挪过来, 老板真测 5/27).
+          已绑显示成功 green chip; 未绑显示输入 6 位邀请码入口. */}
+      <div className="relative z-10 px-5 mb-4">
+        <p className="font-bold mb-2"
+          style={{ fontSize: 12, color: "rgba(0,0,0,0.55)", letterSpacing: "0.08em" }}>
+          {t3("🔗 EMPLOYER BINDING", "🔗 绑定雇主", "🔗 PAGUUGNAY SA EMPLOYER")}
+        </p>
+        <InviteCodeBindCard
+          isLinked={isLinked}
+          onBound={() => setIsLinked(true)}
+        />
       </div>
 
       {/* §3 Taste preferences (display-only, learned-by-algo placeholder) */}

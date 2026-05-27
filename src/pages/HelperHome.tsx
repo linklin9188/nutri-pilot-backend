@@ -978,61 +978,28 @@ export default function HelperHome() {
         </div>
       </div>
 
-      {/* ─────── 邀请码加入 household (未绑定时显) ─────── */}
-      <div className="relative z-10 px-5 mb-4">
-        {codeDone ? (
-          <div className="flex items-center gap-3 px-4 py-3 rounded-2xl"
-            style={{ background: "rgba(37,211,102,0.12)", border: "1px solid rgba(37,211,102,0.25)" }}>
-            <span className="material-symbols-outlined text-[#25D366]" style={{ fontSize: 20, fontVariationSettings: "'FILL' 1" }}>check_circle</span>
-            <p style={{ fontSize: 13, color: "#25D366", fontWeight: 600 }}>
-              {t3("Linked to employer's household! 🎉",
-                  "已绑定雇主家庭 🎉",
-                  "Nakaugnay na sa employer! 🎉")}
-            </p>
-          </div>
-        ) : isLinked ? null : showCodeInput ? (
-          <div className="flex flex-col gap-2 px-4 py-4 rounded-2xl"
-            style={{ background: "rgba(0,0,0,0.04)", border: "1px solid rgba(0,0,0,0.10)" }}>
-            <p style={{ fontSize: 12, color: "rgba(0,0,0,0.65)", marginBottom: 4 }}>
-              {t3("Enter the 6-digit code from your employer:",
-                  "输入雇主的 6 位邀请码：",
-                  "Ilagay ang 6-digit code mula sa employer:")}
-            </p>
-            <div className="flex gap-2">
-              <input
-                value={codeInput}
-                onChange={e => { setCodeInput(e.target.value.replace(/\D/g, "").slice(0, 6)); setCodeError(""); }}
-                placeholder="000000"
-                maxLength={6}
-                className="flex-1 rounded-xl px-4 py-2.5 font-black text-center tracking-[0.25em]"
-                style={{ background: "rgba(0,0,0,0.04)", border: "1px solid rgba(0,0,0,0.15)", color: "#1a1a1a", fontSize: 20, outline: "none" }}
-              />
-              <button
-                onClick={handleJoinHousehold}
-                disabled={codeLoading || codeInput.length !== 6}
-                className="px-4 rounded-xl font-bold text-white active:scale-95 transition-all disabled:opacity-40"
-                style={{ background: "#25D366", fontSize: 13 }}>
-                {codeLoading ? "..." : t3("Join", "加入", "Sumali")}
-              </button>
-            </div>
-            {codeError && <p style={{ fontSize: 11, color: "#d63838" }}>{codeError}</p>}
-            <button onClick={() => setShowCodeInput(false)} style={{ fontSize: 11, color: "rgba(0,0,0,0.45)", marginTop: 2 }}>
-              {t3("Cancel", "取消", "Kanselahin")}
-            </button>
-          </div>
-        ) : (
+      {/* TICKET-097 (5/27 老板拍板) — 邀请码绑定 UI 已挪到 /helper/settings.
+          HelperHome 顶部只显示菜单 + 任务, 不被绑定流程打断. 未绑定的菲佣
+          看 HelperHome 时 isLinked=false → 顶部一条提示 chip 引导跳 settings. */}
+      {!isLinked && (
+        <div className="relative z-10 px-5 mb-4">
           <button
-            onClick={() => setShowCodeInput(true)}
+            onClick={() => navigate('/helper-settings')}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl active:scale-[0.98] transition-all"
-            style={{ background: "rgba(0,0,0,0.03)", border: "1px dashed rgba(0,0,0,0.18)" }}>
-            <span className="material-symbols-outlined" style={{ fontSize: 18, color: "rgba(0,0,0,0.4)" }}>link</span>
-            <p style={{ fontSize: 13, color: "rgba(0,0,0,0.55)" }}>
-              {t3("Enter employer invite code", "输入雇主邀请码", "Ilagay ang employer invite code")}
-            </p>
-            <span className="ml-auto" style={{ fontSize: 11, color: "rgba(0,0,0,0.35)" }}>›</span>
+            style={{ background: "rgba(255,90,31,0.08)", border: "1px dashed rgba(255,90,31,0.30)" }}>
+            <span className="material-symbols-outlined" style={{ fontSize: 18, color: "#FF5A1F" }}>link</span>
+            <div className="flex-1 text-left">
+              <p style={{ fontSize: 13, color: "#1a1a1a", fontWeight: 600 }}>
+                {t3("Bind to your employer", "绑定雇主家庭", "Maiugnay sa employer")}
+              </p>
+              <p style={{ fontSize: 11, color: "rgba(0,0,0,0.55)", marginTop: 1 }}>
+                {t3("Tap to enter invite code in settings", "去设置输入邀请码", "Pumunta sa settings")}
+              </p>
+            </div>
+            <span style={{ fontSize: 13, color: "#FF5A1F" }}>›</span>
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Switch account — 保留低权重 link */}
       <div className="relative z-10 flex justify-center pb-2">
