@@ -63,9 +63,22 @@ import { getUserId, SESSION_VERSION, SESSION_KEY } from './lib/userId';
 (() => {
   try {
     if (localStorage.getItem(SESSION_KEY) === SESSION_VERSION) return;
-    ['userId', 'nutri_user_id', 'isLoggedIn', 'nutri_role'].forEach(k => {
-      localStorage.removeItem(k);
-    });
+    // TICKET-095 P0 自愈修法 (5/27 老板真测 "点微信登录还是回 login 死循环"):
+    // 原设计 sentinel 不命中就清 userId, 但任何代码路径绕过 setUserId() 写
+    // userId 都会触发死循环 (devTestLogin / QuickSetup / OAuth 已修过 4-5 处,
+    // 但难保未来新代码不再犯). 改自愈式:
+    //   - 没有 userId 的 fresh 设备 → 不清 (清也没用), 跳过
+    //   - 有 userId 但 sentinel 没设 → 视为已登录的老用户/或前面有遗漏 setItem,
+    //     直接写 sentinel 保留 userId, 下次启动命中 sentinel 跳过这个分支
+    //   - 老用户首次升级 (sentinel 没设 + 有 userId 但前一版没存) → 同上, 不踢
+    // 真正想 "强制全员重登" 时 bump SESSION_VERSION 到新值同时清认证 keys
+    // (那种 hard reset 需要 explicit ticket, 不是 sentinel 不命中默认行为).
+    const hasUserId = localStorage.getItem('userId') || localStorage.getItem('nutri_user_id');
+    if (hasUserId) {
+      // 自愈: 写 sentinel, 保留 userId
+      localStorage.setItem(SESSION_KEY, SESSION_VERSION);
+    }
+    // 没 userId 的真新设备不需要清, sentinel 也不必写 (登录时 setUserId 会写)
   } catch { /* private mode — no-op */ }
 })();
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
