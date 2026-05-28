@@ -224,6 +224,10 @@ export default function HelperHome() {
       .catch(() => { /* silent — 没社区帖就隐藏 section */ });
 
     // 三步绑定查询 + 拉雇主菜单 (保留 TICKET-009 console.warn diagnose 路径)
+    // TICKET-104 §A 2026-05-29: 加 fallback — 调用者不是 helper (查不到
+    // household_members 行, 例如老板用 dev role switcher 切到菲佣端) → 直接
+    // 把当前 userId 当 employer_id 走 step 3, 让 dev 真测 / 雇主自检能看到菜单.
+    // 跟 helperEmployerMenu.ts loadEmployerTodayMenu 同样的 fallback 模式.
     (async () => {
       // 1. helper's active household membership
       const { data: member, error: memberErr } = await supabase
@@ -235,24 +239,27 @@ export default function HelperHome() {
         .limit(1);
       if (memberErr) console.warn("[HelperHome] household_members fetch error:", memberErr);
       const householdId = (member?.[0] as any)?.household_id;
-      if (!householdId) {
-        console.warn("[HelperHome] no household_members row for helper_id=", userId,
-                     "(Smell 3: helper_id uuid vs string mismatch or Login upsert RLS-denied)");
-        return;
-      }
-      setIsLinked(true);
 
-      // 2. household → employer
-      const { data: hh, error: hhErr } = await supabase
-        .from("households")
-        .select("employer_id")
-        .eq("id", householdId)
-        .maybeSingle();
-      if (hhErr) console.warn("[HelperHome] households fetch error:", hhErr);
-      const employerId = (hh as any)?.employer_id;
-      if (!employerId) {
-        console.warn("[HelperHome] household has no employer_id, household_id=", householdId);
-        return;
+      // 2. household → employer, 或 fallback: 当前 user 就是 employer
+      let employerId: string | undefined;
+      if (householdId) {
+        setIsLinked(true);
+        const { data: hh, error: hhErr } = await supabase
+          .from("households")
+          .select("employer_id")
+          .eq("id", householdId)
+          .maybeSingle();
+        if (hhErr) console.warn("[HelperHome] households fetch error:", hhErr);
+        employerId = (hh as any)?.employer_id;
+        if (!employerId) {
+          console.warn("[HelperHome] household has no employer_id, household_id=", householdId);
+          return;
+        }
+      } else {
+        // TICKET-104 §A fallback: 没有 household_members 行 (老板自己 dev 切菲佣端) → 用自己 userId 当 employer
+        console.warn("[HelperHome] no household_members row for helper_id=", userId,
+                     "→ fallback as employer-self (dev 真测路径)");
+        employerId = userId;
       }
 
       // 3. Today's saved menu
