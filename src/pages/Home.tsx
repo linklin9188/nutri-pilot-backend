@@ -2034,7 +2034,7 @@ export default function Home() {
                 <p style={{ fontSize: 11, color: "rgba(0,0,0,0.38)" }}>已连接</p>
               </div>
             </div>
-            <button onClick={() => navigate("/community?view=employer")}
+            <button onClick={() => navigate("/helper-settings")}
               className="px-3 py-1.5 rounded-xl font-bold shrink-0 active:scale-95"
               style={{ fontSize: 12, background: "rgba(255,90,31,0.08)", color: "#FF5A1F" }}>
               点赞 👑

@@ -68,29 +68,9 @@ export const BENEFITS: MembershipBenefit[] = [
     desc:  '按场次预约职业厨师到家做饭，从米其林菜单里挑当晚菜品',
     status: 'coming_soon',
   },
-  {
-    emoji: '🎉',
-    title: '家宴菜单',
-    desc:  '在家请客 10–20 人 · 按场合 / 忌口 / 孕妇·助长高自动排菜',
-    status: 'live',
-    href:  '/banquet',
-  },
-  {
-    emoji: '🌿',
-    title: '港式祛湿调理 · 节气养生',
-    desc:  '按节气和身体感受推汤水：冬瓜薏米 / 五指毛桃 / 川贝雪梨 …',
-    status: 'live',
-    href:  '/pro/wellness',
-    footnote: 'wellness',
-  },
-  {
-    emoji: '🎒',
-    title: '学校营养补全',
-    desc:  '输入孩子在校菜单，按当日缺口推 3 道家常晚餐补齐营养',
-    status: 'live',
-    href:  '/pro/school-balance',
-    footnote: 'school',
-  },
+  // TICKET-100 (5/28 老板砍清单): 家宴 / 港式祛湿 / 学校营养 3 个 Pro feature
+  // 砍 — 偏离 "每天吃什么 + 菲佣做美味中餐" 核心定位. Pro 价值留意大利食材
+  // 高端采购源 (下方 emoji 💎 那条).
   {
     emoji: '💎',
     title: '高端食材采购源',

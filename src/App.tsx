@@ -14,9 +14,7 @@ import HelperPrep from './pages/HelperPrep';
 import HelperCook from './pages/HelperCook';
 import HelperHome from './pages/HelperHome';
 import HelperSettings from './pages/HelperSettings';
-import LearnerHome from './pages/LearnerHome';
-import Community from './pages/Community';
-import HelperCommunity from './pages/HelperCommunity';
+// TICKET-100 (5/28): LearnerHome / Community / HelperCommunity 已删 (偏离定位)
 import VerifyIngredients from './pages/VerifyIngredients';
 import DeliveryTracking from './pages/DeliveryTracking';
 // TICKET-080-A — 购物车 + 结账 + 订单 (DB schema + UI 第 1 阶段, 无支付)
@@ -32,10 +30,9 @@ import ChatAgent from './pages/ChatAgent';
 import Settings from './pages/Settings';
 import WeeklyMenu from './pages/WeeklyMenu';
 import Pricing from './pages/Pricing';
-import Banquet from './pages/Banquet';
+// TICKET-100 (5/28): Banquet 家宴 已删 (P3 不核心)
 import WeekendDining from './pages/WeekendDining';
-import ProWellness from './pages/ProWellness';
-import ProSchoolBalance from './pages/ProSchoolBalance';
+// TICKET-100 (5/28): ProWellness / ProSchoolBalance 已删 (P3 不核心)
 import Favorites from './pages/Favorites';
 import WeChatCallback from './pages/WeChatCallback';
 import WeChatIn from './pages/WeChatIn';
@@ -334,21 +331,13 @@ function AppShell() {
       <Route path="/chat"     element={<RequireAuth><ChatAgent /></RequireAuth>} />
       <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
       <Route path="/weekly"   element={<RequireAuth><WeeklyMenu /></RequireAuth>} />
-      {/* UI 013 §C — Learner mode shows LearnerHome (cuisine browser); affiliated helpers see HelperHome (employer-linked tasks) */}
-      <Route path="/helper"   element={
-        <RequireAuth helperRole>
-          {localStorage.getItem("nutri_helper_mode") === "learner" ? <LearnerHome /> : <HelperHome />}
-        </RequireAuth>
-      } />
-      <Route path="/community" element={<RequireAuth><Community /></RequireAuth>} />
-      {/* TICKET-044 — 菲佣社区 feed (migration 079 helper_posts/likes/comments) */}
-      <Route path="/helper-community" element={<RequireAuth helperRole><HelperCommunity /></RequireAuth>} />
-      {/* TICKET-036 §1 — helper settings hub (头像/国籍/口味/邀请/切换/登出) */}
+      {/* TICKET-100 (5/28 老板砍清单): LearnerHome 已删, /helper 直接 HelperHome */}
+      <Route path="/helper"   element={<RequireAuth helperRole><HelperHome /></RequireAuth>} />
+      {/* TICKET-100: /community + /helper-community + /banquet + /pro/wellness +
+          /pro/school-balance 全砍 — 偏离 Aieats "每天吃什么 + 菲佣做美味中餐"
+          核心定位. 见 docs/CEO_RETROSPECTIVE_20260528.md. */}
       <Route path="/helper-settings" element={<RequireAuth helperRole><HelperSettings /></RequireAuth>} />
-      <Route path="/banquet"  element={<RequireAuth><Banquet /></RequireAuth>} />
       <Route path="/weekend"  element={<RequireAuth><WeekendDining /></RequireAuth>} />
-      <Route path="/pro/wellness"       element={<RequireAuth><ProWellness /></RequireAuth>} />
-      <Route path="/pro/school-balance" element={<RequireAuth><ProSchoolBalance /></RequireAuth>} />
       <Route path="/favorites" element={<RequireAuth><Favorites /></RequireAuth>} />
 
       {/* TICKET-018 §D — DEV-only candidate-grid prototype. Prod build's

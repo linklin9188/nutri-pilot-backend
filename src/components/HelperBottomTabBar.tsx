@@ -24,10 +24,11 @@ export default function HelperBottomTabBar() {
   if (localStorage.getItem("nutri_role") !== "helper") return null;
 
   const TABS = [
-    { icon: "task_alt",      label: t3("Tasks",    "任务",     "Gawain"),    route: "/helper"    },
-    { icon: "soup_kitchen",  label: t3("Cook",     "做菜",     "Magluto"),   route: "/cook"      },
-    { icon: "shopping_cart", label: t3("Shopping", "采购清单", "Pamimili"),  route: "/verify"    },
-    { icon: "groups",        label: t3("Community","社区",     "Komunidad"), route: "/community" },
+    { icon: "task_alt",      label: t3("Tasks",    "任务",     "Gawain"),    route: "/helper"          },
+    { icon: "soup_kitchen",  label: t3("Cook",     "做菜",     "Magluto"),   route: "/cook"            },
+    { icon: "shopping_cart", label: t3("Shopping", "采购清单", "Pamimili"),  route: "/verify"          },
+    // TICKET-100 (5/28): Community tab 已砍, 改 Settings (跟雇主端一致)
+    { icon: "settings",      label: t3("Settings", "设置",     "Settings"),  route: "/helper-settings" },
   ];
 
   function isActive(route: string) {

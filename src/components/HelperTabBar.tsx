@@ -29,7 +29,7 @@ import { useLanguage } from "../contexts/LanguageContext";
 
 // TICKET-058 §2 — "settings" 从联合类型移除. 调用方如还在传 active="settings"
 // TS 会编译错暴露遗留点 (实际不应有, helper-settings 页不放底部 tab bar).
-export type HelperTabKey = "home" | "prep" | "cook" | "community";
+export type HelperTabKey = "home" | "prep" | "cook" | "settings" | "community";  // community 保留 type alias 兼容老 callers
 
 interface HelperTabBarProps {
   // TICKET-058 §2 — active 改可选. HelperSettings 页通过 home 右上 ⚙️ 进入,
@@ -42,10 +42,11 @@ export default function HelperTabBar({ active }: HelperTabBarProps) {
   const { t3 } = useLanguage();
 
   const TABS: Array<{ key: HelperTabKey; icon: string; label: string; route: string }> = [
-    { key: "home",      icon: "home",          label: t3("Home",     "主页", "Tahanan"),    route: "/helper"           },
-    { key: "prep",      icon: "shopping_cart", label: t3("Shopping", "采购", "Pamimili"),    route: "/prep"             },
-    { key: "cook",      icon: "soup_kitchen",  label: t3("Cook",     "做菜", "Magluto"),     route: "/cook"             },
-    { key: "community", icon: "groups",        label: t3("Community","社区", "Komunidad"),   route: "/helper-community" },
+    { key: "home",      icon: "home",          label: t3("Home",     "主页", "Tahanan"),  route: "/helper"          },
+    { key: "prep",      icon: "shopping_cart", label: t3("Shopping", "采购", "Pamimili"), route: "/prep"            },
+    { key: "cook",      icon: "soup_kitchen",  label: t3("Cook",     "做菜", "Magluto"),  route: "/cook"            },
+    // TICKET-100 (5/28): Community tab 已砍, 改 Settings (跟雇主端一致)
+    { key: "settings",  icon: "settings",      label: t3("Settings", "设置", "Settings"), route: "/helper-settings" },
   ];
 
   return (
