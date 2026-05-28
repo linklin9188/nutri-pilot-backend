@@ -901,8 +901,12 @@ export default function HelperHome() {
         </div>
       )}
 
-      {/* ─────────────── §4 社区动态 — TICKET-044 §B 近期热门 mock smart push ─────────────── */}
-      {communityPosts.length > 0 && (
+      {/* ─────────────── §4 社区动态 — TICKET-044 §B 近期热门 mock smart push ───────────────
+          TICKET-105 2026-05-29 (老板拍板): helper_posts 表当前 30/30 是中文内容,
+          菲佣母语 EN/Tagalog 看不懂. 在数据库 + seed 补 EN/TL 双语之前 (独立
+          TICKET-105 排期), 菲佣视角 (language !== 'zh') 直接隐藏整个 section
+          避免出洋相. 老板自己测 (language='zh') 仍能看到自己 seed 内容. */}
+      {language === 'zh' && communityPosts.length > 0 && (
         <div className="relative z-10 px-5 mb-5">
           <div className="flex items-center justify-between mb-2.5">
             <div className="flex items-center gap-2">
