@@ -35,6 +35,7 @@ import { useLanguage } from "../contexts/LanguageContext";
 import { getDishTitle } from "../lib/dishTitleI18n";
 import HelperTabBar from "../components/HelperTabBar";
 import HelperFamilyPrefsCard from "../components/HelperFamilyPrefsCard";
+import HelperOvernightPrepCard from "../components/HelperOvernightPrepCard";
 // TICKET-076 §Phase 3-5 — 备菜时间反推 + Web Notification 提醒
 import { loadTodayCookSchedule, type DayCookSchedule } from "../lib/cookSchedule";
 import { setDailyMealTime, dateToISODay } from "../lib/dailyMealSchedule";
@@ -593,6 +594,12 @@ export default function HelperHome() {
           householdId={helperHouseholdId}
           helperUserId={getUserId() ?? ''}
         />
+      )}
+
+      {/* TICKET-098 SPEC v2 Phase 2 — 今晚预制明早菜 (仅 19:00 后 + 有 overnight 菜显示).
+          老板 5/27 拍板"早餐可以吃昨晚做好拿出来热的". 组件自带时段过滤 + 空状态 null. */}
+      {isLinked && helperHouseholdId && (
+        <HelperOvernightPrepCard householdId={helperHouseholdId} />
       )}
 
       {/* ─────── TICKET-076 §Phase 4 — 做菜时间计划卡 ───────

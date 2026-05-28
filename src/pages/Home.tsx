@@ -31,6 +31,7 @@ import { bumpHomeVisitCount } from "../components/ChatGuidePrompt";
 import DishImage from "../components/DishImage";
 import ChatFloatingBubble from "../components/ChatFloatingBubble";
 import HelperProgressCard from "../components/HelperProgressCard";
+import { classifyBreakfastPrep } from "../lib/breakfastPrepPhase";
 import ChatSwapModal from "../components/ChatSwapModal";
 import { loadIntentBias } from "../lib/intentBias";
 import { getUserId } from "../lib/userId";
@@ -1746,6 +1747,19 @@ export default function Home() {
                           {/* 小美 chip — only when household has 小美 on AND
                               this dish is robot-doable. Inline trailer of the
                               title so it's read as a property of the dish. */}
+                          {/* TICKET-098 SPEC v2 Phase 2 — 🌙 昨晚备 chip
+                              只 mealTime='早餐' 且菜命中 overnight keyword 才显
+                              (粥/包子/饺子/卤味/凉拌 等需要前一晚做的菜).
+                              morning_fresh 默认不贴 (老板 5/27 "不必要不显"). */}
+                          {mealTime === '早餐' && classifyBreakfastPrep(dish) === 'overnight' && (
+                            <span
+                              className="rounded-full px-1.5 py-0.5 font-bold leading-none ml-1.5 align-middle"
+                              style={{ background: 'rgba(74,108,247,0.12)', color: '#4A6CF7', fontSize: 9, letterSpacing: '0.04em' }}
+                              title="需要昨晚预制, 早上加热"
+                            >
+                              🌙 昨晚备
+                            </span>
+                          )}
                           {localStorage.getItem('has_xiaomei_robot') === 'true' && dish.xiaomei_compatible && (
                             <span
                               className="rounded-full px-1.5 py-0.5 font-bold leading-none ml-1.5 align-middle"
