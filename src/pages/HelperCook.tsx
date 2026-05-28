@@ -7,6 +7,7 @@ import { getUserId } from "../lib/userId";
 import { getDishTitle } from "../lib/dishTitleI18n";
 import { loadEmployerTodayMenu } from "../lib/helperEmployerMenu";
 import HelperTabBar from "../components/HelperTabBar";
+import CantCookButton from "../components/CantCookButton";
 
 interface DishWithCook {
   id: string;
@@ -448,6 +449,13 @@ function CookingScreen({ dish, dishes, dishIndex, onBack, onNextDish }: {
       </header>
 
       <main className="flex-1 px-5 pb-6 flex flex-col gap-4">
+
+        {/* TICKET-098 SPEC v2 Phase 5 — "🆘 这道我没做过" reactive 反馈.
+            老板 5/27 拍板: 菲佣点 → 写 user_chat_preferences (helper_cant_cook +
+            household_id) → 雇主端 Home 收到提示"今天午餐菲佣说不会做". 算法
+            v73 后续 confidence -0.5 减少推荐. 仅未点过时显 (LS 标记), 已点显
+            "已告诉雇主" 绿色 chip. */}
+        <CantCookButton dish={dish} />
 
         {/* UI 015 §K — Watch tutorial video 按钮：dish.video_url 存在时红色显示
             外链 YouTube/Bilibili 教程；NULL → 灰色 "Tutorial coming soon" 占位。

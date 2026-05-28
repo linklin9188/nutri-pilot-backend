@@ -13,10 +13,16 @@
  */
 
 import { useEffect, useState } from 'react';
+import { supabase } from '../lib/supabase';
 import { loadTodayCookLogs, type CookLog } from '../lib/helperCookLog';
 
 interface Props {
   householdId?: string | null;
+}
+
+interface CantCookItem {
+  dish_id: string;
+  title: string;
 }
 
 const MEAL_ORDER: Array<'breakfast' | 'lunch' | 'dinner'> = ['breakfast', 'lunch', 'dinner'];
@@ -33,14 +39,43 @@ function fmtTime(iso?: string | null): string {
 
 export default function HelperProgressCard({ householdId }: Props) {
   const [logs, setLogs] = useState<CookLog[]>([]);
+  const [cantCook, setCantCook] = useState<CantCookItem[]>([]);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     if (!householdId) return;
     let cancelled = false;
-    loadTodayCookLogs(householdId)
-      .then(d => { if (!cancelled) { setLogs(d); setLoaded(true); } })
-      .catch(() => { if (!cancelled) setLoaded(true); });
+
+    Promise.all([
+      loadTodayCookLogs(householdId),
+      // TICKET-098 Phase 5 — 拉菲佣 "不会做" 反馈 (近 7 天 reason='helper_cant_cook')
+      supabase
+        .from('user_chat_preferences')
+        .select('preference_value, created_at')
+        .eq('household_id', householdId)
+        .eq('source', 'didnt_eat')
+        .gte('created_at', new Date(Date.now() - 7 * 86400000).toISOString())
+        .then(({ data }) => {
+          const items: CantCookItem[] = [];
+          for (const r of (data ?? []) as any[]) {
+            const v = r.preference_value;
+            if (v?.reason === 'helper_cant_cook' && v?.dish_id && v?.title) {
+              items.push({ dish_id: v.dish_id, title: v.title });
+            }
+          }
+          // 去重 by dish_id
+          const seen = new Set<string>();
+          return items.filter(i => seen.has(i.dish_id) ? false : (seen.add(i.dish_id), true));
+        })
+        .then((items: CantCookItem[]) => items)
+        .then(items => Promise.resolve(items))
+        .catch(() => [] as CantCookItem[]),
+    ]).then(([lg, cc]) => {
+      if (cancelled) return;
+      setLogs(lg);
+      setCantCook(cc as CantCookItem[]);
+      setLoaded(true);
+    }).catch(() => { if (!cancelled) setLoaded(true); });
 
     // 5 分钟自动刷一次 (菲佣 toggle 后雇主端能看到新进度)
     const interval = setInterval(() => {
@@ -49,8 +84,8 @@ export default function HelperProgressCard({ householdId }: Props) {
     return () => { cancelled = true; clearInterval(interval); };
   }, [householdId]);
 
-  // 没绑 household 或没今日记录 → 不渲染 (主页保持干净)
-  if (!householdId || !loaded || logs.length === 0) return null;
+  // 没绑 household 或都没数据 → 不渲染 (主页保持干净, 老板"不必要不显")
+  if (!householdId || !loaded || (logs.length === 0 && cantCook.length === 0)) return null;
 
   // 按 meal_type 分组聚合状态
   const byMeal: Record<string, { done: CookLog[]; cooking: CookLog[]; pending: CookLog[] }> = {
@@ -125,6 +160,30 @@ export default function HelperProgressCard({ householdId }: Props) {
           );
         })}
       </div>
+      {/* TICKET-098 Phase 5 — 菲佣 "不会做" 反馈 (近 7 天). 触发雇主下次菜单
+          要决定是否换菜. 只有 cantCook 非空才显. */}
+      {cantCook.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-black/[0.08]">
+          <p className="font-bold mb-1.5" style={{ fontSize: 11.5, color: '#FF5A1F' }}>
+            🆘 菲佣反馈不会做
+          </p>
+          <div className="space-y-1">
+            {cantCook.slice(0, 3).map(c => (
+              <div key={c.dish_id} className="flex items-center gap-2 text-[12px]"
+                style={{ color: 'rgba(0,0,0,0.70)' }}>
+                <span style={{ fontSize: 10, color: 'rgba(0,0,0,0.30)' }}>•</span>
+                <span className="font-bold">{c.title}</span>
+              </div>
+            ))}
+          </div>
+          {cantCook.length > 3 && (
+            <p style={{ fontSize: 10, color: 'rgba(0,0,0,0.42)', marginTop: 4 }}>
+              还有 {cantCook.length - 3} 道...
+            </p>
+          )}
+        </div>
+      )}
+
       <p className="mt-2.5 text-center" style={{ fontSize: 10, color: 'rgba(0,0,0,0.40)', letterSpacing: '0.04em' }}>
         ✨ 菲佣在菲佣端勾"做完了"，这里实时显示
       </p>
