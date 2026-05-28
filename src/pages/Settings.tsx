@@ -1966,6 +1966,37 @@ export default function Settings() {
             </a>
           </div>
 
+          {/* TICKET-103 dev-only role switcher — 老板/开发真测雇主↔菲佣端切换.
+              import.meta.env.DEV (本地 vite) 或 ?dev=1 query param 启用. 生产
+              用户看不到. 切换写 nutri_role + reload 重走入口路由. */}
+          {(import.meta.env.DEV || (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('dev'))) && (
+            <div className="mt-6 p-4 rounded-2xl border-2 border-dashed border-orange-300 bg-orange-50/60">
+              <p className="text-[11px] font-bold text-orange-600 uppercase tracking-wider mb-2">🛠 Dev · Role Switch</p>
+              <p className="text-[11px] text-gray-500 mb-3">
+                当前: <b>{myRole === 'helper' ? '菲佣端' : '雇主端'}</b> · 切换后页面刷新
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { localStorage.setItem('nutri_role', 'employer'); window.location.href = '/'; }}
+                  disabled={myRole !== 'helper'}
+                  className="flex-1 py-2.5 rounded-xl font-bold text-[13px] active:scale-95 transition-transform disabled:opacity-40"
+                  style={{ background: myRole !== 'helper' ? 'rgba(255,90,31,0.10)' : '#FF5A1F', color: myRole !== 'helper' ? '#FF5A1F' : 'white' }}>
+                  雇主端 (/)
+                </button>
+                <button
+                  onClick={() => { localStorage.setItem('nutri_role', 'helper'); window.location.href = '/helper'; }}
+                  disabled={myRole === 'helper'}
+                  className="flex-1 py-2.5 rounded-xl font-bold text-[13px] active:scale-95 transition-transform disabled:opacity-40"
+                  style={{ background: myRole === 'helper' ? 'rgba(255,90,31,0.10)' : '#FF5A1F', color: myRole === 'helper' ? '#FF5A1F' : 'white' }}>
+                  菲佣端 (/helper)
+                </button>
+              </div>
+              <p className="text-[10px] text-gray-400 mt-2">
+                生产环境隐藏 · URL 加 ?dev=1 启用
+              </p>
+            </div>
+          )}
+
         </div>
       </div>
 

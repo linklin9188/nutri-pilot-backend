@@ -488,6 +488,29 @@ export default function HelperSettings() {
               {t3("Sign out", "退出登录", "Mag-sign out")}
             </p>
           </button>
+
+          {/* TICKET-103 dev-only role switcher — mirror of Settings.tsx */}
+          {(import.meta.env.DEV || (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('dev'))) && (
+            <div className="mt-6 p-4 rounded-2xl border-2 border-dashed border-orange-300 bg-orange-50/60">
+              <p className="text-[11px] font-bold text-orange-600 uppercase tracking-wider mb-2">🛠 Dev · Role Switch</p>
+              <p className="text-[11px] text-gray-500 mb-3">当前: <b>菲佣端</b> · 切换后页面刷新</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { localStorage.setItem('nutri_role', 'employer'); window.location.href = '/'; }}
+                  className="flex-1 py-2.5 rounded-xl font-bold text-[13px] active:scale-95 transition-transform text-white"
+                  style={{ background: '#FF5A1F' }}>
+                  雇主端 (/)
+                </button>
+                <button
+                  disabled
+                  className="flex-1 py-2.5 rounded-xl font-bold text-[13px] opacity-40"
+                  style={{ background: 'rgba(255,90,31,0.10)', color: '#FF5A1F' }}>
+                  菲佣端 (/helper)
+                </button>
+              </div>
+              <p className="text-[10px] text-gray-400 mt-2">生产环境隐藏 · URL 加 ?dev=1 启用</p>
+            </div>
+          )}
         </div>
       </div>
 
