@@ -15,6 +15,12 @@
  *
  * 失败 console.warn 留 diagnose (匹配 HelperHome 原 TICKET-009 风格),
  * 不向用户弹窗.
+ *
+ * P0 fix 2026-05-28 (老板真测 "雇主点做饭跳出来不是做饭"): 当 step 1 查不到
+ * household_members 行 (= 调用者不是 helper, 或 helper 没绑家庭), fallback
+ * 把当前 user 直接当 employer, 跳过 step 1+2 直接走 step 3. 配合老板 ruling
+ * "做饭/当日菜单是业务流程级共用页, 不绑角色, 雇主菲佣共用同一 UI" — 让
+ * HelperCook / HelperPrep 等业务页一份代码同时服务两端.
  */
 import { supabase } from './supabase';
 
@@ -59,7 +65,7 @@ export async function loadEmployerTodayMenu(
 ): Promise<EmployerMenuResult> {
   if (!helperUserId) return EMPTY;
 
-  // 1. household membership
+  // 1. household membership (helper 视角)
   const { data: member, error: memberErr } = await supabase
     .from('household_members')
     .select('household_id')
@@ -72,25 +78,28 @@ export async function loadEmployerTodayMenu(
     return EMPTY;
   }
   const householdId = (member?.[0] as any)?.household_id as string | undefined;
-  if (!householdId) {
-    console.warn('[helperEmployerMenu] helper not bound to a household, helper_id=', helperUserId);
-    return EMPTY;
-  }
 
-  // 2. household → employer
-  const { data: hh, error: hhErr } = await supabase
-    .from('households')
-    .select('employer_id')
-    .eq('id', householdId)
-    .maybeSingle();
-  if (hhErr) {
-    console.warn('[helperEmployerMenu] households fetch error:', hhErr);
-    return { ...EMPTY, householdId };
-  }
-  const employerId = (hh as any)?.employer_id as string | undefined;
-  if (!employerId) {
-    console.warn('[helperEmployerMenu] household', householdId, 'has no employer_id');
-    return { ...EMPTY, householdId };
+  // 2. household → employer, 或 fallback: 当前 user 就是 employer
+  let employerId: string | undefined;
+  if (householdId) {
+    const { data: hh, error: hhErr } = await supabase
+      .from('households')
+      .select('employer_id')
+      .eq('id', householdId)
+      .maybeSingle();
+    if (hhErr) {
+      console.warn('[helperEmployerMenu] households fetch error:', hhErr);
+      return { ...EMPTY, householdId };
+    }
+    employerId = (hh as any)?.employer_id as string | undefined;
+    if (!employerId) {
+      console.warn('[helperEmployerMenu] household', householdId, 'has no employer_id');
+      return { ...EMPTY, householdId };
+    }
+  } else {
+    // P0 2026-05-28: 调用者不是 helper (查不到 household_members 行) → 当 employer 自己用,
+    // 直接把当前 userId 当 employer_id, 跳过 household lookup 走 step 3 读自己菜单.
+    employerId = helperUserId;
   }
 
   // 3. 当周 weekStart (Mon=0 周一对齐, 同 HelperHome.tsx:208-212)
