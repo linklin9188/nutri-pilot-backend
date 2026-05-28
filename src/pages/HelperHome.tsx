@@ -422,16 +422,26 @@ export default function HelperHome() {
     if (!error) setOriginCountry(code);
   }
 
-  function toggleTaskDone(dishId: string) {
+  function toggleTaskDone(dishId: string, mealType?: 'breakfast' | 'lunch' | 'dinner') {
     setTaskDone(prev => {
       const next = new Set(prev);
-      if (next.has(dishId)) {
+      const isDoneNow = next.has(dishId);
+      if (isDoneNow) {
         next.delete(dishId);
         localStorage.removeItem(`helper_task_done:${dishId}`);
       } else {
         next.add(dishId);
         localStorage.setItem(`helper_task_done:${dishId}`, '1');
       }
+      // TICKET-098 — 双写 DB helper_cook_logs (真持久化, 雇主端 Home 可见今日进度)
+      // status: undone → done, done → pending (取消勾)
+      // mealType 上层 onClick 传 (line ~745 cookbook list 知道是哪餐)
+      import('../lib/helperCookLog').then(m => m.markCookStatus({
+        dishId,
+        status: isDoneNow ? 'pending' : 'done',
+        mealType: mealType ?? 'lunch',
+        householdId: helperHouseholdId,
+      })).catch(() => { /* tolerant - LS 已 toggle, DB 失败不阻塞 */ });
       return next;
     });
   }

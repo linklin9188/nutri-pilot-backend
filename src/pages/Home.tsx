@@ -30,6 +30,7 @@ import IntentInputBox from "../components/IntentInputBox";
 import { bumpHomeVisitCount } from "../components/ChatGuidePrompt";
 import DishImage from "../components/DishImage";
 import ChatFloatingBubble from "../components/ChatFloatingBubble";
+import HelperProgressCard from "../components/HelperProgressCard";
 import ChatSwapModal from "../components/ChatSwapModal";
 import { loadIntentBias } from "../lib/intentBias";
 import { getUserId } from "../lib/userId";
@@ -1316,6 +1317,13 @@ export default function Home() {
       {/* TICKET-083 §5a — 采购通知红卡. 菲佣"✅ 确认完了"后雇主收到, 点 → 自动加车 → /cart.
           没绑 household / 没未读 helper_confirmed → 组件自隐藏 (return null). */}
       <PurchaseNotificationBanner />
+
+      {/* TICKET-098 SPEC v2 Phase 1 — 菲佣今日进度卡. 雇主一进 Home 立刻看到
+          早餐✓/午餐⏳/晚餐⏰. 无 household / 无今日记录 → 组件自 return null
+          不污染主页. 5 分钟自动刷一次 (菲佣 toggle 后雇主端看到新进度). */}
+      <div className="mx-3 mt-2">
+        <HelperProgressCard householdId={householdId} />
+      </div>
 
       {/* TICKET-095 (5/27): ChatGuidePrompt + IntentInputBox 已挪到
           ChatFloatingBubble sheet 内. 主页只渲染 header + 菜单卡, 浮窗在右下角. */}
