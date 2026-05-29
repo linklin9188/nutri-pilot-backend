@@ -38,6 +38,7 @@ import WeChatCallback from './pages/WeChatCallback';
 import WeChatIn from './pages/WeChatIn';
 import Privacy from './pages/Privacy';
 import Terms from './pages/Terms';
+import ChefAgent from './pages/ChefAgent';
 import RequireAuth from './components/RequireAuth';
 import NetworkBanner from './components/NetworkBanner';
 import { syncFavoritesFromCloud } from './lib/favorites';
@@ -329,6 +330,8 @@ function AppShell() {
           route 保留 backward compat (老用户 bookmark 不 404), redirect 到首页. */}
       <Route path="/ai-pilot" element={<Navigate to="/" replace />} />
       <Route path="/chat"     element={<RequireAuth><ChatAgent /></RequireAuth>} />
+      {/* TICKET-113 agent-first MVP "爱吃主厨" — 共用引擎换壳, 旧 app 零改动. /chef 独立入口. */}
+      <Route path="/chef"     element={<RequireAuth><ChefAgent /></RequireAuth>} />
       <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
       <Route path="/weekly"   element={<RequireAuth><WeeklyMenu /></RequireAuth>} />
       {/* TICKET-100 (5/28 老板砍清单): LearnerHome 已删, /helper 直接 HelperHome */}

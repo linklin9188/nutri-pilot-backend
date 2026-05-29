@@ -1976,6 +1976,14 @@ export default function Settings() {
               <p className="text-[10px] text-gray-400 mt-2">
                 生产环境隐藏 · URL 加 ?dev=1 启用
               </p>
+
+              {/* TICKET-113 agent-first MVP 入口 — 共用引擎换壳, 旧 app 零改动. */}
+              <button
+                onClick={() => { window.location.href = '/chef'; }}
+                className="w-full mt-3 py-2.5 rounded-xl font-bold text-[13px] text-white active:scale-95 transition-transform"
+                style={{ background: 'linear-gradient(135deg, #1a1a1a, #333)' }}>
+                🧪 试用「爱吃主厨」(agent-first MVP)
+              </button>
             </div>
           )}
 
