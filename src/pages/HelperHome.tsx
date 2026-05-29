@@ -34,6 +34,7 @@ import { getUserId } from "../lib/userId";
 import { useLanguage } from "../contexts/LanguageContext";
 import { getDishTitle } from "../lib/dishTitleI18n";
 import HelperTabBar from "../components/HelperTabBar";
+import HelperBossFeedbackCard from "../components/HelperBossFeedbackCard";
 import HelperFamilyPrefsCard from "../components/HelperFamilyPrefsCard";
 import HelperOvernightPrepCard from "../components/HelperOvernightPrepCard";
 // TICKET-076 §Phase 3-5 — 备菜时间反推 + Web Notification 提醒
@@ -900,6 +901,10 @@ export default function HelperHome() {
           </div>
         </div>
       )}
+
+      {/* ─────────────── §3.5 雇主反馈 — TICKET-109 (5/29 老板第二核心) ───────────────
+          菲佣做过的菜 + 雇主点👍 → "Boss loved your cooking" 正向激励. 无数据隐藏. */}
+      <HelperBossFeedbackCard />
 
       {/* ─────────────── §4 社区动态 — TICKET-044 §B ───────────────
           TICKET-105 §B v3 (5/29 老板拍板): seed mock 全是 Tagalog 拍照打卡, 真菲佣
