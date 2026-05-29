@@ -2271,10 +2271,16 @@ export function deriveBadges(dish: any, ctx: BadgeContext): TagBadge[] {
   }
 
   // 4. 🎒 school_balance — 家中有 kid + 含 wellness 标签
+  // TICKET-111 fix (2026-05-29): 原读 dish.is_blood_tonic / is_eye_care / is_beauty
+  // 这 3 个 bool 列是 dead schema (全 0% 填充, v59 起已从 DISH_FIELDS SELECT 删除),
+  // → dish.is_* 恒 undefined → 这 3 个 badge 从未显示过. 真数据活在
+  // health_benefit_tags 数组里 (blood_tonic 167 / eye_care 77 / beauty 111 道).
+  // 改读数组, badge 复活. 纯 display 派生 (不影响选菜/排序), 无需 bump ALGO.
   if (ctx.hasKid) {
-    if (dish.is_blood_tonic) out.push({ kind: 'school_balance', icon: '🎒', label: '孩子补血' });
-    else if (dish.is_eye_care) out.push({ kind: 'school_balance', icon: '🎒', label: '孩子护眼' });
-    else if (dish.is_beauty) out.push({ kind: 'school_balance', icon: '🎒', label: '孩子润肤' });
+    const ht = (dish.health_benefit_tags ?? []) as string[];
+    if (ht.includes('blood_tonic')) out.push({ kind: 'school_balance', icon: '🎒', label: '孩子补血' });
+    else if (ht.includes('eye_care')) out.push({ kind: 'school_balance', icon: '🎒', label: '孩子护眼' });
+    else if (ht.includes('beauty')) out.push({ kind: 'school_balance', icon: '🎒', label: '孩子润肤' });
   }
 
   // 2. 🌿 seasonal — dish.seasonal_tags ∩ current season
