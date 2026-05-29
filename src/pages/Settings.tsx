@@ -695,35 +695,17 @@ export default function Settings() {
   // 与 inviteCode useEffect 同一查询返回, 避免双重 round-trip.
   const [householdId, setHouseholdId] = useState<string>("");
   useEffect(() => {
+    // TICKET-106 §B: 走共享 helper, 避免 Settings + Home 并发 INSERT race.
+    // migration 105 加了 UNIQUE(employer_id), helper 内部 catch 23505 → SELECT.
     let cancelled = false;
     (async () => {
       const userId = getUserId();
       if (!userId) return;
-      const { data } = await supabase
-        .from("households")
-        .select("id, invite_code")
-        .eq("employer_id", userId)
-        .order("created_at", { ascending: false })
-        .limit(1);
-      let code = (data?.[0] as any)?.invite_code as string | undefined;
-      let hhId = (data?.[0] as any)?.id as string | undefined;
-      if (!code || !hhId) {
-        // Trigger BEFORE INSERT generates a fresh 6-digit code. Surface insert
-        // errors instead of silently dropping (B-2 §A2): if RLS or a constraint
-        // rejects the row, the user sees a blank invite-code field but we
-        // leave a console trail for triage.
-        const { data: newRow, error: insertErr } = await supabase
-          .from("households")
-          .insert({ employer_id: userId })
-          .select("id, invite_code")
-          .single();
-        if (insertErr) console.error("households insert failed", insertErr);
-        code = (newRow as any)?.invite_code;
-        hhId = (newRow as any)?.id;
-      }
-      if (!cancelled) {
-        if (code) setInviteCode(code);
-        if (hhId) setHouseholdId(hhId);
+      const { getOrCreateHousehold } = await import('../lib/getOrCreateHousehold');
+      const row = await getOrCreateHousehold(userId);
+      if (!cancelled && row) {
+        setInviteCode(row.invite_code);
+        setHouseholdId(row.id);
       }
     })();
     return () => { cancelled = true; };

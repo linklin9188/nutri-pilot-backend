@@ -813,43 +813,24 @@ export default function Home() {
           if ((data as any)?.avatar_url) setAvatarUrl((data as any).avatar_url);
         });
 
-      // Load or create household for this employer. We use `order + limit(1)`
-      // instead of `maybeSingle()` because employer_id has no UNIQUE
-      // constraint — historical data has duplicates per employer, and
-      // maybeSingle() throws PostgREST 400 when there's more than one row.
-      // The newest household is the canonical one.
-      supabase
-        .from("households")
-        .select("id, invite_code, household_members(helper_id, user_profiles!helper_id(display_name))")
-        .eq("employer_id", userId)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .then(async ({ data: rows }) => {
-          const data = rows?.[0];
-          if (data) {
-            setHouseholdId(data.id);
-            setInviteCode(data.invite_code ?? "");
-            const members: any[] = (data as any).household_members ?? [];
-            const active = members.find((m: any) => m.user_profiles?.display_name);
-            if (active) setHelperName(active.user_profiles.display_name);
-          } else {
-            // First time — create household. Surface insert errors instead of
-            // silently dropping (B-2 §A2): RLS or constraint failures should
-            // not be hidden — the user-facing helper-name / invite-code area
-            // will stay blank but the error reaches devtools for triage.
-            const { data: created, error } = await supabase
-              .from("households")
-              .insert({ employer_id: userId })
-              .select("id, invite_code")
-              .single();
-            if (error) {
-              console.error("households insert failed", error);
-            } else if (created) {
-              setHouseholdId(created.id);
-              setInviteCode(created.invite_code ?? "");
-            }
-          }
-        });
+      // TICKET-106 §B: 走共享 helper, 避免 Home + Settings 并发 INSERT race.
+      // migration 105 加了 UNIQUE(employer_id), helper 内部 catch 23505 → SELECT.
+      // helper 不带 members 嵌入 (helper 单职责), 单独查 members 拿 helperName.
+      (async () => {
+        const { getOrCreateHousehold } = await import('../lib/getOrCreateHousehold');
+        const row = await getOrCreateHousehold(userId);
+        if (row) {
+          setHouseholdId(row.id);
+          setInviteCode(row.invite_code);
+          // 顺带拉 active helper 名字 (原嵌入逻辑保留)
+          const { data: members } = await supabase
+            .from('household_members')
+            .select('helper_id, user_profiles!helper_id(display_name)')
+            .eq('household_id', row.id);
+          const active = (members ?? []).find((m: any) => m.user_profiles?.display_name);
+          if (active) setHelperName((active as any).user_profiles.display_name);
+        }
+      })();
     }
 
     // Fallback: helper name from localStorage (settings page)
