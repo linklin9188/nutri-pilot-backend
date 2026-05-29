@@ -22,6 +22,7 @@ import { type SupabaseDish } from '../hooks/useSupabaseMenu';
 import type { WeeklyMenu } from '../hooks/useWeeklyMenu';
 import { getDishTitle } from '../lib/dishTitleI18n';
 import { parseIntent, saveIntentBias, applyIntentBias } from '../lib/intentBias';
+import { findDishesMentionedIn } from '../lib/dishNameSearch';
 import { supabase } from '../lib/supabase';
 import { setDailyMealTime, dateToISODay } from '../lib/dailyMealSchedule';
 import { getUserId } from '../lib/userId';
@@ -206,27 +207,50 @@ export default function ChatSwapModal({
       // Step 3: 对每个勾选 dish 找替换. 已 swap 的 ids 累计排除, 避免连续 swap 撞同一道.
       let swapped = 0;
       const excludeIds = new Set<string>(day.dishes.map(d => d.id));
+
+      // TICKET-110 断层 3 — dish-name 直接命中优先 (老板第一核心 "精准推送").
+      // "我想吃椒盐鸡" → 池里真有椒盐鸡 → 精准捞出来, 而不是只给 chicken 类加权.
+      // 命中的菜按"最长匹配/最具体"排队, 填进勾选的 slot (忽略 type — 雇主明确点名了).
+      const nameMatches = await findDishesMentionedIn(userIntent, { limit: 10 });
+      const exactQueue: SupabaseDish[] = [];
+      if (nameMatches.length > 0) {
+        const ids = nameMatches.map(m => m.id).filter(id => !excludeIds.has(id));
+        if (ids.length > 0) {
+          const { data: fullRows } = await supabase.from('dishes').select('*').in('id', ids);
+          const byId = new Map((fullRows ?? []).map((r: any) => [r.id, r as SupabaseDish]));
+          for (const m of nameMatches) { const r = byId.get(m.id); if (r) exactQueue.push(r); }
+        }
+      }
+
       for (let slotIdx = 0; slotIdx < day.dishes.length; slotIdx++) {
         const current = day.dishes[slotIdx];
         if (!current || !checkedIds.has(current.id)) continue;
 
-        // 同 type 候选池, 取 limit 30 后按 bias 排分.
-        const inList = `(${Array.from(excludeIds).map(id => `"${id}"`).join(',')})`;
-        let query = supabase.from('dishes').select('*').limit(30);
-        if (current.type) query = query.eq('type', current.type);
-        if (excludeIds.size > 0) query = query.not('id', 'in', inList);
-        const { data, error: qErr } = await query;
-        if (qErr) throw new Error(qErr.message);
-        if (!data || data.length === 0) continue;  // 该 slot 找不到候选, 跳过
+        // 优先: dish-name 直接命中 (精准). 队列里取第 1 个未被排除的.
+        let pick: SupabaseDish | undefined;
+        while (exactQueue.length > 0) {
+          const cand = exactQueue.shift()!;
+          if (cand && !excludeIds.has(cand.id)) { pick = cand; break; }
+        }
 
-        // applyIntentBias 接 baseScore=0, 让 bias 单独决定排序 (cuisine + category + tag).
-        // 不复用 scoreForWeek (它依赖大量 context: imagePrefs/familyPrefs/seasonHints...),
-        // 这里 quick swap, 只要 bias 命中的菜浮上来即可.
-        const ranked = (data as SupabaseDish[])
-          .map(d => ({ d, s: applyIntentBias(0, d as any, bias) }))
-          .sort((a, b) => b.s - a.s);
+        // fallback: 同 type 候选池, 取 limit 30 后按 bias 排分.
+        if (!pick) {
+          const inList = `(${Array.from(excludeIds).map(id => `"${id}"`).join(',')})`;
+          let query = supabase.from('dishes').select('*').limit(30);
+          if (current.type) query = query.eq('type', current.type);
+          if (excludeIds.size > 0) query = query.not('id', 'in', inList);
+          const { data, error: qErr } = await query;
+          if (qErr) throw new Error(qErr.message);
+          if (!data || data.length === 0) continue;  // 该 slot 找不到候选, 跳过
 
-        const pick = ranked[0]?.d;
+          // applyIntentBias 接 baseScore=0, 让 bias 单独决定排序 (cuisine + category + tag).
+          // 不复用 scoreForWeek (它依赖大量 context: imagePrefs/familyPrefs/seasonHints...),
+          // 这里 quick swap, 只要 bias 命中的菜浮上来即可.
+          const ranked = (data as SupabaseDish[])
+            .map(d => ({ d, s: applyIntentBias(0, d as any, bias) }))
+            .sort((a, b) => b.s - a.s);
+          pick = ranked[0]?.d;
+        }
         if (!pick) continue;
 
         await swapDish(todayIdx, slotIdx, pick);
