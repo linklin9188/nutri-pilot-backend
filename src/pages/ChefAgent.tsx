@@ -26,6 +26,7 @@ import { getDishTitle } from '../lib/dishTitleI18n';
 import { toggleFavorite, isFavorited } from '../lib/favorites';
 import { INGREDIENT_GROUPS, browseByIngredient, type BrowseDish } from '../lib/ingredientBrowse';
 import { supabase } from '../lib/supabase';
+import { addDishToTodayMenu } from '../lib/chefAddToToday';
 
 type Msg =
   | { kind: 'chef'; text: string }
@@ -48,6 +49,8 @@ export default function ChefAgent() {
   const [busy, setBusy] = useState(false);
   const [detail, setDetail] = useState<BrowseDish | null>(null);
   const [todayAdded, setTodayAdded] = useState<Set<string>>(new Set());
+  const [addingToday, setAddingToday] = useState(false);
+  const [toast, setToast] = useState<{ kind: 'info' | 'error'; text: string } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // 开场 — context-aware 问候
@@ -85,15 +88,39 @@ export default function ChefAgent() {
     ]);
   }
 
-  function addToToday(d: BrowseDish) {
-    // 复用 favorites 作为"今日想吃"暂存 (MVP), 同时标记 UI 已加.
-    // 真正写入今日菜单的 override 机制走 P1 (见 SPEC §10 决策点), MVP 先收藏沉淀.
+  async function addToToday(d: BrowseDish) {
+    // TICKET-113 P0 (老板 5/30): 真写当日菜单 (swapped_dish_ids 合并去重),
+    // 采购清单 + 菲佣端当天可见。同时保留「主厨点单」收藏沉淀。
+    if (addingToday) return;
+    if (todayAdded.has(d.id)) return;
+    setAddingToday(true);
+
+    // 收藏沉淀 (保留原 UX: 加入今日同时仍收藏到「主厨点单」)。
     toggleFavorite({
       id: d.id, title_zh: d.title_zh, title_en: d.title_en ?? undefined,
       image_url: d.image_url ?? undefined, main_ingredient: d.main_ingredient ?? undefined,
       source_tag: '主厨点单',
     });
+
+    const res = await addDishToTodayMenu(d.id);
+    setAddingToday(false);
+
+    if (!res.ok) {
+      setToast({ kind: 'error', text: t('加入今日失败，可重试', 'Could not add — try again') });
+      setTimeout(() => setToast(null), 3500);
+      return;
+    }
+
     setTodayAdded(s => new Set(s).add(d.id));
+    const mealZh = res.mealType === 'lunch' ? '今日午餐' : '今晚';
+    const mealEn = res.mealType === 'lunch' ? "today's lunch" : 'tonight';
+    setToast({
+      kind: 'info',
+      text: res.alreadyPresent
+        ? t(`已在${mealZh}菜单里`, `Already in ${mealEn}`)
+        : t(`✓ 已加入${mealZh}菜单`, `✓ Added to ${mealEn}`),
+    });
+    setTimeout(() => setToast(null), 3000);
   }
 
   return (
@@ -188,6 +215,19 @@ export default function ChefAgent() {
         </div>
       </div>
 
+      {/* Toast — 加入今日 成功/失败 提示态 */}
+      {toast && (
+        <div className="fixed left-1/2 -translate-x-1/2 z-[130] px-4 py-2.5 rounded-full font-semibold pointer-events-none"
+          style={{
+            bottom: 'calc(env(safe-area-inset-bottom, 12px) + 92px)',
+            background: toast.kind === 'error' ? 'rgba(220,38,38,0.95)' : 'rgba(28,28,28,0.96)',
+            border: toast.kind === 'error' ? '1px solid rgba(255,120,120,0.4)' : '1px solid rgba(255,140,84,0.4)',
+            color: 'white', fontSize: 13, maxWidth: '90%',
+          }}>
+          {toast.text}
+        </div>
+      )}
+
       {/* 详情卡 — 图/营养/味道 */}
       {detail && (() => {
         const title = getDishTitle(detail as any, language) || detail.title_zh;
@@ -238,11 +278,11 @@ export default function ChefAgent() {
                     style={{ background: fav ? 'rgba(255,90,31,0.15)' : 'rgba(255,255,255,0.08)', color: fav ? '#FF8C54' : 'white', fontSize: 13 }}>
                     {fav ? `★ ${t('已收藏', 'Saved')}` : `☆ ${t('收藏', 'Save')}`}
                   </button>
-                  <button onClick={() => { addToToday(detail); setDetail(null); }}
-                    disabled={added}
+                  <button onClick={async () => { await addToToday(detail); setDetail(null); }}
+                    disabled={added || addingToday}
                     className="flex-[1.5] py-3 rounded-2xl font-bold text-white active:scale-[0.98] transition-transform disabled:opacity-50"
                     style={{ background: 'linear-gradient(135deg, #FF5A1F, #FF8C54)', fontSize: 13 }}>
-                    {added ? `✓ ${t('已加入', 'Added')}` : t('加入今日想吃', 'Add to today')}
+                    {added ? `✓ ${t('已加入', 'Added')}` : addingToday ? t('加入中…', 'Adding…') : t('加入今日想吃', 'Add to today')}
                   </button>
                 </div>
               </div>
