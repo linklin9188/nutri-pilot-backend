@@ -179,8 +179,15 @@ function RootRedirect() {
     return <Navigate to="/login" replace />;
   }
 
+  // ?dev=1 in URL → lock this device as employer permanently (nutri_dev_employer flag).
+  // Lets the dev account escape helper-redirect without touching other users' flow.
+  if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('dev')) {
+    localStorage.setItem('nutri_dev_employer', '1');
+  }
+  const forceEmployer = localStorage.getItem('nutri_dev_employer') === '1';
+
   const role = localStorage.getItem("nutri_role");
-  if (role === "helper") return <Navigate to="/helper" replace />;
+  if (role === "helper" && !forceEmployer) return <Navigate to="/helper" replace />;
 
   // TICKET-042 §C — 新 onboarding 流程 (SPEC §0.2 老板拍板 "3 组图 + 2 问"):
   //   - 有旧 quickPrefs → 走 /home (保兼容, 不强制旧用户重做新 onboarding)

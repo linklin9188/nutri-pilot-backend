@@ -496,7 +496,7 @@ export default function HelperSettings() {
               <p className="text-[11px] text-gray-500 mb-3">当前: <b>菲佣端</b> · 切换后页面刷新</p>
               <div className="flex gap-2">
                 <button
-                  onClick={() => { localStorage.setItem('nutri_role', 'employer'); window.location.href = '/'; }}
+                  onClick={() => { localStorage.setItem('nutri_role', 'employer'); localStorage.setItem('nutri_dev_employer', '1'); window.location.href = '/'; }}
                   className="flex-1 py-2.5 rounded-xl font-bold text-[13px] active:scale-95 transition-transform text-white"
                   style={{ background: '#FF5A1F' }}>
                   雇主端 (/)

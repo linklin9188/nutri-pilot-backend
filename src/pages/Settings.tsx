@@ -1959,14 +1959,14 @@ export default function Settings() {
               </p>
               <div className="flex gap-2">
                 <button
-                  onClick={() => { localStorage.setItem('nutri_role', 'employer'); window.location.href = '/'; }}
+                  onClick={() => { localStorage.setItem('nutri_role', 'employer'); localStorage.setItem('nutri_dev_employer', '1'); window.location.href = '/'; }}
                   disabled={myRole !== 'helper'}
                   className="flex-1 py-2.5 rounded-xl font-bold text-[13px] active:scale-95 transition-transform disabled:opacity-40"
                   style={{ background: myRole !== 'helper' ? 'rgba(255,90,31,0.10)' : '#FF5A1F', color: myRole !== 'helper' ? '#FF5A1F' : 'white' }}>
                   雇主端 (/)
                 </button>
                 <button
-                  onClick={() => { localStorage.setItem('nutri_role', 'helper'); window.location.href = '/helper'; }}
+                  onClick={() => { localStorage.setItem('nutri_role', 'helper'); localStorage.removeItem('nutri_dev_employer'); window.location.href = '/helper'; }}
                   disabled={myRole === 'helper'}
                   className="flex-1 py-2.5 rounded-xl font-bold text-[13px] active:scale-95 transition-transform disabled:opacity-40"
                   style={{ background: myRole === 'helper' ? 'rgba(255,90,31,0.10)' : '#FF5A1F', color: myRole === 'helper' ? '#FF5A1F' : 'white' }}>
