@@ -54,9 +54,8 @@ Deno.serve(async (req) => {
   }
 
   if (tokenData.errcode) {
-    // errcode 40163 = code already used (double-mount guard in WeChatIn missed it)
-    // treat as auth failure → back to login
-    return redirect(`${ORIGIN}/login`);
+    // Show exact WeChat errcode so we can diagnose (40029=bad code, 40163=reused, 40001=bad secret)
+    return redirectError(`wx_errcode_${tokenData.errcode}_${tokenData.errmsg ?? ''}`);
   }
 
   const { access_token, openid, scope, unionid } = tokenData;
@@ -76,7 +75,7 @@ Deno.serve(async (req) => {
 
   // ── 3. snsapi_base 且无记录 → 新用户需要完整授权，回登录页 ────────
   if (!scope?.includes('snsapi_userinfo')) {
-    return redirect(`${ORIGIN}/login`);
+    return redirectError(`scope_${scope}_no_user`);
   }
 
   // ── 4. snsapi_userinfo → 拿用户信息，建新账号 ────────────────────

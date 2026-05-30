@@ -514,31 +514,6 @@ export default function Login() {
             <p className="text-white/70 leading-relaxed" style={{ fontSize: 14 }}>
               {LOGIN_HERO[language].sub}
             </p>
-            {/* TICKET-040 §A 强化 slogan — italic serif, 14, text-white/55 */}
-            <p className="italic font-serif mt-3 text-white/55" style={{ fontSize: 14, letterSpacing: "0.02em" }}>
-              {LOGIN_HERO[language].slogan}
-            </p>
-          </motion.div>
-
-          {/* 5-channel chip 横排 — 与原 /about 对齐, 无标题无 desc, chip 自解释 */}
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-            transition={{ delay: 0.20, duration: 0.5 }}
-            className="flex flex-wrap gap-2 mb-7">
-            {LOGIN_CHANNELS.map((c, idx) => (
-              <motion.span key={c.emoji}
-                initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.30, delay: 0.25 + idx * 0.05, ease: "easeOut" }}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-semibold"
-                style={{
-                  background: c.color,
-                  color: "white",
-                  fontSize: 11,
-                  border: `1px solid ${c.color.replace("0.15", "0.30")}`,
-                }}>
-                <span>{c.emoji}</span>
-                <span>{c.label[language]}</span>
-              </motion.span>
-            ))}
           </motion.div>
 
           {/* TICKET-045 §C — picker + Switch role 按钮删除 (老板拍板"3 入口同时显示").
@@ -583,47 +558,30 @@ export default function Login() {
 
             {/* TICKET-047 修订 (CEO 14:25 拨乱反正) — 删雇主独立卡, 改 role toggle.
                 微信登录是唯一 OAuth 入口, 雇主/菲佣是任务角色切换 (非独立 OAuth). */}
-            <div className="grid grid-cols-2 gap-2 mb-1">
+            <div className="grid grid-cols-2 gap-3 mb-2">
               <button
                 onClick={() => setRole("employer")}
-                className="rounded-2xl py-3 font-bold transition-all active:scale-95"
+                className="rounded-2xl py-4 font-bold transition-all active:scale-95"
                 style={{
-                  background: role === "employer" ? "rgba(255,90,31,0.18)" : "rgba(255,255,255,0.05)",
-                  border: role === "employer" ? "1.5px solid rgba(255,90,31,0.55)" : "1px solid rgba(255,255,255,0.10)",
-                  color: role === "employer" ? "white" : "rgba(255,255,255,0.55)",
-                  fontSize: 13,
+                  background: role === "employer" ? "rgba(255,90,31,0.22)" : "rgba(255,255,255,0.06)",
+                  border: role === "employer" ? "2px solid rgba(255,90,31,0.70)" : "1px solid rgba(255,255,255,0.12)",
+                  color: role === "employer" ? "white" : "rgba(255,255,255,0.50)",
+                  fontSize: 16,
                 }}>
-                🏠 {t("I'm an employer", "我是雇主")}
+                🏠 {t("Employer", "我是雇主")}
               </button>
               <button
                 onClick={() => setRole("helper")}
-                className="rounded-2xl py-3 font-bold transition-all active:scale-95"
+                className="rounded-2xl py-4 font-bold transition-all active:scale-95"
                 style={{
-                  background: role === "helper" ? "rgba(37,211,102,0.18)" : "rgba(255,255,255,0.05)",
-                  border: role === "helper" ? "1.5px solid rgba(37,211,102,0.55)" : "1px solid rgba(255,255,255,0.10)",
-                  color: role === "helper" ? "white" : "rgba(255,255,255,0.55)",
-                  fontSize: 13,
+                  background: role === "helper" ? "rgba(37,211,102,0.22)" : "rgba(255,255,255,0.06)",
+                  border: role === "helper" ? "2px solid rgba(37,211,102,0.70)" : "1px solid rgba(255,255,255,0.12)",
+                  color: role === "helper" ? "white" : "rgba(255,255,255,0.50)",
+                  fontSize: 16,
                 }}>
-                👩‍🍳 {t("I'm a helper", "我是菲佣")}
+                👩‍🍳 {t("Helper", "我是菲佣")}
               </button>
             </div>
-
-            {/* TICKET-043 §B — 中介推荐码 (选填). PDPO 合规: 仅 input, 不显
-                "你的中介是 X" 避免泄露中介客户名单. employer/helper 双角色都可填. */}
-            <input
-              type="text"
-              inputMode="text"
-              autoCapitalize="characters"
-              value={agencyCode}
-              onChange={e => setAgencyCode(e.target.value.toUpperCase())}
-              placeholder={t("Referral code (optional)", "中介推荐码（选填）")}
-              className="w-full h-10 rounded-xl px-3 text-white outline-none mb-1"
-              style={{
-                background: "rgba(255,255,255,0.05)",
-                border: "1px dashed rgba(255,255,255,0.18)",
-                fontSize: 12, letterSpacing: "0.06em",
-              }}
-            />
 
             {/* TICKET-047 修订 — helper 角色才显邀请码 box, employer 直接看微信登录 */}
             {role === "helper" && (
