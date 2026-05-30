@@ -169,7 +169,8 @@ export default function Login() {
     return saved === "employer" || saved === "helper";
   });
 
-  const [error, setError] = useState("");
+  const wxErrParam = searchParams.get("wx_error");
+  const [error, setError] = useState(wxErrParam ? `微信登录出错: ${wxErrParam}` : "");
 
   // TICKET-068 §B — 菲佣邀请码登录 state
   // §B+ URL ?invite=ABC 自动预填（一键 WhatsApp 闭环菲佣点 link 不用手输）

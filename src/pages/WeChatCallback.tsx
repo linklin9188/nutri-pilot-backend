@@ -35,7 +35,9 @@ export default function WeChatCallback() {
     const isNew  = (searchParams.get('isNew') ?? hashParams.get('isNew')) === '1';
 
     if (!userId) {
-      setError('登录回调缺少用户标识，请回到登录页重试。');
+      // Show full debug URL so we can diagnose WeChat X5 redirect stripping.
+      const debugUrl = window.location.href;
+      setError(`登录回调缺少 userId。\n调试 URL: ${debugUrl}`);
       return;
     }
 
