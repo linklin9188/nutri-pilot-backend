@@ -27,9 +27,12 @@ export default function WeChatCallback() {
     const hash = window.location.hash.startsWith('#')
       ? window.location.hash.slice(1)
       : window.location.hash;
-    const params = new URLSearchParams(hash);
-    const userId = params.get('userId');
-    const isNew  = params.get('isNew') === '1';
+    // WeChat X5 WebView strips #fragment on 302 redirects — edge function now
+    // uses query params. Support both so old links still work.
+    const searchParams = new URLSearchParams(window.location.search);
+    const hashParams   = new URLSearchParams(hash);
+    const userId = searchParams.get('userId') ?? hashParams.get('userId');
+    const isNew  = (searchParams.get('isNew') ?? hashParams.get('isNew')) === '1';
 
     if (!userId) {
       setError('登录回调缺少用户标识，请回到登录页重试。');

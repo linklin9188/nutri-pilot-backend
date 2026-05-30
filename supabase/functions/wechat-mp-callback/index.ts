@@ -70,7 +70,8 @@ Deno.serve(async (req) => {
     .maybeSingle();
 
   if (existing) {
-    return redirect(`${ORIGIN}/auth/wechat/done#userId=${existing.id}&isNew=0`);
+    // Use query params (not hash) — WeChat X5 WebView strips #fragment from 302 redirects.
+    return redirect(`${ORIGIN}/auth/wechat/done?userId=${existing.id}&isNew=0`);
   }
 
   // ── 3. snsapi_base 且无记录 → 新用户需要完整授权，回登录页 ────────
@@ -104,17 +105,17 @@ Deno.serve(async (req) => {
   });
 
   if (insertErr) {
-    // 极小概率 race: 另一个请求在此期间插入了同 openid 的行 → 再查一次
     if (insertErr.code === '23505') {
       const { data: race } = await supabase
         .from('user_profiles')
         .select('id')
         .eq('wechat_openid', openid)
         .maybeSingle();
-      if (race) return redirect(`${ORIGIN}/auth/wechat/done#userId=${race.id}&isNew=0`);
+      if (race) return redirect(`${ORIGIN}/auth/wechat/done?userId=${race.id}&isNew=0`);
     }
     return redirectError('db_insert_failed');
   }
 
-  return redirect(`${ORIGIN}/auth/wechat/done#userId=${newId}&isNew=1`);
+  // Query params, not hash — WeChat X5 WebView strips #fragment on 302 redirect.
+  return redirect(`${ORIGIN}/auth/wechat/done?userId=${newId}&isNew=1`);
 });
