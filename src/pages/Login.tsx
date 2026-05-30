@@ -175,8 +175,17 @@ export default function Login() {
     return saved === "employer" || saved === "helper";
   });
 
+  // TICKET-114 (5/30) — 两路诊断参数都读:
+  //   wx_error  = 后端 wechat-mp-callback 302 回来的微信/DB 错 (errcode / db_insert_failed / scope_...)
+  //   wxin      = 前端 WeChatIn 中转页自己弹走时打的标 (nocode / dup / nosupa)
+  // 任一存在 → 顶部红色横幅醒目显示, 绝不再被"微信识别中"遮罩盖住。
   const wxErrParam = searchParams.get("wx_error");
-  const [error, setError] = useState(wxErrParam ? `微信登录出错: ${wxErrParam}` : "");
+  const wxInParam  = searchParams.get("wxin");
+  const [error, setError] = useState(
+    wxErrParam ? `微信登录出错: ${wxErrParam}`
+    : wxInParam ? `登录中转中断 (wxin=${wxInParam})`
+    : ""
+  );
 
   // TICKET-068 §B — 菲佣邀请码登录 state
   // §B+ URL ?invite=ABC 自动预填（一键 WhatsApp 闭环菲佣点 link 不用手输）
@@ -198,25 +207,12 @@ export default function Login() {
   // 当用户从微信里第一次进入 /login（isWxFlow=true）且没有缓存的
   // wechat_session 时，先显示一个"微信识别中…"覆盖层，4 秒后自动落到
   // 手动登录视图（用户也可立即点"手动登录"跳过等待）。
-  const [wxRecognizing, setWxRecognizing] = useState<boolean>(() => {
-    if (!isWxFlow) return false;
-    // 已有 wechat_session 缓存 = 老用户重复进入，不再 stall — 直接显示
-    // 手动登录界面（点微信按钮即可走 OAuth）。
-    try {
-      const cached = localStorage.getItem("wechat_session");
-      if (cached) {
-        const parsed = JSON.parse(cached) as { at?: number };
-        // 24 小时内有缓存就跳过等待
-        if (parsed.at && Date.now() - parsed.at < 24 * 3600 * 1000) return false;
-      }
-    } catch { /* corrupt cache — fall through to recognizing */ }
-    return true;
-  });
-  useEffect(() => {
-    if (!wxRecognizing) return;
-    const t = setTimeout(() => setWxRecognizing(false), 4000);
-    return () => clearTimeout(t);
-  }, [wxRecognizing]);
+  // TICKET-114 (5/30) — "微信识别中…" 遮罩永久停用 (init 恒为 false)。
+  // 它原本是为了盖住 snsapi_base 静默登录在途时的空白; 但静默登录已在
+  // App.tsx RootRedirect 停用, 这个遮罩只剩两个坏处: (1) 4 秒挡住真报错红字,
+  // 让登录失败"看起来像干净登录页"; (2) 逼用户多点一次"手动登录"二段式
+  // (老板真测多次吐槽)。直接 false, 进 /login 立刻看到角色按钮 + 微信登录。
+  const [wxRecognizing, setWxRecognizing] = useState<boolean>(false);
 
   const goAfterLogin = (r: Role) => {
     if (r === "helper") { navigate("/helper"); return; }
@@ -469,6 +465,30 @@ export default function Login() {
     <div className="font-sans min-h-screen flex flex-col max-w-md mx-auto relative overflow-hidden text-white"
       style={{ background: "#080808" }}>
       {heroBg}
+
+      {/* TICKET-114 (5/30) — 登录诊断横幅。wx_error (后端) / wxin (前端中转)
+          任一存在即在最顶部用红色醒目显示, 不再被遮罩藏起。点 × 可关。 */}
+      {error && (
+        <div
+          className="fixed top-0 left-0 right-0 z-[70] flex items-center justify-between gap-2 py-2.5 px-4"
+          style={{
+            background: "rgba(220,38,38,0.96)",
+            color: "white",
+            fontSize: 13,
+            fontWeight: 600,
+            boxShadow: "0 2px 12px rgba(220,38,38,0.4)",
+          }}
+        >
+          <span style={{ flex: 1, lineHeight: 1.4 }}>{error}</span>
+          <button
+            onClick={() => setError("")}
+            aria-label="关闭"
+            style={{ color: "white", fontSize: 18, lineHeight: 1, padding: "0 4px", opacity: 0.85 }}
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {/* TICKET-064 §B — wx_refresh=avatar 自动重授权时顶部 banner 提示。
           老板真测 #10 关键: 让用户知道页面"正在干嘛", 避免以为卡死又退出。

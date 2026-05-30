@@ -81,7 +81,8 @@ import { getUserId, SESSION_VERSION, SESSION_KEY } from './lib/userId';
 })();
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
 import { supabase } from './lib/supabase';
-import { maybeAttemptSilent } from './lib/wechatSilentLogin';
+// TICKET-114 (5/30) — maybeAttemptSilent (snsapi_base 静默登录) 已停用, 见
+// RootRedirect 内注释。import 移除避免 unused; lib 文件保留备查。
 import { useWeChatShare } from './hooks/useWeChatShare';
 
 // TICKET-018 §D — DEV-only prototype routes (lazy + tree-shaken from prod bundle)
@@ -156,20 +157,14 @@ function RootRedirect() {
   // quickPrefs 用户按 §C 第 3 条 "保兼容, 不强制走新 onboarding" 直接 /home,
   // 不再被拽回 /setup 重做. /setup 路由保留可访问 (旧用户主动重做 / 测试入口).
 
-  // Silent re-auth for WeChat users who lost localStorage between sessions
-  // (公众号 / 朋友圈 / 群聊 link clicks open in webview contexts whose
-  // storage isn't always persisted). attemptSilent() redirects away, so
-  // this branch never falls through to render.
-  if (maybeAttemptSilent()) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: '#080808' }}>
-        <div className="text-center">
-          <div className="inline-block w-8 h-8 rounded-full border-2 border-white/20 border-t-[#FF5A1F] animate-spin mb-3" />
-          <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.6)' }}>正在登录…</p>
-        </div>
-      </div>
-    );
-  }
+  // TICKET-114 (5/30) — 停用 snsapi_base 静默登录 (maybeAttemptSilent).
+  // 它对"新用户"必然有害: 一进首页 `/` 就自动发起静默授权 → 库里无 openid →
+  // 后端判 `scope_snsapi_base_no_user` → 302 回 /login (报错被 Login 的
+  // "微信识别中" 遮罩盖住, 表现为"打开就莫名回登录页, 无红字")。
+  // 绿色按钮走的 snsapi_userinfo 是超集: 老用户已授权会被微信静默跳过同意页、
+  // 后端按 openid 命中直接返回原 userId; 新用户走同意页建号。所以 base 静默
+  // 无存在必要, 停调用即除掉这条自动弹回路径。lib 文件保留备查 (5 分钟可改回)。
+  // if (maybeAttemptSilent()) { return <spinner/>; }  ← 已停用
 
   // TICKET-030 P0 (老板真测) — 未登录用户必须先过 /login 关口，不再直接
   // 进 onboarding (/setup)。getUserId() 是 custom-auth 登录态唯一判定

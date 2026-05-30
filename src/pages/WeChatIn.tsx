@@ -14,29 +14,37 @@ import { useEffect } from 'react';
 
 export default function WeChatIn() {
   useEffect(() => {
+    // TICKET-114 (5/30) — 所有"弹走"路径都改去 /login?wxin=<reason> 打标,
+    // 不再静默 replace('/') (那会让失败看起来像"干净登录页")。这样登录页
+    // 顶部红条会显示 wxin=nocode/dup/nosupa, 一眼定位前端中转哪步断的。
+    const hasUserId = () =>
+      !!(localStorage.getItem('nutri_user_id') || localStorage.getItem('userId'));
+
     const params = new URLSearchParams(window.location.search);
     const code = params.get('code');
     if (!code) {
-      window.location.replace('/');
+      // 微信没回 code (异常) —— 已登录则回首页, 否则打标回登录页。
+      window.location.replace(hasUserId() ? '/' : '/login?wxin=nocode');
       return;
     }
     // Single-shot guard: WeChat OAuth codes are single-use. If the user
-    // back-navigates to this bouncer or the WeChat in-app browser double-
-    // fires the mount-effect (observed in WeChat 8.x), the second pass
-    // would re-POST the same code and trigger errcode 40163 "code been
-    // used". Track the last processed code in sessionStorage; second hit
-    // with the same code is treated as a no-op back-navigation and goes
-    // home (login likely already succeeded the first time).
+    // back-navigates to this bouncer or the WeChat X5 webview re-mounts the
+    // page (bfcache / pageshow), a second forward of the same code triggers
+    // errcode 40163 "code been used". Track the last processed code in
+    // sessionStorage.
+    //   · 若此时已有 userId → 第一次转发其实成功了, 回首页。
+    //   · 若仍无 userId → 第一次转发失败/被打断, 打 wxin=dup 标回登录页
+    //     (让我们知道 X5 重载了中转页), 不再静默回首页掩盖失败。
     const STORE_KEY = 'wechat_oauth_processed_code';
     if (sessionStorage.getItem(STORE_KEY) === code) {
-      window.location.replace('/');
+      window.location.replace(hasUserId() ? '/' : '/login?wxin=dup');
       return;
     }
     sessionStorage.setItem(STORE_KEY, code);
 
     const supaUrl = import.meta.env.VITE_SUPABASE_URL ?? '';
     if (!supaUrl) {
-      window.location.replace('/');
+      window.location.replace('/login?wxin=nosupa');
       return;
     }
     const target = `${supaUrl}/functions/v1/wechat-mp-callback${window.location.search}`;
