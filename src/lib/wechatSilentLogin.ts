@@ -64,7 +64,7 @@ export function shouldAttemptSilent(): boolean {
  */
 export function attemptSilent(): void {
   // 权威 AppID 硬钉 (见 Login.tsx 注释)。线上 VITE_WECHAT_APPID 是错号, 不能用。
-  const appid = 'wx63839880f1595f07';
+  const appid = 'wx3c66070bbe747b92';
   if (!appid) return;
   sessionStorage.setItem(SS_FLAG, '1');
   // Same bouncer path the regular launchWeChat uses — keeps redirect_uri

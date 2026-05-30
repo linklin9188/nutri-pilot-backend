@@ -1275,7 +1275,7 @@ export default function Settings() {
           {(!myDisplayName || !myAvatarUrl) && /MicroMessenger/i.test(navigator.userAgent) && (
             <button
               onClick={() => {
-                const appid = 'wx63839880f1595f07'; // 权威号硬钉 (老板 5/30), 不读线上错值 VITE_WECHAT_APPID
+                const appid = 'wx3c66070bbe747b92'; // 权威号硬钉 (老板 5/30), 不读线上错值 VITE_WECHAT_APPID
                 const redirect = encodeURIComponent(`${window.location.origin}/auth/wechat/in`);
                 const state = crypto.randomUUID();
                 sessionStorage.setItem('wechat_oauth_state', state);
