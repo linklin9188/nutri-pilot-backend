@@ -71,8 +71,14 @@ function devTestLogin(role: Role, providerLabel: string) {
 // (nothinkeats.com), so we bounce through /auth/wechat/in which forwards
 // to the Supabase edge function. Edge fn exchanges code, upserts
 // user_profiles, then 302s back to /auth/wechat/done with userId in hash.
+// 老板 2026-05-30 拍板权威 AppID = wx63839880f1595f07 (后台密钥配对的就是它)。
+// 直接硬钉, 不读 VITE_WECHAT_APPID — 线上构建该 env 被填成了错号 wx3c66...,
+// 导致前端发起 OAuth 用 A 号、后台换 token 用 B 号, 必然登录失败。
+// appid 是公开值 (本就出现在授权 URL), 硬编码不泄密。前后端必须同源。
+const WECHAT_APPID = 'wx63839880f1595f07';
+
 function launchWeChat(): { triggered: boolean; reason?: string } {
-  const appid = import.meta.env.VITE_WECHAT_APPID;
+  const appid = WECHAT_APPID;
   const isWeChatBrowser = /MicroMessenger/i.test(navigator.userAgent);
   if (!isWeChatBrowser) {
     return { triggered: false, reason: "请在微信里打开 nothinkeats.com 后再点「微信登录」。" };

@@ -63,7 +63,8 @@ export function shouldAttemptSilent(): boolean {
  * lightweight placeholder ("正在登录…") while this is in flight.
  */
 export function attemptSilent(): void {
-  const appid = import.meta.env.VITE_WECHAT_APPID;
+  // 权威 AppID 硬钉 (见 Login.tsx 注释)。线上 VITE_WECHAT_APPID 是错号, 不能用。
+  const appid = 'wx63839880f1595f07';
   if (!appid) return;
   sessionStorage.setItem(SS_FLAG, '1');
   // Same bouncer path the regular launchWeChat uses — keeps redirect_uri
