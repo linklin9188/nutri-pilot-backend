@@ -117,7 +117,7 @@ export default function ChefAgent() {
     const mealZh = lastMeal === 'lunch' ? '今日午餐' : '今晚';
     const mealEn = lastMeal === 'lunch' ? "today's lunch" : 'tonight';
     setToast({ kind: 'info', text: t(`✓ ${okCount} 道已加入${mealZh}`, `✓ Added ${okCount} to ${mealEn}`) });
-    setTimeout(() => { setToast(null); navigate('/'); }, 1100);
+    setTimeout(() => { setToast(null); navigate('/today'); }, 1100);
   }
 
   const count = selected.size;

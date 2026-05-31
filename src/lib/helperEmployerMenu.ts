@@ -38,6 +38,9 @@ export interface EmployerDishLite {
   video_lang?:      string | null;
   video_platform?:  string | null;
   cook_time_min?:   number | null;
+  steps_verified?:  boolean | null;
+  description_zh?:  string | null;
+  description_en?:  string | null;
 }
 
 export interface EmployerMenuResult {
@@ -62,6 +65,7 @@ const EMPTY: EmployerMenuResult = {
  */
 export async function loadEmployerTodayMenu(
   helperUserId: string | null | undefined,
+  dayOffset: number = 0,
 ): Promise<EmployerMenuResult> {
   if (!helperUserId) return EMPTY;
 
@@ -102,11 +106,13 @@ export async function loadEmployerTodayMenu(
     employerId = helperUserId;
   }
 
-  // 3. 当周 weekStart (Mon=0 周一对齐, 同 HelperHome.tsx:208-212)
-  const today  = new Date();
-  const dow    = (today.getDay() + 6) % 7;
-  const monday = new Date(today);
-  monday.setDate(today.getDate() - dow);
+  // 3. 目标日 weekStart (Mon=0 周一对齐, 同 HelperHome.tsx:208-212)。
+  //    dayOffset: 0=今天 / 1=明天 — 从目标日反推周一, 自动处理跨周。
+  const target = new Date();
+  target.setDate(target.getDate() + dayOffset);
+  const dow    = (target.getDay() + 6) % 7;
+  const monday = new Date(target);
+  monday.setDate(target.getDate() - dow);
   const weekStart = monday.toISOString().slice(0, 10);
 
   const { data: menuRows, error: menuErr } = await supabase
@@ -144,7 +150,8 @@ export async function loadEmployerTodayMenu(
     .from('dishes')
     .select(
       'id, title_zh, title_en, image_url, main_ingredient, course_type, meal_type, ' +
-      'prep_steps_json, cook_steps_json, video_url, video_lang, video_platform, cook_time_min',
+      'prep_steps_json, cook_steps_json, video_url, video_lang, video_platform, cook_time_min, ' +
+      'steps_verified, description_zh, description_en',
     )
     .in('id', allIds);
   if (dishErr) {

@@ -39,6 +39,7 @@ import WeChatIn from './pages/WeChatIn';
 import Privacy from './pages/Privacy';
 import Terms from './pages/Terms';
 import ChefAgent from './pages/ChefAgent';
+import TodayMenu from './pages/TodayMenu';
 import RequireAuth from './components/RequireAuth';
 import NetworkBanner from './components/NetworkBanner';
 import { syncFavoritesFromCloud } from './lib/favorites';
@@ -334,6 +335,7 @@ function AppShell() {
       <Route path="/chat"     element={<RequireAuth><ChatAgent /></RequireAuth>} />
       {/* TICKET-113 agent-first MVP "爱吃主厨" — 共用引擎换壳, 旧 app 零改动. /chef 独立入口. */}
       <Route path="/chef"     element={<RequireAuth><ChefAgent /></RequireAuth>} />
+      <Route path="/today"    element={<RequireAuth><TodayMenu /></RequireAuth>} />
       <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
       <Route path="/weekly"   element={<RequireAuth><WeeklyMenu /></RequireAuth>} />
       {/* TICKET-100 (5/28 老板砍清单): LearnerHome 已删, /helper 直接 HelperHome */}
