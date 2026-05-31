@@ -23,6 +23,7 @@ export interface DishNameMatch {
   id: string;
   title_zh: string | null;
   title_en: string | null;
+  steps_verified: boolean | null;  // 真做法已校验 → 可做绿标
   matchLen: number;  // 命中的 title 长度, 越长越具体
 }
 
@@ -34,7 +35,7 @@ export async function findDishesMentionedIn(
   if (raw.length < 2) return [];
   const intentLower = raw.toLowerCase();
 
-  const { data, error } = await supabase.from('dishes').select('id, title_zh, title_en');
+  const { data, error } = await supabase.from('dishes').select('id, title_zh, title_en, steps_verified');
   if (error || !data) return [];
 
   const matches: DishNameMatch[] = [];
@@ -46,7 +47,7 @@ export async function findDishesMentionedIn(
     if (zh.length >= 2 && raw.includes(zh)) matchLen = Math.max(matchLen, zh.length);
     if (en.length >= 4 && intentLower.includes(en)) matchLen = Math.max(matchLen, en.length);
     if (matchLen > 0) {
-      matches.push({ id: d.id, title_zh: d.title_zh, title_en: d.title_en, matchLen });
+      matches.push({ id: d.id, title_zh: d.title_zh, title_en: d.title_en, steps_verified: d.steps_verified ?? null, matchLen });
     }
   }
   matches.sort((a, b) => b.matchLen - a.matchLen);

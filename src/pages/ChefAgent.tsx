@@ -1,43 +1,41 @@
 /**
- * ChefAgent — TICKET-113 agent-first MVP "爱吃主厨" (老板 5/30)
+ * ChefAgent — 报菜名 (Warm Hearth 大改版, 老板 5/31 照 Stitch 图3 落地)
  *
- * 老板 5/30 战略: "不再是 app 的时代了". 在不改原有任何东西的基础上, 共用同一套
- * 引擎/数据/lib, 新做一个 agent-first 产品先 MVP, 确认了再上线.
+ * 动线 (Stitch _3): 大标题"你想做什么菜？" → 自由搜索框 (命中真菜名, 可做绿标)
+ *   → 快速选分类方块 (食材) → 菜卡横滑多选 (勾选叠层) → 底部"已选 N 道 / 生成做法"。
  *
- * 设计 — 对话脊柱 + 内联卡, 不是聊天气泡塞 grid:
- *   - 顶部: 主厨问候 (context-aware: 时段 + 今日在家人数)
- *   - 中部: 对话流 — 主厨消息 / 用户消息 / 内联菜卡 (BrowseDish 卡片)
- *   - 底部: 食材 chip 快捷入口 (牛肉/鱼/鸡…) + 自由输入框
+ * "生成做法" = 把多选的菜一次性真写进当日菜单 (addDishToTodayMenu, 按餐次写
+ *   dish_ids/swapped_dish_ids), 采购清单 + 菲佣端当天可见 → 跳今日菜单。
  *
- * 复用 (不新建): ingredientBrowse / favorites / getDishTitle / dishFields /
- *   loadEmployerTodayMenu / user_chat_preferences (偏好沉淀) / supabase.
- *
- * 旧 app 零改动: 新路由 /chef, 旧 4-tab app 一行不动. 共用引擎换个壳。
- *
- * MVP 范围 (P0): 食材浏览 → 内联热门菜卡 → 看详情 (图/营养/味道) → 收藏 +
- *   加今日菜单 (菲佣可见). 营养本地展示, 0 LLM. 暂不接 chatStreaming (P1 再接
- *   自然语言), MVP 先用 chip + 规则应答证明交互模型。
+ * 复用 (不新建): ingredientBrowse / dishNameSearch / chefAddToToday /
+ *   getDishTitle / favorites 沉淀 / user_chat_preferences。
+ * 视觉沿用 App @theme (cream #FCFBF8 + brand #FF5A1F); 可做绿标 = steps_verified。
+ * 旧 4-tab app 一行不动, 共用引擎换壳。
  */
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '../contexts/LanguageContext';
 import { getUserId } from '../lib/userId';
 import { getDishTitle } from '../lib/dishTitleI18n';
-import { toggleFavorite, isFavorited } from '../lib/favorites';
 import { INGREDIENT_GROUPS, browseByIngredient, type BrowseDish } from '../lib/ingredientBrowse';
-import { supabase } from '../lib/supabase';
+import { findDishesMentionedIn, type DishNameMatch } from '../lib/dishNameSearch';
 import { addDishToTodayMenu } from '../lib/chefAddToToday';
+import { supabase } from '../lib/supabase';
 
-type Msg =
-  | { kind: 'chef'; text: string }
-  | { kind: 'user'; text: string }
-  | { kind: 'dishes'; dishes: BrowseDish[]; ingredientZh: string };
-
-function greeting(hour: number, t: (zh: string, en: string) => string): string {
-  if (hour < 11) return t('早上好 ☀️ 今天想吃点什么？', 'Morning ☀️ What would you like today?');
-  if (hour < 16) return t('中午好 🍽 今天想吃点什么？', 'Afternoon 🍽 What are you craving?');
-  return t('晚上好 🌙 今晚想吃点什么？', 'Evening 🌙 What shall we cook tonight?');
+// 选中项的最小载荷 (搜索结果 / 食材菜卡共用)
+interface SelDish {
+  id: string;
+  title_zh: string | null;
+  title_en: string | null;
+  steps_verified: boolean | null;
 }
+
+const CREAM = '#FCFBF8';
+const BRAND = '#FF5A1F';
+const GREEN = '#4CAF50';
+const INK = '#1A1A1A';
+const SUB = '#666666';
+const ALT = '#F2F2ED';
 
 export default function ChefAgent() {
   const navigate = useNavigate();
@@ -45,251 +43,277 @@ export default function ChefAgent() {
   const zh = language !== 'en';
   const t = (z: string, e: string) => (zh ? z : e);
 
-  const [msgs, setMsgs] = useState<Msg[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [detail, setDetail] = useState<BrowseDish | null>(null);
-  const [todayAdded, setTodayAdded] = useState<Set<string>>(new Set());
-  const [addingToday, setAddingToday] = useState(false);
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<DishNameMatch[]>([]);
+  const [searching, setSearching] = useState(false);
+
+  const [activeCat, setActiveCat] = useState<string | null>(null);
+  const [catDishes, setCatDishes] = useState<BrowseDish[]>([]);
+  const [loadingCat, setLoadingCat] = useState(false);
+
+  const [selected, setSelected] = useState<Map<string, SelDish>>(new Map());
+  const [generating, setGenerating] = useState(false);
   const [toast, setToast] = useState<{ kind: 'info' | 'error'; text: string } | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
 
-  // 开场 — context-aware 问候
+  const debRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 自由搜索 — 防抖命中真菜名
   useEffect(() => {
-    const h = new Date().getHours();
-    setMsgs([{ kind: 'chef', text: greeting(h, t) }]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (debRef.current) clearTimeout(debRef.current);
+    const q = query.trim();
+    if (q.length < 2) { setResults([]); setSearching(false); return; }
+    setSearching(true);
+    debRef.current = setTimeout(async () => {
+      const m = await findDishesMentionedIn(q, { limit: 8 });
+      // findDishesMentionedIn 是反向包含; 短词补一个前缀兜底 (title 含 query)
+      setResults(m);
+      setSearching(false);
+    }, 320);
+    return () => { if (debRef.current) clearTimeout(debRef.current); };
+  }, [query]);
 
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-  }, [msgs, busy]);
-
-  async function pickIngredient(g: typeof INGREDIENT_GROUPS[number]) {
-    if (busy) return;
-    setBusy(true);
-    setMsgs(m => [...m, { kind: 'user', text: `${g.emoji} ${zh ? g.zh : g.en}` }]);
-    // 沉淀偏好 (主动选 = 高 confidence) — fire & forget
+  async function pickCat(g: typeof INGREDIENT_GROUPS[number]) {
+    if (loadingCat) return;
+    setActiveCat(g.key);
+    setLoadingCat(true);
+    // 主动选食材 = 高 confidence 偏好沉淀 (fire & forget)
     const uid = getUserId();
     if (uid) {
       supabase.from('user_chat_preferences').insert({
         user_id: uid, signal_type: 'love_keyword', keyword: g.key,
         confidence: 0.9, source: 'chef_ingredient_pick',
-      }).then(undefined, () => { /* tolerant: 表/列不符则忽略 */ });
+      }).then(undefined, () => { /* tolerant */ });
     }
-    const dishes = await browseByIngredient(g.key, { limit: 10 });
-    setBusy(false);
-    if (dishes.length === 0) {
-      setMsgs(m => [...m, { kind: 'chef', text: t('暂时没找到这类做法，换个食材试试？', 'No dishes found for that — try another?') }]);
-      return;
-    }
-    setMsgs(m => [...m,
-      { kind: 'chef', text: t(`这是${g.zh}最受欢迎的做法 👇 点开看看`, `Here are the most popular ${g.en.toLowerCase()} dishes 👇`) },
-      { kind: 'dishes', dishes, ingredientZh: zh ? g.zh : g.en },
-    ]);
+    const dishes = await browseByIngredient(g.key, { limit: 12 });
+    setCatDishes(dishes);
+    setLoadingCat(false);
   }
 
-  async function addToToday(d: BrowseDish) {
-    // TICKET-113 P0 (老板 5/30): 真写当日菜单 (swapped_dish_ids 合并去重),
-    // 采购清单 + 菲佣端当天可见。同时保留「主厨点单」收藏沉淀。
-    if (addingToday) return;
-    if (todayAdded.has(d.id)) return;
-    setAddingToday(true);
-
-    // 收藏沉淀 (保留原 UX: 加入今日同时仍收藏到「主厨点单」)。
-    toggleFavorite({
-      id: d.id, title_zh: d.title_zh, title_en: d.title_en ?? undefined,
-      image_url: d.image_url ?? undefined, main_ingredient: d.main_ingredient ?? undefined,
-      source_tag: '主厨点单',
+  function toggle(d: SelDish) {
+    setSelected(prev => {
+      const next = new Map(prev);
+      if (next.has(d.id)) next.delete(d.id);
+      else next.set(d.id, d);
+      return next;
     });
+  }
 
-    const res = await addDishToTodayMenu(d.id);
-    setAddingToday(false);
-
-    if (!res.ok) {
-      setToast({ kind: 'error', text: t('加入今日失败，可重试', 'Could not add — try again') });
+  async function generate() {
+    if (generating || selected.size === 0) return;
+    setGenerating(true);
+    const items = [...selected.values()];
+    let okCount = 0;
+    let lastMeal: 'lunch' | 'dinner' = 'dinner';
+    for (const d of items) {
+      const res = await addDishToTodayMenu(d.id);
+      if (res.ok) { okCount++; lastMeal = res.mealType; }
+    }
+    setGenerating(false);
+    if (okCount === 0) {
+      setToast({ kind: 'error', text: t('加入失败，请重试', 'Could not add — try again') });
       setTimeout(() => setToast(null), 3500);
       return;
     }
-
-    setTodayAdded(s => new Set(s).add(d.id));
-    const mealZh = res.mealType === 'lunch' ? '今日午餐' : '今晚';
-    const mealEn = res.mealType === 'lunch' ? "today's lunch" : 'tonight';
-    setToast({
-      kind: 'info',
-      text: res.alreadyPresent
-        ? t(`已在${mealZh}菜单里`, `Already in ${mealEn}`)
-        : t(`✓ 已加入${mealZh}菜单`, `✓ Added to ${mealEn}`),
-    });
-    setTimeout(() => setToast(null), 3000);
+    const mealZh = lastMeal === 'lunch' ? '今日午餐' : '今晚';
+    const mealEn = lastMeal === 'lunch' ? "today's lunch" : 'tonight';
+    setToast({ kind: 'info', text: t(`✓ ${okCount} 道已加入${mealZh}`, `✓ Added ${okCount} to ${mealEn}`) });
+    setTimeout(() => { setToast(null); navigate('/'); }, 1100);
   }
 
+  const count = selected.size;
+
   return (
-    <div className="min-h-screen flex flex-col max-w-md mx-auto" style={{ background: '#0a0a0a' }}>
-      {/* Header */}
-      <header className="sticky top-0 z-40 px-5 pt-12 pb-3 flex items-center gap-3"
-        style={{ background: 'linear-gradient(180deg, #0a0a0a 70%, transparent)' }}>
-        <div className="w-9 h-9 rounded-full flex items-center justify-center"
-          style={{ background: 'rgba(255,90,31,0.18)' }}>
-          <span style={{ fontSize: 18 }}>👨‍🍳</span>
-        </div>
-        <div className="flex-1">
-          <h1 className="font-black text-white" style={{ fontSize: 17 }}>{t('爱吃主厨', 'Aieats Chef')}</h1>
-          <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>{t('说一声想吃什么', 'Just tell me what you crave')}</p>
-        </div>
-        <button onClick={() => navigate('/')}
-          className="text-white/40 active:scale-90 transition-transform"
-          style={{ fontSize: 12 }}>
-          {t('经典版', 'Classic')}
+    <div className="min-h-screen flex flex-col max-w-md mx-auto" style={{ background: CREAM, color: INK, paddingBottom: count > 0 ? 132 : 24 }}>
+      {/* TopAppBar */}
+      <header className="sticky top-0 z-40 flex items-center justify-between px-5 h-16"
+        style={{ background: CREAM }}>
+        <button onClick={() => navigate(-1)}
+          className="w-10 h-10 flex items-center justify-center rounded-full active:scale-95 transition-transform"
+          style={{ color: BRAND }}>
+          <span className="material-symbols-outlined">arrow_back</span>
         </button>
+        <div className="font-bold" style={{ fontSize: 18, color: BRAND }}>{t('报菜名', 'Report a Dish')}</div>
+        <div className="w-10 h-10" />
       </header>
 
-      {/* Conversation */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-3" style={{ WebkitOverflowScrolling: 'touch' }}>
-        {msgs.map((m, i) => {
-          if (m.kind === 'chef') return (
-            <div key={i} className="flex items-start gap-2 max-w-[88%]">
-              <div className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center" style={{ background: 'rgba(255,90,31,0.18)' }}>
-                <span style={{ fontSize: 14 }}>👨‍🍳</span>
+      {/* Main */}
+      <main className="flex-1 px-5 pt-2">
+        <h1 className="font-black mb-5" style={{ fontSize: 28, lineHeight: '34px', letterSpacing: '-0.5px' }}>
+          {t('你想做什么菜？', 'What shall we cook?')}
+        </h1>
+
+        {/* 搜索框 */}
+        <div className="rounded-2xl flex items-center px-4 py-3.5 mb-2"
+          style={{ background: ALT, border: '1px solid transparent' }}>
+          <span className="material-symbols-outlined mr-2.5" style={{ color: SUB, fontSize: 22 }}>search</span>
+          <input
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder={t('输入菜名，如：番茄炒蛋、红烧肉…', 'Type a dish name…')}
+            className="bg-transparent border-none outline-none w-full"
+            style={{ fontSize: 16, color: INK }}
+          />
+          {query && (
+            <button onClick={() => setQuery('')} className="ml-2" style={{ color: SUB }}>
+              <span className="material-symbols-outlined" style={{ fontSize: 20 }}>close</span>
+            </button>
+          )}
+        </div>
+
+        {/* 搜索结果行 */}
+        {(searching || results.length > 0) && (
+          <div className="mb-6 space-y-2">
+            {searching && (
+              <div className="flex items-center gap-2 py-2" style={{ color: SUB, fontSize: 13 }}>
+                <span className="material-symbols-outlined animate-spin" style={{ fontSize: 16 }}>progress_activity</span>
+                {t('搜索中…', 'Searching…')}
               </div>
-              <div className="rounded-2xl rounded-tl-sm px-3.5 py-2.5" style={{ background: 'rgba(255,255,255,0.07)' }}>
-                <p className="text-white/90" style={{ fontSize: 14, lineHeight: 1.5 }}>{m.text}</p>
-              </div>
-            </div>
-          );
-          if (m.kind === 'user') return (
-            <div key={i} className="flex justify-end">
-              <div className="rounded-2xl rounded-tr-sm px-3.5 py-2.5" style={{ background: 'linear-gradient(135deg, #FF5A1F, #FF8C54)' }}>
-                <p className="text-white font-semibold" style={{ fontSize: 14 }}>{m.text}</p>
-              </div>
-            </div>
-          );
-          // dishes — 横滑内联卡
-          return (
-            <div key={i} className="flex gap-2.5 overflow-x-auto pb-1 -mx-4 px-4" style={{ scrollbarWidth: 'none' }}>
-              {m.dishes.map(d => {
-                const title = getDishTitle(d as any, language) || d.title_zh;
-                return (
-                  <button key={d.id} onClick={() => setDetail(d)}
-                    className="flex-shrink-0 rounded-2xl overflow-hidden text-left active:scale-[0.97] transition-transform"
-                    style={{ width: 156, background: '#161616', border: '1px solid rgba(255,255,255,0.08)' }}>
-                    <div className="w-full relative" style={{ height: 104, background: 'rgba(255,255,255,0.05)' }}>
-                      {d.image_url && <img src={d.image_url} alt={title} className="w-full h-full object-cover"
-                        onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
-                      {d.xiaomei_compatible && (
-                        <span className="absolute top-1.5 left-1.5 rounded-full px-1.5 py-0.5" style={{ background: 'rgba(255,90,31,0.92)', fontSize: 9, color: 'white', fontWeight: 700 }}>
-                          {t('小美可做', 'Robot OK')}
-                        </span>
-                      )}
-                    </div>
-                    <div className="px-2.5 py-2">
-                      <p className="font-bold text-white leading-tight line-clamp-2" style={{ fontSize: 12.5, minHeight: 32 }}>{title}</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        {d.cook_time_min != null && <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)' }}>⏱ {d.cook_time_min}min</span>}
-                        {d.nutrition_kcal_per_serving != null && <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)' }}>🔥 {Math.round(d.nutrition_kcal_per_serving)}kcal</span>}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          );
-        })}
-        {busy && (
-          <div className="flex items-center gap-2 text-white/40 px-2">
-            <span className="material-symbols-outlined animate-spin" style={{ fontSize: 16 }}>progress_activity</span>
-            <span style={{ fontSize: 12 }}>{t('主厨在翻菜谱…', 'Chef is thinking…')}</span>
+            )}
+            {results.map(r => {
+              const on = selected.has(r.id);
+              const title = getDishTitle(r as any, language) || r.title_zh || '';
+              return (
+                <button key={r.id}
+                  onClick={() => toggle({ id: r.id, title_zh: r.title_zh, title_en: r.title_en, steps_verified: r.steps_verified })}
+                  className="w-full rounded-2xl p-4 flex justify-between items-center active:scale-[0.98] transition-transform"
+                  style={{
+                    background: '#FFFFFF',
+                    border: on ? `2px solid ${BRAND}` : '1px solid #E5E5E0',
+                    boxShadow: '0px 4px 20px rgba(0,0,0,0.04)',
+                  }}>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="material-symbols-outlined" style={{ color: on ? BRAND : SUB, fontSize: 20 }}>
+                      {on ? 'check_circle' : 'restaurant'}
+                    </span>
+                    <span className="font-semibold truncate" style={{ fontSize: 16 }}>{title}</span>
+                  </div>
+                  {r.steps_verified && (
+                    <span className="flex items-center gap-1 px-2.5 py-1 rounded-full shrink-0"
+                      style={{ background: 'rgba(76,175,80,0.12)', color: GREEN, fontSize: 12, fontWeight: 600 }}>
+                      <span className="material-symbols-outlined" style={{ fontSize: 14 }}>check_circle</span>
+                      {t('可做', 'Ready')}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+            {!searching && query.trim().length >= 2 && results.length === 0 && (
+              <p className="py-2" style={{ color: SUB, fontSize: 13 }}>
+                {t('没找到这道菜，换个说法或从下面快速选', 'Not found — try the quick picks below')}
+              </p>
+            )}
           </div>
         )}
-      </div>
 
-      {/* 食材 chip 快捷入口 */}
-      <div className="shrink-0 px-4 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingBottom: 'calc(env(safe-area-inset-bottom, 12px) + 12px)' }}>
-        <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
-          {INGREDIENT_GROUPS.map(g => (
-            <button key={g.key} onClick={() => pickIngredient(g)} disabled={busy}
-              className="shrink-0 px-3.5 py-2 rounded-full font-bold active:scale-95 transition-transform disabled:opacity-40"
-              style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.10)', fontSize: 13, color: 'white' }}>
-              {g.emoji} {zh ? g.zh : g.en}
-            </button>
-          ))}
+        {/* 快速选 — 食材方块 */}
+        <h2 className="font-bold mb-3" style={{ fontSize: 20 }}>{t('快速选', 'Quick pick')}</h2>
+        <div className="flex gap-3 overflow-x-auto pb-2" style={{ scrollbarWidth: 'none' }}>
+          {INGREDIENT_GROUPS.map(g => {
+            const on = activeCat === g.key;
+            return (
+              <button key={g.key} onClick={() => pickCat(g)}
+                className="shrink-0 flex flex-col items-center justify-center rounded-[20px] active:scale-95 transition-all"
+                style={{
+                  width: 76, height: 76,
+                  background: on ? '#E8E8E6' : '#F4F4F2',
+                  border: on ? `2px solid ${BRAND}` : '2px solid transparent',
+                }}>
+                <span style={{ fontSize: 24, marginBottom: 2 }}>{g.emoji}</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: on ? INK : SUB }}>{zh ? g.zh : g.en}</span>
+              </button>
+            );
+          })}
         </div>
-      </div>
 
-      {/* Toast — 加入今日 成功/失败 提示态 */}
+        {/* 菜卡横滑多选 */}
+        {activeCat && (
+          <div className="mt-4">
+            {loadingCat ? (
+              <div className="flex items-center gap-2 py-6" style={{ color: SUB, fontSize: 13 }}>
+                <span className="material-symbols-outlined animate-spin" style={{ fontSize: 16 }}>progress_activity</span>
+                {t('在翻菜谱…', 'Finding dishes…')}
+              </div>
+            ) : catDishes.length === 0 ? (
+              <p className="py-6" style={{ color: SUB, fontSize: 13 }}>{t('这类暂时没有，换个食材', 'None yet — try another')}</p>
+            ) : (
+              <div className="flex gap-4 overflow-x-auto pb-4" style={{ scrollbarWidth: 'none' }}>
+                {catDishes.map(d => {
+                  const on = selected.has(d.id);
+                  const title = getDishTitle(d as any, language) || d.title_zh;
+                  return (
+                    <button key={d.id}
+                      onClick={() => toggle({ id: d.id, title_zh: d.title_zh, title_en: d.title_en, steps_verified: d.steps_verified })}
+                      className="shrink-0 flex flex-col gap-2 active:scale-[0.97] transition-transform text-left"
+                      style={{ width: 140 }}>
+                      <div className="w-full relative rounded-[24px] overflow-hidden"
+                        style={{ aspectRatio: '1', background: ALT, boxShadow: '0px 4px 20px rgba(0,0,0,0.04)' }}>
+                        {d.image_url && (
+                          <img src={d.image_url} alt={title} className="w-full h-full object-cover"
+                            onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                        )}
+                        {on && (
+                          <div className="absolute top-2 right-2 rounded-full flex items-center justify-center"
+                            style={{ width: 26, height: 26, background: BRAND, border: `2px solid ${CREAM}` }}>
+                            <span className="material-symbols-outlined text-white" style={{ fontSize: 15 }}>check</span>
+                          </div>
+                        )}
+                        {d.steps_verified && (
+                          <span className="absolute bottom-2 left-2 flex items-center gap-0.5 px-2 py-0.5 rounded-full"
+                            style={{ background: 'rgba(255,255,255,0.92)', color: GREEN, fontSize: 11, fontWeight: 600 }}>
+                            <span className="material-symbols-outlined" style={{ fontSize: 13 }}>check_circle</span>
+                            {t('可做', 'Ready')}
+                          </span>
+                        )}
+                      </div>
+                      <span className="font-semibold truncate px-1" style={{ fontSize: 15 }}>{title}</span>
+                      {d.cook_time_min != null && (
+                        <span className="px-1" style={{ fontSize: 12, color: SUB, marginTop: -4 }}>⏱ {d.cook_time_min}min</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </main>
+
+      {/* 底部固定动作栏 */}
+      {count > 0 && (
+        <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md z-50 px-5 pt-3"
+          style={{
+            background: CREAM, boxShadow: '0px -4px 20px rgba(0,0,0,0.05)',
+            borderTopLeftRadius: 20, borderTopRightRadius: 20,
+            paddingBottom: 'calc(env(safe-area-inset-bottom, 12px) + 12px)',
+          }}>
+          <div className="flex justify-between items-center mb-3 px-1">
+            <span style={{ fontSize: 16 }}>
+              {t('已选', 'Selected')} <strong style={{ color: BRAND }}>{count}</strong> {t('道', '')}
+            </span>
+            <button onClick={() => setSelected(new Map())} style={{ fontSize: 14, color: SUB, fontWeight: 500 }}>
+              {t('清空', 'Clear')}
+            </button>
+          </div>
+          <button onClick={generate} disabled={generating}
+            className="w-full py-4 rounded-full font-bold text-white flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-60"
+            style={{ background: BRAND, fontSize: 18, boxShadow: '0px 8px 30px rgba(255,90,31,0.22)' }}>
+            <span className="material-symbols-outlined">auto_awesome</span>
+            {generating ? t('加入中…', 'Adding…') : t('生成做法', 'Generate')}
+          </button>
+        </div>
+      )}
+
+      {/* Toast */}
       {toast && (
         <div className="fixed left-1/2 -translate-x-1/2 z-[130] px-4 py-2.5 rounded-full font-semibold pointer-events-none"
           style={{
-            bottom: 'calc(env(safe-area-inset-bottom, 12px) + 92px)',
-            background: toast.kind === 'error' ? 'rgba(220,38,38,0.95)' : 'rgba(28,28,28,0.96)',
-            border: toast.kind === 'error' ? '1px solid rgba(255,120,120,0.4)' : '1px solid rgba(255,140,84,0.4)',
-            color: 'white', fontSize: 13, maxWidth: '90%',
+            bottom: 'calc(env(safe-area-inset-bottom, 12px) + 96px)',
+            background: toast.kind === 'error' ? 'rgba(220,38,38,0.96)' : 'rgba(28,28,28,0.96)',
+            color: 'white', fontSize: 14, maxWidth: '90%',
           }}>
           {toast.text}
         </div>
       )}
-
-      {/* 详情卡 — 图/营养/味道 */}
-      {detail && (() => {
-        const title = getDishTitle(detail as any, language) || detail.title_zh;
-        const added = todayAdded.has(detail.id);
-        const fav = isFavorited(detail.id);
-        return (
-          <div className="fixed inset-0 z-[120] flex items-end justify-center" style={{ background: 'rgba(0,0,0,0.6)' }} onClick={() => setDetail(null)}>
-            <div className="w-full max-w-md rounded-t-3xl overflow-hidden" style={{ background: '#161616', maxHeight: '88vh' }} onClick={e => e.stopPropagation()}>
-              <div className="w-full relative" style={{ height: 200, background: 'rgba(255,255,255,0.05)' }}>
-                {detail.image_url && <img src={detail.image_url} alt={title} className="w-full h-full object-cover" />}
-                <button onClick={() => setDetail(null)} className="absolute top-3 right-3 w-8 h-8 rounded-full flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
-                  <span className="material-symbols-outlined text-white" style={{ fontSize: 18 }}>close</span>
-                </button>
-              </div>
-              <div className="px-5 py-4 overflow-y-auto" style={{ maxHeight: 'calc(88vh - 200px)' }}>
-                <h2 className="font-black text-white" style={{ fontSize: 19 }}>{title}</h2>
-                {/* 味道 tags */}
-                {detail.flavor_tags && detail.flavor_tags.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mt-2">
-                    {detail.flavor_tags.slice(0, 6).map((tag, i) => (
-                      <span key={i} className="px-2 py-0.5 rounded-full" style={{ background: 'rgba(255,90,31,0.15)', color: '#FF8C54', fontSize: 11 }}>{tag}</span>
-                    ))}
-                  </div>
-                )}
-                {detail.description_zh && zh && <p className="text-white/60 mt-3" style={{ fontSize: 13, lineHeight: 1.6 }}>{detail.description_zh}</p>}
-                {/* 营养 — 本地展示 */}
-                <div className="grid grid-cols-4 gap-2 mt-4">
-                  {[
-                    { label: t('热量', 'kcal'), val: detail.nutrition_kcal_per_serving, unit: '' },
-                    { label: t('蛋白', 'Protein'), val: detail.protein_g, unit: 'g' },
-                    { label: t('碳水', 'Carb'), val: detail.carb_g, unit: 'g' },
-                    { label: t('脂肪', 'Fat'), val: detail.fat_g, unit: 'g' },
-                  ].map((n, i) => (
-                    <div key={i} className="rounded-xl py-2.5 text-center" style={{ background: 'rgba(255,255,255,0.05)' }}>
-                      <p className="font-black text-white" style={{ fontSize: 15 }}>{n.val != null ? Math.round(n.val) : '—'}<span style={{ fontSize: 10 }}>{n.unit}</span></p>
-                      <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)' }}>{n.label}</p>
-                    </div>
-                  ))}
-                </div>
-                <div className="flex items-center gap-3 mt-3 text-white/50" style={{ fontSize: 12 }}>
-                  {detail.cook_time_min != null && <span>⏱ {detail.cook_time_min} min</span>}
-                  {detail.xiaomei_compatible && <span style={{ color: '#FF8C54' }}>🤖 {t('小美一键做', 'Robot-ready')}</span>}
-                </div>
-                {/* 动作 */}
-                <div className="flex gap-2.5 mt-5">
-                  <button onClick={() => { toggleFavorite({ id: detail.id, title_zh: detail.title_zh, title_en: detail.title_en ?? undefined, image_url: detail.image_url ?? undefined }); setDetail({ ...detail }); }}
-                    className="flex-1 py-3 rounded-2xl font-bold active:scale-[0.98] transition-transform"
-                    style={{ background: fav ? 'rgba(255,90,31,0.15)' : 'rgba(255,255,255,0.08)', color: fav ? '#FF8C54' : 'white', fontSize: 13 }}>
-                    {fav ? `★ ${t('已收藏', 'Saved')}` : `☆ ${t('收藏', 'Save')}`}
-                  </button>
-                  <button onClick={async () => { await addToToday(detail); setDetail(null); }}
-                    disabled={added || addingToday}
-                    className="flex-[1.5] py-3 rounded-2xl font-bold text-white active:scale-[0.98] transition-transform disabled:opacity-50"
-                    style={{ background: 'linear-gradient(135deg, #FF5A1F, #FF8C54)', fontSize: 13 }}>
-                    {added ? `✓ ${t('已加入', 'Added')}` : addingToday ? t('加入中…', 'Adding…') : t('加入今日想吃', 'Add to today')}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
     </div>
   );
 }
