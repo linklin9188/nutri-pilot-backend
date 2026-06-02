@@ -108,12 +108,16 @@ export async function loadEmployerTodayMenu(
 
   // 3. 目标日 weekStart (Mon=0 周一对齐, 同 HelperHome.tsx:208-212)。
   //    dayOffset: 0=今天 / 1=明天 — 从目标日反推周一, 自动处理跨周。
+  //    ⚠️ 必须用本地日期 (非 toISOString 的 UTC): 写入侧 useWeeklyMenu.getWeekStartISO
+  //    / chefAddToToday 都用 formatLocalDate(本地)。香港 UTC+8 凌晨 0–8 点 toISOString
+  //    会回退到 UTC 前一天, 导致 week_start 比写入侧早一天 → 菲佣读不到当天菜单 (实测
+  //    2026-06-02 7/7 天凌晨断链, 此处修)。
   const target = new Date();
   target.setDate(target.getDate() + dayOffset);
   const dow    = (target.getDay() + 6) % 7;
   const monday = new Date(target);
   monday.setDate(target.getDate() - dow);
-  const weekStart = monday.toISOString().slice(0, 10);
+  const weekStart = `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, '0')}-${String(monday.getDate()).padStart(2, '0')}`;
 
   const { data: menuRows, error: menuErr } = await supabase
     .from('user_weekly_menus')

@@ -8,7 +8,7 @@
  *   (报菜名/排菜单写入), byMeal 分桶, 跟 /chef 报菜名闭环。只读不改算法, 不 bump。
  *   雇主自己用时走 fallback (无 household_members 行 → 当 employer 自己读)。
  *   v1: 可做=steps_verified 真值; 缺N样 待 v2 (需库存真数据 + 单菜短缺计算)。
- *   换一批 → /weekly (原位重排留 v2); 开始做饭 → /cook。
+ *   换一批 → /weekly (原位重排留 v2); 开始做饭 → /cook-v2 (新做饭页: 列表→选菜→先备菜🧺→再做饭🔥)。
  */
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -150,7 +150,7 @@ export default function TodayMenu() {
               <span className="material-symbols-outlined" style={{ fontSize: 20 }}>shuffle</span>
               {t('换一批', 'Reshuffle')}
             </button>
-            <button onClick={() => navigate('/cook')}
+            <button onClick={() => navigate('/cook-v2')}
               className="flex-[2] flex items-center justify-center gap-2 rounded-full font-bold text-white active:scale-[0.98] transition-transform"
               style={{ height: 48, background: BRAND, fontSize: 14, boxShadow: '0px 8px 30px rgba(255,90,31,0.20)' }}>
               <span className="material-symbols-outlined" style={{ fontSize: 20 }}>restaurant_menu</span>

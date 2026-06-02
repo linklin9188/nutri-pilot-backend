@@ -36,10 +36,17 @@ import WeekendDining from './pages/WeekendDining';
 import Favorites from './pages/Favorites';
 import WeChatCallback from './pages/WeChatCallback';
 import WeChatIn from './pages/WeChatIn';
+import HostSsoIn from './pages/HostSsoIn';
 import Privacy from './pages/Privacy';
 import Terms from './pages/Terms';
 import ChefAgent from './pages/ChefAgent';
 import TodayMenu from './pages/TodayMenu';
+import HomeNew from './pages/HomeNew';
+import HelperCookNew from './pages/HelperCookNew';
+import HelperCommunityNew from './pages/HelperCommunityNew';
+import ProcureNew from './pages/ProcureNew';
+import FridgeScanNew from './pages/FridgeScanNew';
+import LoginNew from './pages/LoginNew';
 import RequireAuth from './components/RequireAuth';
 import NetworkBanner from './components/NetworkBanner';
 import { syncFavoritesFromCloud } from './lib/favorites';
@@ -302,6 +309,7 @@ function AppShell() {
           /onboarding-v2 (无 preference_vector + 无 quickPrefs). */}
       <Route path="/onboarding-v2" element={<RequireAuth><OnboardingV2 /></RequireAuth>} />
       <Route path="/auth/wechat/in"   element={<WeChatIn />} />
+      <Route path="/auth/host/in"     element={<HostSsoIn />} />
       <Route path="/auth/wechat/done" element={<WeChatCallback />} />
       <Route path="/pricing" element={<Pricing />} />
       <Route path="/privacy" element={<Privacy />} />
@@ -336,6 +344,11 @@ function AppShell() {
       {/* TICKET-113 agent-first MVP "爱吃主厨" — 共用引擎换壳, 旧 app 零改动. /chef 独立入口. */}
       <Route path="/chef"     element={<RequireAuth><ChefAgent /></RequireAuth>} />
       <Route path="/today"    element={<RequireAuth><TodayMenu /></RequireAuth>} />
+      <Route path="/home-v2"  element={<RequireAuth><HomeNew /></RequireAuth>} />
+      <Route path="/cook-v2"  element={<RequireAuth helperRole><HelperCookNew /></RequireAuth>} />
+      <Route path="/procure-v2" element={<RequireAuth><ProcureNew /></RequireAuth>} />
+      <Route path="/scan-v2"  element={<RequireAuth><FridgeScanNew /></RequireAuth>} />
+      <Route path="/login-v2" element={<LoginNew />} />
       <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
       <Route path="/weekly"   element={<RequireAuth><WeeklyMenu /></RequireAuth>} />
       {/* TICKET-100 (5/28 老板砍清单): LearnerHome 已删, /helper 直接 HelperHome */}
@@ -344,6 +357,8 @@ function AppShell() {
           /pro/school-balance 全砍 — 偏离 Aieats "每天吃什么 + 菲佣做美味中餐"
           核心定位. 见 docs/CEO_RETROSPECTIVE_20260528.md. */}
       <Route path="/helper-settings" element={<RequireAuth helperRole><HelperSettings /></RequireAuth>} />
+      {/* TICKET-105 §B v3 重启 — 菲佣社区拍照打卡 (新 Warm Hearth 页, 全 EN/TL). */}
+      <Route path="/helper-community" element={<RequireAuth helperRole><HelperCommunityNew /></RequireAuth>} />
       <Route path="/weekend"  element={<RequireAuth><WeekendDining /></RequireAuth>} />
       <Route path="/favorites" element={<RequireAuth><Favorites /></RequireAuth>} />
 

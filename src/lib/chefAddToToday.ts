@@ -83,8 +83,11 @@ export async function addDishToTodayMenu(dishId: string): Promise<ChefAddResult>
     };
     if (mealType === 'dinner') {
       row.swapped_dish_ids = merged;
-      // 保留原自动方案 dish_ids 不清空。
-      if (existing?.dish_ids) row.dish_ids = dishIds;
+      // dish_ids 列是 NOT NULL (无默认值) — 必须永远带上, 否则纯拍照/点菜
+      // 首次写晚餐(当天还没 AI 生成菜单, 无 existing 行)会 NULL 违约插入失败,
+      // 整条"拍照/点菜→菲佣"动线断 (2026-06-02 端到端实测命中)。dishIds 已是
+      // existing?.dish_ids ?? [], 新行为 [], 既满足约束又不清空已有自动菜。
+      row.dish_ids = dishIds;
     } else {
       // 午餐写 dish_ids (采购午餐格只读这列)。保留已有 swapped 不动。
       row.dish_ids = merged;
