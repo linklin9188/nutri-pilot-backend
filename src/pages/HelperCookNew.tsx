@@ -16,10 +16,12 @@
  *
  * 形态: 今天菜单列表 → 点一道菜 → 全屏步骤模式 (Mise en place 备料卡 → 逐步做法)。
  */
-import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useLanguage } from '../contexts/LanguageContext';
 import { getUserId } from '../lib/userId';
+import { supabase } from '../lib/supabase';
+import CantCookButton from '../components/CantCookButton';
 import {
   loadEmployerTodayMenu, type EmployerMenuResult, type EmployerDishLite,
 } from '../lib/helperEmployerMenu';
@@ -68,6 +70,30 @@ function unwrap<T>(raw: unknown): T[] {
   return arr.map((e: any) => (typeof e === 'string' ? (() => { try { return JSON.parse(e); } catch { return e; } })() : e));
 }
 
+// ── 火候解析 (合并自旧 HelperCook, 改读英文 action 文本, 永不读 zh) ──────────────
+type HeatLevel = 'high' | 'medium' | 'low' | 'simmer' | 'temp';
+function parseHeat(text: string): { level: HeatLevel | null; en: string; tl: string } {
+  const t = (text || '').toLowerCase();
+  const tempMatch = t.match(/(\d{2,3})\s*(?:°c|℃|degrees?\b)/);
+  if (tempMatch) { const c = parseInt(tempMatch[1]); return { level: 'temp', en: `${c}°C`, tl: `${c}°C` }; }
+  if (/simmer|braise|reduce to (a )?low|cover and (cook|wait)/.test(t)) return { level: 'simmer', en: 'Simmer', tl: 'Pakuluan ng Mahina' };
+  if (/high heat|on high|over high/.test(t))   return { level: 'high',   en: 'High Heat',   tl: 'Mataas na Apoy' };
+  if (/medium heat|on medium|over medium|medium-low|medium-high/.test(t)) return { level: 'medium', en: 'Medium Heat', tl: 'Katamtamang Apoy' };
+  if (/low heat|on low|over low|gentle/.test(t)) return { level: 'low',  en: 'Low Heat',    tl: 'Mahinang Apoy' };
+  return { level: null, en: '', tl: '' };
+}
+const HEAT_CONFIG: Record<HeatLevel, { bg: string; light: string; border: string; icon: string }> = {
+  high:   { bg: '#FF4500', light: 'rgba(255,69,0,0.12)',   border: 'rgba(255,69,0,0.3)',   icon: '🔥🔥🔥' },
+  medium: { bg: '#FF8C00', light: 'rgba(255,140,0,0.12)',  border: 'rgba(255,140,0,0.3)',  icon: '🔥🔥' },
+  low:    { bg: '#4DA6FF', light: 'rgba(77,166,255,0.12)', border: 'rgba(77,166,255,0.3)', icon: '🔥' },
+  simmer: { bg: '#00B4A0', light: 'rgba(0,180,160,0.12)',  border: 'rgba(0,180,160,0.3)',  icon: '♨️' },
+  temp:   { bg: '#9B59B6', light: 'rgba(155,89,182,0.12)', border: 'rgba(155,89,182,0.3)', icon: '🌡️' },
+};
+function formatTime(sec: number) {
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
+
 const MEALS: { key: 'breakfast' | 'lunch' | 'dinner'; icon: string; en: string; tl: string }[] = [
   { key: 'breakfast', icon: 'wb_sunny', en: 'Breakfast', tl: 'Almusal' },
   { key: 'lunch', icon: 'lunch_dining', en: 'Lunch', tl: 'Tanghalian' },
@@ -79,20 +105,38 @@ export default function HelperCookNew() {
   const lang = useHelperLang();
   const L = (en: string, tl: string) => (lang === 'tl' ? tl : en);
 
+  const [searchParams] = useSearchParams();
+  const singleDishId = searchParams.get('dish_id');
+
   const [menu, setMenu] = useState<EmployerMenuResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeDish, setActiveDish] = useState<EmployerDishLite | null>(null);
+
+  // dishes 选列 (与 helperEmployerMenu 对齐, 单菜直达复用)
+  const DISH_FIELDS =
+    'id, title_zh, title_en, image_url, main_ingredient, course_type, meal_type, ' +
+    'prep_steps_json, cook_steps_json, video_url, video_lang, video_platform, cook_time_min, ' +
+    'steps_verified, description_zh, description_en';
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
+      // 单菜直达 (?dish_id= 从 HelperHome 等跳来): 直接拉那一道开步骤模式, 不依赖菜单绑定。
+      if (singleDishId) {
+        const { data } = await supabase.from('dishes').select(DISH_FIELDS).eq('id', singleDishId).maybeSingle();
+        if (!cancelled) {
+          if (data) setActiveDish(data as unknown as EmployerDishLite);
+          setLoading(false);
+        }
+        return;
+      }
       const uid = getUserId();
       const res = await loadEmployerTodayMenu(uid, 0);
       if (!cancelled) { setMenu(res); setLoading(false); }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [singleDishId]);
 
   const byMeal = menu?.byMeal ?? { breakfast: [], lunch: [], dinner: [] };
   const hasAny = (menu?.dishes?.length ?? 0) > 0;
@@ -186,19 +230,19 @@ function DishCard({ d, lang, onOpen }: { d: EmployerDishLite; lang: HLang; onOpe
   );
 }
 
-// ── 全屏步骤模式 ─────────────────────────────────────────────────────────────
+// ── 全屏步骤模式 (合并版: 备料托盘 + 逐步聚焦做法 + 计时/火候/视频/求助/分享) ────
 function CookStepsScreen({ dish, lang, onBack }: { dish: EmployerDishLite; lang: HLang; onBack: () => void }) {
   const L = (en: string, tl: string) => (lang === 'tl' ? tl : en);
+  const txt = (en?: string, tl?: string) => (lang === 'tl' ? (tl || en || '') : (en || ''));
   const navigate = useNavigate();
   const title = dish.title_en || L('Dish', 'Ulam');
   const prep = useMemo(() => unwrap<PrepStep>(dish.prep_steps_json), [dish]);
   const cook = useMemo(() => unwrap<CookStep>(dish.cook_steps_json), [dish]);
 
-  // phase: 'prep' (Mise en place 备料) → 'cook' (逐步做法)
+  // phase: 'prep' (Mise en place 备料托盘) → 'cook' (逐步聚焦做法)
   const [phase, setPhase] = useState<'prep' | 'cook'>('prep');
-  const [doneSteps, setDoneSteps] = useState<Set<number>>(new Set());
 
-  // 备料按托盘分组
+  // ── 备料按托盘分组 ──
   const prepByTray = useMemo(() => {
     const groups: Record<string, PrepStep[]> = {};
     for (const p of prep) {
@@ -208,18 +252,100 @@ function CookStepsScreen({ dish, lang, onBack }: { dish: EmployerDishLite; lang:
     return groups;
   }, [prep]);
 
-  function toggleStep(i: number) {
-    setDoneSteps(prev => {
-      const next = new Set(prev);
-      next.has(i) ? next.delete(i) : next.add(i);
+  // ── cook 聚焦单步状态 (合并自旧 HelperCook) ──
+  const [currentIdx, setCurrentIdx] = useState(0);
+  const [completed, setCompleted] = useState<Set<number>>(new Set());
+  const [timers, setTimers] = useState<Record<number, { remaining: number; running: boolean }>>({});
+  const activeTimerRef = useRef<number | null>(null);
+  const [feedbackAck, setFeedbackAck] = useState<Set<string>>(new Set());
+
+  const step = cook[currentIdx];
+  const isFirst = currentIdx === 0;
+  const isLast = currentIdx === cook.length - 1;
+  const completedCount = completed.size;
+  const allDone = completedCount >= cook.length && cook.length > 0;
+
+  // 求助反馈 → user_feedback_helper (静默 + 一次重试, 菲佣永不见报错)
+  async function sendStepFeedback(type: 'cant_understand' | 'too_hard' | 'missing_ingredient') {
+    const ackKey = `${currentIdx}-${type}`;
+    setFeedbackAck(prev => { const s = new Set(prev); s.add(ackKey); return s; });
+    setTimeout(() => setFeedbackAck(prev => { const s = new Set(prev); s.delete(ackKey); return s; }), 3000);
+    const payload = {
+      user_id: getUserId() ?? 'anonymous',
+      dish_id: dish.id,
+      step_index: currentIdx,
+      feedback_type: type,
+      locale: lang,
+    };
+    const attempt = () => supabase.from('user_feedback_helper').insert(payload);
+    try { const { error } = await attempt(); if (error) await attempt(); } catch { /* silent */ }
+  }
+
+  // 切到某步 → 自动起该步计时 (有时长才起)。仅 cook phase。
+  useEffect(() => {
+    if (phase !== 'cook' || !step || !(step.duration_min && step.duration_min > 0)) return;
+    const idx = currentIdx;
+    setTimers(prev => {
+      if (prev[idx]) return prev; // 已有计时态, 不重置
+      const next: Record<number, { remaining: number; running: boolean }> = {};
+      for (const k of Object.keys(prev)) { const n = Number(k); next[n] = prev[n].running ? { ...prev[n], running: false } : prev[n]; }
+      next[idx] = { remaining: Math.round((step.duration_min as number) * 60), running: true };
+      activeTimerRef.current = idx;
+      return next;
+    });
+  }, [currentIdx, phase]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 倒计时 tick
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTimers(prev => {
+        const next = { ...prev }; let changed = false;
+        for (const key of Object.keys(next)) {
+          const k = Number(key); const s = next[k];
+          if (s.running && s.remaining > 0) { next[k] = { ...s, remaining: s.remaining - 1 }; changed = true; }
+          else if (s.running && s.remaining === 0) { next[k] = { ...s, running: false }; if (activeTimerRef.current === k) activeTimerRef.current = null; changed = true; }
+        }
+        return changed ? next : prev;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  function handleTimer() {
+    if (!step || !(step.duration_min && step.duration_min > 0)) return;
+    const idx = currentIdx;
+    setTimers(prev => {
+      const existing = prev[idx];
+      const next = { ...prev };
+      if (!existing || !existing.running) {
+        for (const k of Object.keys(next)) { const n = Number(k); if (n !== idx && next[n].running) next[n] = { ...next[n], running: false }; }
+        const rem = existing && existing.remaining > 0 ? existing.remaining : Math.round((step.duration_min as number) * 60);
+        next[idx] = { remaining: rem, running: true };
+        activeTimerRef.current = idx;
+      } else {
+        next[idx] = { ...existing, running: false };
+        activeTimerRef.current = null;
+      }
       return next;
     });
   }
 
-  const txt = (en?: string, tl?: string) => (lang === 'tl' ? (tl || en || '') : (en || ''));
+  function markDoneAndNext() {
+    setCompleted(prev => { const s = new Set(prev); s.add(currentIdx); return s; });
+    if (!isLast) setCurrentIdx(i => i + 1);
+  }
+
+  const heat = step ? parseHeat(txt(step.action_en, step.action_tl)) : { level: null, en: '', tl: '' };
+  const heatCfg = heat.level ? HEAT_CONFIG[heat.level] : null;
+  const timer = timers[currentIdx];
+  const timerRunning = timer?.running ?? false;
+  const durationSec = step?.duration_min ? Math.round(step.duration_min * 60) : 0;
+  const hasTimer = durationSec > 0;
+  const timerRemaining = timer?.remaining ?? durationSec;
+  const timerDone = timer ? timer.remaining === 0 : false;
 
   return (
-    <div className="min-h-screen max-w-md mx-auto" style={{ background: CREAM, color: INK, paddingBottom: 110 }}>
+    <div className="min-h-screen max-w-md mx-auto" style={{ background: CREAM, color: INK, paddingBottom: 120 }}>
       {/* Header */}
       <header className="sticky top-0 z-20 flex items-center gap-3 px-4 pt-5 pb-3"
         style={{ background: `${CREAM}e6`, backdropFilter: 'blur(8px)' }}>
@@ -229,8 +355,15 @@ function CookStepsScreen({ dish, lang, onBack }: { dish: EmployerDishLite; lang:
         </button>
         <div className="flex-1 min-w-0">
           <h1 className="font-black truncate" style={{ fontSize: 19 }}>{title}</h1>
-          {typeof dish.cook_time_min === 'number' && dish.cook_time_min > 0 && (
-            <p style={{ fontSize: 12, color: SUB }}>⏱ {dish.cook_time_min} min</p>
+          {phase === 'cook' && cook.length > 0 ? (
+            <p style={{ fontSize: 12, color: SUB }}>
+              {L(`Step ${currentIdx + 1} of ${cook.length} · ${completedCount} done`,
+                 `Hakbang ${currentIdx + 1} ng ${cook.length} · ${completedCount} tapos`)}
+            </p>
+          ) : (
+            typeof dish.cook_time_min === 'number' && dish.cook_time_min > 0 && (
+              <p style={{ fontSize: 12, color: SUB }}>⏱ {dish.cook_time_min} min</p>
+            )
           )}
         </div>
       </header>
@@ -304,48 +437,117 @@ function CookStepsScreen({ dish, lang, onBack }: { dish: EmployerDishLite; lang:
               </div>
             )}
           </>
+        ) : cook.length === 0 ? (
+          <p className="text-center py-10" style={{ fontSize: 14, color: SUB }}>{L('No steps available', 'Walang hakbang')}</p>
         ) : (
           <>
-            <p className="mb-4" style={{ fontSize: 13, color: SUB }}>
-              {L('Follow each step. Tap when done.', 'Sundin ang bawat hakbang. I-tap kapag tapos.')}
-            </p>
-            {cook.length === 0 ? (
-              <p className="text-center py-10" style={{ fontSize: 14, color: SUB }}>{L('No steps available', 'Walang hakbang')}</p>
-            ) : (
-              <div className="space-y-3">
-                {cook.map((s, i) => {
-                  const done = doneSteps.has(i);
-                  return (
-                    <button key={i} onClick={() => toggleStep(i)}
-                      className="w-full flex gap-3 rounded-2xl p-4 active:scale-[0.99] transition-transform text-left"
-                      style={{ background: done ? 'rgba(76,175,80,0.08)' : '#FFFFFF', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', opacity: done ? 0.7 : 1 }}>
-                      <div className="shrink-0 flex items-center justify-center rounded-full font-black text-white"
-                        style={{ width: 30, height: 30, background: done ? GREEN : BRAND, fontSize: 14 }}>
-                        {done ? '✓' : (s.step ?? i + 1)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-bold" style={{ fontSize: 15, lineHeight: 1.4, textDecoration: done ? 'line-through' : 'none' }}>
-                          {txt(s.action_en, s.action_tl)}
-                        </p>
-                        {txt(s.state_target_en, s.state_target_tl) && (
-                          <p style={{ fontSize: 12.5, color: GREEN, marginTop: 4, lineHeight: 1.4 }}>
-                            🎯 {txt(s.state_target_en, s.state_target_tl)}
-                          </p>
-                        )}
-                      </div>
-                      {typeof s.duration_min === 'number' && s.duration_min > 0 && (
-                        <span className="shrink-0 self-start tabular-nums" style={{ fontSize: 12, color: SUB, fontWeight: 600 }}>{s.duration_min} min</span>
-                      )}
-                    </button>
-                  );
-                })}
+            {/* 进度条 + 步点 */}
+            <div className="w-full h-1.5 rounded-full overflow-hidden mb-3" style={{ background: 'rgba(0,0,0,0.08)' }}>
+              <div className="h-full rounded-full transition-all duration-500" style={{ width: `${(completedCount / cook.length) * 100}%`, background: GREEN }} />
+            </div>
+            <div className="flex gap-1.5 mb-4 flex-wrap">
+              {cook.map((_, i) => (
+                <button key={i} onClick={() => setCurrentIdx(i)} className="rounded-full transition-all active:scale-90"
+                  style={{ width: i === currentIdx ? 24 : 8, height: 8, background: completed.has(i) ? GREEN : i === currentIdx ? BRAND : 'rgba(0,0,0,0.15)' }} />
+              ))}
+            </div>
+
+            {/* 🆘 这道我没做过 (传 title_en 进 title_zh 槽, 保持零中文) */}
+            <div className="mb-3">
+              <CantCookButton dish={{ id: dish.id, title_zh: dish.title_en || title }} />
+            </div>
+
+            {/* 视频教程 (有 video_url 才红色显示) */}
+            {dish.video_url ? (
+              <a href={dish.video_url} target="_blank" rel="noopener noreferrer"
+                className="block py-3 px-5 rounded-2xl text-center font-bold active:scale-95 transition-transform mb-3"
+                style={{ background: 'linear-gradient(135deg, #FF4757, #FF6B6B)', color: '#FFFFFF', fontSize: 15, boxShadow: '0 4px 16px rgba(255,71,87,0.3)' }}>
+                🎬 {L('Watch tutorial', 'Manood ng tutorial')}
+                {dish.video_lang && <span className="opacity-80 ml-1" style={{ fontSize: 12 }}> · {dish.video_lang.toUpperCase()}</span>}
+              </a>
+            ) : null}
+
+            {/* 火候提示 */}
+            {heatCfg && (
+              <div className="rounded-2xl px-5 py-4 flex items-center gap-4 mb-3" style={{ background: heatCfg.light, border: `1.5px solid ${heatCfg.border}` }}>
+                <div className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 text-3xl" style={{ background: heatCfg.bg + '22' }}>{heatCfg.icon}</div>
+                <p className="font-black" style={{ fontSize: 24, color: heatCfg.bg, lineHeight: 1 }}>{L(heat.en, heat.tl)}</p>
+              </div>
+            )}
+
+            {/* 当前步骤卡 */}
+            {step && (
+              <div className="rounded-2xl px-5 py-5 mb-3" style={{ background: completed.has(currentIdx) ? 'rgba(76,175,80,0.10)' : '#FFFFFF', border: `1.5px solid ${completed.has(currentIdx) ? 'rgba(76,175,80,0.30)' : 'rgba(0,0,0,0.08)'}`, boxShadow: '0 2px 10px rgba(0,0,0,0.04)' }}>
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center font-black text-white" style={{ background: completed.has(currentIdx) ? GREEN : BRAND, fontSize: 14 }}>
+                    {completed.has(currentIdx) ? '✓' : (step.step ?? currentIdx + 1)}
+                  </div>
+                  <span style={{ fontSize: 12, color: SUB, fontWeight: 600 }}>
+                    {completed.has(currentIdx) ? L('Done ✓', 'Tapos ✓') : L('Current step', 'Kasalukuyang hakbang')}
+                  </span>
+                </div>
+                <p className="leading-relaxed" style={{ fontSize: 17, fontWeight: 500, lineHeight: 1.6 }}>{txt(step.action_en, step.action_tl)}</p>
+                {txt(step.state_target_en, step.state_target_tl) && (
+                  <div className="mt-4 flex items-start gap-2 px-3 py-2.5 rounded-2xl" style={{ background: 'rgba(76,175,80,0.08)', border: '1px solid rgba(76,175,80,0.2)' }}>
+                    <span style={{ fontSize: 16 }}>🎯</span>
+                    <div className="flex-1 min-w-0">
+                      <div style={{ fontSize: 10, color: GREEN, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 2 }}>{L('Done when', 'Tapos kapag')}</div>
+                      <p style={{ fontSize: 14, fontWeight: 500, lineHeight: 1.5 }}>{txt(step.state_target_en, step.state_target_tl)}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 求助按钮 ❓🥵🛒 */}
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              {([
+                { type: 'cant_understand' as const, emoji: '❓', en: "Don't get it", tl: 'Hindi maintindihan' },
+                { type: 'too_hard' as const, emoji: '🥵', en: 'Too hard', tl: 'Masyadong mahirap' },
+                { type: 'missing_ingredient' as const, emoji: '🛒', en: 'Missing item', tl: 'Walang sangkap' },
+              ]).map(({ type, emoji, en, tl }) => {
+                const acked = feedbackAck.has(`${currentIdx}-${type}`);
+                return (
+                  <button key={type} onClick={() => sendStepFeedback(type)}
+                    className="rounded-2xl py-2.5 px-2 flex flex-col items-center gap-1 active:scale-95 transition-transform"
+                    style={{ background: acked ? 'rgba(76,175,80,0.16)' : '#FFFFFF', border: `1px solid ${acked ? 'rgba(76,175,80,0.35)' : 'rgba(0,0,0,0.08)'}` }}>
+                    <span style={{ fontSize: 20, lineHeight: 1 }}>{acked ? '✓' : emoji}</span>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: acked ? GREEN : 'rgba(0,0,0,0.7)', lineHeight: 1.2, textAlign: 'center' }}>{L(en, tl)}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* 计时器 */}
+            {hasTimer && (
+              <button onClick={handleTimer}
+                className="w-full rounded-2xl py-5 flex flex-col items-center gap-2 active:scale-[0.97] transition-transform"
+                style={{ background: timerDone ? 'rgba(76,175,80,0.12)' : timerRunning ? 'rgba(255,90,31,0.12)' : '#FFFFFF', border: `1.5px solid ${timerDone ? 'rgba(76,175,80,0.3)' : timerRunning ? 'rgba(255,90,31,0.3)' : 'rgba(0,0,0,0.08)'}` }}>
+                <div className="font-black tabular-nums" style={{ fontSize: 48, letterSpacing: 2, color: timerDone ? GREEN : timerRunning ? BRAND : 'rgba(0,0,0,0.7)' }}>
+                  {timerDone ? L('Done!', 'Tapos na!') : formatTime(timerRemaining)}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined" style={{ fontSize: 18, color: timerDone ? GREEN : timerRunning ? BRAND : SUB, fontVariationSettings: "'FILL' 1" }}>
+                    {timerDone ? 'check_circle' : timerRunning ? 'pause_circle' : 'play_circle'}
+                  </span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: timerDone ? GREEN : timerRunning ? BRAND : SUB }}>
+                    {timerDone ? L('Timer done ✓', 'Tapos na ang oras ✓') : timerRunning ? L('Tap to pause', 'I-tap para i-pause') : L('Tap to resume', 'I-tap para ituloy')}
+                  </span>
+                </div>
+              </button>
+            )}
+
+            {allDone && (
+              <div className="rounded-2xl p-5 text-center mt-3" style={{ background: 'rgba(76,175,80,0.14)', border: '1.5px solid rgba(76,175,80,0.35)' }}>
+                <p className="text-3xl mb-1">🎉</p>
+                <p className="font-black" style={{ fontSize: 17 }}>{title} {L('done!', 'tapos na!')}</p>
               </div>
             )}
           </>
         )}
       </main>
 
-      {/* 底部: prep→cook 推进 / cook 完成 */}
+      {/* 底部: prep→cook 推进 / cook 逐步导航 / cook 完成→分享 */}
       <footer className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md z-20"
         style={{ background: `${CREAM}f0`, backdropFilter: 'blur(8px)', borderTop: '1px solid #E5E5E0' }}>
         <div className="px-4 py-3" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 12px) + 12px)' }}>
@@ -356,9 +558,9 @@ function CookStepsScreen({ dish, lang, onBack }: { dish: EmployerDishLite; lang:
               {L('Start cooking', 'Simulan ang pagluluto')}
               <span className="material-symbols-outlined" style={{ fontSize: 20 }}>local_fire_department</span>
             </button>
-          ) : (
+          ) : allDone || cook.length === 0 ? (
             <div className="flex items-center gap-2.5">
-              {/* Share this dish → 菲佣社区 composer (compose=1 自动开 + dish 预选) */}
+              {/* Share → 菲佣社区 composer (compose=1 自动开 + dish 预选) */}
               <button onClick={() => navigate(`/helper-community?compose=1&dish=${dish.id}`)}
                 className="shrink-0 flex items-center justify-center gap-1.5 rounded-full font-bold active:scale-[0.98] transition-transform"
                 style={{ height: 50, paddingLeft: 18, paddingRight: 18, background: '#FFFFFF', color: BRAND, border: `1.5px solid ${BRAND}`, fontSize: 14 }}>
@@ -367,11 +569,24 @@ function CookStepsScreen({ dish, lang, onBack }: { dish: EmployerDishLite; lang:
               </button>
               <button onClick={onBack}
                 className="flex-1 flex items-center justify-center gap-2 rounded-full font-bold text-white active:scale-[0.98] transition-transform"
-                style={{ height: 50, background: doneSteps.size >= cook.length && cook.length > 0 ? GREEN : INK, fontSize: 15 }}>
+                style={{ height: 50, background: allDone ? GREEN : INK, fontSize: 15 }}>
                 <span className="material-symbols-outlined" style={{ fontSize: 20 }}>check_circle</span>
-                {doneSteps.size >= cook.length && cook.length > 0
-                  ? L('Done! Back to menu', 'Tapos! Bumalik sa menu')
-                  : L('Back to menu', 'Bumalik sa menu')}
+                {allDone ? L('Done! Back to menu', 'Tapos! Bumalik sa menu') : L('Back to menu', 'Bumalik sa menu')}
+              </button>
+            </div>
+          ) : (
+            <div className="flex gap-2.5">
+              <button onClick={() => setCurrentIdx(i => Math.max(0, i - 1))} disabled={isFirst}
+                className="flex-1 flex items-center justify-center gap-1.5 rounded-full font-bold active:scale-95 transition-transform disabled:opacity-30"
+                style={{ height: 50, background: ALT, fontSize: 14 }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 18 }}>arrow_back_ios</span>
+                {L('Back', 'Bumalik')}
+              </button>
+              <button onClick={markDoneAndNext}
+                className="flex-[2] flex items-center justify-center gap-2 rounded-full font-bold text-white active:scale-[0.98] transition-transform"
+                style={{ height: 50, background: isLast ? GREEN : BRAND, fontSize: 15 }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 20, fontVariationSettings: isLast ? "'FILL' 1" : undefined }}>{isLast ? 'check_circle' : 'arrow_forward_ios'}</span>
+                {isLast ? L('Finish this dish!', 'Tapusin ito!') : L('Done, next step', 'Tapos, susunod')}
               </button>
             </div>
           )}

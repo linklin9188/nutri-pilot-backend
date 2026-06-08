@@ -11,7 +11,6 @@ import QuickSetup from './pages/QuickSetup';
 import Onboarding from './pages/Onboarding';
 import OnboardingV2 from './pages/OnboardingV2';
 import HelperPrep from './pages/HelperPrep';
-import HelperCook from './pages/HelperCook';
 import HelperHome from './pages/HelperHome';
 import HelperSettings from './pages/HelperSettings';
 // TICKET-100 (5/28): LearnerHome / Community / HelperCommunity 已删 (偏离定位)
@@ -335,7 +334,10 @@ function AppShell() {
       <Route path="/orders"           element={<RequireAuth><Orders /></RequireAuth>} />
       <Route path="/orders/:id"       element={<RequireAuth><OrderDetail /></RequireAuth>} />
       <Route path="/prep"     element={<RequireAuth helperRole><HelperPrep /></RequireAuth>} />
-      <Route path="/cook"     element={<RequireAuth helperRole><HelperCook /></RequireAuth>} />
+      {/* 做饭页合并 (老板 6-8): /cook 与 /cook-v2 统一渲染 HelperCookNew —
+          备料托盘分组 + 逐步聚焦做法 + 计时/火候/视频/求助/🆘/分享 全在一页。
+          旧 HelperCook.tsx 保留文件但不再挂路由。?dish_id= 单菜直达已在新页支持。 */}
+      <Route path="/cook"     element={<RequireAuth helperRole><HelperCookNew /></RequireAuth>} />
       {/* TICKET-066 P0 — /ai-pilot 原是 mock demo (AIPilot.tsx 33-79 行硬编码假对话),
           老板拍板废弃: chat 主入口统一到 Home/Weekly 顶部 IntentInputBox.
           route 保留 backward compat (老用户 bookmark 不 404), redirect 到首页. */}
