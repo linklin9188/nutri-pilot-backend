@@ -1434,6 +1434,32 @@ export default function Home() {
         <FamilyMemberNudge />
         <InviteFamilySheet inviteCode={inviteCode} />
 
+        {/* 拍冰箱 / 报菜名 并排入口 — 老板 6/11: 自己挑菜的"下厨房"模式 (/chef)
+            之前只挂在 /home-v2 + /chef 网址, 老首页够不到. 拍冰箱复用现有
+            fridgeInputRef→handleFridgeScan; 报菜名跳 ChefAgent 多选写当日菜单. */}
+        <div className="grid grid-cols-2 gap-3">
+          <button onClick={() => fridgeInputRef.current?.click()}
+            className="rounded-2xl p-4 flex flex-col items-start active:scale-[0.98] transition-transform text-left"
+            style={{ background: '#FFFFFF', boxShadow: '0 4px 16px rgba(0,0,0,0.05)' }}>
+            <span className="flex items-center justify-center rounded-full mb-2"
+              style={{ width: 44, height: 44, background: 'rgba(255,90,31,0.10)' }}>
+              <span className="material-symbols-outlined" style={{ fontSize: 24, color: '#FF5A1F' }}>photo_camera</span>
+            </span>
+            <p className="font-bold" style={{ fontSize: 15 }}>{t('Scan fridge', '拍冰箱')}</p>
+            <p style={{ fontSize: 11.5, color: '#666', marginTop: 2 }}>{t('Cook what you have', '用现有食材出菜')}</p>
+          </button>
+          <button onClick={() => navigate('/chef')}
+            className="rounded-2xl p-4 flex flex-col items-start active:scale-[0.98] transition-transform text-left"
+            style={{ background: '#FFFFFF', boxShadow: '0 4px 16px rgba(0,0,0,0.05)' }}>
+            <span className="flex items-center justify-center rounded-full mb-2"
+              style={{ width: 44, height: 44, background: 'rgba(76,175,80,0.12)' }}>
+              <span className="material-symbols-outlined" style={{ fontSize: 24, color: '#4CAF50' }}>edit_note</span>
+            </span>
+            <p className="font-bold" style={{ fontSize: 15 }}>{t('Pick dishes', '报菜名')}</p>
+            <p style={{ fontSize: 11.5, color: '#666', marginTop: 2 }}>{t('Just tell us', '想吃啥直接说')}</p>
+          </button>
+        </div>
+
         {/* ① TODAY'S MENU — Editorial hero ────────────────────────
             Inspired by food magazine layouts: large dish photography on
             the left, generous typography on the right. No internal padding
