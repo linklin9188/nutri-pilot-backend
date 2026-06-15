@@ -37,7 +37,9 @@ export interface BreakfastCombo {
 // 用 sentinel placeholder 替换硬编码菜名, resolveSlot 见 placeholder 时按 dayIndex
 // % 5 在 BREAKFAST_PROTEIN_EGG_POOL 5 蛋池里循环取. 保证可预测的 5-day 轮换 (非随机).
 export const EGG_PLACEHOLDER = '__EGG_DAY_ROTATION__'; // sentinel, 不会误命中真实 dish title
-export const BREAKFAST_PROTEIN_EGG_POOL = ['茶叶蛋', '白煮蛋', '鸡蛋羹', '煎鸡蛋', '葱花炒鸡蛋'];
+// 老板 6/15: 茶叶蛋拿掉 (要卤水/茶叶慢炖, 太复杂). 剩 4 蛋都是简单做法,
+// 轮换取模用 .length 自动适配 5→4, 不用改 resolveSlot.
+export const BREAKFAST_PROTEIN_EGG_POOL = ['白煮蛋', '鸡蛋羹', '煎鸡蛋', '葱花炒鸡蛋'];
 
 export const BREAKFAST_COMBOS: BreakfastCombo[] = [
   // ── 北方家常 ────────────────────────────────────────────────────
