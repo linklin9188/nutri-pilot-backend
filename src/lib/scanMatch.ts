@@ -105,12 +105,40 @@ const INGREDIENT_MAP: Array<{ kw: string[]; main: string }> = [
   { kw: ['苹果','香蕉','橙','柠檬','梨','葡萄','草莓','蓝莓','fruit','apple','banana','orange','lemon'],     main: 'fruit' },
 ];
 
+// ── Broad protein fallback ──────────────────────────────────────────
+//
+// Runs ONLY when the specific-cut pass above fails. Catches bones /
+// offal / unusual cuts the specific list misses — e.g. 牛膝骨 / 牛大骨 /
+// 牛筒骨 / 牛尾 / 牛蝎子 / 牛杂 / 猪筒骨 / 鸡架 — so the scan still surfaces
+// dishes of that animal's meat instead of returning zero (老板 6/15 真测:
+// 拍牛膝骨 → 0 菜, 因 '牛膝骨' 不含任何具体部位词).
+//
+// 单字 '牛'/'猪'/'鸡' 命中力强, 容易误伤 false-friends (牛奶/牛油果/鸡蛋).
+// 这些要么已被上面 specific pass 先吃掉 (牛奶→dairy / 鸡蛋→egg), 要么在 `not`
+// 里显式排除. fallback 只在 specific 全落空时兜, 所以误伤面已极小.
+const BROAD_PROTEIN_FALLBACK: Array<{ kw: string; main: string; not?: string[] }> = [
+  { kw: '牛', main: 'beef',    not: ['牛油果', '牛蛙'] },
+  { kw: '猪', main: 'pork' },
+  { kw: '鸡', main: 'chicken', not: ['鸡蛋'] },
+  { kw: '鸭', main: 'duck' },
+  { kw: '鹅', main: 'duck' },   // 无 goose enum, 归最近的 duck
+  { kw: '羊', main: 'lamb' },
+  { kw: '鱼', main: 'fish',    not: ['鱼露', '鱿鱼'] },  // 鱿鱼 specific 已吃; 鱼露=调味
+  { kw: '虾', main: 'shrimp' },
+  { kw: '蟹', main: 'crab' },
+];
+
 /** Map a single Chinese ingredient name to our DB main_ingredient enum. */
 export function normalizeIngredient(raw: string): string | null {
   const s = (raw ?? '').toLowerCase().trim();
   if (!s) return null;
+  // Pass 1 — specific cut / item match (precise).
   for (const entry of INGREDIENT_MAP) {
     if (entry.kw.some(k => s.includes(k.toLowerCase()))) return entry.main;
+  }
+  // Pass 2 — broad protein fallback (骨/杂/不常见部位兜到对应肉类).
+  for (const f of BROAD_PROTEIN_FALLBACK) {
+    if (s.includes(f.kw) && !(f.not ?? []).some(n => s.includes(n))) return f.main;
   }
   return null;
 }

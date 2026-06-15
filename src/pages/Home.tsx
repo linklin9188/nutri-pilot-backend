@@ -2666,6 +2666,43 @@ export default function Home() {
               </>
             )}
 
+            {/* 0 道匹配 + 已拍照 — 之前这组合四个分支全落空, 用户只看到一张照片
+                (老板 6/15 真测: 拍牛膝骨 0 菜白屏). 给真空态: 显示认出的食材 +
+                "报菜名/重拍" 兜底入口. */}
+            {!fridgeScanLoading && !fridgeError && fridgeDishes.length === 0 && fridgePreview && (
+              <div className="flex flex-col items-center py-8 gap-4 text-center">
+                <span className="material-symbols-outlined" style={{ fontSize: 48, color: "rgba(0,0,0,0.14)" }}>
+                  search_off
+                </span>
+                <div>
+                  <p className="font-bold mb-1" style={{ fontSize: 15, color: "#1a1a1a" }}>
+                    {t('No ready recipe for this', '这个暂时没有现成菜谱')}
+                  </p>
+                  <p style={{ fontSize: 12.5, color: "rgba(0,0,0,0.45)", lineHeight: 1.5 }}>
+                    {fridgeIngredients.length > 0
+                      ? t(`We saw: ${fridgeIngredients.join('、')}. Tell us what to cook and we'll find a recipe.`,
+                          `认出了：${fridgeIngredients.join('、')}。直接报菜名，我帮你找做法。`)
+                      : t("Couldn't recognise the food. Try a clearer photo, or just tell us the dish.",
+                          '没认出食材，换张清楚点的照片，或者直接报菜名。')}
+                  </p>
+                </div>
+                <div className="flex gap-2 w-full">
+                  <button
+                    className="flex-1 h-12 rounded-2xl font-bold active:scale-95"
+                    style={{ fontSize: 13, background: "rgba(0,0,0,0.05)", color: "rgba(0,0,0,0.5)" }}
+                    onClick={() => fridgeInputRef.current?.click()}>
+                    {t('Retake', '重拍')}
+                  </button>
+                  <button
+                    className="flex-1 h-12 rounded-2xl font-bold text-white active:scale-95"
+                    style={{ fontSize: 13, background: "#FF5A1F" }}
+                    onClick={() => { setIsFridgeScanOpen(false); navigate('/chef'); }}>
+                    {t('Pick a dish', '去报菜名')}
+                  </button>
+                </div>
+              </div>
+            )}
+
             {!fridgeScanLoading && !fridgeError && fridgeDishes.length === 0 && !fridgePreview && (
               <div className="flex flex-col items-center py-10 gap-4">
                 <span className="material-symbols-outlined" style={{ fontSize: 56, color: "rgba(0,0,0,0.12)" }}>
