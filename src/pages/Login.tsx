@@ -34,6 +34,20 @@ const LOGIN_CHANNELS: ChannelChip[] = [
   { emoji: '💪', color: 'rgba(168,85,247,0.15)', label: { 'zh': '本周补',  'zh-Hant': '本週補',  'en': 'Week boost', 'tl': 'Linggo boost',   'id': 'Boost mingguan'   } },
 ];
 
+// TICKET-115 (老板 6/16 真测印尼工人) — 邀请码自助绑定区 5 lang 全配.
+// 原本这块用 t(en,zh) 双语, 印尼/Tagalog 工人点链接进来只看到英文.
+// 印尼工人母语优先 ([[feedback_helper_ui_no_chinese]] 的母语原则), 补 id + tl.
+const INVITE_TEXT: Record<Language, {
+  hdr: string; codePh: string; nickPh: string; submit: string; submitting: string;
+  errCode: string; errNick: string; errWrong: string; errFail: string;
+}> = {
+  "zh":      { hdr: "我是工人", codePh: "邀请码（6 位）", nickPh: "你的名字", submit: "用邀请码进入", submitting: "提交中…", errCode: "请输入邀请码", errNick: "请填写你的名字", errWrong: "邀请码不对，请联系雇主重发", errFail: "提交失败，请重试" },
+  "zh-Hant": { hdr: "我是工人", codePh: "邀請碼（6 位）", nickPh: "你的名字", submit: "用邀請碼進入", submitting: "提交中…", errCode: "請輸入邀請碼", errNick: "請填寫你的名字", errWrong: "邀請碼不對，請聯絡僱主重發", errFail: "提交失敗，請重試" },
+  "en":      { hdr: "I'm a helper", codePh: "Invite code (6 digits)", nickPh: "Your name", submit: "Enter with code", submitting: "Submitting…", errCode: "Please enter the invite code", errNick: "Please enter your name", errWrong: "Wrong invite code, ask your employer to resend.", errFail: "Submit failed, please retry" },
+  "tl":      { hdr: "Ako ay katulong", codePh: "Invite code (6 digit)", nickPh: "Pangalan mo", submit: "Pumasok gamit ang code", submitting: "Isinusumite…", errCode: "Pakilagay ang invite code", errNick: "Pakilagay ang pangalan mo", errWrong: "Maling code, hingin sa employer na ipadala ulit.", errFail: "Nabigo, subukan ulit." },
+  "id":      { hdr: "Saya asisten rumah tangga", codePh: "Kode undangan (6 digit)", nickPh: "Nama kamu", submit: "Masuk dengan kode", submitting: "Mengirim…", errCode: "Silakan masukkan kode undangan", errNick: "Silakan masukkan nama kamu", errWrong: "Kode salah, minta majikan kirim ulang.", errFail: "Gagal mengirim, coba lagi." },
+};
+
 type Role = "employer" | "helper";
 
 // Local fallback identity so the rest of the app stays usable when WeChat
@@ -254,8 +268,8 @@ export default function Login() {
     setInviteErr("");
     const code = inviteCode.trim().toUpperCase();
     const nick = inviteNick.trim();
-    if (!code) { setInviteErr(t("Please enter the invite code", "请输入邀请码")); return; }
-    if (!nick) { setInviteErr(t("Please enter your name", "请填写你的名字")); return; }
+    if (!code) { setInviteErr(INVITE_TEXT[language].errCode); return; }
+    if (!nick) { setInviteErr(INVITE_TEXT[language].errNick); return; }
     setInviteBusy(true);
     try {
       const { data: hh, error: hhErr } = await supabase
@@ -264,7 +278,7 @@ export default function Login() {
         .eq('invite_code', code)
         .maybeSingle();
       if (hhErr || !hh) {
-        setInviteErr(t("Wrong invite code, ask your employer to resend.", "邀请码不对，请联系雇主重发"));
+        setInviteErr(INVITE_TEXT[language].errWrong);
         setInviteBusy(false);
         return;
       }
@@ -297,7 +311,7 @@ export default function Login() {
       window.dispatchEvent(new Event('nutri-prefs-changed'));
       navigate('/helper');
     } catch (e: any) {
-      setInviteErr(e?.message ?? t("Submit failed, please retry", "提交失败，请重试"));
+      setInviteErr(e?.message ?? INVITE_TEXT[language].errFail);
       setInviteBusy(false);
     }
   };
@@ -616,7 +630,7 @@ export default function Login() {
               <div className="flex flex-col gap-3 rounded-2xl p-4"
                 style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.10)" }}>
                 <p className="text-white font-semibold text-center" style={{ fontSize: 14 }}>
-                  {t("I'm a helper", "我是工人")}
+                  {INVITE_TEXT[language].hdr}
                 </p>
                 <input
                   type="text"
@@ -624,7 +638,7 @@ export default function Login() {
                   autoCapitalize="characters"
                   value={inviteCode}
                   onChange={e => setInviteCode(e.target.value)}
-                  placeholder={t("Invite code (6 chars)", "邀请码（6 位）")}
+                  placeholder={INVITE_TEXT[language].codePh}
                   className="w-full h-11 rounded-xl px-3 text-white outline-none"
                   style={{
                     background: "rgba(255,255,255,0.10)",
@@ -636,7 +650,7 @@ export default function Login() {
                   type="text"
                   value={inviteNick}
                   onChange={e => setInviteNick(e.target.value)}
-                  placeholder={t("Your nickname", "你的名字")}
+                  placeholder={INVITE_TEXT[language].nickPh}
                   className="w-full h-11 rounded-xl px-3 text-white outline-none"
                   style={{
                     background: "rgba(255,255,255,0.10)",
@@ -655,8 +669,8 @@ export default function Login() {
                   }}
                 >
                   {inviteBusy
-                    ? t("Submitting…", "提交中…")
-                    : t("Enter with code", "用邀请码进入")}
+                    ? INVITE_TEXT[language].submitting
+                    : INVITE_TEXT[language].submit}
                 </button>
                 {inviteErr && (
                   <p className="text-center" style={{ color: "#FF8C54", fontSize: 13 }}>
