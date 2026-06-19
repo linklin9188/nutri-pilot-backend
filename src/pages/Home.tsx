@@ -1932,28 +1932,14 @@ export default function Home() {
               )}
             </div>
 
-            {/* TICKET-092 — 菜单卡底部 footer：扫冰箱 + 烹饪 内嵌进菜单卡，
-                替代原独立 grid 2 板块，节省一个独立 section + 降低视觉密度. */}
+            {/* TICKET-092 — 菜单卡底部 footer：烹饪入口. 老板 6/19 拿掉这里的
+                扫冰箱 (与顶部 1437「拍冰箱/报菜名」并排入口重复), 只留「开始做菜」独占整行.
+                雇主和菲佣共用同一套烹饪界面 (HelperCook = /cook = "今日烹饪"). */}
             <div className="px-5 pb-4 pt-3 flex items-center gap-2"
               style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
               <button
-                onClick={() => {
-                  if (!isLoggedIn) { navigate('/login', { state: { from: '/' } }); return; }
-                  fridgeInputRef.current?.click();
-                }}
-                className="flex-1 rounded-xl py-2.5 flex items-center justify-center gap-1.5 font-bold active:scale-[0.98] transition-transform"
-                style={{ background: 'rgba(0,180,216,0.10)', fontSize: 13, color: '#0099BC' }}
-                title={isLoggedIn ? '扫冰箱' : '请先登录后使用'}>
-                <span className="material-symbols-outlined" style={{ fontSize: 16, fontVariationSettings: "'FILL' 1" }}>kitchen</span>
-                {isLoggedIn ? t3('Scan fridge', '扫冰箱', 'I-scan ang ref') : t3('Scan fridge 🔒', '扫冰箱 🔒', 'Scan 🔒')}
-              </button>
-              {/* TICKET-092 P0 hot-fix — 雇主"做菜"按钮:
-                  雇主和菲佣共用同一套烹饪界面 (HelperCook = /cook = "今日烹饪")，
-                  原代码错跳 /prep (= HelperPrep "Shopping Check 采购确认"，购物界面)。
-                  改跳 /cook 才对. */}
-              <button
                 onClick={() => navigate('/cook')}
-                className="flex-[1.4] rounded-xl py-2.5 flex items-center justify-center gap-1.5 font-bold text-white active:scale-[0.98] transition-transform"
+                className="w-full rounded-xl py-2.5 flex items-center justify-center gap-1.5 font-bold text-white active:scale-[0.98] transition-transform"
                 style={{ background: 'linear-gradient(135deg, #FF5A1F 0%, #FF8C54 100%)', fontSize: 13, boxShadow: '0 4px 14px rgba(255,90,31,0.25)' }}>
                 <span className="material-symbols-outlined" style={{ fontSize: 16, fontVariationSettings: "'FILL' 1" }}>skillet</span>
                 {t3('Start cooking', '开始做菜', 'Simulan magluto')}

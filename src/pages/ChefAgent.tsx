@@ -30,6 +30,26 @@ interface SelDish {
   steps_verified: boolean | null;
 }
 
+// 菜谱详情 (点菜卡打开抽屉 — 下厨房核心: 用料 + 做法步骤 + 视频)
+interface DetailDish {
+  id: string;
+  title_zh: string | null;
+  title_en: string | null;
+  image_url: string | null;
+  cook_time_min: number | null;
+  steps_verified: boolean | null;
+  video_url: string | null;
+  prep_steps_json: any;
+  cook_steps_json: any;
+}
+
+// jsonb 有时被双重包成 string (见 useWeeklyMenu v57 unwrap) — 统一成数组
+function asArr(v: any): any[] {
+  if (Array.isArray(v)) return v;
+  if (typeof v === 'string') { try { const p = JSON.parse(v); return Array.isArray(p) ? p : []; } catch { return []; } }
+  return [];
+}
+
 const CREAM = '#FCFBF8';
 const BRAND = '#FF5A1F';
 const GREEN = '#4CAF50';
@@ -55,7 +75,29 @@ export default function ChefAgent() {
   const [generating, setGenerating] = useState(false);
   const [toast, setToast] = useState<{ kind: 'info' | 'error'; text: string } | null>(null);
 
+  // 菜谱详情抽屉
+  const [detail, setDetail] = useState<DetailDish | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
   const debRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 点菜卡 → 拉详情 (cook_steps/prep_steps/video — BrowseDish/DishNameMatch 不含这些)
+  async function openDetail(seed: SelDish & { image_url?: string | null; cook_time_min?: number | null }) {
+    setDetailLoading(true);
+    setDetail({
+      id: seed.id, title_zh: seed.title_zh, title_en: seed.title_en,
+      image_url: seed.image_url ?? null, cook_time_min: seed.cook_time_min ?? null,
+      steps_verified: seed.steps_verified, video_url: null,
+      prep_steps_json: [], cook_steps_json: [],
+    });
+    const { data } = await supabase
+      .from('dishes')
+      .select('id,title_zh,title_en,image_url,cook_time_min,steps_verified,video_url,prep_steps_json,cook_steps_json')
+      .eq('id', seed.id)
+      .maybeSingle();
+    if (data) setDetail(data as DetailDish);
+    setDetailLoading(false);
+  }
 
   // 自由搜索 — 防抖命中真菜名
   useEffect(() => {
@@ -171,30 +213,39 @@ export default function ChefAgent() {
             )}
             {results.map(r => {
               const on = selected.has(r.id);
+              const sel: SelDish = { id: r.id, title_zh: r.title_zh, title_en: r.title_en, steps_verified: r.steps_verified };
               const title = getDishTitle(r as any, language) || r.title_zh || '';
               return (
-                <button key={r.id}
-                  onClick={() => toggle({ id: r.id, title_zh: r.title_zh, title_en: r.title_en, steps_verified: r.steps_verified })}
-                  className="w-full rounded-2xl p-4 flex justify-between items-center active:scale-[0.98] transition-transform"
+                <div key={r.id}
+                  onClick={() => openDetail(sel)}
+                  className="w-full rounded-2xl p-4 flex justify-between items-center active:scale-[0.98] transition-transform cursor-pointer"
                   style={{
                     background: '#FFFFFF',
                     border: on ? `2px solid ${BRAND}` : '1px solid #E5E5E0',
                     boxShadow: '0px 4px 20px rgba(0,0,0,0.04)',
                   }}>
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className="material-symbols-outlined" style={{ color: on ? BRAND : SUB, fontSize: 20 }}>
-                      {on ? 'check_circle' : 'restaurant'}
-                    </span>
+                    <button
+                      onClick={e => { e.stopPropagation(); toggle(sel); }}
+                      className="shrink-0 active:scale-90 transition-transform"
+                      aria-label={t('选中', 'select')}>
+                      <span className="material-symbols-outlined" style={{ color: on ? BRAND : SUB, fontSize: 22 }}>
+                        {on ? 'check_circle' : 'radio_button_unchecked'}
+                      </span>
+                    </button>
                     <span className="font-semibold truncate" style={{ fontSize: 16 }}>{title}</span>
                   </div>
-                  {r.steps_verified && (
-                    <span className="flex items-center gap-1 px-2.5 py-1 rounded-full shrink-0"
-                      style={{ background: 'rgba(76,175,80,0.12)', color: GREEN, fontSize: 12, fontWeight: 600 }}>
-                      <span className="material-symbols-outlined" style={{ fontSize: 14 }}>check_circle</span>
-                      {t('可做', 'Ready')}
-                    </span>
-                  )}
-                </button>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {r.steps_verified && (
+                      <span className="flex items-center gap-1 px-2.5 py-1 rounded-full"
+                        style={{ background: 'rgba(76,175,80,0.12)', color: GREEN, fontSize: 12, fontWeight: 600 }}>
+                        <span className="material-symbols-outlined" style={{ fontSize: 14 }}>check_circle</span>
+                        {t('可做', 'Ready')}
+                      </span>
+                    )}
+                    <span className="material-symbols-outlined" style={{ color: SUB, fontSize: 20 }}>chevron_right</span>
+                  </div>
+                </div>
               );
             })}
             {!searching && query.trim().length >= 2 && results.length === 0 && (
@@ -239,11 +290,12 @@ export default function ChefAgent() {
               <div className="flex gap-4 overflow-x-auto pb-4" style={{ scrollbarWidth: 'none' }}>
                 {catDishes.map(d => {
                   const on = selected.has(d.id);
+                  const sel: SelDish = { id: d.id, title_zh: d.title_zh, title_en: d.title_en ?? null, steps_verified: d.steps_verified };
                   const title = getDishTitle(d as any, language) || d.title_zh;
                   return (
-                    <button key={d.id}
-                      onClick={() => toggle({ id: d.id, title_zh: d.title_zh, title_en: d.title_en, steps_verified: d.steps_verified })}
-                      className="shrink-0 flex flex-col gap-2 active:scale-[0.97] transition-transform text-left"
+                    <div key={d.id}
+                      onClick={() => openDetail({ ...sel, image_url: d.image_url, cook_time_min: d.cook_time_min })}
+                      className="shrink-0 flex flex-col gap-2 active:scale-[0.97] transition-transform text-left cursor-pointer"
                       style={{ width: 140 }}>
                       <div className="w-full relative rounded-[24px] overflow-hidden"
                         style={{ aspectRatio: '1', background: ALT, boxShadow: '0px 4px 20px rgba(0,0,0,0.04)' }}>
@@ -251,12 +303,16 @@ export default function ChefAgent() {
                           <img src={d.image_url} alt={title} className="w-full h-full object-cover"
                             onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                         )}
-                        {on && (
-                          <div className="absolute top-2 right-2 rounded-full flex items-center justify-center"
-                            style={{ width: 26, height: 26, background: BRAND, border: `2px solid ${CREAM}` }}>
-                            <span className="material-symbols-outlined text-white" style={{ fontSize: 15 }}>check</span>
-                          </div>
-                        )}
+                        {/* 右上勾选圈 — 独立 toggle, 不触发详情 */}
+                        <button
+                          onClick={e => { e.stopPropagation(); toggle(sel); }}
+                          className="absolute top-2 right-2 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+                          style={{ width: 28, height: 28, background: on ? BRAND : 'rgba(255,255,255,0.92)', border: `2px solid ${CREAM}` }}
+                          aria-label={t('选中', 'select')}>
+                          <span className="material-symbols-outlined" style={{ fontSize: 16, color: on ? '#FFFFFF' : SUB }}>
+                            {on ? 'check' : 'add'}
+                          </span>
+                        </button>
                         {d.steps_verified && (
                           <span className="absolute bottom-2 left-2 flex items-center gap-0.5 px-2 py-0.5 rounded-full"
                             style={{ background: 'rgba(255,255,255,0.92)', color: GREEN, fontSize: 11, fontWeight: 600 }}>
@@ -269,7 +325,7 @@ export default function ChefAgent() {
                       {d.cook_time_min != null && (
                         <span className="px-1" style={{ fontSize: 12, color: SUB, marginTop: -4 }}>⏱ {d.cook_time_min}min</span>
                       )}
-                    </button>
+                    </div>
                   );
                 })}
               </div>
@@ -302,6 +358,139 @@ export default function ChefAgent() {
           </button>
         </div>
       )}
+
+      {/* 菜谱详情抽屉 — 下厨房核心: 用料 + 做法步骤 + 视频 */}
+      {detail && (() => {
+        const dTitle = getDishTitle(detail as any, language) || detail.title_zh || '';
+        const prep = asArr(detail.prep_steps_json);
+        const cook = asArr(detail.cook_steps_json);
+        const on = selected.has(detail.id);
+        const pick = (z: any, e: any) => (zh ? (z ?? e) : (e ?? z)) as string;
+        return (
+          <div className="fixed inset-0 z-[120] flex flex-col justify-end" onClick={() => setDetail(null)}>
+            <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.45)' }} />
+            <div onClick={e => e.stopPropagation()}
+              className="relative w-full max-w-md mx-auto flex flex-col"
+              style={{ background: CREAM, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '88vh' }}>
+              {/* drag handle + close */}
+              <div className="flex items-center justify-between px-5 pt-3 pb-1">
+                <div className="w-9" />
+                <div style={{ width: 40, height: 4, borderRadius: 2, background: 'rgba(0,0,0,0.15)' }} />
+                <button onClick={() => setDetail(null)} className="w-9 h-9 flex items-center justify-center rounded-full active:scale-90" style={{ color: SUB }}>
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+              </div>
+
+              <div className="overflow-y-auto px-5 pb-3" style={{ scrollbarWidth: 'none' }}>
+                {/* 头图 */}
+                {detail.image_url && (
+                  <div className="w-full rounded-[20px] overflow-hidden mb-3" style={{ aspectRatio: '16/10', background: ALT }}>
+                    <img src={detail.image_url} alt={dTitle} className="w-full h-full object-cover"
+                      onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                  </div>
+                )}
+                <div className="flex items-center gap-2 flex-wrap mb-3">
+                  <h2 className="font-black" style={{ fontSize: 22 }}>{dTitle}</h2>
+                  {detail.cook_time_min != null && (
+                    <span style={{ fontSize: 13, color: SUB }}>⏱ {detail.cook_time_min}min</span>
+                  )}
+                  {detail.steps_verified && (
+                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-full"
+                      style={{ background: 'rgba(76,175,80,0.12)', color: GREEN, fontSize: 12, fontWeight: 600 }}>
+                      <span className="material-symbols-outlined" style={{ fontSize: 13 }}>check_circle</span>
+                      {t('可做', 'Ready')}
+                    </span>
+                  )}
+                </div>
+
+                {/* 视频教程 */}
+                {detail.video_url && (
+                  <a href={detail.video_url} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-2 rounded-xl px-4 py-2.5 mb-4 active:scale-[0.98] transition-transform"
+                    style={{ background: 'rgba(255,0,0,0.08)', color: '#D00' }}>
+                    <span className="material-symbols-outlined" style={{ fontSize: 20 }}>smart_display</span>
+                    <span className="font-semibold" style={{ fontSize: 14 }}>{t('看视频教程', 'Watch video')}</span>
+                  </a>
+                )}
+
+                {detailLoading && (
+                  <div className="flex items-center gap-2 py-6" style={{ color: SUB, fontSize: 13 }}>
+                    <span className="material-symbols-outlined animate-spin" style={{ fontSize: 16 }}>progress_activity</span>
+                    {t('在翻菜谱…', 'Loading recipe…')}
+                  </div>
+                )}
+
+                {/* 用料 */}
+                {!detailLoading && prep.length > 0 && (
+                  <div className="mb-5">
+                    <h3 className="font-bold mb-2 flex items-center gap-1.5" style={{ fontSize: 16 }}>
+                      <span className="material-symbols-outlined" style={{ fontSize: 18, color: BRAND }}>shopping_basket</span>
+                      {t('用料', 'Ingredients')}
+                    </h3>
+                    <div className="rounded-2xl px-4 py-1" style={{ background: '#FFFFFF', border: '1px solid #E5E5E0' }}>
+                      {prep.map((p: any, i: number) => (
+                        <div key={i} className="flex items-center justify-between py-2.5"
+                          style={{ borderBottom: i < prep.length - 1 ? '1px solid #F0F0EC' : 'none' }}>
+                          <span style={{ fontSize: 15 }}>{pick(p.ingredient_zh, p.ingredient_en)}</span>
+                          {p.amount_g != null && <span style={{ fontSize: 14, color: SUB }}>{p.amount_g}g</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 做法步骤 */}
+                {!detailLoading && cook.length > 0 && (
+                  <div className="mb-2">
+                    <h3 className="font-bold mb-2 flex items-center gap-1.5" style={{ fontSize: 16 }}>
+                      <span className="material-symbols-outlined" style={{ fontSize: 18, color: BRAND }}>skillet</span>
+                      {t('做法', 'Steps')}
+                    </h3>
+                    <div className="space-y-3">
+                      {cook.map((s: any, i: number) => (
+                        <div key={i} className="flex gap-3">
+                          <div className="shrink-0 rounded-full flex items-center justify-center font-bold text-white"
+                            style={{ width: 26, height: 26, background: BRAND, fontSize: 13 }}>
+                            {s.step ?? i + 1}
+                          </div>
+                          <div className="flex-1 pb-1">
+                            <p style={{ fontSize: 15, lineHeight: 1.55 }}>{pick(s.action_zh, s.action_en)}</p>
+                            <div className="flex items-center gap-3 mt-1">
+                              {s.duration_min != null && (
+                                <span style={{ fontSize: 12, color: SUB }}>⏱ {s.duration_min}min</span>
+                              )}
+                              {pick(s.state_target_zh, s.state_target_en) && (
+                                <span style={{ fontSize: 12, color: GREEN }}>✓ {pick(s.state_target_zh, s.state_target_en)}</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {!detailLoading && prep.length === 0 && cook.length === 0 && (
+                  <p className="py-6 text-center" style={{ color: SUB, fontSize: 13 }}>
+                    {t('这道菜的详细做法还在补充中', 'Recipe details coming soon')}
+                  </p>
+                )}
+              </div>
+
+              {/* 底部加入按钮 */}
+              <div className="px-5 pt-2" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 12px) + 12px)', borderTop: '1px solid rgba(0,0,0,0.06)' }}>
+                <button
+                  onClick={() => { toggle({ id: detail.id, title_zh: detail.title_zh, title_en: detail.title_en, steps_verified: detail.steps_verified }); setDetail(null); }}
+                  className="w-full py-3.5 rounded-full font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+                  style={{ background: on ? ALT : BRAND, color: on ? INK : '#FFFFFF', fontSize: 16, marginTop: 8 }}>
+                  <span className="material-symbols-outlined" style={{ fontSize: 20 }}>{on ? 'remove_circle' : 'add_circle'}</span>
+                  {on ? t('已选 · 点击移出', 'Selected · tap to remove') : t('加入今日菜单', 'Add to today')}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Toast */}
       {toast && (
