@@ -399,6 +399,9 @@ export default function Home() {
   // mealTime must be declared before useRecommendDishes
   const [mealTime, setMealTime] = useState<"早餐" | "午餐" | "晚餐">(() => {
     const h = new Date().getHours();
+    // 20:00 起 todayDayIndex() 已把"今天"滚到明天 (晚饭吃完翻篇), 餐次默认也
+    // 跟着回到第一餐 → 晚上看到的是"明天的早餐"而非停在今天晚餐 (老板 6/21 真测).
+    if (h >= 20) return "早餐";
     return h < 10 ? "早餐" : h < 15 ? "午餐" : "晚餐";
   });
   const [todayAdults, setTodayAdults] = useState(3);
@@ -1016,6 +1019,31 @@ export default function Home() {
             mealType:    mealTime,
             source:      'home_per_dish',
           }).catch(() => {/* non-critical */});
+
+          // ★ 真正落库 (修 2026-06-21 老板真测 "换菜刷新就没了"): 原来只 setMenuSwaps
+          // 改内存, 刷新即丢 + 菲佣读 DB 收不到. 这里按当前餐次 + dish.id 在
+          // weeklyMenu 对应数组里定位 slotIndex → weeklySwapDish 写 swapped_dish_ids.
+          // 找不到对应 slot (手动加的菜 / 投影不匹配) 则只保留内存 swap, 不落库.
+          const day = weeklyMenu?.days[todayIdx];
+          if (day) {
+            let mt: 'breakfast' | 'lunch' | 'dinner' | 'fruit' | null = null;
+            let slotIdx = -1;
+            if (mealTime === '早餐') {
+              slotIdx = (day.breakfastDishes ?? []).findIndex(d => d.id === swappedDish.id);
+              if (slotIdx >= 0) mt = 'breakfast';
+            } else if (mealTime === '午餐') {
+              slotIdx = (day.lunchDishes ?? []).findIndex(d => d.id === swappedDish.id);
+              if (slotIdx >= 0) mt = 'lunch';
+              else if (day.fruitDish?.id === swappedDish.id) { mt = 'fruit'; slotIdx = 0; }
+            } else {
+              slotIdx = (day.dishes ?? []).findIndex(d => d.id === swappedDish.id);
+              if (slotIdx >= 0) mt = 'dinner';
+              else if (day.fruitDish?.id === swappedDish.id) { mt = 'fruit'; slotIdx = 0; }
+            }
+            if (mt && slotIdx >= 0) {
+              weeklySwapDish(todayIdx, slotIdx, opt as any, mt).catch(() => {/* 落库失败保留内存 */});
+            }
+          }
         }
       }
     }

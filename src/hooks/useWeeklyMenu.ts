@@ -3439,21 +3439,21 @@ async function loadFromDB(userId: string, weekStart: string, lsKey: string): Pro
       .order('day_index'),
     supabase
       .from('user_weekly_menus')
-      .select('day_index, dish_ids, algo_version, cache_key')
+      .select('day_index, dish_ids, swapped_dish_ids, algo_version, cache_key')
       .eq('user_id', userId)
       .eq('week_start', weekStart)
       .eq('meal_type', 'lunch')
       .order('day_index'),
     supabase
       .from('user_weekly_menus')
-      .select('day_index, dish_ids, algo_version, cache_key')
+      .select('day_index, dish_ids, swapped_dish_ids, algo_version, cache_key')
       .eq('user_id', userId)
       .eq('week_start', weekStart)
       .eq('meal_type', 'breakfast')
       .order('day_index'),
     supabase
       .from('user_weekly_menus')
-      .select('day_index, dish_ids, algo_version, cache_key')
+      .select('day_index, dish_ids, swapped_dish_ids, algo_version, cache_key')
       .eq('user_id', userId)
       .eq('week_start', weekStart)
       .eq('meal_type', 'fruit')
@@ -3479,22 +3479,22 @@ async function loadFromDB(userId: string, weekStart: string, lsKey: string): Pro
 
   const allIds = [
     ...dinnerRes.data.flatMap(r => (r.swapped_dish_ids ?? r.dish_ids) as string[]),
-    ...(lunchRes.data ?? []).flatMap(r => r.dish_ids as string[]),
-    ...(breakfastRes.data ?? []).flatMap(r => r.dish_ids as string[]),
-    ...(fruitRes.data ?? []).flatMap(r => r.dish_ids as string[]),
+    ...(lunchRes.data ?? []).flatMap(r => ((r as any).swapped_dish_ids ?? r.dish_ids) as string[]),
+    ...(breakfastRes.data ?? []).flatMap(r => ((r as any).swapped_dish_ids ?? r.dish_ids) as string[]),
+    ...(fruitRes.data ?? []).flatMap(r => ((r as any).swapped_dish_ids ?? r.dish_ids) as string[]),
   ];
   const { data: dishRows } = await supabase.from('dishes').select(DISH_FIELDS).in('id', allIds);
   if (!dishRows) return null;
 
   const dishMap = new Map(dishRows.map(d => [d.id, d]));
   const lunchMap = new Map(
-    (lunchRes.data ?? []).map(r => [r.day_index as number, (r.dish_ids as string[])])
+    (lunchRes.data ?? []).map(r => [r.day_index as number, (((r as any).swapped_dish_ids ?? r.dish_ids) as string[])])
   );
   const breakfastMap = new Map(
-    (breakfastRes.data ?? []).map(r => [r.day_index as number, (r.dish_ids as string[])])
+    (breakfastRes.data ?? []).map(r => [r.day_index as number, (((r as any).swapped_dish_ids ?? r.dish_ids) as string[])])
   );
   const fruitMap = new Map(
-    (fruitRes.data ?? []).map(r => [r.day_index as number, (r.dish_ids as string[])])
+    (fruitRes.data ?? []).map(r => [r.day_index as number, (((r as any).swapped_dish_ids ?? r.dish_ids) as string[])])
   );
 
   const days: WeeklyDayMenu[] = dinnerRes.data
@@ -4043,19 +4043,32 @@ export function useWeeklyMenu(weekOffset: number = 0) {
   }, [refreshKey, weekOffset]);
 
   // Swap a single dish on a given day (user override)
-  async function swapDish(dayIndex: number, slotIndex: number, newDish: SupabaseDish) {
+  // mealType 默认 'dinner' 保持旧调用方 (WeeklyMenu.tsx / ChatSwapModal) 不变;
+  // Home per-dish 换菜传 'breakfast' / 'lunch' / 'fruit' 让换菜真正落到对应
+  // meal_type 行的 swapped_dish_ids (修 2026-06-21 老板真测 "换菜刷新就没了" —
+  // 原 handleSwapConfirm 只改内存 + swapDish 写死 dinner, 午/早/果换菜全丢).
+  async function swapDish(
+    dayIndex: number,
+    slotIndex: number,
+    newDish: SupabaseDish,
+    mealType: 'breakfast' | 'lunch' | 'dinner' | 'fruit' = 'dinner',
+  ) {
     if (!weeklyMenu) return;
+
+    const replaceInArr = (arr: any[]) =>
+      arr.map((d, i) => (i === slotIndex ? newDish : d));
 
     const updated: WeeklyMenu = {
       ...weeklyMenu,
-      days: weeklyMenu.days.map(day =>
-        day.dayIndex === dayIndex
-          ? {
-              ...day,
-              dishes: day.dishes.map((d, i) => (i === slotIndex ? newDish : d)),
-            }
-          : day
-      ),
+      days: weeklyMenu.days.map(day => {
+        if (day.dayIndex !== dayIndex) return day;
+        switch (mealType) {
+          case 'breakfast': return { ...day, breakfastDishes: replaceInArr(day.breakfastDishes ?? []) };
+          case 'lunch':     return { ...day, lunchDishes:     replaceInArr(day.lunchDishes ?? []) };
+          case 'fruit':     return { ...day, fruitDish:       newDish };
+          default:          return { ...day, dishes:          replaceInArr(day.dishes) };
+        }
+      }),
     };
 
     setWeeklyMenu(updated);
@@ -4064,26 +4077,33 @@ export function useWeeklyMenu(weekOffset: number = 0) {
     safeSetWeeklyMenuCache(lsKey, JSON.stringify(updated));
 
     const userId = getUserId() ?? 'anonymous';
-    const day = updated.days[dayIndex];
+    const origDay = weeklyMenu.days[dayIndex];
+    const newDay  = updated.days[dayIndex];
+    const arrFor = (d: any): any[] =>
+      mealType === 'breakfast' ? (d.breakfastDishes ?? [])
+      : mealType === 'lunch'   ? (d.lunchDishes ?? [])
+      : mealType === 'fruit'   ? (d.fruitDish ? [d.fruitDish] : [])
+      :                          d.dishes;
+
     await supabase.from('user_weekly_menus').upsert({
       user_id:          userId,
       week_start:       weeklyMenu.weekStart,
       day_index:        dayIndex,
-      meal_type:        'dinner',
-      dish_ids:         weeklyMenu.days[dayIndex].dishes.map(d => d.id),
-      swapped_dish_ids: day.dishes.map(d => d.id),
+      meal_type:        mealType,
+      dish_ids:         arrFor(origDay).map((d: any) => d.id),
+      swapped_dish_ids: arrFor(newDay).map((d: any) => d.id),
       algo_version:     ALGO_VERSION,
       cache_key:        lsKey,
     }, { onConflict: 'user_id,week_start,day_index,meal_type' });
 
     // TICKET-075 §5 — 同步 LS.generatedMenu (下游 HelperPrep/HelperCook 旧路径
     // + 雇主 /verify 读 hookWeeklyMenu 通过 dispatch event 触发 re-render).
-    // 只在 dayIndex === 今天 时写, 因为 generatedMenu 物理语义 = "今日菜单".
-    // 算法零变化, ALGO_VERSION 不 bump.
+    // 只在 dinner + dayIndex === 今天 时写 (generatedMenu 物理语义 = "今日晚餐主菜"),
+    // 午/早/果换菜不污染它. 算法零变化, ALGO_VERSION 不 bump.
     try {
       const todayIdx = todayDayIndex();
-      if (dayIndex === todayIdx) {
-        localStorage.setItem('generatedMenu', JSON.stringify(updated.days[todayIdx].dishes));
+      if (mealType === 'dinner' && dayIndex === todayIdx) {
+        localStorage.setItem('generatedMenu', JSON.stringify(newDay.dishes));
       }
       window.dispatchEvent(new Event('nutri-weekly-menu-changed'));
     } catch { /* quota / SSR */ }
