@@ -207,6 +207,12 @@ export default function Login() {
     (searchParams.get("invite") ?? "").toUpperCase()
   );
   const [inviteNick, setInviteNick] = useState("");
+
+  // TICKET-116 — 账号找回码恢复 (换手机后输码找回账号 + 全部数据)
+  const [recoverOpen, setRecoverOpen] = useState(false);
+  const [recoverInput, setRecoverInput] = useState("");
+  const [recoverErr, setRecoverErr] = useState("");
+  const [recoverBusy, setRecoverBusy] = useState(false);
   const [inviteErr, setInviteErr] = useState("");
   const [inviteBusy, setInviteBusy] = useState(false);
 
@@ -313,6 +319,41 @@ export default function Login() {
     } catch (e: any) {
       setInviteErr(e?.message ?? INVITE_TEXT[language].errFail);
       setInviteBusy(false);
+    }
+  };
+
+  // TICKET-116 — 账号找回码恢复: 输码 → 查回 userId → setUserId 数据回来.
+  // 自动判雇主/菲佣落对端 (household_members 命中 = 菲佣).
+  const handleRecover = async () => {
+    setRecoverErr("");
+    const raw = recoverInput.trim();
+    if (!raw) { setRecoverErr(t("Please enter your recovery code", "请输入账号找回码")); return; }
+    setRecoverBusy(true);
+    try {
+      const { recoverByCode } = await import("../lib/recoveryCode");
+      const id = await recoverByCode(raw);
+      if (!id) {
+        setRecoverErr(t("Code not found — check and retry", "找不到这个码，请核对后重试"));
+        setRecoverBusy(false);
+        return;
+      }
+      setUserId(id);
+      localStorage.setItem("isLoggedIn", "true");
+      markLogin();
+      const { data: hm } = await supabase
+        .from("household_members")
+        .select("helper_id")
+        .eq("helper_id", id)
+        .eq("status", "active")
+        .maybeSingle();
+      const isHelper = !!hm;
+      localStorage.setItem("nutri_role", isHelper ? "helper" : "employer");
+      syncProfileFromDB(id).catch(() => {});
+      window.dispatchEvent(new Event("nutri-prefs-changed"));
+      navigate(isHelper ? "/helper" : "/");
+    } catch (e: any) {
+      setRecoverErr(e?.message ?? t("Recover failed, please retry", "恢复失败，请重试"));
+      setRecoverBusy(false);
     }
   };
 
@@ -740,6 +781,46 @@ export default function Login() {
                 <span style={{ fontSize: 14 }}>🌱</span>
                 {t("Not employed yet — Learn Chinese cooking", "我还没就职 — 先学中国菜")}
               </button>
+            )}
+
+            {/* TICKET-116 — 换手机找回账号 (低调入口, 雇主/菲佣通用) */}
+            {!recoverOpen ? (
+              <button
+                onClick={() => setRecoverOpen(true)}
+                className="w-full text-center mt-1 active:scale-[0.98] transition-all"
+                style={{ fontSize: 12, color: "rgba(255,255,255,0.50)" }}>
+                {t("Changed phone? Recover with your code", "换了手机？用账号找回码恢复")}
+              </button>
+            ) : (
+              <div className="flex flex-col gap-2 rounded-2xl p-4 mt-1"
+                style={{ background: "rgba(124,58,237,0.10)", border: "1px solid rgba(124,58,237,0.25)" }}>
+                <p className="text-white/85 font-semibold text-center" style={{ fontSize: 13 }}>
+                  {t("Recover your account", "找回我的账号")}
+                </p>
+                <input
+                  type="text"
+                  inputMode="text"
+                  autoCapitalize="characters"
+                  value={recoverInput}
+                  onChange={e => { setRecoverInput(e.target.value); setRecoverErr(""); }}
+                  placeholder="XXXX-XXXX"
+                  className="w-full h-11 rounded-xl px-3 text-white text-center outline-none"
+                  style={{ background: "rgba(255,255,255,0.10)", border: "1px solid rgba(255,255,255,0.18)", fontSize: 16, letterSpacing: "0.12em" }}
+                />
+                <button
+                  onClick={handleRecover}
+                  disabled={recoverBusy}
+                  className="w-full h-12 rounded-xl flex items-center justify-center font-semibold transition-all active:scale-[0.98] disabled:opacity-60"
+                  style={{ background: "#7C3AED", fontSize: 15, color: "white" }}>
+                  {recoverBusy ? t("Recovering…", "恢复中…") : t("Recover account", "恢复账号")}
+                </button>
+                {recoverErr && (
+                  <p className="text-center" style={{ color: "#FF8C54", fontSize: 12 }}>{recoverErr}</p>
+                )}
+                <button onClick={() => setRecoverOpen(false)} style={{ fontSize: 12, color: "rgba(255,255,255,0.45)" }}>
+                  {t("Cancel", "取消")}
+                </button>
+              </div>
             )}
 
             {error && (

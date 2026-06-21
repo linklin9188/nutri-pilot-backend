@@ -691,6 +691,20 @@ export default function Settings() {
   const [inviteCode, setInviteCode] = useState<string>("");
   const [codeCopied, setCodeCopied] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+  // TICKET-116 — 账号找回码 (雇主换手机用这串码找回账号, 不依赖微信)
+  const [recoveryCode, setRecoveryCode] = useState<string>("");
+  const [recoveryCopied, setRecoveryCopied] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const userId = getUserId();
+      if (!userId) return;
+      const { getOrCreateRecoveryCode } = await import('../lib/recoveryCode');
+      const code = await getOrCreateRecoveryCode(userId);
+      if (!cancelled && code) setRecoveryCode(code);
+    })();
+    return () => { cancelled = true; };
+  }, []);
   // TICKET-072 P0 — householdId state, family_members DB CRUD 全靠它当 FK.
   // 与 inviteCode useEffect 同一查询返回, 避免双重 round-trip.
   const [householdId, setHouseholdId] = useState<string>("");
@@ -1759,6 +1773,46 @@ export default function Settings() {
                 </span>
                 {linkCopied ? "已复制 / Copied" : "复制链接 / Copy link"}
               </button>
+
+              {/* TICKET-116 — 账号找回码 (雇主自己换手机找回; 与上面"发给菲佣的邀请码"
+                  强区分: 不同底色 + 钥匙图标 + "别发给别人" 文案, 防雇主发错). */}
+              <div className="h-px bg-black/5 my-1" />
+              <div className="rounded-[14px] p-3"
+                style={{ background: "rgba(124,58,237,0.06)", border: "1px solid rgba(124,58,237,0.20)" }}>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <span className="material-symbols-outlined" style={{ fontSize: 16, color: "#7C3AED" }}>vpn_key</span>
+                  <p className="text-[12px] font-bold" style={{ color: "#7C3AED" }}>账号找回码（换手机找回，别发给别人）</p>
+                </div>
+                <p className="text-[11px] text-secondary mb-2 leading-snug">
+                  换手机、换浏览器或清缓存后，在登录页输入这串码，就能找回你的账号和全部数据。建议截图保存。
+                </p>
+                {recoveryCode ? (
+                  <button
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(recoveryCode);
+                        setRecoveryCopied(true);
+                        setTimeout(() => setRecoveryCopied(false), 1800);
+                      } catch { /* clipboard blocked — 用户仍可读 */ }
+                    }}
+                    className="w-full bg-white border-2 border-dashed rounded-[12px] py-2.5 flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
+                    style={{ borderColor: "rgba(124,58,237,0.30)" }}
+                    title="点击复制"
+                  >
+                    <span className="font-mono font-black" style={{ fontSize: 22, letterSpacing: "0.12em", color: "#7C3AED" }}>
+                      {recoveryCode.slice(0, 4)}-{recoveryCode.slice(4)}
+                    </span>
+                    <span className="material-symbols-outlined" style={{ fontSize: 16, color: "#7C3AED" }}>
+                      {recoveryCopied ? "check_circle" : "content_copy"}
+                    </span>
+                  </button>
+                ) : (
+                  <div className="w-full bg-black/[0.03] border border-black/5 rounded-[12px] py-3 flex items-center justify-center gap-2">
+                    <div className="w-3.5 h-3.5 border-2 border-[#7C3AED]/40 border-t-[#7C3AED] rounded-full animate-spin" />
+                    <span className="text-[12px] text-secondary">正在生成找回码…</span>
+                  </div>
+                )}
+              </div>
 
               {/* TICKET-067 §C — 小美料理机 toggle 并入做饭辅助卡（原独立 card 已删）*/}
               <div className="h-px bg-black/5" />
