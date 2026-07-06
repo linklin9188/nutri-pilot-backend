@@ -33,6 +33,7 @@ import { isNewUserSession } from '../lib/userLifecycle';
 import { pickBreakfastCombo, classifyBreakfastSlot, classifyStapleSubtype, type BreakfastStapleSubtype, WET_DRINK_KEYWORDS } from '../lib/breakfastCombos';
 import { loadChatPreferences, injectChatPrefsIntoPrefScores, applyMealStyleToPrefScores } from '../lib/chatPreferenceExtractor';
 import { syncProfileFromDB } from '../lib/profileSync';
+import { loadFavorites } from '../lib/favorites';
 import { loadPantryItems } from './usePantry';
 import { recommendDishesByVector, computeHouseholdVector, VECTOR_DIM } from '../lib/recommendVector';
 
@@ -122,7 +123,7 @@ const WORKDAYS_PER_WEEK = 5;
 // This ensures old cached menus are discarded after an algorithm update.
 // Exported so other pages (e.g. VerifyIngredients / shopping list) can read
 // from the matching cache key without drifting behind algo bumps.
-export const ALGO_VERSION = 'v73'; // v73: 老板 6/15 早餐蛋池拿掉茶叶蛋 (太复杂, 要茶卤慢炖) — breakfastCombos.ts BREAKFAST_PROTEIN_EGG_POOL 5→4 蛋 (白煮蛋/鸡蛋羹/煎鸡蛋/葱花炒鸡蛋), 轮换取模 .length 自动适配; DB 同步删 dishes 茶叶蛋行 + 清 user_weekly_menus 引用. bump 让 v72 缓存失效, 旧菜单残留茶叶蛋早餐重排掉. // v72: TICKET-095 reactive 3 类 — swap/favorite/cook_done 自动写 user_chat_preferences. swap dish 走 → trackSwapDislike (confidence 0.6, dislike_keyword); 收藏 → trackFavoriteLove (confidence 0.8, love_keyword); 菲佣 cook 完成 toggle → trackCookCompleted (confidence 0.7, source=cook_done). 所有信号通过 lib/chatPreferenceExtractor.ts dynamic import + saveChatPreferences upsert. 第 4 reactive (没吃勾选) 留 TICKET-096 接 dish-level eating toggle. bump 让 v71 缓存失效, 用户开始 swap/收藏/cook done 立刻反映到下次菜单调权. // v71: TICKET-094 chat preferences → prefScores 注入 (老板拍板 chat + 使用数据 = 核心命中率来源). useWeeklyMenu hook 启动时 loadChatPreferences(user_id + household_id), injectChatPrefsIntoPrefScores 把 chat 偏好 (cook_method/staple_subtype/meat_part) 翻译成 prefScores keyword + 权重 1.5× (confidence × sign × 1.5), 注入到 scoreForWeek axis 4 学习曲线自动用上. household_id 双维度让雇主菲佣共享偏好. 不动 scoreForWeek 接口. bump 让全 v70 缓存失效 - chat 弹起来选 chip 后下次菜单立刻按 prefs 调权. // v70: TICKET-093 早餐 staple subtype 一周 dedup — 加 BreakfastStapleSubtype 7 类 (rice/wheat/grain_misc/tuber/bean/processed/other_staple), classifyStapleSubtype() 按 title 关键词分类, generateWeekPlan 早餐循环跟踪 weekStapleSubtypeCounts (cap 2/5 天), 超 cap 时从 breakfastPool 找未达 cap 的 subtype dish swap 进去保多样性. 配合补菜 20 道 (薯芋/杂豆/杂粮/加工各 5). 老板真测 "早餐都是粥和面食". bump 让 v69 缓存失效. // v69: TICKET-093 用餐风格收口 — (a) 午餐 staplePool dayIndex 过滤"快餐型" staple, Mon+Thu (dayIndex 0/3) 允许盖饭/便当/炒饭/烩饭/焗饭/泡饭, Tue/Wed/Fri 硬过滤; (b) 晚餐 small template 默认塞 staple slot (老板真测 "晚餐为什么没主食" — 中餐家庭吃饭没主食反直觉, 小模板 staple slot = 最后 1 槽, lowCarb 用户仍砍); (c) 读 localStorage.nutri_meal_style ('standard' / 'low_staple' / 'high_protein' / 'light'), 'high_protein' 等价于 lowCarb=1 让算法 staple slot 砍 + 主菜增. 配合 onboarding-v2 加 "用餐风格" 题 + Settings 同名 chip. bump 让全 v68 缓存失效. // v68: TICKET-065 P0 (老板真测 #11 "我想吃西北菜结果出腊味合蒸") — IntentBias schema 加 cuisineBoosts 维度. 真因: 原 schema 只有 categoryBoosts + tagBoosts, "西北菜"被 Gemini 转都失效, 算法回退按 hometown + prefScores 排 → 粤菜命中. 改动 4 处: (1) src/lib/intentBias.ts 加 CuisineCode type (实查 dishes.origin_cuisine 12 真值: cantonese/sichuan/jiangnan/northern/western/japanese_korean/southeast_asian/hunan/northwest/fujian/hakka/northeast) + IntentBias.cuisineBoosts field + applyIntentBias cuisine 命中加分 + getIntentHash 把 cuisineBoosts 纳入 hash 做 cache buster + loadIntentBias 兜底旧 LS 没 cuisineBoosts; (2) supabase/functions/parse-intent/index.ts PROMPT 加 cuisineBoosts schema + mapping cheat sheet; (3) parseIntent return 加 cuisineBoosts clampObj; (4) bump ALGO 让全 v67 缓存失效, 新 intent + cuisineBoosts hash 立即生效. dish.origin_cuisine 已在 DISH_FIELDS SELECT (v59 起), 无需改 caller. 不动 hometownBuckets 归并桶 — cuisineBoosts 直命中 DB 真值, 跟 hometown 维度物理分离。
+export const ALGO_VERSION = 'v74'; // v74: 家常菜种子 (favorites boost) — 收藏 (nutri_favorites) 命中 scoreForWeek +1.00, 压过全部画像推测分 (hometown 0.05/goal 0.15/taste 0.25); recency/diversity 惩罚照常生效保证收藏菜之间轮换. 冷启动根因修复: 不再让算法猜用户, 让用户先勾"我家常吃的菜"直接主导菜单 = 家常菜轮换 + 少量新菜探索. generateWeekPlan 顶部一次 loadFavorites(), 6 处 scoreForWeek 调用共享 favoriteIds Set. 配套 Home 空收藏引导 banner. bump 让 v73 缓存失效. // v73: 老板 6/15 早餐蛋池拿掉茶叶蛋 (太复杂, 要茶卤慢炖) — breakfastCombos.ts BREAKFAST_PROTEIN_EGG_POOL 5→4 蛋 (白煮蛋/鸡蛋羹/煎鸡蛋/葱花炒鸡蛋), 轮换取模 .length 自动适配; DB 同步删 dishes 茶叶蛋行 + 清 user_weekly_menus 引用. bump 让 v72 缓存失效, 旧菜单残留茶叶蛋早餐重排掉. // v72: TICKET-095 reactive 3 类 — swap/favorite/cook_done 自动写 user_chat_preferences. swap dish 走 → trackSwapDislike (confidence 0.6, dislike_keyword); 收藏 → trackFavoriteLove (confidence 0.8, love_keyword); 菲佣 cook 完成 toggle → trackCookCompleted (confidence 0.7, source=cook_done). 所有信号通过 lib/chatPreferenceExtractor.ts dynamic import + saveChatPreferences upsert. 第 4 reactive (没吃勾选) 留 TICKET-096 接 dish-level eating toggle. bump 让 v71 缓存失效, 用户开始 swap/收藏/cook done 立刻反映到下次菜单调权. // v71: TICKET-094 chat preferences → prefScores 注入 (老板拍板 chat + 使用数据 = 核心命中率来源). useWeeklyMenu hook 启动时 loadChatPreferences(user_id + household_id), injectChatPrefsIntoPrefScores 把 chat 偏好 (cook_method/staple_subtype/meat_part) 翻译成 prefScores keyword + 权重 1.5× (confidence × sign × 1.5), 注入到 scoreForWeek axis 4 学习曲线自动用上. household_id 双维度让雇主菲佣共享偏好. 不动 scoreForWeek 接口. bump 让全 v70 缓存失效 - chat 弹起来选 chip 后下次菜单立刻按 prefs 调权. // v70: TICKET-093 早餐 staple subtype 一周 dedup — 加 BreakfastStapleSubtype 7 类 (rice/wheat/grain_misc/tuber/bean/processed/other_staple), classifyStapleSubtype() 按 title 关键词分类, generateWeekPlan 早餐循环跟踪 weekStapleSubtypeCounts (cap 2/5 天), 超 cap 时从 breakfastPool 找未达 cap 的 subtype dish swap 进去保多样性. 配合补菜 20 道 (薯芋/杂豆/杂粮/加工各 5). 老板真测 "早餐都是粥和面食". bump 让 v69 缓存失效. // v69: TICKET-093 用餐风格收口 — (a) 午餐 staplePool dayIndex 过滤"快餐型" staple, Mon+Thu (dayIndex 0/3) 允许盖饭/便当/炒饭/烩饭/焗饭/泡饭, Tue/Wed/Fri 硬过滤; (b) 晚餐 small template 默认塞 staple slot (老板真测 "晚餐为什么没主食" — 中餐家庭吃饭没主食反直觉, 小模板 staple slot = 最后 1 槽, lowCarb 用户仍砍); (c) 读 localStorage.nutri_meal_style ('standard' / 'low_staple' / 'high_protein' / 'light'), 'high_protein' 等价于 lowCarb=1 让算法 staple slot 砍 + 主菜增. 配合 onboarding-v2 加 "用餐风格" 题 + Settings 同名 chip. bump 让全 v68 缓存失效. // v68: TICKET-065 P0 (老板真测 #11 "我想吃西北菜结果出腊味合蒸") — IntentBias schema 加 cuisineBoosts 维度. 真因: 原 schema 只有 categoryBoosts + tagBoosts, "西北菜"被 Gemini 转都失效, 算法回退按 hometown + prefScores 排 → 粤菜命中. 改动 4 处: (1) src/lib/intentBias.ts 加 CuisineCode type (实查 dishes.origin_cuisine 12 真值: cantonese/sichuan/jiangnan/northern/western/japanese_korean/southeast_asian/hunan/northwest/fujian/hakka/northeast) + IntentBias.cuisineBoosts field + applyIntentBias cuisine 命中加分 + getIntentHash 把 cuisineBoosts 纳入 hash 做 cache buster + loadIntentBias 兜底旧 LS 没 cuisineBoosts; (2) supabase/functions/parse-intent/index.ts PROMPT 加 cuisineBoosts schema + mapping cheat sheet; (3) parseIntent return 加 cuisineBoosts clampObj; (4) bump ALGO 让全 v67 缓存失效, 新 intent + cuisineBoosts hash 立即生效. dish.origin_cuisine 已在 DISH_FIELDS SELECT (v59 起), 无需改 caller. 不动 hometownBuckets 归并桶 — cuisineBoosts 直命中 DB 真值, 跟 hometown 维度物理分离。
 // v67: TICKET-059 P0 hot-fix (老板真测 #3) — 加家人后菜单实时重生成。短期 hack 3 件套: (1) cache_key 显式加 _h{homeMembersCount} suffix (getCacheKey 末尾), 即使 calcDishCount 桶化没让 dishesPerDay 变也强制 invalidate; (2) calcDishesForToday 出口 floor 兜底: dishesPerDay = max(dishesPerDay, min(9, homeMembers.length)), 保证菜数至少跟家里人数一致; (3) Settings persistMembers 加 nutri-home-changed event dispatch, useWeeklyMenu 加监听 → 加/删家人立即 clear cache + setRefreshKey 重生菜单. 长期方案 (family_members DB 表 + 算法 cascade vector 读家人) 走 PENDING_BOSS_DECISION schema 升级 ticket. bump 让全 v66 缓存失效。
 // v66: TICKET-040 早餐 spec 校准 (老板 25/05 凌晨) — 早餐 4 类合并为 3 类: 碳水 + 蛋白 + 维生素 (veg OR fruit 任一即够, 不强制两者都要). breakfastCombos.ts BREAKFAST_VEG/FRUIT_KEYWORDS 保留 (数据仍用), 改 generateWeekPlan supplement check 从 AND 改 OR. bump 让全 v65 缓存失效。
 // v65: TICKET-034 Settings §2 嵌入向量推荐 — recommendVector.ts (manual 20 维: cuisine 5+spice 1+ingredient family 8+cooking 6); user 选 onboarding 图片 → userVectorFromSelectedDishes 写 user_profiles.preference_vector; 推荐 cascade: 有 vector → recommendDishesByVector (cosineSimilarity top 100 → nutritionRerank by dietary_goal → 过敏硬过滤) 截 pool top 150 喂 generateWeekPlan; 无 vector (旧用户) → fallback 现有 scoreDish/scoreForWeek 兼容. dishes.feature_vector 100% 填充 (924/924, by scripts/compute-dish-feature-vector.ts). bump 让全 v64 缓存失效, 新算法立即生效。
@@ -862,7 +863,19 @@ export function getCacheKey(weekStart: string): string {
     const homeMembersCount = JSON.parse(localStorage.getItem('nutri_family_members') ?? '[]').length;
     homeKey = `_h${homeMembersCount}`;
   } catch { homeKey = '_h0'; }
-  return `weekly_menu_${ALGO_VERSION}_${weekStart}_p${dishesPerDay}_c${cuisineKey}_e${eatingKey}_i${intentKey}_x${ccKey}${crKey}${byDayKey}${homeKey}`;
+  // v74 家常菜种子 — 收藏集合 hash suffix。用户勾/取消收藏后 cache_key 变,
+  // 下次读菜单强制重生成, 保证"勾完家常菜 → 菜单立刻像你家的"感知闭环。
+  // 简单求和 hash 足够: id 集合任何增删都会改变 sum。
+  let favKey = '_f0';
+  try {
+    const favs = loadFavorites();
+    let h = 0;
+    for (const f of favs) {
+      for (let i = 0; i < f.id.length; i++) h = (h * 31 + f.id.charCodeAt(i)) >>> 0;
+    }
+    favKey = `_f${favs.length}x${h.toString(36)}`;
+  } catch {}
+  return `weekly_menu_${ALGO_VERSION}_${weekStart}_p${dishesPerDay}_c${cuisineKey}_e${eatingKey}_i${intentKey}_x${ccKey}${crKey}${byDayKey}${homeKey}${favKey}`;
 }
 
 // §A (TICKET-030) localStorage quota 防爆 — 老板 15:35 F12 真测发现旧版本 cache
@@ -1405,6 +1418,11 @@ interface WeeklyScoreParams {
   // 24 节气短名). caller fetch + sessionStorage 30min 缓存后传入; 缺失/空 →
   // 退本地 getCurrentFestival 公历推断 (维持 axis 27 既有兜底量级)。
   festivalTags?: string[];
+  // ── v74 家常菜种子 — 收藏 (nutri_favorites) 是用户亲手勾的"我家吃这些"，
+  // 冷启动期唯一的真实信号。命中 +1.00 压过所有画像推测分 (hometown 0.05 /
+  // goal 0.15 / taste 0.25)，recency −0.60 仍然负责收藏菜之间的轮换，
+  // 所以菜单 = 家常菜换着吃 + 分数够高的新菜探索。
+  favoriteIds?: Set<string>;
 }
 
 // ── Helper: extract all ingredient names a dish references ───────────────────
@@ -1427,7 +1445,7 @@ function scoreForWeek({
   dish, profile, prefScores, recentIds, pickedIngredients, pickedCuisines = [], pickedTitleKeywords, dayIndex,
   spiceBoost: _unusedSpiceBoost = 0, ageGroup, healthPrefs, helperMode = false, hasPregnant = false,
   humidity = 75, solarTerm = null, hasXiaomei = false, mealTime = '晚餐',
-  homeInventoryItems, imagePrefs, festivalTags,
+  homeInventoryItems, imagePrefs, festivalTags, favoriteIds,
 }: WeeklyScoreParams): number {
   // TICKET-005 v3 重设计: spiceBoost 入参保留但不再使用 — 由 axis 32-40 间接覆盖.
   void _unusedSpiceBoost;
@@ -1467,6 +1485,12 @@ function scoreForWeek({
   // ── 3. Taste preference ───────────────────────────────────────────────────
   const tasteScore = profile.taste_pref && flavorTags.includes(profile.taste_pref) ? 0.25 : 0.0;
   score += tasteScore;
+
+  // ── 3.5 v74 家常菜种子 (favorites boost) ─────────────────────────────────
+  // 收藏 = 用户亲手勾的"我家常吃"，冷启动期唯一真实信号。+1.00 压过全部
+  // 画像推测分；recency (axis 6) 与 diversity (axis 7) 惩罚照常生效，
+  // 保证收藏菜之间轮换而不是天天同一道。
+  if (favoriteIds?.has(dish.id)) score += 1.0;
 
   // ── 4. Usage-data layer — power curve × sigmoid 学习权重 ────────────────
   // 用户使用数据成幂次方增长 (v33 power curve)。每次"keep / engage / cook"
@@ -2492,6 +2516,8 @@ function generateWeekPlan(
   // §A (TICKET-024) userDiversity — 在 generateWeekPlan 顶部计算一次, main loop
   // 4 处 weightedRandom + buildSlotPlan 都从同一 diversity 派生 dynamicK 输出.
   const userDiversity = computeUserDiversity(imagePrefs, familyPrefs ?? null);
+  // v74 家常菜种子 — 一次性 load 收藏 id 集合，6 处 scoreForWeek 调用共享。
+  const favoriteIds = new Set(loadFavorites().map(f => f.id));
   // 粥 / 稀饭 are breakfast-only in Chinese cuisine — user direction
   // 2026-05-17. Stripped once at function entry so every lunch + dinner
   // pool below inherits the ban (the previous per-slot filter only ran
@@ -2739,7 +2765,7 @@ function generateWeekPlan(
             helperMode,
             hasPregnant: familyPrefs?.hasPregnant ?? false,
             humidity, solarTerm, hasXiaomei, mealTime: '晚餐',
-            homeInventoryItems, imagePrefs, festivalTags,
+            homeInventoryItems, imagePrefs, festivalTags, favoriteIds,
           });
 
           // ── Family multi-goal scoring ───────────────────────────────────
@@ -2934,7 +2960,7 @@ function generateWeekPlan(
             healthPrefs,
             hasPregnant: familyPrefs?.hasPregnant ?? false,
             humidity, solarTerm, hasXiaomei, mealTime: '晚餐',
-            homeInventoryItems, imagePrefs, festivalTags,
+            homeInventoryItems, imagePrefs, festivalTags, favoriteIds,
           });
           const flavors: string[] = d.flavor_tags ?? [];
           if (flavors.includes('sweet'))  s += 0.25;
@@ -3012,7 +3038,7 @@ function generateWeekPlan(
         dayIndex, spiceBoost, ageGroup, healthPrefs,
         hasPregnant: familyPrefs?.hasPregnant ?? false,
         humidity, solarTerm, hasXiaomei, mealTime: '午餐',
-        homeInventoryItems, imagePrefs, festivalTags,
+        homeInventoryItems, imagePrefs, festivalTags, favoriteIds,
       });
       if ((d.flavor_tags ?? []).includes('light')) score += 0.15;
       return { dish: d, score };
@@ -3232,7 +3258,7 @@ function generateWeekPlan(
             healthPrefs,
             hasPregnant: familyPrefs?.hasPregnant ?? false,
             humidity, solarTerm, hasXiaomei, mealTime: '早餐',
-            homeInventoryItems, imagePrefs, festivalTags,
+            homeInventoryItems, imagePrefs, festivalTags, favoriteIds,
           }),
         }));
         scored.sort((a, b) => b.score - a.score);
@@ -3264,7 +3290,7 @@ function generateWeekPlan(
                 spiceBoost, ageGroup, healthPrefs,
                 hasPregnant: familyPrefs?.hasPregnant ?? false,
                 humidity, solarTerm, hasXiaomei, mealTime: '早餐',
-                homeInventoryItems, imagePrefs, festivalTags,
+                homeInventoryItems, imagePrefs, festivalTags, favoriteIds,
               }),
             }))
             .sort((a: any, b: any) => b.score - a.score)
@@ -3311,7 +3337,7 @@ function generateWeekPlan(
                 spiceBoost, ageGroup, healthPrefs,
                 hasPregnant: familyPrefs?.hasPregnant ?? false,
                 humidity, solarTerm, hasXiaomei, mealTime: '早餐',
-                homeInventoryItems, imagePrefs, festivalTags,
+                homeInventoryItems, imagePrefs, festivalTags, favoriteIds,
               }),
             }))
             .sort((a: any, b: any) => b.score - a.score);
@@ -3637,10 +3663,14 @@ export function useWeeklyMenu(weekOffset: number = 0) {
     // 的 UI/组件不必 piggyback 在 prefs 通道上, 语义更清晰, 也方便未来
     // 接长期方案 family_members DB 表后单独触发。
     window.addEventListener('nutri-home-changed', handler);
+    // v74 家常菜种子 — 收藏增删 (favorites.ts persist 已 dispatch) 触发重生成,
+    // 配合 getCacheKey 的 _f{hash} suffix 双保险, 用户勾完家常菜立刻看到菜单变。
+    window.addEventListener('nutri-favorites-changed', handler);
     return () => {
       window.removeEventListener('nutri-prefs-changed', handler);
       window.removeEventListener('nutri-intent-bias-changed', handler);
       window.removeEventListener('nutri-home-changed', handler);
+      window.removeEventListener('nutri-favorites-changed', handler);
     };
   }, [weekOffset]);
 

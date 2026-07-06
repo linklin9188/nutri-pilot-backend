@@ -33,6 +33,7 @@ import Pricing from './pages/Pricing';
 import WeekendDining from './pages/WeekendDining';
 // TICKET-100 (5/28): ProWellness / ProSchoolBalance 已删 (P3 不核心)
 import Favorites from './pages/Favorites';
+import FamilyDishPicker from './pages/FamilyDishPicker';
 import WeChatCallback from './pages/WeChatCallback';
 import WeChatIn from './pages/WeChatIn';
 import HostSsoIn from './pages/HostSsoIn';
@@ -363,6 +364,7 @@ function AppShell() {
       <Route path="/helper-community" element={<RequireAuth helperRole><HelperCommunityNew /></RequireAuth>} />
       <Route path="/weekend"  element={<RequireAuth><WeekendDining /></RequireAuth>} />
       <Route path="/favorites" element={<RequireAuth><Favorites /></RequireAuth>} />
+      <Route path="/family-dishes" element={<RequireAuth><FamilyDishPicker /></RequireAuth>} />
 
       {/* TICKET-018 §D — DEV-only candidate-grid prototype. Prod build's
           import.meta.env.DEV is false → CandidateGridProto is null →

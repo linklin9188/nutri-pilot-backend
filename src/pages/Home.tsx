@@ -39,7 +39,7 @@ import { loadCuisineMode, type CuisineMode } from "../lib/cuisineFilter";
 import { loadFamilyMembers } from "../lib/familyPrefs";
 import { loadDailySchedule, setDailyMealTime, dateToISODay, type DailyMealSchedule } from "../lib/dailyMealSchedule";
 import { HeartButton } from "../components/HeartButton";
-import { addFavorite } from "../lib/favorites";
+import { addFavorite, loadFavorites } from "../lib/favorites";
 import { TagBadgeRow, type TagBadge } from "../components/TagBadge";
 import { getDishTitle } from "../lib/dishTitleI18n";
 import ShareCard from "../components/ShareCard";
@@ -969,6 +969,14 @@ export default function Home() {
   const now = new Date();
   const hour = now.getHours();
   const greeting = hour < 12 ? "早安" : hour < 17 ? "下午好" : "晚上好";
+
+  // v74 家常菜种子 nudge — 收藏数, 勾/取消实时同步 (favorites.ts dispatch)
+  const [favSeedCount, setFavSeedCount] = useState(() => loadFavorites().length);
+  useEffect(() => {
+    const sync = () => setFavSeedCount(loadFavorites().length);
+    window.addEventListener('nutri-favorites-changed', sync);
+    return () => window.removeEventListener('nutri-favorites-changed', sync);
+  }, []);
   const dateLabel = now.toLocaleDateString("zh-HK", {
     month: "long", day: "numeric", weekday: "long",
   });
@@ -1461,6 +1469,27 @@ export default function Home() {
             2 分钟分别建档 (一个不吃鱼 + 一个长高需求等)。 */}
         <FamilyMemberNudge />
         <InviteFamilySheet inviteCode={inviteCode} />
+
+        {/* v74 家常菜种子 nudge — 收藏 < 5 时引导去 /family-dishes 勾家常菜。
+            冷启动根因: 菜单不像"我家的菜"是因为没有真实信号, 收藏是唯一
+            用户亲手给的信号 (scoreForWeek +1.00 主导菜单)。勾满即消失。 */}
+        {favSeedCount < 5 && (
+          <button onClick={() => navigate('/family-dishes')}
+            className="rounded-2xl p-4 flex items-center gap-3 active:scale-[0.98] transition-transform text-left w-full"
+            style={{ background: 'linear-gradient(135deg, #FFF3E9, #FFE8D6)', boxShadow: '0 4px 16px rgba(255,90,31,0.10)' }}>
+            <span className="flex items-center justify-center rounded-full shrink-0"
+              style={{ width: 44, height: 44, background: 'rgba(255,90,31,0.14)' }}>
+              <span className="material-symbols-outlined" style={{ fontSize: 24, color: '#FF5A1F' }}>favorite</span>
+            </span>
+            <span>
+              <p className="font-bold" style={{ fontSize: 15 }}>{t('Pick your family dishes', '勾出您家常吃的菜')}</p>
+              <p style={{ fontSize: 11.5, color: '#8a5a3a', marginTop: 2 }}>
+                {t('2 min — the weekly menu will rotate around them', '花 2 分钟，一周菜单就围着这些菜轮换')}
+              </p>
+            </span>
+            <span className="material-symbols-outlined ml-auto" style={{ fontSize: 20, color: '#FF5A1F' }}>chevron_right</span>
+          </button>
+        )}
 
         {/* 拍冰箱 / 报菜名 并排入口 — 老板 6/11: 自己挑菜的"下厨房"模式 (/chef)
             之前只挂在 /home-v2 + /chef 网址, 老首页够不到. 拍冰箱复用现有
